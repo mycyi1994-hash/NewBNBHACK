@@ -3,6 +3,7 @@ dist/
 .next/
 .turbo/
 coverage/
+*.tsbuildinfo
 
 # secrets
 .env
@@ -14,7 +15,7 @@ coverage/
 .baw/
 
 # vendored docs (fetched by scripts/fetch-docs.sh)
-docs/vendor/
+docs/vendor/*
 !docs/vendor/ENDPOINTS.md
 
 # local

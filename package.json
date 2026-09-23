@@ -1,0 +1,38 @@
+{
+  "name": "ijaro",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ijaro/web --filter @ijaro/agent dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint . --max-warnings=0 && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "fetch-docs": "bash scripts/fetch-docs.sh",
+    "endpoints": "tsx scripts/gen-endpoints.ts",
+    "reach": "tsx scripts/reach.ts",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "dx:metrics": "tsx scripts/dx-metrics.ts",
+    "tape:once": "node scripts/not-yet.mjs tape:once M0-08",
+    "cycle:once": "node scripts/not-yet.mjs cycle:once M1-03",
+    "smoke": "node scripts/not-yet.mjs smoke M2-12"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@next/eslint-plugin-next": "16.3.6",
+    "@types/node": "22.20.4",
+    "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.1"
+  }
+}

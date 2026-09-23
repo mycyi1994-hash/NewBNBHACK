@@ -1,0 +1,17 @@
+{
+  "name": "@ijaro/binance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. --project @ijaro/binance"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@binance-web3/wallet": "12.3.0"
+  }
+}

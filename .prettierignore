@@ -1,0 +1,9 @@
+# Human-written planning set, DX evidence and generated tables keep their own layout.
+*.md
+docs/
+dx/
+fixtures/
+pnpm-lock.yaml
+packages/db/drizzle/
+**/.next/
+**/next-env.d.ts
