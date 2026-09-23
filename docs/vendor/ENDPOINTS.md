@@ -72,7 +72,7 @@ resource not found" in DeFi but "Tax token cannot configure referral fee" in Tra
 
 <!-- BEGIN GENERATED: pnpm endpoints -->
 
-Generated 2026-09-23T18:01:10.652Z from `docs/vendor/llms-full.txt` (fetched 2026-09-23T17:52:39.789Z, 8417 lines, sha256 `ea604b558bd3…`) and `@binance-web3/wallet@12.3.0`.
+Generated 2026-09-23T18:28:49.557Z from `docs/vendor/llms-full.txt` (fetched 2026-09-23T17:52:39.789Z, 8416 lines, sha256 `ea604b558bd3…`) and `@binance-web3/wallet@12.3.0`.
 Operations: 65 in the llms-full.txt API Reference, 65 in the connector.
 
 Legend: `*` marks a required sub-field; _path/query/body/header_ is where the connector puts the parameter on the wire; `x{}` object, `x[]` array. `recvWindow` and `nonce` (optional on every operation) are omitted — see Authentication.

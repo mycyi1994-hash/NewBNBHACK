@@ -223,7 +223,8 @@ async function main() {
   const text = await readFile(LLMS_FULL, 'utf8');
   const fetchedAt = (await stat(LLMS_FULL)).mtime.toISOString();
   const sha = createHash('sha256').update(text).digest('hex').slice(0, 12);
-  const lineCount = text.split('\n').length;
+  // Same count as `wc -l` (newline-terminated lines).
+  const lineCount = text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
   const docOps = parseApiReference(text);
 
   const require = createRequire(import.meta.url);
