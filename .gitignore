@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.studio/
+.baw/
+
+# vendored docs (fetched by scripts/fetch-docs.sh)
+docs/vendor/
+!docs/vendor/ENDPOINTS.md
+
+# local
+.DS_Store
+*.log
