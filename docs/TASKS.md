@@ -24,7 +24,7 @@
   - 증거: `.github/workflows/ci.yml` — `pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm lint` → `pnpm test`, api_calls 통합 테스트용 일회용 Postgres 16 서비스. 시크릿 없음.
 - [x] `.env.example` 반영, `packages/config` zod 검증, 캡 상수
   - 증거: `packages/config/src/index.ts`(18개 변수 전부 zod, 캡 동결·상호 검증, live 모드 필수값, 비밀값 미노출). 테스트 `validates exactly the variables declared in .env.example`, `no source file outside packages/config mentions a cap variable`(캡은 config에서만 읽음) 통과. ESLint `no-restricted-properties`가 config 밖 `process.env` 금지.
-- 수용: 클린 클론에서 `pnpm i && pnpm typecheck && pnpm lint && pnpm test` 녹색 — **확인**(2026-09-23 18:27 UTC, `git clone` 새 사본, `--frozen-lockfile`): install `Done in 2.1s using pnpm v10.33.0` · typecheck `scripts typecheck: Done` · lint `All matched files use Prettier code style!` · test `Tests 82 passed | 1 skipped (83)`(DB 없을 때), 테스트 DB를 주면 `Tests 83 passed (83)`. CI 녹색은 푸시 후 아래에 기록.
+- 수용: 클린 클론에서 `pnpm i && pnpm typecheck && pnpm lint && pnpm test` 녹색 — **확인**(2026-09-23 18:27 UTC, `git clone` 새 사본, `--frozen-lockfile`): install `Done in 2.1s using pnpm v10.33.0` · typecheck `scripts typecheck: Done` · lint `All matched files use Prettier code style!` · test `Tests 82 passed | 1 skipped (83)`(DB 없을 때), 테스트 DB를 주면 `Tests 83 passed (83)`. **CI 녹색**: GitHub Actions `ci` run #2 (https://github.com/mycyi1994-hash/NewBNBHACK/actions/runs/35902818616, 커밋 `03cc5d7`, 2026-09-23 18:30 UTC) — install·typecheck·lint·test 모두 success, `Test Files 9 passed (9)` · `Tests 83 passed (83)`(Postgres 서비스로 `@ijaro/db` 포함). run #1은 새 푸시로 취소됨(concurrency).
 
 ### M0-02 문서 수집 · 기준: DX
 - [x] `scripts/fetch-docs.sh` 실행 → `docs/vendor/llms.txt`, `llms-full.txt`(gitignore), Skills Hub 얕은 클론
