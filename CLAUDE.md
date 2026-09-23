@@ -14,6 +14,9 @@ and you keep the evidence trail they demand. You do not redesign the product on 
 5. `docs/DECISIONS.md` — locked decisions and open questions. If you resolve a ⚠️VERIFY item, write the result here.
 6. `docs/DX_PROTOCOL.md` — how to log developer-experience evidence (25% of the score).
 7. `docs/UX_COPY.md` — every user-facing string, KR + EN. Do not invent copy.
+8. `docs/GOALS.md` — the `/goal` directives (G0–G9). When you are running under a goal, its numbered
+   conditions are the contract, and you end **every** turn with a `GOAL STATUS` block: one line per
+   condition, `PASS` or `FAIL`, followed by the evidence (quoted command output, tx hash, file path).
 
 ## Mission in one paragraph
 

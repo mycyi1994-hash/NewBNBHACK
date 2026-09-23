@@ -18,6 +18,7 @@
 | [`docs/PLAN.md`](docs/PLAN.md) | 마스터 기획서: 목표, 사용자, 범위, 흐름, 일정, 컷라인, 3인 검토 회의록 | 전원 |
 | [`docs/SPEC.md`](docs/SPEC.md) | 기술 명세: 모듈, 데이터 모델, 에이전트 루프, 가디언, 에러 분류, 보안 | 엔지니어 |
 | [`docs/TASKS.md`](docs/TASKS.md) | 티켓 백로그(M0~M4), 수용 기준 | 엔지니어 |
+| [`docs/GOALS.md`](docs/GOALS.md) | `/goal`에 붙여넣는 지시서 10개(G0~G9), 순서와 선행 조건 | 운영자·Opus 5.5 |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | 잠긴 결정, 1일차에 닫을 질문 | 전원 |
 | [`docs/DX_PROTOCOL.md`](docs/DX_PROTOCOL.md) | 개발자 경험 리포트(25%) 증거 체계 | 전원 |
 | [`docs/UX_COPY.md`](docs/UX_COPY.md) | 화면 문구 KR/EN, 위험 고지, 금지어 | 제품·엔지니어 |
@@ -25,9 +26,9 @@
 | [`dx/LOG.md`](dx/LOG.md) | 개발자 경험 로그(시간순) | 전원 |
 
 ## 시작하기 (Opus 5.5)
-1. `CLAUDE.md`를 읽는다.
-2. `scripts/fetch-docs.sh`로 공식 문서를 내려받는다.
-3. `docs/TASKS.md`의 M0-01부터 순서대로.
+1. 레포 루트에서 Claude Code를 auto 모드로 연다.
+2. `docs/GOALS.md`의 **G0** 블록을 `/goal ` 뒤에 붙여넣는다. 골이 끝나면 선행 조건을 채우고 G1, G2… 순서로.
+3. 골 없이 수동으로 할 때는 `CLAUDE.md`를 읽고 `docs/TASKS.md`의 M0-01부터.
 
 ## 라이선스
 제출 전 확정(MIT 권장).
