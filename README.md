@@ -1,6 +1,6 @@
 # 이자로 (Ijaro) — Interest buys the stock. Principal stays.
 
-> BNB Hack: Tokenized Stocks Edition 출품 프로젝트. **상태: 기획 완료, 구현 시작 전.**
+> BNB Hack: Tokenized Stocks Edition 출품 프로젝트. **상태: M0 부트스트랩(G0) 완료 — 워크스페이스·설정 검증·Web3 API 클라이언트(오프라인)·공식 문서 대조. 다음은 G1(API 키 필요).**
 > 빌드 2026-09-23 → 내부 제출 10-09 → 마감 10-11 12:00 UTC → 심사 10-12~23.
 
 원금은 USDT 이자 통장(Venus)에 그대로 두고, **이자(또는 정한 적립금)로만** 미국 주식 토큰(bStocks / Ondo, BSC 메인넷)을

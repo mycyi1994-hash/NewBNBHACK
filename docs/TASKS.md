@@ -18,22 +18,33 @@
 - [ ] 하우스 지갑 예산 ≤ $300 (USDT $250 + BNB 가스 $10 상당) 준비
 
 ### M0-01 레포 부트스트랩 · 기준: 기술
-- [ ] pnpm workspace, TS strict, eslint/prettier, vitest, `packages/{core,binance,chain,db,config}`, `apps/{web,agent}`, `skills/ijaro`, `scripts/`, `fixtures/`, `dx/`
-- [ ] GitHub Actions: typecheck·lint·test
-- [ ] `.env.example` 반영, `packages/config` zod 검증, 캡 상수
-- 수용: 클린 클론에서 `pnpm i && pnpm typecheck && pnpm lint && pnpm test` 녹색, CI 녹색
+- [x] pnpm workspace, TS strict, eslint/prettier, vitest, `packages/{core,binance,chain,db,config}`, `apps/{web,agent}`, `skills/ijaro`, `scripts/`, `fixtures/`, `dx/`
+  - 증거: `pnpm-workspace.yaml`(apps/*, packages/*, scripts), `tsconfig.base.json`(strict + noUncheckedIndexedAccess), `eslint.config.mjs`(type-aware), `.prettierrc.json`, `vitest.config.ts`(패키지별 project). Node 22, TS 5.9.3, ESLint 10.11, Vitest 5.0.1, Next.js 16.3.6(App Router, Tailwind 4) — `pnpm --filter @ijaro/web build` 성공(`○ /` static).
+- [x] GitHub Actions: typecheck·lint·test
+  - 증거: `.github/workflows/ci.yml` — `pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm lint` → `pnpm test`, api_calls 통합 테스트용 일회용 Postgres 16 서비스. 시크릿 없음.
+- [x] `.env.example` 반영, `packages/config` zod 검증, 캡 상수
+  - 증거: `packages/config/src/index.ts`(18개 변수 전부 zod, 캡 동결·상호 검증, live 모드 필수값, 비밀값 미노출). 테스트 `validates exactly the variables declared in .env.example`, `no source file outside packages/config mentions a cap variable`(캡은 config에서만 읽음) 통과. ESLint `no-restricted-properties`가 config 밖 `process.env` 금지.
+- 수용: 클린 클론에서 `pnpm i && pnpm typecheck && pnpm lint && pnpm test` 녹색 — **확인**(2026-09-23 18:27 UTC, `git clone` 새 사본, `--frozen-lockfile`): install `Done in 2.1s using pnpm v10.33.0` · typecheck `scripts typecheck: Done` · lint `All matched files use Prettier code style!` · test `Tests 82 passed | 1 skipped (83)`(DB 없을 때), 테스트 DB를 주면 `Tests 83 passed (83)`. CI 녹색은 푸시 후 아래에 기록.
 
 ### M0-02 문서 수집 · 기준: DX
-- [ ] `scripts/fetch-docs.sh` 실행 → `docs/vendor/llms.txt`, `llms-full.txt`(gitignore), Skills Hub 얕은 클론
-- [ ] `@binance-web3/wallet` devDependency 설치, 서명·경로 소스 위치를 `docs/vendor/ENDPOINTS.md`에 정리(커밋)
-- [ ] SPEC §3.1의 ⚠️VERIFY 항목을 문서 기준으로 1차 확인 → DECISIONS 기록
-- 수용: ENDPOINTS.md에 모듈별 경로·필수 파라미터·응답 필드 표
+- [x] `scripts/fetch-docs.sh` 실행 → `docs/vendor/llms.txt`, `llms-full.txt`(gitignore), Skills Hub 얕은 클론
+  - 증거: `bash scripts/fetch-docs.sh` 성공 — `143 llms.txt`, `8416 llms-full.txt`, skills-hub `9960c67`. 문서 호스트가 curl에 HTTP 202 WAF 챌린지(빈 본문)를 줘서 스크립트가 검증 후 헤드리스 Chromium으로 폴백(`scripts/fetch-docs-browser.mjs`, dx/LOG.md 17:44).
+- [x] `@binance-web3/wallet` devDependency 설치, 서명·경로 소스 위치를 `docs/vendor/ENDPOINTS.md`에 정리(커밋)
+  - 증거: `packages/binance/package.json` devDependency `@binance-web3/wallet` 12.3.0(서명은 `@binance-web3/common` 1.1.0 `Web3RequestSigner.signWeb3`). ENDPOINTS.md의 표는 `pnpm endpoints`(`scripts/gen-endpoints.ts`)가 llms-full.txt API Reference와 커넥터를 operationId로 조인해 생성: `65 doc operations, 65 connector operations, 4 anomalies`, 메서드·경로 불일치 0.
+- [x] SPEC §3.1의 ⚠️VERIFY 항목을 문서 기준으로 1차 확인 → DECISIONS 기록
+  - 증거: `docs/DECISIONS.md` §2.1 V-01~V-12(base URL, 서명 문자열, 헤더명, 엔벨로프, 레이트리밋, 견적 유효시간 30초 등), Q-01/03/04/05/06/10/11/13/14 결과 칸, 새 질문 Q-15(RFQ는 브로드캐스트가 아님)·Q-16(DeFi APPROVE 무제한). 문서로 못 닫은 항목은 "미확인: 이유"(V-09 가격 배치 body, Q-10 상향치, Q-13 ABI).
+- 수용: ENDPOINTS.md에 모듈별 경로·필수 파라미터·응답 필드 표 — **확인**: General Data, Address Portfolio, RWA Data, Trading API, Transaction API, Wallet API, Defi Data, Defi Transaction, B402 Payments 표 + §1 Authentication, 각 행에 llms-full.txt 섹션 제목·줄 번호 출처.
 
 ### M0-03 Web3 API 클라이언트 v0 · 기준: 기술·DX
-- [ ] 서명, 엔벨로프, 엔드포인트별 토큰버킷, 429 처리, `api_calls` 기록, 픽스처 저장
-- [ ] `pnpm reach`: 미서명 도달 → 서명 호출(RWA 토큰 목록, Market 가격 배치) → 지연·코드 출력
-- [ ] 서명 벡터 테스트(커넥터와 동일 서명 생성)
-- 수용: 첫 성공 호출의 UTC 시각·지연·시행착오가 `dx/LOG.md`에 기록(서술은 [HUMAN])
+- [x] 서명, 엔벨로프, 엔드포인트별 토큰버킷, 429 처리, `api_calls` 기록, 픽스처 저장 (오프라인 부분, G0)
+  - 증거: `packages/binance/src/` — `sign.ts`(RFC 3986 인코딩 + 전송 경로 왕복 검사), `envelope.ts`(OCResult·B402, HTTP 200 오류, WAF/HTML 본문), `rate-limit.ts`(엔드포인트 5/s, 전역 20/s, DeFi 그룹 5/s, 429 일시정지), `client.ts`(`request(module, endpoint, opts)` 단일 진입점, 429는 `Retry-After` 후 1회 재시도, 시계 오차 감지), `telemetry.ts`(`onApiCall` 훅, 마스킹), `fixtures.ts`(`fixtures/<module>/<endpoint>-<yyyymmdd>-<n>.json`, 키·지갑 주소 가림). `packages/db` `api_calls` 테이블·마이그레이션. `pnpm test` 중 `@ijaro/binance` 64개 통과.
+  - 로컬 Postgres 실증(샌드박스, 커밋 안 함): `pnpm db:migrate` 2회(멱등) → `pnpm reach`가 `api_calls: 1 rows recorded` → `pnpm dx:metrics --out <scratch>` `1 api_calls rows summarized`.
+- [x] `pnpm reach` 오프라인 부분(G0): 스크립트, 미서명 도달, 키가 없으면 UNAVAILABLE
+  - 증거: `scripts/reach.ts`. 출력 `unsigned  GET  /api/v1/dex/market/supported/chain  HTTP 401 code 40101 641 ms "API Key is required" — reached the gateway (expected: signature required)`(2026-09-23 18:16 UTC, 미국 소재 샌드박스, REGION_TAG unset) 다음 줄 `UNAVAILABLE: no API key (BINANCE_WEB3_API_KEY / BINANCE_WEB3_API_SECRET not set) — skipped signed probes: rwa/getRwaTokenList, market/getTokenPrice`, exit 3.
+- [ ] `pnpm reach`: 서명 호출(RWA 토큰 목록, Market 가격 배치) → 지연·코드 출력 — G1(API 키 필요). 가격 배치 body는 문서에 없어 출력에 "UNVERIFIED — DECISIONS V-09"로 표시됨.
+- [x] 서명 벡터 테스트(커넥터와 동일 서명 생성)
+  - 증거: `packages/binance/src/signature-vectors.test.ts` 통과 — `X-OC-SIGN matches the official connector > GET RWA token list with query (getRwaTokenList)`, `> GET aggregated quote with RFQ wallet (getAggregatedQuote)`, `> GET with characters that need encoding (searchRwaToken)`, `> POST JSON body (buildDeFiDepositTransaction)`, `> POST B402 envelope body (getB402SupportedConfigurationsV2)`, `> documents a connector anomaly: GET /order/{orderId} also signs a JSON body`, `pre-hash string from the docs > matches the GET example in llms-full.txt § Authentication › 3.1 (L223)`. 커넥터의 실제 요청 경로(axios 어댑터로 캡처)와 바이트 단위 일치, 고정 벡터 5개는 `openssl dgst -sha256 -hmac`으로도 재현.
+- 수용: 첫 성공 호출의 UTC 시각·지연·시행착오가 `dx/LOG.md`에 기록(서술은 [HUMAN]) — 대기(G1). 첫 미서명 호출은 dx/LOG.md 18:16 항목.
 
 ### M0-04 리전 도달성 결정 · 기준: 기술
 - [ ] `pnpm reach`를 (a) 한국 개발기 (b) 프랑크푸르트 러너 (c) Vercel icn1 함수에서 실행, 결과·코드(40304 여부) 기록
@@ -76,8 +87,10 @@
 - 수용: `pnpm reach`가 Wallet API로 하우스 잔고 표시
 
 ### M0-12 DX 규약 시작 · 기준: DX
-- [ ] `dx/LOG.md` 첫 항목들(등록·키 발급·첫 호출), `pnpm dx:metrics` 스켈레톤
-- 수용: DX_PROTOCOL 형식 준수
+- [x] `dx/LOG.md` 첫 항목들(등록·키 발급·첫 호출), `pnpm dx:metrics` 스켈레톤
+  - 증거: `dx/LOG.md`에 에이전트 항목 19건(2026-09-23 17:44–18:20 UTC): 문서 호스트 WAF 챌린지, 가격 배치 body 부재, 커넥터↔문서 불일치 4건, 오류 HTTP 상태 모순, 레이트리밋 헤더 표, B402 엔벨로프 예외, DeFi 예제·무제한 승인·코드 충돌·단위, 첫 미서명 호출 등. 등록·키 발급 시각은 [HUMAN] 항목(M0-00, GOALS G1 선행 조건)으로 사람이 기록.
+  - `pnpm dx:metrics`(`scripts/dx-metrics.ts` + `renderMetricsMarkdown`): api_calls → `dx/metrics.md`(엔드포인트·리전별 호출 수, 오류율, nearest-rank p50/p95, 오류 코드). DATABASE_URL이 없으면 `UNAVAILABLE: no DATABASE_URL — dx/metrics.md not regenerated`(exit 3).
+- 수용: DX_PROTOCOL 형식 준수 — **확인**: 각 항목이 §3.1 형식(목표·기대·실제·문서·잃은 시간·우회·요청·증거, UTC, 태그). 서술(소감)은 사람 몫으로 비워 둠.
 
 ---
 
