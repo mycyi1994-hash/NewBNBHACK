@@ -13,7 +13,12 @@
 
 ## 0-1. `/goal`이 없을 때 (대체 실행 방법)
 
-`/goal`은 비교적 최근 기능이라 구버전 Claude Code, 일부 표면(웹 세션·IDE 확장 구버전), 혹은 설정(`disableAllHooks: true`, 관리형 `allowManagedHooksOnly`, 신뢰되지 않은 워크스페이스)에서는 슬래시 목록에 나타나지 않는다. 먼저 `claude --version` 확인 후 `claude update`(npm 설치면 `npm i -g @anthropic-ai/claude-code@latest`)로 갱신하고 `/`를 눌러 목록에 `goal`이 있는지 본다. 그래도 없으면 아래 둘 중 하나로 같은 지시서를 돌린다. 지시서 본문은 바꾸지 않는다.
+`/goal`이 슬래시 목록에 없는 경우는 공식 문서상 세 가지다(https://code.claude.com/docs/en/goal.md).
+1. **버전이 낮다.** 도입 버전은 문서에 명시되지 않았지만 관련 기능의 최소 버전이 v2.1.234~2.1.269대다. `claude --version`으로 확인하고 `claude update`(npm 설치면 `npm i -g @anthropic-ai/claude-code@latest`, Homebrew는 `brew upgrade claude-code`)로 갱신한 뒤 `/`를 눌러 `goal`이 있는지 본다.
+2. **설정이 막고 있다.** `~/.claude/settings.json` 또는 프로젝트 `.claude/settings.json`에 `disableAllHooks: true`가 있거나, 조직 관리형 설정에 `allowManagedHooksOnly`가 있으면 `/goal`이 비활성화된다(훅 시스템의 일부다). 이때는 명령을 치면 이유를 알려준다.
+3. **워크스페이스가 신뢰되지 않았다.** 훅과 같은 신뢰 규칙을 따른다. 레포 폴더를 신뢰로 표시한다.
+
+그래도 없으면 아래 셋 중 하나로 같은 지시서를 돌린다. 지시서 본문은 바꾸지 않는다.
 
 **대체 A — `/loop` 자율 페이스 (권장).** `/loop`는 간격마다 같은 프롬프트를 다시 보내고, 간격을 생략하면 모델이 스스로 페이스를 정하며, 모델이 "끝났다"고 판단하면 멈춘다. 골 본문 앞뒤에 두 문장을 붙인다:
 
@@ -23,7 +28,26 @@
 
 **대체 B — 일반 프롬프트 + 수동 계속.** 골 본문을 그냥 메시지로 보낸다. Claude가 멈추면 `GOAL STATUS에서 FAIL인 항목만 계속 진행해`라고 답한다. 가장 단순하고, 지출이 있는 G4에는 오히려 이 방식이 안전하다.
 
-**대체 C — Stop 훅으로 자동 계속.** `settings.json`의 `Stop` 훅이 마지막 메시지의 GOAL STATUS에 FAIL이 있으면 `{"decision":"block","reason":"..."}`으로 종료를 막아 계속 일하게 만드는 방식. 턴 상한을 스크립트에 두어야 한다. 정확한 설정 예시는 확인 후 `scripts/goal-gate.mjs`로 추가한다.
+**대체 C — Stop 훅으로 자동 계속 (문서: https://code.claude.com/docs/en/hooks-guide.md).** 프롬프트형 `Stop` 훅은 매 턴 끝에 조건 프롬프트를 작은 모델에 보내고, `{"ok": true}`면 멈추고 `{"ok": false, "reason": "..."}`면 그 이유를 Claude에게 돌려주어 계속 일하게 한다. `/goal`과 가장 비슷하지만 두 가지가 다르다: (a) 설정 파일에 있으므로 그 범위의 **모든 세션**에 적용된다 → 레포에 커밋되는 `.claude/settings.json`이 아니라 **`.claude/settings.local.json`**(gitignore됨)에 넣고 다 쓰면 지운다. (b) 연속 차단은 **최대 8회**로 제한되어 있어 그 뒤에는 멈춘다 → 사람이 "계속"이라고 한 번 치면 다시 8회. `/loop`의 자율 페이스도 최대 7일 뒤 종료된다.
+
+`.claude/settings.local.json`:
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Read the assistant's final message. It must contain a GOAL STATUS block that lists every numbered goal condition as PASS or FAIL with evidence. Respond {\"ok\": true} if (a) every condition is PASS and the message states the work is committed with a clean git status, or (b) the message says GOAL STOPPED because the turn cap was reached, or (c) the message states that the next step needs a human (API key, account, funds, a y-confirmation for spending). Otherwise respond {\"ok\": false, \"reason\": \"<name the FAIL conditions and tell Claude to keep working on exactly those, ending the turn with a GOAL STATUS block>\"}."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+이 훅을 켠 상태에서 골 본문을 일반 메시지로 보내면 된다. **지출이 있는 G4에서는 훅을 끈다.**
 
 ## 1. 순서표
 
