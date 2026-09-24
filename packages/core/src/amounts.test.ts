@@ -15,6 +15,7 @@ describe('toUnits / fromUnits', () => {
     expect(toUnits('0.000001', 6)).toBe(1n);
     expect(fromUnits(12_345_000_000_000_000_000n, 18)).toBe('12.345');
     expect(fromUnits(0n, 18)).toBe('0');
+    expect(toUnits('7', 0)).toBe(7n);
     expect(fromUnits(-1n, 2)).toBe('-0.01');
   });
 
