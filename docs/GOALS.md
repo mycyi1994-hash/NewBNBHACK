@@ -70,8 +70,8 @@
 ```
 이자로 M1의 핵심을 EXECUTION_MODE=simulate로 완성한다. CLAUDE.md, docs/SPEC.md §4~§7·§11, docs/TASKS.md M1-01~M1-04·M1-07·M1-08을 읽는다. 완료 조건(모두 충족):
 1) M1-01: Drizzle 스키마에 plans, cycles, receipts, holdings, instruments, api_calls, tape_samples, guardian_events, judge_codes, skill_tokens, spend_ledger가 있고 마이그레이션이 왕복(up/down)하며, 시드가 하우스 플랜 H-SAFE(NVDA, safe, $5, daily, regular_session)와 H-YIELD(DECISIONS D-10의 티커, yield, weekly)를 만든다.
-2) M1-02: packages/core의 decideCycle이 순수 함수이며 WINDOW(정규장 판단, nextOpenTime+2분), BUDGET(이자 계산, 적립, 캡, MIN_BUY 누적), ASSET(기업행동 코드별 SKIPPED, 섹터 후보 대체, 발행사 폴백), PRICE(괴리 2%), QUOTE(가격영향 1% 초과 시 절반 재견적 2회)를 구현하고 CycleOutcome과 whyKey(docs/UX_COPY.md §4의 키만 사용)를 낸다. 테스트가 30개 이상이고 packages/core 커버리지가 100%다(커버리지 요약 인용).
-3) M1-03/04: HouseWalletExecutor가 정확 금액 승인 콜데이터 → Transaction API 시뮬레이션 → (live일 때만) 서명·브로드캐스트 → 영수증 폴링 → 실수령량 파싱 순서로 구현되어 있고, `pnpm cycle:once --plan H-SAFE`가 simulate 모드에서 DUE→RECORD를 모두 거쳐 승인·스왑 시뮬레이션 성공과 금액·주식 수 환산을 출력하며 cycles 행을 만든다(출력 인용). --live 플래그는 금액·주소·시뮬 결과를 보여주고 y 입력을 요구하는 프롬프트가 있음을 코드로 보여준다.
+2) M1-02: packages/core의 decideCycle이 순수 함수이며 WINDOW(우리 NYSE 달력으로 정규장 판단, 다음 개장+2분), BUDGET(이자 계산, 적립, 캡, MIN_BUY 누적), ASSET(기업행동 코드별 SKIPPED, 발행사 폴백·발행사 최소 주문; 섹터 타깃은 REPLAN R10 결정 전까지 제외), PRICE(독립 주가 대비 프리미엄 2%, SPEC §5.5 v2), QUOTE(가격영향 1% 초과 시 절반 재견적 2회, 25초 지난 견적 재요청, RFQ 미실행)를 구현하고 CycleOutcome과 whyKey(docs/UX_COPY.md §4의 키만 사용)를 낸다. 테스트가 30개 이상이고 packages/core 커버리지가 100%다(커버리지 요약 인용).
+3) M1-03/04: HouseWalletExecutor가 정확 금액 승인 콜데이터 → Transaction API 시뮬레이션 → (live일 때만) 서명·브로드캐스트 → 영수증 폴링 → 실수령량 파싱 순서로 구현되어 있고, `pnpm cycle:once --plan H-SAFE`가 simulate 모드에서 DUE→RECORD를 모두 거쳐 정확 금액 승인 시뮬레이션 SUCCESS, 새 견적·스왑 콜데이터·스왑 시뮬레이션 결과(승인이 아직 체인에 없어 allowance로 실패하면 그 사유를 사람 말로; 시뮬레이션은 tx 1건씩이라 승인→스왑 성공은 G4에서 확인), 금액·주식 수 환산을 출력하며 cycles 행을 만든다(출력 인용). --live 플래그는 금액·주소·시뮬 결과를 보여주고 y 입력을 요구하는 프롬프트가 있음을 코드로 보여준다.
 4) M1-07: docs/SPEC.md §11의 코드 매핑이 구현되어 있고 코드별 단위 테스트가 있으며, 429는 Retry-After를 따르고, 미지 코드 최초 관측 시 dx 이벤트가 기록된다.
 5) M1-08: 홀딩이 multiplier 스냅샷과 shares=tokens×multiplier를 유지하고 배수 변경 감지 테스트가 통과한다.
 6) `pnpm typecheck && pnpm lint && pnpm test` exit 0, TASKS 갱신, 커밋, git status clean.
