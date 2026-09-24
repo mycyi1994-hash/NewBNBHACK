@@ -38,12 +38,27 @@ describe('TokenBucket', () => {
 });
 
 describe('RateLimiter', () => {
-  it('keeps each endpoint at 5 requests per second', async () => {
+  it('keeps each endpoint at 5 requests in any 1 s window (+250 ms margin)', async () => {
     const clock = fakeClock();
     const limiter = new RateLimiter(undefined, clock);
     for (let i = 0; i < 5; i++) expect(await limiter.acquire('GET /a')).toBe(0);
-    expect(await limiter.acquire('GET /a')).toBe(200);
+    // A 5/5 token bucket would allow this one after 200 ms; the gateway answered 429 to that.
+    expect(await limiter.acquire('GET /a')).toBe(1250);
     expect(await limiter.acquire('GET /b')).toBe(0);
+  });
+
+  it('replays the 2026-09-24 quote burst without a sixth call inside one second', async () => {
+    const clock = fakeClock();
+    const limiter = new RateLimiter(undefined, clock);
+    const sent: number[] = [];
+    for (let i = 0; i < 12; i++) {
+      await limiter.acquire('GET /quote');
+      sent.push(clock.now());
+      clock.advance(65); // quotes answered in ~65 ms
+    }
+    for (let i = 5; i < sent.length; i++) {
+      expect((sent[i] ?? 0) - (sent[i - 5] ?? 0)).toBeGreaterThanOrEqual(1250);
+    }
   });
 
   it('holds the global budget at 20 per second (1,200 per minute)', async () => {
@@ -59,7 +74,7 @@ describe('RateLimiter', () => {
     const clock = fakeClock();
     const limiter = new RateLimiter(undefined, clock);
     for (let i = 0; i < 5; i++) expect(await limiter.acquire(`POST /defi/${i}`, 'defi')).toBe(0);
-    expect(await limiter.acquire('POST /defi/other', 'defi')).toBe(200);
+    expect(await limiter.acquire('POST /defi/other', 'defi')).toBe(1250);
   });
 
   it('pauses everything after a 429 for the Retry-After period', async () => {
@@ -67,6 +82,18 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter(undefined, clock);
     limiter.pause(3_000);
     expect(await limiter.acquire('GET /x')).toBe(3_000);
+  });
+
+  it('counts a retry at the time it is sent after a 429 pause', async () => {
+    const clock = fakeClock();
+    const limiter = new RateLimiter(undefined, clock);
+    for (let i = 0; i < 4; i++) await limiter.acquire('GET /q');
+    limiter.pause(1_000);
+    expect(await limiter.acquire('GET /q')).toBe(1_000); // the retry goes out at t = 1000
+    // Four sends at t = 0 have aged out by t = 1250, but the retry at 1000 still counts.
+    clock.advance(250);
+    for (let i = 0; i < 4; i++) expect(await limiter.acquire('GET /q')).toBe(0);
+    expect(await limiter.acquire('GET /q')).toBe(1_000);
   });
 
   it('rejects unknown groups', async () => {

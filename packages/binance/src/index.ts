@@ -12,11 +12,12 @@ export type { ApiModule, EnvelopeFlavour } from './modules.js';
 export {
   DEFAULT_LIMITS,
   RateLimiter,
+  SlidingWindow,
   TokenBucket,
   retryAfterMs,
   systemClock,
 } from './rate-limit.js';
-export type { BucketSpec, Clock, RateLimiterSpec } from './rate-limit.js';
+export type { BucketSpec, Clock, RateLimiterSpec, WindowSpec } from './rate-limit.js';
 export {
   MAX_RECV_WINDOW_MS,
   authHeaders,
