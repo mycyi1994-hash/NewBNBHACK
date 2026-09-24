@@ -15,8 +15,26 @@ export type TapeSampleRow = typeof tapeSamples.$inferSelect;
 
 const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'drizzle');
 
+/**
+ * libpq-only URL parameters. postgres.js forwards unknown URL parameters to the server as settings,
+ * so Neon's console connection string (`…&channel_binding=require`) fails with 42704
+ * `unrecognized configuration parameter "channel_binding"`. postgres.js has no channel binding to
+ * honour it with; TLS still follows `sslmode`.
+ */
+const LIBPQ_ONLY_PARAMS = ['channel_binding'];
+
+/** The database URL as postgres.js must receive it: libpq-only parameters removed. */
+export function postgresUrl(databaseUrl: string): string {
+  if (!URL.canParse(databaseUrl)) return databaseUrl;
+  const url = new URL(databaseUrl);
+  const present = LIBPQ_ONLY_PARAMS.filter((name) => url.searchParams.has(name));
+  if (present.length === 0) return databaseUrl;
+  for (const name of present) url.searchParams.delete(name);
+  return url.toString();
+}
+
 export function createDb(databaseUrl: string) {
-  const sql = postgres(databaseUrl, { max: 5, onnotice: () => undefined });
+  const sql = postgres(postgresUrl(databaseUrl), { max: 5, onnotice: () => undefined });
   const db = drizzle(sql);
   return { db, close: () => sql.end({ timeout: 5 }) };
 }

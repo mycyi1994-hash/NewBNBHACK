@@ -3,6 +3,7 @@
  * Prints the exact SQL it runs. Default tables: api_calls, instruments, tape_samples.
  */
 import { loadConfig } from '@ijaro/config';
+import { postgresUrl } from '@ijaro/db';
 import postgres from 'postgres';
 
 const ALLOWED = ['api_calls', 'instruments', 'tape_samples'] as const;
@@ -14,7 +15,7 @@ if (!config.databaseUrl) {
   console.log('UNAVAILABLE: no DATABASE_URL');
   process.exitCode = 3;
 } else {
-  const sql = postgres(config.databaseUrl, { max: 1, onnotice: () => undefined });
+  const sql = postgres(postgresUrl(config.databaseUrl), { max: 1, onnotice: () => undefined });
   try {
     console.log(`db:count — ${new Date().toISOString()}`);
     for (const table of tables) {
