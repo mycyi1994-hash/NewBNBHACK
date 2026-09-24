@@ -81,7 +81,8 @@
 - 수용: 시뮬레이션 성공 픽스처, 이자 계산 테스트 녹색 — 이자 테스트 **녹색**; 성공 픽스처는 APPROVE만(예치·상환 성공 시뮬레이션은 M0-11 충전 후 `pnpm spike:venus` 재실행).
 
 ### M0-08 테이프 가동 · 기준: DX
-- [ ] `apps/agent` 잡: 10분마다 인스트루먼트별 온체인가·참조가·장 상태 + 견적 3규모 → `tape_samples`
+- [x] `apps/agent` 잡: 10분마다 인스트루먼트별 온체인가·참조가·장 상태 + 견적 3규모 → `tape_samples`
+  - 증거(로컬, 한국 개발 PC): `apps/agent/src/tape.ts`·`main.ts` — 인스트루먼트 9종 × $5/$50/$500, RWA price(tokenPrice·referencePrice·갱신 시각), RWA list statusInfo, 우리 시계 `session` 태그, 견적 expectedOut·priceImpact·vendor·executionMode·route·오류코드·지연. 10분 경계 정렬. 에이전트 실행 00:46:14Z 첫 실행 → 00:50, 01:00, …, 01:50:00Z(64분, 8회, 로그 `tape: … 27 rows …, 5 quote errors, session overnight`). count: `SELECT count(*) FROM tape_samples; → 54`(00:46:26Z) → `81`(00:59:37Z) → `243`(01:50:31Z). 기록된 오류는 전부 Ondo $5의 `40375`(45행). `pnpm tape:once` 동작(00:45:51Z, `tape_samples: 27 rows inserted`). 이 64분 동안 견적에서 429가 44건 나왔고(재시도로 전부 복구) 클라이언트 제한을 슬라이딩 창으로 고친 뒤(dx/LOG.md 01:52) 01:54:58Z `pnpm tape:once` 429 0건; 에이전트는 01:55:49Z 새 코드로 재시작.
 - [ ] 프랑크푸르트 러너에 배포, **9/25 20:00 KST 이전 가동**
 - [ ] `GET /api/tape/latest`
 - 수용: 24시간 후 행 수 ≥ 예상치의 90%, 주말 태그 정상

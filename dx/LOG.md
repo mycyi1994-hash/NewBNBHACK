@@ -323,3 +323,23 @@
 - 우회: vToken 주소는 DEPOSIT 항목 `to`에서 얻고 온체인 `symbol()/underlying()`로 검증(`scripts/spike-venus.ts`). 미충전 지갑은 `simulate=false`로 콜데이터 확보.
 - 요청: investment detail에 vToken 주소 채우기; 40484 원인별 코드 분리; 다중 tx(approve→deposit) 시뮬레이션 또는 state override; APY 구성(기본 이자 vs 보상) 명시; 정확 금액 approve 옵션.
 - 증거: `pnpm spike:venus` 출력; `fixtures/defi-data/*-20260924-*.json`, `fixtures/defi-transaction/*-20260924-*.json`, `fixtures/transaction/simulateTransactions-20260924-{1,2,3}.json`(하우스 주소 `[redacted]`).
+
+## 2026-09-24 01:50 UTC — [tape] 로컬 테이프 64분 가동: 9회 × 27행
+- 목표: M0-08 로컬 — 10분마다 9종 × $5/$50/$500 견적과 가격·장 상태를 tape_samples에.
+- 기대: 매 실행 27행, 오류는 문서화된 코드만.
+- 실제: 00:45:51Z(`pnpm tape:once`)부터 01:50:00Z까지 9회 243행, `tape_samples` count 54(00:46:26Z) → 81(00:59:37Z) → 243(01:50:31Z). 매 실행 27행, 기록된 견적 오류 5행 = Ondo 5종 × $5 `40375 "Minimum order amount is 5 USD."`. 한 실행 약 13초(견적 27건 순차). 세션 태그 전부 `overnight`. 다만 아래 항목대로 실행마다 429가 섞였고(재시도로 모두 복구) 01:52 이후 수정.
+- 문서: 해당 없음.
+- 잃은 시간: 0.
+- 우회: 아래 항목.
+- 요청: 없음.
+- 증거: 에이전트 콘솔 로그(`tape: 2026-09-24T01:50:00.007Z 27 rows …`); `pnpm db:count`.
+
+## 2026-09-24 01:52 UTC — [web3api][ratelimit] 엔드포인트당 5 RPS를 지켰는데 429: 게이트웨이는 슬라이딩 1초 창
+- 목표: 레이트리밋 준수(엔드포인트당 5/s) 확인.
+- 기대: 클라이언트 토큰버킷(용량 5, 초당 5)이면 429 없음.
+- 실제: 00:45–01:50 UTC `getAggregatedQuote`에서 HTTP 429 / `42900 "Rate limit exceeded"` 44건(테이프 실행마다 약 5건), `Retry-After: 1`, 재시도 1회로 모두 200. 헤더 기록(`fixtures/trading/getAggregatedQuote-20260924-1…6.json`): 00:46:45.311Z부터 65 ms 간격으로 `x-oc-ratelimit-remaining` 4→3→2→1→0, 6번째(00:46:45.733Z, 첫 요청 후 422 ms)가 429. 버킷은 5개 소진 후 200 ms 뒤 6번째를 허용하므로 1초 안에 6건이 나감 — 게이트웨이는 "임의의 1초 창에 5건"으로 셈. 창 1,050 ms로 바꾼 뒤(01:53)에도 2건: (a) 429 뒤 `Retry-After` 대기로 늦게 나간 재시도를 창이 원래 슬롯 시각으로 기록, (b) 5번째 앞 요청의 지연이 427 ms로 커서 게이트웨이 도착 시각이 우리 송신 시각보다 늦음.
+- 문서: § Authentication › Rate Limits (L392) — "per endpoint 5 RPS"만 있고 창 방식(고정/슬라이딩, 도착 기준) 설명 없음.
+- 잃은 시간: [HUMAN]
+- 우회: `packages/binance/src/rate-limit.ts` 엔드포인트·DeFi 그룹 제한을 슬라이딩 창(5건 / 1,000 ms + 여유 250 ms)으로, 실제 송신 시각(429 대기 포함)을 기록. 01:54:58Z `pnpm tape:once` → api_calls 29건, 429 0건, 재시도 0건.
+- 요청: 레이트리밋 창 방식과 기준 시각(도착/처리)을 문서에 명시; `X-OC-RateLimit-Reset` 같은 창 리셋 헤더 제공.
+- 증거: api_calls `http_status=429` 44행(00:45:52Z–01:50:08Z); 위 픽스처 헤더; `rate-limit.test.ts` "replays the 2026-09-24 quote burst…", "counts a retry at the time it is sent after a 429 pause".
