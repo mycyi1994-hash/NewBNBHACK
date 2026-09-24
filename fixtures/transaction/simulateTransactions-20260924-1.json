@@ -1,0 +1,49 @@
+{
+  "recordedAt": "2026-09-24T00:51:43.879Z",
+  "module": "transaction",
+  "endpoint": "simulateTransactions",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/dex/pre-transaction/simulate",
+    "body": {
+      "binanceChainId": "56",
+      "evmTx": {
+        "from": "[redacted]",
+        "to": "0x55d398326f99059fF775485246999027B3197955",
+        "value": "0",
+        "data": "0x095ea7b3000000000000000000000000fd5840cd36d94d7229439859c0112a4185bc0255ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:51:44 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "4",
+      "x-oc-used-weight": "1",
+      "x-amz-cf-id": "5n1ooFwKlfXKe-j1KvhG_2uIQtKGtU1GvnI2mFn8706M2cYwkk5DlA=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "status": "SUCCESS",
+        "failReason": "",
+        "balanceChanges": [],
+        "allowanceChanges": [
+          {
+            "tokenAddress": "0x55d398326f99059ff775485246999027b3197955",
+            "owner": "[redacted]",
+            "spender": "0xfd5840cd36d94d7229439859c0112a4185bc0255",
+            "preAmount": "0",
+            "postAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        ]
+      },
+      "timestamp": 1790211104334,
+      "success": true
+    }
+  }
+}

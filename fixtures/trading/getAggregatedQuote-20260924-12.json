@@ -1,0 +1,25 @@
+{
+  "recordedAt": "2026-09-24T00:46:47.359Z",
+  "module": "trading",
+  "endpoint": "getAggregatedQuote",
+  "request": {
+    "method": "GET",
+    "path": "/build/api/v1/dex/aggregator/quote?binanceChainId=56&amount=5000000000000000000&fromTokenAddress=0x55d398326f99059fF775485246999027B3197955&toTokenAddress=0x0cdE6936d305d5B34667fC46425E852efd73559a&userWalletAddress=[redacted]",
+    "body": null
+  },
+  "response": {
+    "httpStatus": 429,
+    "headers": {
+      "content-type": "application/json",
+      "date": "Thu, 24 Sep 2026 00:46:47 GMT",
+      "retry-after": "1",
+      "x-amz-cf-id": "71QDfmeulMvbJBO5F0KjCrTwXYnxMeJXTUi5WtmXRuoEwWABhrzJBA=="
+    },
+    "body": {
+      "code": 42900,
+      "timestamp": 1790210807754,
+      "msg": "Rate limit exceeded",
+      "data": ""
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "recordedAt": "2026-09-24T00:51:41.117Z",
+  "module": "defi-data",
+  "endpoint": "getDeFiPositions",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/defi/data/position/list",
+    "body": {
+      "addresses": [
+        "[redacted]"
+      ],
+      "binanceChainIds": [
+        "56"
+      ]
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:51:43 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "4",
+      "x-oc-used-weight": "1",
+      "x-amz-cf-id": "U2t2UnM2vLfBzJaU4OIq-XNZwrQhm_tFASQI315cziqidCnTZLcVdw=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "totalValue": "0",
+        "addressList": []
+      },
+      "timestamp": 1790211103024,
+      "success": true
+    }
+  }
+}

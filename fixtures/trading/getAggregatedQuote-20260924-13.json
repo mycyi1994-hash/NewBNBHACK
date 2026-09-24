@@ -1,0 +1,28 @@
+{
+  "recordedAt": "2026-09-24T00:46:48.417Z",
+  "module": "trading",
+  "endpoint": "getAggregatedQuote",
+  "request": {
+    "method": "GET",
+    "path": "/build/api/v1/dex/aggregator/quote?binanceChainId=56&amount=5000000000000000000&fromTokenAddress=0x55d398326f99059fF775485246999027B3197955&toTokenAddress=0x0cdE6936d305d5B34667fC46425E852efd73559a&userWalletAddress=[redacted]",
+    "body": null
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:46:48 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "4",
+      "x-oc-used-weight": "1",
+      "x-amz-cf-id": "zxBR3HnNIh4_CNunmjgsX0nbPqfNk3CGaRWy1UJZCjd_HMMz1c5Nog=="
+    },
+    "body": {
+      "code": 40375,
+      "msg": "Minimum order amount is 5 USD.",
+      "data": null,
+      "timestamp": 1790210808824,
+      "success": false
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "recordedAt": "2026-09-24T00:51:43.206Z",
+  "module": "defi-transaction",
+  "endpoint": "buildDeFiRedeemTransaction",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/defi/transaction/redeem",
+    "body": {
+      "address": "[redacted]",
+      "investmentId": "5b77bfd8d8f7c18e9ee0d8f331c4d78f56744eed8addbe2e9970c0ef37e763cb",
+      "token": {
+        "tokenAddress": "0x55d398326f99059fF775485246999027B3197955",
+        "amount": "1"
+      },
+      "simulate": false
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:51:43 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "3",
+      "x-oc-used-weight": "2",
+      "x-amz-cf-id": "ajQJB6JWS4XnkARzTDtmsdb244csdLWxLGI2zPVhNZWlMYvLAb-iYw=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "dataList": [
+          {
+            "callDataType": "REDEEM",
+            "from": "[redacted]",
+            "to": "0xfD5840Cd36d94D7229439859C0112a4185BC0255",
+            "value": "0x0",
+            "data": "0xdb006a7500000000000000000000000000000000000000000000000000000000e0d32c75",
+            "gasPrice": "64257210",
+            "maxPriorityFeePerGas": "64257210",
+            "maxFeePerGas": "64257210"
+          }
+        ],
+        "redeemDelayDays": []
+      },
+      "timestamp": 1790211103730,
+      "success": true
+    }
+  }
+}
