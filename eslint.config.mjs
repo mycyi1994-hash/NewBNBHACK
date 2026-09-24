@@ -50,7 +50,12 @@ export default defineConfig(
   },
   {
     // The config package itself, test wiring, and doc-fetch tooling may read the environment.
-    files: ['packages/config/**', '**/*.test.ts', 'scripts/fetch-docs-browser.mjs'],
+    files: [
+      'packages/config/**',
+      '**/*.test.ts',
+      'packages/*/test/**',
+      'scripts/fetch-docs-browser.mjs',
+    ],
     rules: { 'no-restricted-properties': 'off' },
   },
   {
