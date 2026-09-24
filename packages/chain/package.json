@@ -10,6 +10,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --root ../.. --project @ijaro/chain"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "@ijaro/config": "workspace:*",
+    "@ijaro/core": "workspace:*",
+    "viem": "2.56.8"
+  },
+  "devDependencies": {
+    "vitest": "5.0.1"
+  }
 }
