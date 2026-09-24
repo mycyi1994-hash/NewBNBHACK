@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ApiCallRecord, ApiCallSink, ApiModule } from '@ijaro/binance';
-import { asc, desc, getTableColumns, gte, sql as rawSql } from 'drizzle-orm';
+import { asc, desc, eq, getTableColumns, gte, sql as rawSql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
@@ -81,9 +81,30 @@ export async function listInstruments(db: Db): Promise<InstrumentRow[]> {
   return db.select().from(instruments).orderBy(asc(instruments.ticker), asc(instruments.issuer));
 }
 
-export async function insertTapeSamples(db: Db, rows: TapeSampleInsert[]): Promise<void> {
-  if (rows.length === 0) return;
-  await db.insert(tapeSamples).values(rows);
+/**
+ * Inserts a tape run. Idempotent on (slot_at, instrument_id, size_usd): re-running a slot after a
+ * worker restart inserts nothing. Returns the number of rows actually written.
+ */
+export async function insertTapeSamples(db: Db, rows: TapeSampleInsert[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const written = await db
+    .insert(tapeSamples)
+    .values(rows)
+    .onConflictDoNothing({
+      target: [tapeSamples.slotAt, tapeSamples.instrumentId, tapeSamples.sizeUsd],
+    })
+    .returning({ id: tapeSamples.id });
+  return written.length;
+}
+
+/** True when a run for this slot is already stored (checked before spending ~30 API calls). */
+export async function tapeSlotRecorded(db: Db, slotAt: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: tapeSamples.id })
+    .from(tapeSamples)
+    .where(eq(tapeSamples.slotAt, slotAt))
+    .limit(1);
+  return row !== undefined;
 }
 
 /** Rows of the most recent tape run. */

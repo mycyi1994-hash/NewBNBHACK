@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { presenceMatrix, type RwaToken } from './registry.js';
-import { msUntilNextSlot, routeOf } from './tape.js';
+import { msUntilNextSlot, routeOf, tapeSlot } from './tape.js';
 
 const token = (ticker: string, platformId: string, tokenSymbol: string): RwaToken => ({
   binanceChainId: '56',
@@ -32,6 +32,15 @@ describe('presenceMatrix', () => {
 });
 
 describe('tape helpers', () => {
+  it('keys a scheduled run by its 10-minute slot, so a restart inside the slot maps to it', () => {
+    expect(tapeSlot(new Date('2026-09-24T01:55:49.016Z')).toISOString()).toBe(
+      '2026-09-24T01:50:00.000Z',
+    );
+    expect(tapeSlot(new Date('2026-09-24T02:00:00.000Z')).toISOString()).toBe(
+      '2026-09-24T02:00:00.000Z',
+    );
+  });
+
   it('aligns runs to 10-minute wall-clock slots', () => {
     expect(msUntilNextSlot(new Date('2026-09-24T00:46:14.000Z'))).toBe(226_000);
     expect(msUntilNextSlot(new Date('2026-09-24T00:50:00.000Z'))).toBe(600_000);

@@ -3,7 +3,16 @@
  * `tape_samples` (M0-08); the other tables of SPEC §4
  * arrive with M1-01.
  */
-import { bigserial, boolean, index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+  bigserial,
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 
 /** One row per HTTP attempt to the Binance Web3 API, written by the client's onApiCall hook. */
 export const apiCalls = pgTable(
@@ -71,6 +80,11 @@ export const tapeSamples = pgTable(
     id: bigserial('id', { mode: 'number' }).primaryKey(),
     /** Start of the tape run this row belongs to (one run = all instruments × sizes). */
     sampledAt: timestamp('sampled_at', { withTimezone: true, mode: 'string' }).notNull(),
+    /**
+     * Idempotency key of the run: the 10-minute wall-clock slot for scheduled runs (a restarted
+     * worker re-running a slot inserts nothing), the exact start time for manual `tape:once`.
+     */
+    slotAt: timestamp('slot_at', { withTimezone: true, mode: 'string' }).notNull(),
     instrumentId: text('instrument_id').notNull(),
     /** Our own clock: regular | pre | post | overnight | weekend | holiday (US equities, ET). */
     session: text('session').notNull(),
@@ -95,5 +109,6 @@ export const tapeSamples = pgTable(
   (table) => [
     index('tape_samples_sampled_at_idx').on(table.sampledAt),
     index('tape_samples_instrument_idx').on(table.instrumentId, table.sampledAt),
+    uniqueIndex('tape_samples_slot_uq').on(table.slotAt, table.instrumentId, table.sizeUsd),
   ],
 );

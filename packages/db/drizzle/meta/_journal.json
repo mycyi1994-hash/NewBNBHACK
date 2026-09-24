@@ -15,6 +15,13 @@
       "when": 1790210465256,
       "tag": "0001_instruments_tape",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790216588334,
+      "tag": "0002_tape_slot",
+      "breakpoints": true
     }
   ]
 }

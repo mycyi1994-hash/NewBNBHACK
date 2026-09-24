@@ -6,7 +6,7 @@
 import type { BinanceClient } from '@ijaro/binance';
 import { BSC_CHAIN_ID, readBstockMultiplier, readErc20Meta, type BscClient } from '@ijaro/chain';
 import { fromUnits } from '@ijaro/core';
-import type { InstrumentRow } from '@ijaro/db';
+import { listInstruments, upsertInstruments, type Db, type InstrumentRow } from '@ijaro/db';
 
 /** Candidate tickers (PLAN/TASKS M0-05). Tickers are product choices; addresses are not in code. */
 export const CANDIDATE_TICKERS = ['NVDA', 'TSLA', 'AAPL', 'MSFT', 'QQQ'] as const;
@@ -129,4 +129,40 @@ export function presenceMatrix(
     row.set(issuer, [...(row.get(issuer) ?? []), t.tokenSymbol]);
   }
   return matrix;
+}
+
+export interface RegistryResult {
+  tokenCount: number;
+  matrix: Map<string, Map<string, string[]>>;
+  verifications: Verification[];
+  upserted: number;
+  total: number;
+}
+
+/**
+ * Fetch → verify on-chain → upsert. Used by `pnpm registry` and by the worker at start-up and
+ * daily, so a fresh database (Neon, G2) fills itself from the API.
+ */
+export async function refreshRegistry(
+  deps: { client: BinanceClient; bsc: BscClient; db: Db },
+  options: { recordFixture?: boolean; now?: Date } = {},
+): Promise<RegistryResult> {
+  const now = options.now ?? new Date();
+  const tokens = await fetchRwaTokens(deps.client, {
+    recordFixture: options.recordFixture ?? false,
+  });
+  const candidates = tokens.filter((t) =>
+    (CANDIDATE_TICKERS as readonly string[]).includes(t.underlyingTicker),
+  );
+  const verifications: Verification[] = [];
+  for (const token of candidates) verifications.push(await verifyToken(deps.bsc, token, now));
+  const accepted = verifications.flatMap((v) => (v.ok && v.row ? [v.row] : []));
+  await upsertInstruments(deps.db, accepted);
+  return {
+    tokenCount: tokens.length,
+    matrix: presenceMatrix(tokens, CANDIDATE_TICKERS),
+    verifications,
+    upserted: accepted.length,
+    total: (await listInstruments(deps.db)).length,
+  };
 }

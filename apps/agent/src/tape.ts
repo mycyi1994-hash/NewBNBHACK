@@ -92,12 +92,20 @@ export interface TapeDeps {
   client: BinanceClient;
   instruments: readonly InstrumentRow[];
   houseAddress: string | undefined;
+  /** Idempotency key (see tapeSlot); defaults to the start time, i.e. a one-off run. */
+  slotAt?: Date;
   now?: () => Date;
+}
+
+/** Start of the 10-minute wall-clock slot containing `at` — the scheduled run's idempotency key. */
+export function tapeSlot(at: Date, intervalMs: number = TAPE_INTERVAL_MS): Date {
+  return new Date(at.getTime() - (at.getTime() % intervalMs));
 }
 
 /** One tape run: returns the rows (caller inserts them). */
 export async function sampleTape(deps: TapeDeps): Promise<TapeSampleInsert[]> {
   const sampledAt = (deps.now ?? (() => new Date()))();
+  const slotAt = (deps.slotAt ?? sampledAt).toISOString();
   const session = usSession(sampledAt);
   const key = (a: string) => a.toLowerCase();
   let tokens: RwaToken[] = [];
@@ -131,6 +139,7 @@ export async function sampleTape(deps: TapeDeps): Promise<TapeSampleInsert[]> {
       );
       rows.push({
         sampledAt: sampledAt.toISOString(),
+        slotAt,
         instrumentId: instrument.id,
         session,
         openState: status?.openState ?? null,
