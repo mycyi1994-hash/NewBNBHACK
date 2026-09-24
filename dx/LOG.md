@@ -353,3 +353,13 @@
 - 우회: 해당 없음. `packages/core` `supplyApyFromRatePerBlock`는 연 블록 수를 인자로 받으므로 호출하는 쪽이 실측값을 넘긴다.
 - 요청: 00:49 항목의 "APY 구성(기본 이자 vs 보상) 명시"는 차이라는 근거가 사라져 우선순위를 낮춤(구성 명시 자체는 여전히 유용).
 - 증거: 위 두 블록의 번호·타임스탬프; DECISIONS Q-12.
+
+## 2026-09-24 02:31 UTC — [web3api][region] 프랑크푸르트(Fly fra) 첫 호출: 도달 OK, 한국보다 2~4배 느림, 병행 호출에 40303 없음
+- 목표: M0-04 (b)·M0-08 — 프랑크푸르트 워커에서 도달 확인, 같은 키를 한국과 병행할 때 40303 여부(DECISIONS Q-01).
+- 기대: 제한 지역 아님 → 도달 OK. 문서상 "concurrent multi-region access"는 40303 위험.
+- 실제: Fly 머신 `d8de470f023428`(fra) `pnpm reach` 02:31:42Z — 미서명 401/40101 356 ms, 서명 RWA 목록 200/0 350 ms, 가격 배치 200/0 253 ms, 시계 차 10 ms. 같은 세 호출이 한국 PC(02:33:02Z)에선 146 / 150 / 58 ms — 게이트웨이까지는 한국이 더 가까움. 한국 호출은 워커의 마지막 호출(02:32:27Z) 36초 뒤였고 40303 없음(같은 초 겹침·장시간 병행은 미관측). 워커 첫 실행 api_calls `region=fra` 33행, 429 0건(슬라이딩 창 제한 적용 후).
+- 문서: § Service-Restricted Countries & Regions; § Authentication › Error Codes(40301–40304 설명, 다중 지역 판정 기준·시간창은 없음).
+- 잃은 시간: 0.
+- 우회: 서버는 fra 한 곳, 한국 PC의 API 호출은 일회성 확인만.
+- 요청: 40303 "frequent location switching or concurrent multi-region access"의 판정 기준(시간창, 요청 수)과, 개발(다른 지역)과 운영에 키를 나눠야 하는지 문서화.
+- 증거: 호스트 `pnpm reach` 출력; Neon `SELECT region, count(*) … FROM api_calls GROUP BY region` → `fra 33`(02:31:55Z); 한국 PC `pnpm reach` 출력(02:33:02Z).

@@ -50,7 +50,8 @@
 
 ### M0-04 리전 도달성 결정 · 기준: 기술
 - [ ] `pnpm reach`를 (a) 한국 개발기 (b) 프랑크푸르트 러너 (c) Vercel icn1 함수에서 실행, 결과·코드(40304 여부) 기록
-  - (a) 한국 개발기: 2026-09-24 00:17 UTC 도달 OK(서명 200, 지역 코드 없음) — DECISIONS Q-01. (b)(c) 남음.
+  - (a) 한국 개발기: 2026-09-24 00:17 UTC 도달 OK(서명 200, 지역 코드 없음) — DECISIONS Q-01.
+  - (b) 프랑크푸르트 러너(Fly `fra`): 2026-09-24 02:31:42 UTC 도달 OK(미서명 401/40101 356 ms, 서명 200/0 350·253 ms, 지역 코드 없음), 병행 중 한국 PC 02:33:02 UTC도 40303 없음 — DECISIONS Q-01, D-06. (c) Vercel icn1은 웹 배포(M2) 때.
 - 수용: DECISIONS D-REGION 확정(웹 리전, 워커 리전, 개발 방식)
 
 ### M0-05 인스트루먼트 인벤토리 · 기준: 기술·창의
@@ -83,8 +84,10 @@
 ### M0-08 테이프 가동 · 기준: DX
 - [x] `apps/agent` 잡: 10분마다 인스트루먼트별 온체인가·참조가·장 상태 + 견적 3규모 → `tape_samples`
   - 증거(로컬, 한국 개발 PC): `apps/agent/src/tape.ts`·`main.ts` — 인스트루먼트 9종 × $5/$50/$500, RWA price(tokenPrice·referencePrice·갱신 시각), RWA list statusInfo, 우리 시계 `session` 태그, 견적 expectedOut·priceImpact·vendor·executionMode·route·오류코드·지연. 10분 경계 정렬. 에이전트 실행 00:46:14Z 첫 실행 → 00:50, 01:00, …, 01:50:00Z(64분, 8회, 로그 `tape: … 27 rows …, 5 quote errors, session overnight`). count: `SELECT count(*) FROM tape_samples; → 54`(00:46:26Z) → `81`(00:59:37Z) → `243`(01:50:31Z). 기록된 오류는 전부 Ondo $5의 `40375`(45행). `pnpm tape:once` 동작(00:45:51Z, `tape_samples: 27 rows inserted`). 이 64분 동안 견적에서 429가 44건 나왔고(재시도로 전부 복구) 클라이언트 제한을 슬라이딩 창으로 고친 뒤(dx/LOG.md 01:52) 01:54:58Z `pnpm tape:once` 429 0건; 에이전트는 01:55:49Z 새 코드로 재시작.
-- [ ] 프랑크푸르트 러너에 배포, **9/25 20:00 KST 이전 가동**
-- [ ] `GET /api/tape/latest`
+- [x] 프랑크푸르트 러너에 배포, **9/25 20:00 KST 이전 가동**
+  - 증거: Fly.io 앱 `ijaro-agent`, 머신 `d8de470f023428` `fra` `started`(2026-09-24 02:30:28 UTC, `fly status`), `shared-cpu-1x:512MB`, `fly machine status -d` → `"restart": {"policy": "always"}`, `fly machine list` 1대. 설정 `fly.toml`(primary_region fra, [[restart]] always), 이미지 `Dockerfile` + `.dockerignore`(`.env*` 제외; 빌드 중 `.env*` 발견 시 실패, 로컬 이미지에서 `env-files-found: 0`). 시크릿 6개는 `fly secrets import`(stdin)로만. DB Neon(마이그레이션 0000–0002). 첫 실행 `tape: slot 2026-09-24T02:30:00.000Z … 27/27 rows written`; 호스트 `pnpm reach` 성공, api_calls `region=fra` 33행(DECISIONS Q-01). 재시작 안전: `apps/agent/src/main.ts` `tapeTick`이 `tapeSlot()`(10분 슬롯)으로 `tapeSlotRecorded` 선확인, `packages/db/src/index.ts` `insertTapeSamples`가 `ON CONFLICT DO NOTHING`(유니크 `tape_samples_slot_uq` = slot_at·instrument_id·size_usd, `drizzle/0002_tape_slot.sql`). `fly machine restart`(02:32:08 UTC) 뒤 로그 `tape: slot 2026-09-24T02:30:00.000Z already recorded — skipped`. 테스트 `packages/db/src/tape.test.ts`(Postgres, 재실행 시 0행 기록).
+- [x] `GET /api/tape/latest`
+  - 증거: `apps/web/app/api/tape/latest/route.ts` — 최신 실행 행 + `state` LIVE(20분 이내)/STALE/UNAVAILABLE(사유). 로컬 `next dev --webpack`에서 `LIVE 2026-09-24T02:20:00.007Z … rows 27`. 워크스페이스 TS 패키지의 `.js` import 때문에 webpack `extensionAlias`와 `--webpack` 사용(Turbopack은 `./schema.js`를 못 찾음). 웹 배포(Vercel)는 M2.
 - 수용: 24시간 후 행 수 ≥ 예상치의 90%, 주말 태그 정상
 
 ### M0-09 baw 스파이크 [HUMAN+에이전트] · 기준: AW 특별상·DX
