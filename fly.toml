@@ -1,0 +1,18 @@
+# apps/agent worker on Fly.io (SPEC §13, DECISIONS D-06): Frankfurt only, one machine, always restart.
+# No HTTP service: the worker only makes outbound calls. Secrets are set with `fly secrets import`.
+app = "ijaro-agent"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  REGION_TAG = "fra"
+  EXECUTION_MODE = "simulate"
+
+[[restart]]
+  policy = "always"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
