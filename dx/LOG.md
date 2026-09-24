@@ -225,3 +225,101 @@
 - 우회: 가격 배치 body는 응답 필드에서 추정한 배열 형식을 썼고 수용됨.
 - 요청: `POST /market/price`, `/price-info`, `/token/basic-info`의 request body 스키마를 문서에 추가.
 - 증거: 사용자 PC `pnpm reach` 출력(대화에 공유, 2026-09-24 00:17:25 UTC). api_calls 행은 로컬 DB 수정 후 재실행 시 생김.
+
+## 2026-09-24 00:28 UTC — [web3api][telemetry] api_calls 첫 기록 성공(한국 개발 PC)
+- 목표: `pnpm reach`의 모든 시도를 api_calls에 기록(M0-03 수용).
+- 기대: 00:17 첫 서명 호출 때와 같은 결과 + `api_calls: 3 rows recorded`.
+- 실제: 00:28:12 UTC 실행에서 3행 기록(id 1–3: getSupportedChains 401/40101 128 ms, getRwaTokenList 200/0 144 ms, getTokenPrice 200/0 64 ms, region kr-dev, 요청 id 모두 채워짐). 00:37:01 재실행에서 3행 추가 → `SELECT count(*) FROM api_calls; → 6`(00:37:35 UTC).
+- 그 전 오류: 00:17 실행에서 api_calls 기록만 실패 — PostgreSQL `28P01`(비밀번호 인증 실패). 원인: DATABASE_URL이 가리킨 5432 포트에 다른 PostgreSQL 인스턴스가 떠 있었음. 로컬 DB를 5433으로 옮겨 해결. Binance 쪽 오류(40102 서명, 40103 시각, 4030x 지역)는 첫 서명 호출 전후 모두 0건.
+- 문서: 해당 없음(로컬 설정).
+- 잃은 시간: [HUMAN]
+- 우회: DATABASE_URL 포트 5433.
+- 요청: 없음.
+- 증거: `pnpm reach` 출력(00:37:01 UTC) `api_calls: 3 rows recorded`; `pnpm db:count`.
+
+## 2026-09-24 00:41 UTC — [rwa][onchain] bStocks 배수 함수명은 문서에 없음 — 바이트코드에서 찾음
+- 목표: bStocks `uiMultiplier` 읽기(M0-05, DECISIONS Q-13).
+- 기대: llms-full.txt나 RWA API 설명에 온체인 ABI(배수 함수명)가 있음.
+- 실제: 문서에 없음. NVDAB(`0x02fc…7436`)는 beacon proxy(EIP-1967 beacon 슬롯 → `0x156d…93a3`, `implementation()` → `0xCFEd…4e46`). 구현 바이트코드의 PUSH4 셀렉터에서 `uiMultiplier()`·`newUIMultiplier()`·`effectiveAt()` 확인. NVDAB uiMultiplier `1000778223752807865`(1e18 스케일) = API `tokenToShareRatio` `1.000778223752807865`, effectiveAt 0. Ondo NVDAon(beacon `0xc046…3315`, 구현 `0x578f…50fd`)에는 이 함수들이 없음 → Ondo 배수는 API `tokenToShareRatio`뿐.
+- 문서: llms-full.txt § RWA에 필드 설명 없음; 커넥터 `GetRwaTokenListResponseDataInner.tokenToShareRatio`.
+- 잃은 시간: [HUMAN]
+- 우회: 바이트코드 셀렉터 스캔 후 `packages/chain` `readBstockMultiplier`.
+- 요청: bStocks 토큰 ABI(배수·예정 배수·발효 시각 함수)를 RWA 문서에 명시. Ondo 배수의 온체인 출처가 있다면 명시.
+- 증거: `pnpm registry` 출력(00:45:40 UTC) `uiMultiplier … = API tokenToShareRatio …` 4건.
+
+## 2026-09-24 00:45 UTC — [rwa] statusInfo가 발행사마다 다름: bStocks는 marketStatus·nextOpen/Close가 null
+- 목표: 장 상태로 정규장 창구 판단(SPEC §5.2).
+- 기대: 모든 RWA 토큰의 `statusInfo`에 `marketStatus`와 `nextOpenTime`/`nextCloseTime`.
+- 실제: Ondo 5종은 `marketStatus:"overnight"`, `nextCloseTime 1790236500000`(2026-09-24T07:55Z), `nextOpenTime 1790236860000`(08:01Z) — 정규장이 아니라 Ondo 24/5 세션의 경계. bStocks 4종은 `openState:true, marketStatus:null, reasonCode:"TRADING", nextOpenTime:null, nextCloseTime:null`(US 장외인 00:45Z에도 TRADING).
+- 문서: 커넥터 `GetRwaTokenListResponseDataInnerStatusInfo`(값 목록만, 발행사별 차이 설명 없음).
+- 잃은 시간: [HUMAN]
+- 우회: 테이프에 우리 시계 기준 `session`(regular/pre/post/overnight/weekend/holiday, America/New_York) 태그를 같이 기록(`packages/core/src/session.ts`).
+- 요청: 발행사별 statusInfo 의미와 null 조건 문서화.
+- 증거: `fixtures/rwa/getRwaTokenList-20260924-1.json`; tape_samples `market_status` 열.
+
+## 2026-09-24 00:46 UTC — [trading] M0-06 소액 견적 표(장외, US overnight)
+- 목표: NVDA·QQQ × bStocks·Ondo에 $1/$5/$50 USDT 견적(M0-06).
+- 기대: 문서대로 Ondo는 RFQ, bStock은 SWAP/RFQ 혼합; Ondo 최소액은 msg에(예시 "20 USD").
+- 실제: 2026-09-24T00:46:45Z, US 세션 overnight(정규장 아님), `userWalletAddress`=하우스 지갑.
+
+| instrument | USD | expectedOut (tokens) | implied USD/token | priceImpact % | vendor / mode | route | error | ms |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| NVDAB | 1 | 0.004442430800471653 | 225.1020 | 0.0000000000 | LiquidMesh/SWAP | Kipseli 100.00% | — | 138 |
+| NVDAB | 5 | 0.022212154002358266 | 225.1020 | 0.0000000000 | LiquidMesh/SWAP | Kipseli 100.00% | — | 59 |
+| NVDAB | 50 | 0.222121540023582663 | 225.1020 | 0.0000000000 | LiquidMesh/SWAP | Kipseli 100.00% | — | 60 |
+| NVDAon | 1 | — | — | — | — | — | 40375 "Minimum order amount is 5 USD." | — |
+| NVDAon | 5 | — | — | — | — | — | 40375 "Minimum order amount is 5 USD." | — |
+| NVDAon | 50 | 0.221892762466632448 | 225.3341 | 0.0000149702 | LiquidMesh/SWAP | Rfq Halfmoon 100.00% | — | 293 |
+| QQQB | 1 | 0.001349947465289318 | 740.7696 | 0.0000000000 | LiquidMesh/SWAP | Kipseli 100.00% | — | 71 |
+| QQQB | 5 | 0.006749737326446592 | 740.7696 | 0.0000000000 | LiquidMesh/SWAP | Kipseli 100.00% | — | 58 |
+| QQQB | 50 | 0.067496698353477741 | 740.7770 | 0.0000000000 | LiquidMesh/SWAP | Kipseli 100.00% | — | 53 |
+| QQQon | 1 | — | — | — | — | — | 40375 "Minimum order amount is 5 USD." | — |
+| QQQon | 5 | — | — | — | — | — | 40375 "Minimum order amount is 5 USD." | — |
+| QQQon | 50 | 0.067266855205420944 | 743.3081 | -0.0000000000 | LiquidMesh/SWAP | Rfq Halfmoon 100.00% | — | 285 |
+
+  - 추가 측정(00:48 UTC): NVDAon $5.01·$5.05·$5.10·$6 → 견적 OK. $5.00은 거부, $5.01은 통과 — "5 USD"가 초과 조건인지 USDT 단가(0.99975) 환산 때문인지는 미확인. NVDAB $0.10도 견적 OK(bStock 최소액 관측 안 됨).
+  - Ondo도 `LiquidMesh/SWAP`(dex 이름 "Rfq Halfmoon")이고 `/swap` 응답도 `executionMode SWAP`, `tx` 있음, `rfq` null — 문서 "Ondo는 항상 RFQ"와 다름.
+  - 그런데 Ondo 견적에서 `userWalletAddress`를 빼면 `40001 "userWalletAddress is required for RFQ (Ondo) quote"`(bStock은 없어도 OK).
+  - priceImpact에 음수 0 `"-0.0000000000"`이 섞여 옴.
+- 문서: § Introduction (Trading API) › Equity Token Trading (L2235); § Error Codes (Trading API) › RFQ Orders (L3092).
+- 잃은 시간: [HUMAN]
+- 우회: 테이프·결정은 응답의 `executionMode`를 그대로 기록·사용(발행사로 추정하지 않음). 최소액은 테이프에서 관측.
+- 요청: Ondo 경로가 SWAP으로 나오는 조건, 최소액 비교 규칙(≥ vs >, USD 환산 기준), priceImpact 부호 규칙 문서화.
+- 증거: `pnpm spike:quotes` 출력; `fixtures/trading/getAggregatedQuote-20260924-*.json`(지갑 주소 `[redacted]`).
+
+## 2026-09-24 00:52 UTC — [trading] quoteId TTL 실측: 35초 뒤 /swap → 40401
+- 목표: Q-04 견적 유효시간 확인. `/swap`은 콜데이터 생성만(서명·브로드캐스트 없음).
+- 기대: 문서 TTL 30초.
+- 실제: NVDAB $50 견적 직후 `/swap` OK(96 ms, `executionMode SWAP`, `tx.to 0xB444…DdA5`), 35초 뒤 같은 quoteId → `40401 "quoteId=… not found or expired"`(109 ms). NVDAon도 같음(0초 OK 100 ms, 35초 40401 84 ms).
+- 문서: § Key Constraints (L2276) — 일치.
+- 잃은 시간: 0.
+- 우회: 해당 없음. 재견적 기준은 30초 미만.
+- 요청: 없음.
+- 증거: `fixtures/trading/buildSwapTransaction-20260924-*.json`.
+
+## 2026-09-24 00:55 UTC — [rwa] referencePrice = tokenPrice ÷ tokenToShareRatio (정확히)
+- 목표: Q-06 참조가 정의 실측.
+- 기대: 커넥터 설명대로 온체인가에서 파생.
+- 실제: 테이프 최신 행 9종 모두 `tokenPrice / multiplier`와 `referencePrice`의 상대 오차 ≤ 5.4e-10(예: NVDAB 224.695137 = 224.695137). 독립 시세가 아니라 온체인가를 주당으로 환산한 값.
+- 문서: 커넥터 `GetRwaTokenPriceResponseDataInner.referencePrice` 설명과 일치; llms-full.txt에는 필드 설명 없음.
+- 잃은 시간: 0.
+- 우회: SPEC §5.5 괴리 가드(`onchain/reference − 1`)는 이 값으로는 항상 ≈0 — 사람 결정 필요(DECISIONS Q-06).
+- 요청: 독립 기초자산 시세(underlying-market의 `marketData`)와의 관계 문서화.
+- 증거: tape_samples ⨝ instruments 쿼리(00:55 UTC).
+
+## 2026-09-24 00:49 UTC — [defi] Venus USDT: poolAddress null, simulate=true는 미충전 주소를 40484로 거부, APPROVE는 무제한
+- 목표: M0-07 — Venus 정보, USDT 투자 항목, 예치·상환 콜데이터, Transaction API 시뮬레이션(브로드캐스트 없음).
+- 기대: investment detail에 vToken 주소(`poolAddress`); build `simulate=true`가 `preview`를 줌.
+- 실제:
+  - protocol/detail venus: securityScore `"93.1"`, TVL `1353914642`, dimensionScores codeSecurity 96 / fundamentalHealth 92.5 / operationalResilience 84.96 / communityTrust 98 / governanceStrength 88.45 / marketStability 94.18 (458 ms).
+  - investment/list(Earn, venus, BSC, USDT) → 1건 `investmentId 5b77bfd8…63cb` "USDT", `apyBps 316`(3.16%), `tvl 185541887.44`. detail도 같고 `poolAddress: null`.
+  - position/list(하우스) → `{"totalValue":"0","addressList":[]}` (1,664 ms — 이번 세션 최장).
+  - deposit 1 USDT `simulate=true` → HTTP 200 `40484 "Insufficient balance…"`; redeem `simulate=true` → 같은 코드 `40484 "You don't have any position in this investment product."`(다른 원인에 같은 코드). `simulate=false`로는 둘 다 code 0: deposit `dataList` = APPROVE, DEPOSIT; redeem = REDEEM, `redeemDelayDays []`(즉시).
+  - APPROVE 디코드: `USDT.approve(spender 0xfD58…0255, type(uint256).max)` — 무제한(Q-16). DEPOSIT `to` = 같은 `0xfD58…0255`, 셀렉터 `0xa0712d68` = `mint(uint256)`. REDEEM 셀렉터 `0xdb006a75` = `redeem(uint256)`(vToken 수량 기준). DEPOSIT/REDEEM 항목에는 `gasLimit` 없음.
+  - 온체인(블록 123664140): `0xfD5840Cd36d94D7229439859C0112a4185BC0255` `symbol()`=vUSDT, decimals 8, `underlying()`=USDT. exchangeRateStored `265115854764046092440821898`(1 vUSDT = 0.026511585 USDT), cash 50,523,730.69 / borrows 135,119,487.09 / reserves 52.89 → 이용률 72.78%. Comptroller `0xfD36…8384` actionPaused MINT=false REDEEM=false. supplyRatePerBlock `445461184` → 블록당 복리 연 1.89%(0.75초 블록 가정, 42,048,000/년) — API apyBps 316(3.16%)과 1.27%p 차이(원인 미확인: 보상 포함 여부가 문서에 없음, 블록 수 가정도 미검증).
+  - Transaction API simulate(하우스 주소, 잔고 USDT 0·BNB 0): APPROVE → `status SUCCESS`, allowanceChanges `preAmount 0 → postAmount 1157…9935`(무제한) (93 ms); DEPOSIT → `status FAILED`, `failReason "execution reverted: BEP20: transfer amount exceeds balance"` (114 ms); REDEEM → `FAILED "execution reverted: math error"` (127 ms). 시뮬레이션은 단일 tx라 APPROVE 결과가 DEPOSIT에 이어지지 않음.
+- 문서: § Integration Flow (DeFi API) › Step 2, Step 3 (L3755, L3820), › Calldata Validity & Approvals (L4119); § Error Codes (DeFi API).
+- 잃은 시간: [HUMAN]
+- 우회: vToken 주소는 DEPOSIT 항목 `to`에서 얻고 온체인 `symbol()/underlying()`로 검증(`scripts/spike-venus.ts`). 미충전 지갑은 `simulate=false`로 콜데이터 확보.
+- 요청: investment detail에 vToken 주소 채우기; 40484 원인별 코드 분리; 다중 tx(approve→deposit) 시뮬레이션 또는 state override; APY 구성(기본 이자 vs 보상) 명시; 정확 금액 approve 옵션.
+- 증거: `pnpm spike:venus` 출력; `fixtures/defi-data/*-20260924-*.json`, `fixtures/defi-transaction/*-20260924-*.json`, `fixtures/transaction/simulateTransactions-20260924-{1,2,3}.json`(하우스 주소 `[redacted]`).

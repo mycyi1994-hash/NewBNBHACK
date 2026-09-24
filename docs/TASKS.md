@@ -46,6 +46,7 @@
 - [x] 서명 벡터 테스트(커넥터와 동일 서명 생성)
   - 증거: `packages/binance/src/signature-vectors.test.ts` 통과 — `X-OC-SIGN matches the official connector > GET RWA token list with query (getRwaTokenList)`, `> GET aggregated quote with RFQ wallet (getAggregatedQuote)`, `> GET with characters that need encoding (searchRwaToken)`, `> POST JSON body (buildDeFiDepositTransaction)`, `> POST B402 envelope body (getB402SupportedConfigurationsV2)`, `> documents a connector anomaly: GET /order/{orderId} also signs a JSON body`, `pre-hash string from the docs > matches the GET example in llms-full.txt § Authentication › 3.1 (L223)`. 커넥터의 실제 요청 경로(axios 어댑터로 캡처)와 바이트 단위 일치, 고정 벡터 5개는 `openssl dgst -sha256 -hmac`으로도 재현.
 - 수용: 첫 성공 호출의 UTC 시각·지연·시행착오가 `dx/LOG.md`에 기록(서술은 [HUMAN]) — **확인**: 첫 서명 호출 성공 2026-09-24 00:17:25 UTC, RWA 목록 186 ms·가격 배치 58 ms, 서명·시각 오류 없음(dx/LOG.md 2026-09-24 00:17 항목). 포털·키 발급 시각과 소감은 [HUMAN].
+  - api_calls 실기록(한국 개발 PC, DB 127.0.0.1:5433): 00:28:12 UTC 첫 3행, 00:37:01 재실행 `api_calls: 3 rows recorded` → `pnpm db:count` `SELECT count(*) FROM api_calls; → 6`(00:37:35 UTC). 그 전 실패는 로컬 DB `28P01`(다른 PostgreSQL이 5432 점유) — dx/LOG.md 00:28 항목.
 
 ### M0-04 리전 도달성 결정 · 기준: 기술
 - [ ] `pnpm reach`를 (a) 한국 개발기 (b) 프랑크푸르트 러너 (c) Vercel icn1 함수에서 실행, 결과·코드(40304 여부) 기록
@@ -53,22 +54,31 @@
 - 수용: DECISIONS D-REGION 확정(웹 리전, 워커 리전, 개발 방식)
 
 ### M0-05 인스트루먼트 인벤토리 · 기준: 기술·창의
-- [ ] RWA Data API로 BSC(56) 토큰·플랫폼 목록 수집(폴백: 공개 bapi type 1/2/3)
-- [ ] 후보 티커 NVDA, TSLA, AAPL, MSFT, QQQ 존재 발행사 확인; 온체인 `symbol/decimals` 검증; bStocks `uiMultiplier` 읽기
-- [ ] `instruments` 테이블 + 생성 스크립트 `pnpm registry`(코드 상수 금지)
-- 수용: 5티커 × 발행사 매트릭스가 DECISIONS에, 픽스처 저장
+- [x] RWA Data API로 BSC(56) 토큰·플랫폼 목록 수집(폴백: 공개 bapi type 1/2/3)
+  - 증거: RWA Data API 직접 성공(폴백 불필요) — `GET /api/v1/dex/market/rwa/tokens?binanceChainId=56` 488종(ondo 442, bstock 46, BSC에 xStocks 없음). 픽스처 `fixtures/rwa/getRwaTokenList-20260924-1.json`.
+- [x] 후보 티커 NVDA, TSLA, AAPL, MSFT, QQQ 존재 발행사 확인; 온체인 `symbol/decimals` 검증; bStocks `uiMultiplier` 읽기
+  - 증거: `pnpm registry`(2026-09-24 00:45:40 UTC) — 매트릭스 NVDA·TSLA·MSFT·QQQ = bStocks+Ondo, AAPL = Ondo만. 9종 모두 `OK  … symbol … = API …; decimals 18 = API 18`, bStocks 4종 `uiMultiplier … = API tokenToShareRatio …`. 함수명은 바이트코드에서 확인(DECISIONS Q-13, dx/LOG.md 00:41).
+- [x] `instruments` 테이블 + 생성 스크립트 `pnpm registry`(코드 상수 금지)
+  - 증거: `packages/db/drizzle/0001_instruments_tape.sql`, `scripts/registry.ts` + `apps/agent/src/registry.ts`. 출력 `instruments: 9 verified rows upserted, 9 rows in table`; `pnpm db:count` → `SELECT count(*) FROM instruments; → 9`. 코드의 주소 상수는 BSC USDT(주식 아님, 기동 시 `assertUsdt`로 검증)뿐.
+- 수용: 5티커 × 발행사 매트릭스가 DECISIONS에, 픽스처 저장 — **확인**: DECISIONS §2.2, 픽스처 위.
 
 ### M0-06 소액 견적 스파이크 · 기준: 기술·DX
-- [ ] 정규장(22:30~05:00 KST)과 장외 각각, NVDAB·NVDAon(+QQQ 계열)에 $1/$5/$50 견적: expectedOut, priceImpact, route/vendor, 오류코드
-- [ ] 최소 체결 가능 금액과 기본 발행사 결정
-- 수용: DECISIONS D-MIN-BUY, D-ISSUER 확정; 결과 표가 `dx/LOG.md`에
+- [~] 정규장(22:30~05:00 KST)과 장외 각각, NVDAB·NVDAon(+QQQ 계열)에 $1/$5/$50 견적: expectedOut, priceImpact, route/vendor, 오류코드
+  - 장외(US overnight, 2026-09-24 00:46 UTC) 완료: `pnpm spike:quotes` 표가 dx/LOG.md 00:46 항목. NVDAB·QQQB $1/$5/$50 전부 LiquidMesh/SWAP, 영향 ≈0%; NVDAon·QQQon $1·$5 → `40375 "Minimum order amount is 5 USD."`, $50 OK(LiquidMesh/SWAP, "Rfq Halfmoon"). 픽스처 `fixtures/trading/getAggregatedQuote-20260924-*.json`. **정규장 재측정 남음**(DECISIONS Q-03) — 테이프가 $5/$50/$500을 10분마다 기록하므로 13:30 UTC 이후 행으로도 확인 가능.
+- [~] 최소 체결 가능 금액과 기본 발행사 결정
+  - 제안만(확정은 사람): D-09 `MIN_BUY_USD` $2 유지, Ondo는 > $5; D-10 기본 발행사 bStocks, Ondo 폴백. Q-02 미확인.
+- 수용: DECISIONS D-MIN-BUY, D-ISSUER 확정; 결과 표가 `dx/LOG.md`에 — 표 **확인**, 확정은 정규장 재측정·사람 결정 대기.
 
 ### M0-07 Venus 스파이크 · 기준: 기술·창의
-- [ ] DeFi API: Venus 프로토콜 정보(보안점수·TVL·APY), USDT 투자 항목, 포지션 조회
-- [ ] 온체인: vUSDT `exchangeRateStored`, `balanceOfUnderlying`, Comptroller 가드 플래그, 이용률 계산
-- [ ] DeFi API 예치·상환 콜데이터 형태 확인 → Transaction API 시뮬레이션(하우스 지갑, 브로드캐스트 없음)
-- [ ] `packages/core/amounts.ts`: 이자 계산 함수 + 테스트
-- 수용: 시뮬레이션 성공 픽스처, 이자 계산 테스트 녹색
+- [x] DeFi API: Venus 프로토콜 정보(보안점수·TVL·APY), USDT 투자 항목, 포지션 조회
+  - 증거: `pnpm spike:venus`(2026-09-24 00:49 UTC) — securityScore 93.1, 프로토콜 TVL 1,353,914,642, USDT Earn `apyBps 316`, 투자 TVL 185,541,887.44, 하우스 포지션 `totalValue 0`. 픽스처 `fixtures/defi-data/{getProtocolDetail,listDeFiInvestments,getInvestmentDetail,getDeFiPositions}-20260924-*.json`.
+- [x] 온체인: vUSDT `exchangeRateStored`, `balanceOfUnderlying`, Comptroller 가드 플래그, 이용률 계산
+  - 증거: `packages/chain` `readVTokenState`(한 블록에 고정해 읽음) — vToken `0xfD58…0255`(DEPOSIT 항목 `to`; Data API `poolAddress`는 null) `symbol()`=vUSDT, `underlying()`=USDT, exchangeRateStored 265115854764046092440821898, 이용률 72.78%, actionPaused MINT/REDEEM false. `balanceOfUnderlying`은 view가 아니라서 `balanceOf × exchangeRateStored`(`underlyingFromVTokens`)로 계산. 테스트 `packages/chain/src/index.test.ts`(기록된 블록 123664140 값 재생).
+- [~] DeFi API 예치·상환 콜데이터 형태 확인 → Transaction API 시뮬레이션(하우스 지갑, 브로드캐스트 없음)
+  - 형태 확인·시뮬레이션 실행 완료: deposit = APPROVE(무제한) + DEPOSIT(`mint`), redeem = REDEEM(`redeem`), `redeemDelayDays []`. 시뮬레이션: APPROVE `SUCCESS`, DEPOSIT `FAILED "BEP20: transfer amount exceeds balance"`, REDEEM `FAILED "math error"` — 하우스 지갑 미충전(USDT 0·BNB 0, M0-11). 픽스처 `fixtures/defi-transaction/*-20260924-*.json`, `fixtures/transaction/simulateTransactions-20260924-{1,2,3}.json`. DECISIONS Q-05·Q-16.
+- [x] `packages/core/amounts.ts`: 이자 계산 함수 + 테스트
+  - 증거: `toUnits/fromUnits`, `underlyingFromVTokens`, `vTokensForUnderlying`, `utilizationBps`, `interestUnits`, `supplyApyFromRatePerBlock` — `packages/core/src/amounts.test.ts` 통과(`pnpm test`).
+- 수용: 시뮬레이션 성공 픽스처, 이자 계산 테스트 녹색 — 이자 테스트 **녹색**; 성공 픽스처는 APPROVE만(예치·상환 성공 시뮬레이션은 M0-11 충전 후 `pnpm spike:venus` 재실행).
 
 ### M0-08 테이프 가동 · 기준: DX
 - [ ] `apps/agent` 잡: 10분마다 인스트루먼트별 온체인가·참조가·장 상태 + 견적 3규모 → `tape_samples`
