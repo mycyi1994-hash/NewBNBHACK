@@ -2,10 +2,11 @@
  * pnpm reach — can this host reach the Binance Web3 API, and do signed calls work? (TASKS M0-03/04)
  *
  *   1. unsigned GET (no key needed): proves the gateway answers with a JSON envelope from here
- *      (a 40101 "Invalid API Key" is the expected, healthy answer; 4030x means region/VPN blocks).
+ *      (a 40101 is the expected, healthy answer; 4030x means region/VPN blocks).
  *   2. signed RWA token list (BSC).
  *   3. signed Market price batch for a few tokens from step 2. Its body shape is not documented
- *      anywhere (docs/DECISIONS.md V-09); this probe is how G1 settles it, and says so.
+ *      anywhere; the array of {binanceChainId, tokenContractAddress} sent here was accepted in the
+ *      first live run (docs/DECISIONS.md V-09).
  *
  * Read-only: no quotes, no transactions. Every attempt goes to api_calls when DATABASE_URL is set.
  * Flags: --fixtures (save responses under fixtures/), --no-db.
@@ -175,7 +176,7 @@ if (!client.hasCredentials) {
           binanceChainId: '56',
           tokenContractAddress: t.tokenContractAddress,
         })),
-        note: 'body shape UNVERIFIED — DECISIONS V-09',
+        note: 'body shape not in the docs — DECISIONS V-09',
       },
       (data) => `${data.length} prices (${sample.map((t) => t.tokenSymbol ?? '?').join(', ')})`,
     );

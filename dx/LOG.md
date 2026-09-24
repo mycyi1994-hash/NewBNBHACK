@@ -199,3 +199,18 @@
 - 우회: 우리 클라이언트 기본 15 s, 모든 호출의 지연을 api_calls에 기록해 p95로 판단.
 - 요청: 문서에 권장 타임아웃과 엔드포인트별 지연 목표 공개.
 - 증거: 위 소스 위치. p50/p95는 `pnpm dx:metrics`(G1 이후).
+
+## 2026-09-24 00:17 UTC — [web3api][auth] 첫 서명 호출 성공(한국 개발 PC): RWA 목록·가격 배치 모두 200
+- 목표: `pnpm reach`로 서명 호출 도달 확인(M0-03, M0-04 (a) 한국 개발기).
+- 기대: 문서대로 서명한 요청이 HTTP 200·`code 0`, 한국 회선에서 지역·IP 차단 코드(40301~40303) 없음.
+- 실제: 사용자 PC(Windows, Node v24.14.1, REGION_TAG=kr-dev)에서 2026-09-24T00:17:25Z 실행.
+  - 미서명 `GET /api/v1/dex/market/supported/chain` → HTTP 401, code 40101 "API Key is required", 139 ms.
+  - 서명 `GET /api/v1/dex/market/rwa/tokens?binanceChainId=56` → HTTP 200, code 0, 186 ms, 토큰 488개(platformId `ondo` 442, `bstock` 46). BSC 목록에 다른 platformId(xStocks 등)는 없음.
+  - 서명 `POST /api/v1/dex/market/price`, body `[{"binanceChainId":"56","tokenContractAddress":"0x…"}]` 3개(문서·커넥터에 스키마 없음, DECISIONS V-09) → HTTP 200, code 0, 58 ms, 가격 3건(SOXSon, CRWDon, PANWon).
+  - 응답 `timestamp` 기준 시계 차 +342 ms. 요청 id로 `x-amz-cf-id` 형식 값이 잡힘(문서에 요청 id 헤더 없음).
+  - 서명 오류(40102)·시각 오류(40103) 없이 통과, 지역·IP 차단 코드 없음.
+- 문서: llms-full.txt § Authentication; § Introduction (Market API) › General Data(가격 배치 body 미기재).
+- 잃은 시간: Binance 쪽 0. 같은 실행의 api_calls 기록 실패는 로컬 DB 설정 문제(5432 포트의 다른 PostgreSQL이 응답, 28P01)로 Binance와 무관.
+- 우회: 가격 배치 body는 응답 필드에서 추정한 배열 형식을 썼고 수용됨.
+- 요청: `POST /market/price`, `/price-info`, `/token/basic-info`의 request body 스키마를 문서에 추가.
+- 증거: 사용자 PC `pnpm reach` 출력(대화에 공유, 2026-09-24 00:17:25 UTC). api_calls 행은 로컬 DB 수정 후 재실행 시 생김.

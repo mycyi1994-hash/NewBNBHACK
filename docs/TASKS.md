@@ -41,13 +41,15 @@
   - 로컬 Postgres 실증(샌드박스, 커밋 안 함): `pnpm db:migrate` 2회(멱등) → `pnpm reach`가 `api_calls: 1 rows recorded` → `pnpm dx:metrics --out <scratch>` `1 api_calls rows summarized`.
 - [x] `pnpm reach` 오프라인 부분(G0): 스크립트, 미서명 도달, 키가 없으면 UNAVAILABLE
   - 증거: `scripts/reach.ts`. 출력 `unsigned  GET  /api/v1/dex/market/supported/chain  HTTP 401 code 40101 641 ms "API Key is required" — reached the gateway (expected: signature required)`(2026-09-23 18:16 UTC, 미국 소재 샌드박스, REGION_TAG unset) 다음 줄 `UNAVAILABLE: no API key (BINANCE_WEB3_API_KEY / BINANCE_WEB3_API_SECRET not set) — skipped signed probes: rwa/getRwaTokenList, market/getTokenPrice`, exit 3.
-- [ ] `pnpm reach`: 서명 호출(RWA 토큰 목록, Market 가격 배치) → 지연·코드 출력 — G1(API 키 필요). 가격 배치 body는 문서에 없어 출력에 "UNVERIFIED — DECISIONS V-09"로 표시됨.
+- [x] `pnpm reach`: 서명 호출(RWA 토큰 목록, Market 가격 배치) → 지연·코드 출력
+  - 증거: 2026-09-24 00:17:25 UTC 한국 개발 PC(REGION_TAG=kr-dev) — `signed GET /api/v1/dex/market/rwa/tokens HTTP 200 code 0 186 ms — 488 RWA tokens on BSC (ondo 442, bstock 46)`, `signed POST /api/v1/dex/market/price HTTP 200 code 0 58 ms — 3 prices (SOXSon, CRWDon, PANWon)`. 가격 배치 body 형식은 DECISIONS V-09.
 - [x] 서명 벡터 테스트(커넥터와 동일 서명 생성)
   - 증거: `packages/binance/src/signature-vectors.test.ts` 통과 — `X-OC-SIGN matches the official connector > GET RWA token list with query (getRwaTokenList)`, `> GET aggregated quote with RFQ wallet (getAggregatedQuote)`, `> GET with characters that need encoding (searchRwaToken)`, `> POST JSON body (buildDeFiDepositTransaction)`, `> POST B402 envelope body (getB402SupportedConfigurationsV2)`, `> documents a connector anomaly: GET /order/{orderId} also signs a JSON body`, `pre-hash string from the docs > matches the GET example in llms-full.txt § Authentication › 3.1 (L223)`. 커넥터의 실제 요청 경로(axios 어댑터로 캡처)와 바이트 단위 일치, 고정 벡터 5개는 `openssl dgst -sha256 -hmac`으로도 재현.
-- 수용: 첫 성공 호출의 UTC 시각·지연·시행착오가 `dx/LOG.md`에 기록(서술은 [HUMAN]) — 대기(G1). 첫 미서명 호출은 dx/LOG.md 18:16 항목.
+- 수용: 첫 성공 호출의 UTC 시각·지연·시행착오가 `dx/LOG.md`에 기록(서술은 [HUMAN]) — **확인**: 첫 서명 호출 성공 2026-09-24 00:17:25 UTC, RWA 목록 186 ms·가격 배치 58 ms, 서명·시각 오류 없음(dx/LOG.md 2026-09-24 00:17 항목). 포털·키 발급 시각과 소감은 [HUMAN].
 
 ### M0-04 리전 도달성 결정 · 기준: 기술
 - [ ] `pnpm reach`를 (a) 한국 개발기 (b) 프랑크푸르트 러너 (c) Vercel icn1 함수에서 실행, 결과·코드(40304 여부) 기록
+  - (a) 한국 개발기: 2026-09-24 00:17 UTC 도달 OK(서명 200, 지역 코드 없음) — DECISIONS Q-01. (b)(c) 남음.
 - 수용: DECISIONS D-REGION 확정(웹 리전, 워커 리전, 개발 방식)
 
 ### M0-05 인스트루먼트 인벤토리 · 기준: 기술·창의
