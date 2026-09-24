@@ -1,14 +1,16 @@
 /**
  * Market tape (TASKS M0-08, SPEC §10): every 10 minutes, per registered instrument, the on-chain
- * token price and reference price (RWA price), the market state (RWA list statusInfo plus our own
- * US session tag) and one Trading API quote per size ($5/$50/$500 USDT → token). Read-only: quotes
- * are never swapped. A failed quote is a row with its error code, not a gap.
+ * token price and reference price (RWA price), the independent US stock price (RWA Dynamic V2,
+ * stock-price.ts), the market state (RWA list statusInfo plus our own US session tag) and one
+ * Trading API quote per size ($5/$50/$500 USDT → token). Read-only: quotes are never swapped. A
+ * failed quote or stock price is a row with its error, not a gap.
  */
 import { BinanceApiError, type BinanceClient } from '@ijaro/binance';
 import { BSC_CHAIN_ID, BSC_USDT } from '@ijaro/chain';
 import { toUnits, usSession } from '@ijaro/core';
 import type { InstrumentRow, TapeSampleInsert } from '@ijaro/db';
 import { fetchRwaTokens, type RwaToken } from './registry.js';
+import { fetchStockQuote, stockQuotesByTicker, type StockQuoteResult } from './stock-price.js';
 
 export const TAPE_SIZES_USD = [5, 50, 500] as const;
 export const TAPE_INTERVAL_MS = 10 * 60 * 1000;
@@ -95,6 +97,8 @@ export interface TapeDeps {
   /** Idempotency key (see tapeSlot); defaults to the start time, i.e. a one-off run. */
   slotAt?: Date;
   now?: () => Date;
+  /** Independent stock price source; defaults to the public RWA Dynamic V2 endpoint. */
+  stockQuote?: (contractAddress: string) => Promise<StockQuoteResult>;
 }
 
 /** Start of the 10-minute wall-clock slot containing `at` — the scheduled run's idempotency key. */
@@ -111,6 +115,10 @@ export async function sampleTape(deps: TapeDeps): Promise<TapeSampleInsert[]> {
   let tokens: RwaToken[] = [];
   let prices: RwaPrice[] = [];
   let statusError: string | undefined;
+  const stockQuotes = stockQuotesByTicker(
+    deps.instruments,
+    deps.stockQuote ?? ((address) => fetchStockQuote(address)),
+  );
   try {
     [tokens, prices] = await Promise.all([
       fetchRwaTokens(deps.client),
@@ -123,6 +131,7 @@ export async function sampleTape(deps: TapeDeps): Promise<TapeSampleInsert[]> {
     if (!(error instanceof BinanceApiError)) throw error;
     statusError = `${error.code ?? error.kind}: ${error.msg}`;
   }
+  const stockBy = await stockQuotes;
   const tokenBy = new Map(tokens.map((t) => [key(t.tokenContractAddress), t]));
   const priceBy = new Map(prices.map((p) => [key(p.tokenContractAddress), p]));
 
@@ -130,6 +139,7 @@ export async function sampleTape(deps: TapeDeps): Promise<TapeSampleInsert[]> {
   for (const instrument of deps.instruments) {
     const status = tokenBy.get(key(instrument.address))?.statusInfo;
     const price = priceBy.get(key(instrument.address));
+    const stock = stockBy.get(instrument.ticker);
     for (const sizeUsd of TAPE_SIZES_USD) {
       const outcome = await quoteUsdtTo(
         deps.client,
@@ -147,6 +157,8 @@ export async function sampleTape(deps: TapeDeps): Promise<TapeSampleInsert[]> {
         reasonCode: status?.reasonCode ?? (statusError ? 'UNAVAILABLE' : null),
         tokenPrice: price?.tokenPrice ?? null,
         referencePrice: price?.referencePrice ?? null,
+        stockPrice: stock?.ok ? stock.stockPrice : null,
+        stockPriceError: stock && !stock.ok ? stock.error : null,
         priceUpdatedAt: price?.tokenPriceUpdatedAt
           ? new Date(price.tokenPriceUpdatedAt).toISOString()
           : null,

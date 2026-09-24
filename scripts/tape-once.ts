@@ -26,7 +26,7 @@ try {
         ? `ERR ${r.errorCode} ${maskHouse(r.errorMsg ?? '', rt.redact)}`
         : `out ${r.expectedOut} impact ${r.priceImpactPct}% ${r.vendor}/${r.executionMode} [${r.route}] ${r.latencyMs} ms`;
       console.log(
-        `  ${r.instrumentId.padEnd(13)} $${String(r.sizeUsd).padEnd(3)} ${r.marketStatus ?? '-'}/${r.reasonCode ?? '-'} price ${r.tokenPrice} ref ${r.referencePrice} — ${result}`,
+        `  ${r.instrumentId.padEnd(13)} $${String(r.sizeUsd).padEnd(3)} ${r.marketStatus ?? '-'}/${r.reasonCode ?? '-'} price ${r.tokenPrice} ref ${r.referencePrice} stock ${r.stockPrice ?? (r.stockPriceError ? `ERR ${r.stockPriceError}` : 'null')} — ${result}`,
       );
     }
     console.log(`tape_samples: ${rows.length} rows inserted`);

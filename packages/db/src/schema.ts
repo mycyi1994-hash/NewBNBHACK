@@ -94,6 +94,10 @@ export const tapeSamples = pgTable(
     reasonCode: text('reason_code'),
     tokenPrice: text('token_price'),
     referencePrice: text('reference_price'),
+    /** Independent US stock price per share (RWA Dynamic V2 stockInfo.price); null off-hours. */
+    stockPrice: text('stock_price'),
+    /** Why the stock price call failed, when it did. */
+    stockPriceError: text('stock_price_error'),
     priceUpdatedAt: timestamp('price_updated_at', { withTimezone: true, mode: 'string' }),
     sizeUsd: integer('size_usd').notNull(),
     /** Output token amount in smallest units (quote `toTokenAmount`). */
