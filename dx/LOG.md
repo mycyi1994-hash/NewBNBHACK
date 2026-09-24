@@ -363,3 +363,23 @@
 - 우회: 서버는 fra 한 곳, 한국 PC의 API 호출은 일회성 확인만.
 - 요청: 40303 "frequent location switching or concurrent multi-region access"의 판정 기준(시간창, 요청 수)과, 개발(다른 지역)과 운영에 키를 나눠야 하는지 문서화.
 - 증거: 호스트 `pnpm reach` 출력; Neon `SELECT region, count(*) … FROM api_calls GROUP BY region` → `fra 33`(02:31:55Z); 한국 PC `pnpm reach` 출력(02:33:02Z).
+
+## 2026-09-24 05:21 UTC — [rwa][docs] statusInfo 값 목록과 독립 주가가 Web3 API 문서에 없고 Skills Hub 스킬에만 있음; 실제 `paused` ≠ 문서 `pause`
+- 목표: M1-02 결정 엔진의 ASSET(거래 정지·기업행동)·PRICE(괴리) 규칙을 공식 문서 값으로 고정.
+- 기대: Web3 API RWA 문서(llms-full.txt)에 RWA 목록 `statusInfo`의 `marketStatus`·`reasonCode`·`reasonMsg` 값 목록과, 참조가와 별개인 기초자산 주가 필드가 있음.
+- 실제:
+  - llms-full.txt에서 `reasonCode`·`statusInfo`·`MARKET_PAUSED`·`nextOpenTime`을 검색하면 0건이다.
+  - 값 목록은 Skills Hub `binance-tokenized-securities-info/SKILL.md`(공개 bapi 문서)의 "Reason Codes"·"Corporate Actions" 표에만 있다. 코드는 TRADING, MARKET_CLOSED, MARKET_PAUSED, ASSET_PAUSED(cash_dividend·stock_dividend·stock_split·merger·acquisition·spinoff·maintenance·corporate action), ASSET_LIMITED(earnings), UNSUPPORTED, MARKET_MAINTENANCE다.
+  - 그 표의 `marketStatus` 목록은 `pause`인데, 2026-09-24 00:45 UTC Web3 API RWA 목록의 Ondo 97종은 `marketStatus:"paused"`(reasonCode `MARKET_PAUSED`, reasonMsg "Paused for session transition")였다. 같은 시각 Ondo 81종은 `UNSUPPORTED`, 264종은 `TRADING`이었다. bStocks 46종은 `TRADING`에 `marketStatus:null`이었다.
+  - 참조가와 별개인 US 주가는 같은 스킬의 RWA Dynamic V2 `stockInfo.price`("May be `null` outside trading hours")뿐이다. Web3 API RWA 가격의 `referencePrice`는 토큰가 ÷ 배수로 파생된 값이다(00:55 항목, Q-06).
+- 문서: llms-full.txt(해당 필드 설명 없음); `docs/vendor/binance-skills-hub/skills/binance-web3/binance-tokenized-securities-info/SKILL.md` "Reason Codes", "Corporate Actions", "API 5: RWA Dynamic V2".
+- 잃은 시간: [HUMAN]
+- 우회:
+  - 엔진은 스킬 표의 코드를 쓴다.
+  - 장 판단은 우리 NYSE 달력으로 한다(`packages/core/src/session.ts`).
+  - 가격 괴리는 독립 주가가 있을 때만 잰다(`packages/core/src/decide.ts`, SPEC §5.5 v2).
+- 요청:
+  - Web3 API RWA 문서에 `statusInfo` 값 목록과 발행사별 차이(bStocks는 marketStatus null, 장외에도 TRADING)를 실어 주세요.
+  - 표기(`pause`와 `paused`)를 하나로 통일해 주세요.
+  - 독립 기초자산 가격(`stockInfo.price` 상당)을 Web3 API에서도 제공해 주세요.
+- 증거: `fixtures/rwa/getRwaTokenList-20260924-1.json`(statusInfo 분포 위와 같음); 위 스킬 파일.

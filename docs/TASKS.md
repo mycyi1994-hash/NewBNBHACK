@@ -113,13 +113,16 @@
 ## M1 세로 관통 (9/26 ~ 9/30) — 목표: 메인넷 영수증
 
 ### M1-01 도메인·DB · 기준: 기술
-- [ ] SPEC §4 타입, Drizzle 스키마 11개 테이블, 마이그레이션, 시드(하우스 플랜 2개)
+- [~] SPEC §4 타입, Drizzle 스키마 11개 테이블, 마이그레이션, 시드(하우스 플랜 2개)
+  - 타입 완료(2026-09-24, 클라우드 세션): `packages/core/src/types.ts` — SPEC §4 v2(금액은 소수 문자열, 계산은 18자리 bigint, `FAILED.fundsMoved` none/gas_only, `BOUGHT.interestUsd`). 남음: Drizzle 스키마(v2의 `tx_outbox`·`jobs` 포함)·마이그레이션·시드.
 - 수용: 마이그레이션 왕복, 타입 테스트
 
 ### M1-02 결정 엔진 `decideCycle` · 기준: 기술·창의
-- [ ] 순수 함수: WINDOW/BUDGET/ASSET/PRICE/QUOTE 판단, 결과 `CycleOutcome` + whyKey
-- [ ] 경계 테스트: 창구 경계 시각, 최소주문, 캡, 기업행동 코드, 발행사 폴백, 가격 괴리, 가격영향 축소 재견적
-- 수용: 테스트 ≥ 30, 커버리지 100%(core)
+- [x] 순수 함수: WINDOW/BUDGET/ASSET/PRICE/QUOTE 판단, 결과 `CycleOutcome` + whyKey
+  - 증거: `packages/core/src/decide.ts` `decideCycle(input)` → `not_due` | `done`(DEFERRED/SKIPPED/FAILED + whyKey) | `quote` | `execute`, 부수효과 없음. 규칙은 SPEC §5 v2: 우리 NYSE 달력(`nextRegularOpen`), 공식 스킬의 reason code, 기업행동은 발행사 전환 없이 SKIPPED, 독립 주가가 있을 때만 괴리, Ondo 최소 5.01, 25초 지난 견적 재요청, RFQ 미실행, 가격영향 절반 재견적 2회, 이자 매수는 원금을 상환하지 않음. `boughtOutcome()`이 영수증 수령량으로 BOUGHT와 사유를 만든다.
+- [x] 경계 테스트: 창구 경계 시각, 최소주문, 캡, 기업행동 코드, 발행사 폴백, 가격 괴리, 가격영향 축소 재견적
+  - 증거: `packages/core/src/decide.test.ts` 57개(DUE 4 · GUARDIAN 1 · WINDOW 4 · BUDGET 9 · ASSET 11 · PRICE 4 · QUOTE 12 · BOUGHT 4 · 경계 6) — 모든 whyKey와 파라미터를 UX_COPY §4 표와 대조(`packages/core/test/ux-copy.ts`). 달력 테스트(주말·휴장일·DST).
+- 수용: 테스트 ≥ 30, 커버리지 100%(core) — **확인**(2026-09-24 05:21 UTC): `pnpm coverage:core` → `Statements 100% (243/243)`, `Branches 100% (212/212)`, `Functions 100% (34/34)`, `Lines 100% (211/211)`(임계 100% 강제). 전체 `pnpm test` 18파일 183개 통과(DB 포함).
 
 ### M1-03 HouseWalletExecutor · 기준: 기술
 - [ ] 정확 승인 → Transaction API 시뮬레이션 → viem 서명 → Transaction API 브로드캐스트(RPC 폴백) → 영수증 폴링 → 실수령량 파싱
@@ -143,8 +146,9 @@
 - 수용: 코드별 단위 테스트, 알림 1회 실동작
 
 ### M1-08 홀딩·배수 · 기준: 창의·UX
-- [ ] 영수증마다 multiplier 스냅샷, 변경 감지 이벤트, shares 재계산
-- 수용: 배수 변경 시뮬레이션 테스트
+- [~] 영수증마다 multiplier 스냅샷, 변경 감지 이벤트, shares 재계산
+  - 계산 완료: `packages/core/src/holdings.ts` — `sharesFromTokens`(정확, 내림), `revalueHolding`(배수 변경 감지), `upcomingMultiplierChange`(bStocks `newUIMultiplier`·`effectiveAt` 예정 안내). 남음: 영수증 저장 시 스냅샷·이벤트 연결(M1-03/04 이후).
+- 수용: 배수 변경 시뮬레이션 테스트 — `holdings.test.ts`(분할로 배수 1→10이면 2주 → 20주, balanceOf 불변)
 
 ### M1-09 하우스 플랜 가동 · 기준: 기술
 - [ ] H-SAFE(일 $5, 정규장), H-YIELD(원금 확정액, 주 1회) 9/30부터 연속 가동
