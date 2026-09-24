@@ -17,9 +17,13 @@
     "reach": "tsx scripts/reach.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "dx:metrics": "tsx scripts/dx-metrics.ts",
-    "tape:once": "node scripts/not-yet.mjs tape:once M0-08",
+    "db:count": "tsx scripts/db-count.ts",
+    "tape:once": "tsx scripts/tape-once.ts",
     "cycle:once": "node scripts/not-yet.mjs cycle:once M1-03",
-    "smoke": "node scripts/not-yet.mjs smoke M2-12"
+    "smoke": "node scripts/not-yet.mjs smoke M2-12",
+    "registry": "tsx scripts/registry.ts",
+    "spike:quotes": "tsx scripts/spike-quotes.ts",
+    "spike:venus": "tsx scripts/spike-venus.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

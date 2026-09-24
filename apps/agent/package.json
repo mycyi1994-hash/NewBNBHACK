@@ -13,7 +13,11 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@ijaro/config": "workspace:*"
-  },
-  "devDependencies": {}
+    "@ijaro/binance": "workspace:*",
+    "@ijaro/chain": "workspace:*",
+    "@ijaro/config": "workspace:*",
+    "@ijaro/core": "workspace:*",
+    "@ijaro/db": "workspace:*",
+    "viem": "2.56.8"
+  }
 }

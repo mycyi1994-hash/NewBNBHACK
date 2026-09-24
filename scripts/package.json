@@ -8,9 +8,14 @@
     "test": "vitest run --root .. --project @ijaro/scripts"
   },
   "dependencies": {
+    "@ijaro/agent": "workspace:*",
     "@ijaro/binance": "workspace:*",
+    "@ijaro/chain": "workspace:*",
     "@ijaro/config": "workspace:*",
-    "@ijaro/db": "workspace:*"
+    "@ijaro/core": "workspace:*",
+    "@ijaro/db": "workspace:*",
+    "postgres": "3.4.9",
+    "viem": "2.56.8"
   },
   "devDependencies": {
     "@binance-web3/wallet": "12.3.0",
