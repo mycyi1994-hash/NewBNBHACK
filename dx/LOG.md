@@ -343,3 +343,13 @@
 - 우회: `packages/binance/src/rate-limit.ts` 엔드포인트·DeFi 그룹 제한을 슬라이딩 창(5건 / 1,000 ms + 여유 250 ms)으로, 실제 송신 시각(429 대기 포함)을 기록. 01:54:58Z `pnpm tape:once` → api_calls 29건, 429 0건, 재시도 0건.
 - 요청: 레이트리밋 창 방식과 기준 시각(도착/처리)을 문서에 명시; `X-OC-RateLimit-Reset` 같은 창 리셋 헤더 제공.
 - 증거: api_calls `http_status=429` 44행(00:45:52Z–01:50:08Z); 위 픽스처 헤더; `rate-limit.test.ts` "replays the 2026-09-24 quote burst…", "counts a retry at the time it is sent after a 429 pause".
+
+## 2026-09-24 02:11 UTC — [chain][edge] 정정: 00:49 항목의 Venus APY 차이는 우리 블록 간격 가정 오류
+- 목표: 00:49 항목의 "온체인 환산 연 1.89% vs API `apyBps 316`(3.16%)" 차이 원인 확인.
+- 기대: 0.75초 블록(연 42,048,000블록)으로 `supplyRatePerBlock`을 환산하면 API APY와 같다.
+- 실제: BSC 블록 간격 실측 0.45015초 — 블록 123654005(2026-09-23T23:35:40Z) → 123674005(2026-09-24T02:05:43Z), 20,000블록에 9,003초(`eth_getBlockByNumber`, bsc-dataseed.bnbchain.org). 연 70,056,648블록으로 `supplyRatePerBlock 445461184`를 블록당 복리하면 3.170% ≈ API 3.16%. 1.27%p 차이는 우리 가정(0.75초) 탓이고 API 문제가 아님. 기본 공급 이자만으로 맞으므로 `apyBps`에 XVS 보상은 없거나 0.
+- 문서: 해당 없음(블록 간격은 체인 파라미터). DeFi API 문서에 `apyBps` 구성 설명이 없는 점은 그대로.
+- 잃은 시간: [HUMAN]
+- 우회: 해당 없음. `packages/core` `supplyApyFromRatePerBlock`는 연 블록 수를 인자로 받으므로 호출하는 쪽이 실측값을 넘긴다.
+- 요청: 00:49 항목의 "APY 구성(기본 이자 vs 보상) 명시"는 차이라는 근거가 사라져 우선순위를 낮춤(구성 명시 자체는 여전히 유용).
+- 증거: 위 두 블록의 번호·타임스탬프; DECISIONS Q-12.
