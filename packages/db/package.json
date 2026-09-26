@@ -9,10 +9,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --root ../.. --project @ijaro/db",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:generate:check": "drizzle-kit check"
   },
   "dependencies": {
     "@ijaro/binance": "workspace:*",
+    "@ijaro/core": "workspace:*",
     "drizzle-orm": "0.45.3",
     "postgres": "3.4.9"
   },

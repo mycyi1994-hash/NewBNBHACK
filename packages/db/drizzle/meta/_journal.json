@@ -29,6 +29,13 @@
       "when": 1790227470711,
       "tag": "0003_tape_stock_price",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790444211574,
+      "tag": "0004_m1_core",
+      "breakpoints": true
     }
   ]
 }

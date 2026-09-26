@@ -1,19 +1,21 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { ApiCallRecord, ApiCallSink, ApiModule } from '@ijaro/binance';
 import { asc, desc, eq, getTableColumns, gte, sql as rawSql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import { apiCalls, instruments, tapeSamples } from './schema.js';
 
-export { apiCalls, instruments, tapeSamples };
+export * from './auth.js';
+export * from './ledger.js';
+export * from './mappers.js';
+export * from './migrations.js';
+export * from './plans.js';
+export * from './queue.js';
+export * from './schema.js';
+export * from './seed.js';
 
 export type InstrumentRow = typeof instruments.$inferSelect;
 export type TapeSampleInsert = typeof tapeSamples.$inferInsert;
 export type TapeSampleRow = typeof tapeSamples.$inferSelect;
-
-const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'drizzle');
 
 /**
  * libpq-only URL parameters. postgres.js forwards unknown URL parameters to the server as settings,
@@ -40,10 +42,6 @@ export function createDb(databaseUrl: string) {
 }
 
 export type Db = ReturnType<typeof createDb>['db'];
-
-export async function migrateDb(db: Db): Promise<void> {
-  await migrate(db, { migrationsFolder: MIGRATIONS });
-}
 
 export async function insertApiCall(db: Db, record: ApiCallRecord): Promise<void> {
   await db.insert(apiCalls).values(record);

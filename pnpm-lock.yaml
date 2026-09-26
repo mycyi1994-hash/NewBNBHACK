@@ -135,6 +135,9 @@ importers:
       '@ijaro/binance':
         specifier: workspace:*
         version: link:../binance
+      '@ijaro/core':
+        specifier: workspace:*
+        version: link:../core
       drizzle-orm:
         specifier: 0.45.3
         version: 0.45.3(postgres@3.4.9)

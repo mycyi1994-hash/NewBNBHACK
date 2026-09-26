@@ -113,9 +113,13 @@
 ## M1 세로 관통 (9/26 ~ 9/30) — 목표: 메인넷 영수증
 
 ### M1-01 도메인·DB · 기준: 기술
-- [~] SPEC §4 타입, Drizzle 스키마 11개 테이블, 마이그레이션, 시드(하우스 플랜 2개)
-  - 타입 완료(2026-09-24, 클라우드 세션): `packages/core/src/types.ts` — SPEC §4 v2(금액은 소수 문자열, 계산은 18자리 bigint, `FAILED.fundsMoved` none/gas_only, `BOUGHT.interestUsd`). 남음: Drizzle 스키마(v2의 `tx_outbox`·`jobs` 포함)·마이그레이션·시드.
-- 수용: 마이그레이션 왕복, 타입 테스트
+- [x] SPEC §4 타입, Drizzle 스키마 11개 테이블, 마이그레이션, 시드(하우스 플랜 2개)
+  - 타입 완료(2026-09-24, 클라우드 세션): `packages/core/src/types.ts` — SPEC §4 v2(금액은 소수 문자열, 계산은 18자리 bigint, `FAILED.fundsMoved` none/gas_only, `BOUGHT.interestUsd`).
+  - 스키마 완료(2026-09-26, 클라우드 세션): `packages/db/src/schema.ts` 13개 테이블(SPEC §4의 11개 + v2 `tx_outbox`·`jobs`), 마이그레이션 `packages/db/drizzle/0004_m1_core.sql`. 금액은 numeric(38,18) 문자열. FK 10개(연쇄 삭제 없음 — 영수증은 플랜과 함께 지워지지 않음), CHECK 17개(상태·종류 값, 금액 ≥ 0, 일 한도 ≥ 1회 한도, **원금 0인 yield 플랜은 active 불가** — D-16).
+  - 헬퍼: `plans.ts`(플랜 락 `lock_until` 조건부 UPDATE, 사이클 멱등 `(plan_id, due_at)`, 영수증 tx 해시 1회), `ledger.ts`(캡 예약: advisory lock + 한 트랜잭션에서 전 캡 검사 후 삽입, 전역 일일·플랜 일일·심사 코드 총액), `queue.ts`(jobs `FOR UPDATE SKIP LOCKED`, tx_outbox 발신자별 nonce 유일), `auth.ts`(심사 코드·스킬 토큰은 SHA-256만 저장), `mappers.ts`(행 → core 타입, 모르는 값은 예외).
+  - 시드: `pnpm db:seed` — H-SAFE(NVDA safe $5 daily regular_session, 1회·일 $5), H-YIELD(QQQ yield weekly regular_session, 1회·일 $5), 발행사 `['bstocks','ondo']`, 둘 다 `paused(awaiting_funding)`, 원금은 예치 영수증에서 기록(D-16). 기존 플랜은 덮어쓰지 않음. `JUDGE_CODES` 해시 동기화. 실행 출력(스크래치 DB): `house plans: created [H-SAFE, H-YIELD], kept [] (new plans paused: awaiting_funding, first due 2026-09-28T13:32:00.000Z)` → 재실행 `created [], kept [H-SAFE, H-YIELD]`.
+  - 되돌리기: drizzle-kit은 up만 만들므로 `packages/db/drizzle-down/<tag>.sql` 5개를 손으로 쓰고 `rollbackMigration`(최신 1개만, 역 SQL + 기록 삭제를 한 트랜잭션)과 `pnpm db:rollback <tag> --yes`(없으면 거부)를 추가.
+- 수용: 마이그레이션 왕복, 타입 테스트 — **확인**(2026-09-26 17:44 UTC, 새 DB): `src/migrations.test.ts` 전용 임시 DB에서 up → down 5개(최신부터) → up, 열·제약·인덱스 스냅샷이 동일. 행 → 도메인 타입 테스트 `src/mappers.test.ts`. DB 테스트 39개(캡 동시 예약 10건 중 정확히 2건만 통과 — advisory lock을 지우면 3회 모두 실패하는 것을 확인, 락 5명 동시 획득 시 1명, 잡 동시 청구 시 중복 없음, nonce 중복 거부, CHECK 위반 거부). 전체 `pnpm test` 25파일 222개 통과, `pnpm typecheck`·`pnpm lint` 통과, core 커버리지 100%.
 
 ### M1-02 결정 엔진 `decideCycle` · 기준: 기술·창의
 - [x] 순수 함수: WINDOW/BUDGET/ASSET/PRICE/QUOTE 판단, 결과 `CycleOutcome` + whyKey

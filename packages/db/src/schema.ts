@@ -1,18 +1,35 @@
 /**
- * Drizzle schema. M0 ships `api_calls` (SPEC §3.1 item 2, §10), `instruments` (M0-05) and
- * `tape_samples` (M0-08); the other tables of SPEC §4
- * arrive with M1-01.
+ * Drizzle schema. M0: `api_calls` (SPEC §3.1 item 2, §10), `instruments` (M0-05), `tape_samples`
+ * (M0-08). M1-01: the plan and execution tables of SPEC §4 v2 — plans, cycles, receipts,
+ * holdings, spend_ledger, guardian_events, judge_codes, skill_tokens, tx_outbox and jobs.
+ * USD amounts are numeric(38,18) read as strings: no floats touch money. Foreign keys never cascade
+ * (receipts are never deleted with their plan) and CHECK constraints back the money rules in code.
  */
+import { sql } from 'drizzle-orm';
 import {
+  bigint,
   bigserial,
   boolean,
+  check,
+  date,
   index,
   integer,
+  jsonb,
+  numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+
+const usd = (name: string) => numeric(name, { precision: 38, scale: 18 });
+const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'string' });
+const cycleRef = (name: string) => bigint(name, { mode: 'number' });
+
+/** `column in ('a', 'b')` for a CHECK constraint (values are literals written here, never input). */
+const oneOf = (column: string, values: readonly string[]) =>
+  sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
 
 /** One row per HTTP attempt to the Binance Web3 API, written by the client's onApiCall hook. */
 export const apiCalls = pgTable(
@@ -114,5 +131,295 @@ export const tapeSamples = pgTable(
     index('tape_samples_sampled_at_idx').on(table.sampledAt),
     index('tape_samples_instrument_idx').on(table.instrumentId, table.sampledAt),
     uniqueIndex('tape_samples_slot_uq').on(table.slotAt, table.instrumentId, table.sizeUsd),
+  ],
+);
+
+/**
+ * Plans (SPEC §4 `Plan`). House plans are seeded (`pnpm db:seed`); judge and skill plans are created
+ * by the web API. `lock_until` is the scheduler's per-plan lock, `next_due_at` its clock.
+ */
+export const plans = pgTable(
+  'plans',
+  {
+    id: text('id').primaryKey(),
+    /** 'house' | 'judge' | 'skill'. */
+    ownerKind: text('owner_kind').notNull(),
+    /** judge_codes.code_hash or skill_tokens.id; null for house plans. */
+    ownerRef: text('owner_ref'),
+    /** Skill plans: the user's own wallet (their assistant signs); null = the house wallet. */
+    walletAddress: text('wallet_address'),
+    /** 'safe' | 'yield'. */
+    mode: text('mode').notNull(),
+    /** Ticker plans only for now (sector targets are not implemented). */
+    ticker: text('ticker').notNull(),
+    issuerPreference: text('issuer_preference').array().notNull(),
+    principalUsd: usd('principal_usd').notNull().default('0'),
+    contributionUsd: usd('contribution_usd').notNull().default('0'),
+    /** Interest redeemed from Venus but not yet spent (SPEC §5.3 v2). */
+    harvestedUnspentUsd: usd('harvested_unspent_usd').notNull().default('0'),
+    /** 'weekly' | 'daily' | 'once'. */
+    cadence: text('cadence').notNull(),
+    /** 'regular_session' | 'anytime'. */
+    window: text('window').notNull(),
+    maxPerBuyUsd: usd('max_per_buy_usd').notNull(),
+    maxDailyUsd: usd('max_daily_usd').notNull(),
+    /** 'active' | 'paused' | 'stopped'. */
+    status: text('status').notNull().default('active'),
+    pausedReason: text('paused_reason'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    nextDueAt: at('next_due_at').notNull(),
+    expiresAt: at('expires_at'),
+    lockUntil: at('lock_until'),
+  },
+  (table) => [
+    index('plans_due_idx').on(table.status, table.nextDueAt),
+    index('plans_owner_idx').on(table.ownerKind, table.ownerRef),
+    check('plans_owner_kind_ck', oneOf('owner_kind', ['house', 'judge', 'skill'])),
+    check('plans_mode_ck', oneOf('mode', ['safe', 'yield'])),
+    check('plans_status_ck', oneOf('status', ['active', 'paused', 'stopped'])),
+    check(
+      'plans_amounts_ck',
+      sql`principal_usd >= 0 and contribution_usd >= 0 and harvested_unspent_usd >= 0 and max_per_buy_usd > 0 and max_daily_usd >= max_per_buy_usd`,
+    ),
+    // With no principal on record, a yield plan would count the whole deposit as interest.
+    check(
+      'plans_yield_principal_ck',
+      sql`mode <> 'yield' or status <> 'active' or principal_usd > 0`,
+    ),
+  ],
+);
+
+/**
+ * One row per plan cycle, idempotent on (plan_id, due_at). `state` is the worker's progress;
+ * `outcome_kind` the SPEC §4 CycleOutcome once decided. A broadcast awaiting confirmation keeps
+ * the cycle in 'awaiting_tx' (tx_outbox PENDING), never FAILED.
+ */
+export const cycles = pgTable(
+  'cycles',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    planId: text('plan_id')
+      .notNull()
+      .references(() => plans.id),
+    dueAt: at('due_at').notNull(),
+    startedAt: at('started_at').notNull().defaultNow(),
+    finishedAt: at('finished_at'),
+    /** 'running' | 'awaiting_tx' | 'done'. */
+    state: text('state').notNull().default('running'),
+    /** 'BOUGHT' | 'DEFERRED' | 'SKIPPED' | 'FAILED'. */
+    outcomeKind: text('outcome_kind'),
+    outcome: jsonb('outcome'),
+    whyKey: text('why_key'),
+    whyParams: jsonb('why_params'),
+    /** Step log: decisions, quotes, simulations (no keys, addresses masked in UI). */
+    steps: jsonb('steps')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    instrumentId: text('instrument_id'),
+    spendUsd: usd('spend_usd'),
+    interestUsd: usd('interest_usd'),
+    retryAt: at('retry_at'),
+    /** 'simulate' | 'live': the execution mode the cycle ran under. */
+    executionMode: text('execution_mode').notNull(),
+  },
+  (table) => [
+    uniqueIndex('cycles_plan_due_uq').on(table.planId, table.dueAt),
+    index('cycles_plan_started_idx').on(table.planId, table.startedAt),
+    check('cycles_state_ck', oneOf('state', ['running', 'awaiting_tx', 'done'])),
+    check(
+      'cycles_outcome_kind_ck',
+      oneOf('outcome_kind', ['BOUGHT', 'DEFERRED', 'SKIPPED', 'FAILED']),
+    ),
+    check('cycles_execution_mode_ck', oneOf('execution_mode', ['simulate', 'live'])),
+  ],
+);
+
+/** On-chain receipts (SPEC §4 `Receipt`), one per confirmed transaction. */
+export const receipts = pgTable(
+  'receipts',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    cycleId: cycleRef('cycle_id').references(() => cycles.id),
+    planId: text('plan_id')
+      .notNull()
+      .references(() => plans.id),
+    /** 'approve' | 'swap' | 'deposit' | 'redeem'. */
+    kind: text('kind').notNull(),
+    txHash: text('tx_hash').notNull(),
+    explorerUrl: text('explorer_url').notNull(),
+    chainId: integer('chain_id').notNull(),
+    /** e.g. { spendUsd, tokens, shares, instrumentId }. */
+    amounts: jsonb('amounts').notNull(),
+    /** 'transaction_api' | 'rpc' | 'user_wallet' (skill plans report their own tx). */
+    broadcastVia: text('broadcast_via').notNull(),
+    simulatedAt: at('simulated_at'),
+    blockNumber: text('block_number'),
+    /** 'success' | 'failed' (status 0 on chain). */
+    status: text('status').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('receipts_tx_uq').on(table.txHash),
+    index('receipts_plan_idx').on(table.planId, table.createdAt),
+    check('receipts_kind_ck', oneOf('kind', ['approve', 'swap', 'deposit', 'redeem'])),
+    check('receipts_status_ck', oneOf('status', ['success', 'failed'])),
+  ],
+);
+
+/** Shares held per plan and instrument (SPEC §5.9): tokens × multiplier, snapshot per update. */
+export const holdings = pgTable(
+  'holdings',
+  {
+    planId: text('plan_id')
+      .notNull()
+      .references(() => plans.id),
+    instrumentId: text('instrument_id').notNull(),
+    /** Token base units (integer string). */
+    tokens: text('tokens').notNull(),
+    decimals: integer('decimals').notNull(),
+    multiplierAtLastUpdate: text('multiplier_at_last_update').notNull(),
+    shares: text('shares').notNull(),
+    costUsd: usd('cost_usd').notNull(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.planId, table.instrumentId] })],
+);
+
+/**
+ * The single source for daily caps (SPEC §4, UTC day). A cycle reserves its spend in the same
+ * transaction that records the decision; confirmation marks it spent, failure releases it.
+ */
+export const spendLedger = pgTable(
+  'spend_ledger',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    planId: text('plan_id')
+      .notNull()
+      .references(() => plans.id),
+    cycleId: cycleRef('cycle_id').references(() => cycles.id),
+    /** 'house' | 'judge' | 'skill' — which cap bucket the spend counts against. */
+    ownerKind: text('owner_kind').notNull(),
+    day: date('day', { mode: 'string' }).notNull(),
+    amountUsd: usd('amount_usd').notNull(),
+    /** 'reserved' | 'spent' | 'released'. */
+    status: text('status').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('spend_ledger_day_idx').on(table.day, table.status),
+    uniqueIndex('spend_ledger_cycle_uq').on(table.cycleId),
+    check('spend_ledger_status_ck', oneOf('status', ['reserved', 'spent', 'released'])),
+    check('spend_ledger_amount_ck', sql`amount_usd >= 0`),
+  ],
+);
+
+/** Guardian rule firings (SPEC §6), shown on the plan page and the Watch screen. */
+export const guardianEvents = pgTable(
+  'guardian_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    ts: at('ts').notNull().defaultNow(),
+    rule: text('rule').notNull(),
+    /** 'warn' | 'pause_buys' | 'redeem_all'. */
+    action: text('action').notNull(),
+    detail: jsonb('detail').notNull(),
+    planId: text('plan_id').references(() => plans.id),
+    resolvedAt: at('resolved_at'),
+  },
+  (table) => [
+    index('guardian_events_ts_idx').on(table.ts),
+    check('guardian_events_action_ck', oneOf('action', ['warn', 'pause_buys', 'redeem_all'])),
+  ],
+);
+
+/** Judge codes, stored as SHA-256 hashes of the codes given in JUDGE_CODES. */
+export const judgeCodes = pgTable('judge_codes', {
+  codeHash: text('code_hash').primaryKey(),
+  /** Shown in logs instead of the code, e.g. the first 4 hex of the hash. */
+  label: text('label').notNull(),
+  disabled: boolean('disabled').notNull().default(false),
+  createdAt: at('created_at').notNull().defaultNow(),
+});
+
+/** Skill (mode C) bearer tokens: only the SHA-256 hash is stored. */
+export const skillTokens = pgTable(
+  'skill_tokens',
+  {
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull(),
+    /** The user's wallet; the server never holds its keys or session (SPEC §14). */
+    walletAddress: text('wallet_address').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+    lastUsedAt: at('last_used_at'),
+    revokedAt: at('revoked_at'),
+  },
+  (table) => [uniqueIndex('skill_tokens_hash_uq').on(table.tokenHash)],
+);
+
+/**
+ * Signed transactions, written before broadcast (SPEC §5.8 v2). A worker that restarts reconciles
+ * SIGNED and PENDING rows against the chain before opening new cycles, so a buy is never sent twice.
+ */
+export const txOutbox = pgTable(
+  'tx_outbox',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    planId: text('plan_id')
+      .notNull()
+      .references(() => plans.id),
+    cycleId: cycleRef('cycle_id').references(() => cycles.id),
+    /** 'approve' | 'swap' | 'deposit' | 'redeem'. */
+    kind: text('kind').notNull(),
+    chainId: integer('chain_id').notNull(),
+    fromAddress: text('from_address').notNull(),
+    nonce: integer('nonce').notNull(),
+    rawTx: text('raw_tx').notNull(),
+    txHash: text('tx_hash').notNull(),
+    /** 'SIGNED' | 'PENDING' | 'CONFIRMED' | 'FAILED'. */
+    status: text('status').notNull(),
+    broadcastVia: text('broadcast_via'),
+    attempts: integer('attempts').notNull().default(0),
+    error: text('error'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('tx_outbox_nonce_uq').on(table.chainId, table.fromAddress, table.nonce),
+    uniqueIndex('tx_outbox_hash_uq').on(table.txHash),
+    index('tx_outbox_status_idx').on(table.status),
+    check('tx_outbox_status_ck', oneOf('status', ['SIGNED', 'PENDING', 'CONFIRMED', 'FAILED'])),
+    check('tx_outbox_kind_ck', oneOf('kind', ['approve', 'swap', 'deposit', 'redeem'])),
+  ],
+);
+
+/**
+ * Work the web asks the worker to do (SPEC §5 v2: the web never signs). Kinds: 'preview' (quote +
+ * simulation in plain words), 'run' (one cycle now), 'stop' (pause, and redeem for yield plans).
+ */
+export const jobs = pgTable(
+  'jobs',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    planId: text('plan_id')
+      .notNull()
+      .references(() => plans.id),
+    payload: jsonb('payload')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    /** 'queued' | 'running' | 'done' | 'failed'. */
+    status: text('status').notNull().default('queued'),
+    result: jsonb('result'),
+    error: text('error'),
+    attempts: integer('attempts').notNull().default(0),
+    createdAt: at('created_at').notNull().defaultNow(),
+    startedAt: at('started_at'),
+    finishedAt: at('finished_at'),
+  },
+  (table) => [
+    index('jobs_status_idx').on(table.status, table.createdAt),
+    check('jobs_kind_ck', oneOf('kind', ['preview', 'run', 'stop'])),
+    check('jobs_status_ck', oneOf('status', ['queued', 'running', 'done', 'failed'])),
   ],
 );

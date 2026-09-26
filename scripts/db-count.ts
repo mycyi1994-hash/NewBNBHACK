@@ -1,14 +1,28 @@
 /**
  * pnpm db:count [table…] — read-only row counts (evidence for TASKS acceptance: "SELECT count").
- * Prints the exact SQL it runs. Default tables: api_calls, instruments, tape_samples.
+ * Prints the exact SQL it runs. Default tables: api_calls, instruments, tape_samples; the M1 tables
+ * (plans, cycles, receipts, …) on request.
  */
 import { loadConfig } from '@ijaro/config';
 import { postgresUrl } from '@ijaro/db';
 import postgres from 'postgres';
 
-const ALLOWED = ['api_calls', 'instruments', 'tape_samples'] as const;
+const DEFAULT = ['api_calls', 'instruments', 'tape_samples'] as const;
+const ALLOWED = [
+  ...DEFAULT,
+  'plans',
+  'cycles',
+  'receipts',
+  'holdings',
+  'spend_ledger',
+  'guardian_events',
+  'judge_codes',
+  'skill_tokens',
+  'tx_outbox',
+  'jobs',
+] as const;
 const requested = process.argv.slice(2).filter((a) => a !== '--');
-const tables = requested.length > 0 ? requested : [...ALLOWED];
+const tables = requested.length > 0 ? requested : [...DEFAULT];
 
 const config = loadConfig();
 if (!config.databaseUrl) {

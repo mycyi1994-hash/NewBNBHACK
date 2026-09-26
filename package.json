@@ -16,6 +16,8 @@
     "endpoints": "tsx scripts/gen-endpoints.ts",
     "reach": "tsx scripts/reach.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:rollback": "tsx scripts/db-rollback.ts",
+    "db:seed": "tsx scripts/db-seed.ts",
     "dx:metrics": "tsx scripts/dx-metrics.ts",
     "db:count": "tsx scripts/db-count.ts",
     "tape:once": "tsx scripts/tape-once.ts",
