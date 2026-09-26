@@ -122,6 +122,8 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
       ticker: instrument.ticker,
       issuer: 'bstocks',
       symbol: instrument.symbol,
+      address: instrument.address,
+      multiplier: instrument.multiplier,
       reasonCode: 'TRADING',
       reasonMsg: null,
       // 225.175 per token ÷ 1.000778… tokens per share, against the US price of 225: a gap of

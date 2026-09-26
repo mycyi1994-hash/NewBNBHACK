@@ -10,6 +10,7 @@ import {
   insertGuardianEvent,
   insertGuardianSample,
   isoTime,
+  latestGuardianSamples,
   openGuardianActions,
   resolveGuardianEvents,
   sampleNear,
@@ -57,6 +58,27 @@ describe.skipIf(!url)('guardian history on Postgres', () => {
     expect(since && isoTime(since)).toBe('2001-02-01T10:05:00.000Z');
     await insertGuardianSample(db, { ts: '2001-02-01T10:15:00Z', metric, value: '0.995', source });
     expect(await belowSince(db, metric, source, '0.99')).toBeUndefined();
+  });
+
+  it('reads the newest sample of each metric, trimmed', async () => {
+    // Far-future timestamps make these the newest rows whatever else the table holds.
+    await insertGuardianSample(db, {
+      ts: '2999-01-01T00:00:00Z',
+      metric: 'venus_security_score',
+      value: '90',
+      source,
+    });
+    await insertGuardianSample(db, {
+      ts: '2999-01-02T00:00:00Z',
+      metric: 'venus_security_score',
+      value: '93.1',
+      source,
+    });
+    expect((await latestGuardianSamples(db)).venus_security_score).toEqual({
+      value: '93.1',
+      ts: '2999-01-02T00:00:00.000Z',
+      source,
+    });
   });
 
   it('lists open verdicts until the rule resolves', async () => {

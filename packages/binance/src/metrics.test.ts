@@ -151,5 +151,7 @@ describe('summarizeCalls', () => {
       ['fra', 2],
       ['unset', 1],
     ]);
+    // Percentiles are taken over every call, not averaged from the groups.
+    expect(summary.total).toEqual({ calls: 3, errors: 2, p50Ms: 300, p95Ms: 15000 });
   });
 });

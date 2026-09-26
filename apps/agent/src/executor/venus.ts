@@ -33,6 +33,8 @@ export interface VenusMarket {
   investmentId: string;
   /** vUSDT, verified on chain: underlying() is BSC USDT. */
   vToken: Hex;
+  /** The supply APY the DeFi API listed at discovery, in basis points (UX_COPY §5 {apy}). */
+  apyBps?: number;
 }
 
 /** Gas estimates get a margin; the bound in signableTx still applies. */
@@ -80,7 +82,11 @@ export async function discoverVenusUsdt(
   if (!isAddressEqual(underlying as Hex, BSC_USDT)) {
     throw new Error(`${vToken} underlying() is ${underlying}, not USDT`);
   }
-  return { investmentId: usdt.investmentId, vToken };
+  return {
+    investmentId: usdt.investmentId,
+    vToken,
+    ...(typeof usdt.apyBps === 'number' ? { apyBps: usdt.apyBps } : {}),
+  };
 }
 
 /** The USD value of `vTokens` at the current exchange rate (18-decimal string). */

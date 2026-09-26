@@ -64,6 +64,14 @@ function usageQuery(scope: SpendScope) {
     where status in ('reserved', 'spent')`;
 }
 
+/** What `planId` has reserved or spent on `day` (the "오늘 사용" figure). */
+export async function planSpendOnDay(db: Db, planId: string, day: string): Promise<string> {
+  const rows = await db.execute<{ used: string }>(sql`
+    select coalesce(sum(amount_usd), 0)::text as used from spend_ledger
+    where plan_id = ${planId} and day = ${day} and status in ('reserved', 'spent')`);
+  return rows[0]?.used ?? '0';
+}
+
 /** What the plan may still spend today: the tightest remaining cap, never below zero. */
 export async function remainingSpend(db: Db, scope: SpendScope): Promise<string> {
   const judgeCap = scope.ownerKind === 'judge' ? scope.caps.judgeTotalUsd : undefined;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { newYorkTimeOn, nextRegularOpen, usSession } from './session.js';
+import { newYorkTimeOn, nextRegularOpen, regularClose, usSession } from './session.js';
 
 const at = (iso: string) => usSession(new Date(iso));
 
@@ -69,5 +69,21 @@ describe('nextRegularOpen — search limit', () => {
     expect(() => nextRegularOpen(new Date('2026-09-26T15:00:00Z'), 1)).toThrow(
       /no NYSE session within 1 days/,
     );
+  });
+});
+
+describe('regularClose', () => {
+  it('is 16:00 ET during a normal session and 13:00 ET on an early close', () => {
+    expect(regularClose(new Date('2026-09-28T14:00:00Z'))?.toISOString()).toBe(
+      '2026-09-28T20:00:00.000Z',
+    );
+    expect(regularClose(new Date('2026-11-27T15:00:00Z'))?.toISOString()).toBe(
+      '2026-11-27T18:00:00.000Z',
+    );
+  });
+
+  it('is null outside the regular session', () => {
+    expect(regularClose(new Date('2026-09-28T12:00:00Z'))).toBeNull(); // pre-market
+    expect(regularClose(new Date('2026-09-26T15:00:00Z'))).toBeNull(); // Saturday
   });
 });

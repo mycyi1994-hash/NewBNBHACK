@@ -135,7 +135,11 @@ export async function createWorld(
         time: clock.now(),
       },
     ],
-    '/api/v1/defi/data/protocol/detail': () => ({ defiProtocolId: 'venus', tvl: market.venusTvl }),
+    '/api/v1/defi/data/protocol/detail': () => ({
+      defiProtocolId: 'venus',
+      tvl: market.venusTvl,
+      securityScore: '93.1',
+    }),
     '/api/v1/dex/aggregator/quote': (u) => [
       {
         quoteId: `q-${clock.now()}`,

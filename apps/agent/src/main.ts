@@ -1,6 +1,7 @@
 /**
- * Long-running worker (SPEC §5, §13): the tape recorder (M0-08, every 10 min) and the scheduler
- * tick (M1-06, every 5 min: outbox, awaiting cycles, guardian, web jobs, due plans).
+ * Long-running worker (SPEC §5, §13): the tape recorder (M0-08, every 10 min), the scheduler
+ * tick (M1-06, every 5 min: outbox, awaiting cycles, guardian, web jobs, due plans) and a web-job
+ * poll every 3 s between ticks (one at a time with the tick: one signer, one nonce sequence).
  *
  * EXECUTION_MODE=simulate (the default) signs nothing. With EXECUTION_MODE=live the worker is the
  * one signer (SPEC §5 v2) and spends only for plans that are active — house plans are seeded
@@ -24,10 +25,12 @@ import type { CycleDeps } from './cycle.js';
 import { discoverVenusUsdt } from './executor/venus.js';
 import { refreshRegistry } from './registry.js';
 import { createRuntime, executorDeps } from './runtime.js';
-import { schedulerTick, TICK_MS } from './scheduler.js';
+import { JOB_POLL_MS, processJobs, schedulerTick, TICK_MS } from './scheduler.js';
 import { msUntilNextSlot, sampleTape, tapeSlot } from './tape.js';
 
 const REGISTRY_REFRESH_MS = 24 * 60 * 60 * 1000;
+/** The listed Venus APY changes daily; the risk disclosure shows it with its age. */
+const VENUS_REFRESH_MS = 6 * 60 * 60 * 1000;
 
 const config = loadConfig();
 console.log(`agent: configuration valid — ${JSON.stringify(describeConfig(config))}`);
@@ -38,9 +41,9 @@ await assertUsdt(rt.bsc);
 
 // The scheduler needs the house address; without it the worker only records the tape.
 let cycleDeps: { deps: CycleDeps; simulate: CycleDeps } | undefined;
-if (rt.houseAddress) {
-  const deps = executorDeps(rt, config.executionMode);
-  const simulate = config.executionMode === 'live' ? executorDeps(rt, 'simulate') : deps;
+
+/** Finds and verifies the Venus USDT market (and its listed APY) for the scheduler and the web. */
+async function venusTick(deps: CycleDeps, simulate: CycleDeps) {
   try {
     deps.venus = simulate.venus = await discoverVenusUsdt(simulate);
     await writeWorkerStatus(rt.database.db, 'venus', {
@@ -52,6 +55,13 @@ if (rt.houseAddress) {
       `agent: Venus market UNAVAILABLE (${error instanceof Error ? error.message : String(error)}) — yield plans and the Venus guardian rules wait`,
     );
   }
+}
+
+if (rt.houseAddress) {
+  const deps = executorDeps(rt, config.executionMode);
+  const simulate = config.executionMode === 'live' ? executorDeps(rt, 'simulate') : deps;
+  await venusTick(deps, simulate);
+  setInterval(() => void venusTick(deps, simulate), VENUS_REFRESH_MS);
   cycleDeps = { deps, simulate };
   const active = (await listPlans(rt.database.db))
     .filter((p) => p.status === 'active')
@@ -82,6 +92,25 @@ async function tick() {
     }
   } catch (error) {
     console.log(`tick: FAILED — ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    ticking = false;
+  }
+}
+
+/** Web jobs between ticks (Judge Mode waits seconds, not minutes); never alongside a tick. */
+async function jobsPoll() {
+  if (!cycleDeps || ticking) return;
+  ticking = true;
+  try {
+    const { jobs, errors } = await processJobs(cycleDeps.deps, cycleDeps.simulate);
+    if (jobs.length) {
+      console.log(
+        `jobs: ${jobs.map((j) => `${j.kind}:${j.status}`).join(', ')}` +
+          (errors.length ? ` errors: ${errors.join('; ')}` : ''),
+      );
+    }
+  } catch (error) {
+    console.log(`jobs: FAILED — ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     ticking = false;
   }
@@ -155,7 +184,10 @@ await registryTick();
 setInterval(() => void registryTick(), REGISTRY_REFRESH_MS);
 await tick();
 setInterval(() => void tick(), TICK_MS);
-console.log(`agent: scheduler registered (every ${TICK_MS / 60_000} min)`);
+setInterval(() => void jobsPoll(), JOB_POLL_MS);
+console.log(
+  `agent: scheduler registered (every ${TICK_MS / 60_000} min; web jobs every ${JOB_POLL_MS / 1000} s)`,
+);
 console.log('agent: tape job registered (every 10 min, keyed by slot); running current slot now');
 await tapeTick();
 schedule();

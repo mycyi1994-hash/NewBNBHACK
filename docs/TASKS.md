@@ -210,23 +210,42 @@
 ## M2 제품화 (10/1 ~ 10/4) — 목표: 심사위원 3분 완주
 
 ### M2-01 Watch 홈 · 기준: UX·기술
-- [ ] 하우스 카드 2개, 영수증 피드(사유+링크), 장 상태 배지, LIVE/STALE/UNAVAILABLE, CTA 2개
+- [x] 하우스 카드 2개, 영수증 피드(사유+링크), 장 상태 배지, LIVE/STALE/UNAVAILABLE, CTA 2개
+  - 코드(9/26): `apps/web/app/page.tsx` — 히어로(제목·부제·CTA 2개) + 이자 카운터(하우스 이자 플랜의 vToken을 체인에서 읽은 값, 15초마다 다시 읽음 — 외삽 없음, `components/home/InterestCounter.tsx`), 하우스 카드 2개(원금·이자·모은 주식·다음 매수·오늘 한도·영수증 수·마지막 사유), 영수증 피드(사유 한 줄 + BscScan), 장외 괴리 인사이트(테이프 7일), 종목 카드(발행사·Ondo 최소 $5.01), 믿을 수 있는 이유(캡은 설정값에서, 지킴이 상태는 표본에서). 헤더: 장 상태 배지(우리 NYSE 달력), 테이프 데이터 상태, KO/EN. 모든 블록이 LIVE / n분 전 / 불러올 수 없음(이유)을 단다(`components/ui.tsx` `StateBadge`, 읽기 실패는 `lib/server/settle.ts`가 이유 라벨로 바꾸고 원인은 서버 로그에만).
 - 수용: 모바일 375px에서 가로 스크롤 없음, 첫 화면 3초 이해 리허설(강민서 체크리스트)
+  - [x] 375px 가로 스크롤 없음: `pnpm ui:check`(Playwright Chromium, `scripts/ui-check.ts`) — 로컬 `next start` + 스크래치 DB, 7개 페이지 × KO/EN × 375/1440px 28회 전부 `scrollWidth 375 / 375`(1440도 동일), 페이지 오류 0, `ui:check — 0 problems`.
+  - [ ] [HUMAN] 3초 이해 리허설.
 
 ### M2-02 Judge Mode · 기준: UX·기술
-- [ ] 코드 → 종목/섹터 → 모드·금액 → 미리보기(사람 말+원본 토글) → 실행 진행 → 영수증 → [멈추기]
-- [ ] 코드별 캡, 7일 자동 stop, 리셋
+- [x] 코드 → 종목/섹터 → 모드·금액 → 미리보기(사람 말+원본 토글) → 실행 진행 → 영수증 → [멈추기]
+  - 코드(9/26): `apps/web/app/judge/page.tsx` + `components/judge/JudgeFlow.tsx` — ① 코드(`POST /api/judge/session`) ② 종목(레지스트리, 체험 한도로 못 사는 Ondo 전용 종목은 비활성+사유) ③ 적립/이자 모드(이자 모드는 위험 고지 모달, "이해했어요" 체크 전엔 버튼 비활성)·금액·사는 시간(장 마감이면 다음 개장 시각/장외 한도 절반 안내) ④ 미리보기 = 워커의 시뮬레이션 잡 결과(사람 말 + '자세히'에 발행사·조각 수·최소 수령) ⑤ 실행 잡 ⑥ 영수증(BOUGHT/예약됨 DEFERRED/SKIPPED/FAILED/시뮬레이션 모드/확인 대기 각각의 문구) + [플랜 멈추기]. 섹터 고르기는 그리지 않았다(M2-07 섹터 결정 대기, "곧 출시" 금지).
+  - 워커가 웹 잡을 5분 틱에서만 집어 3분 완주가 불가능했던 문제: 틱 사이 3초마다 잡만 처리(`apps/agent/src/scheduler.ts` `processJobs`, `main.ts` `JOB_POLL_MS`, 틱과 같은 잠금 — 서명자 하나·nonce 한 줄). 테스트 "picks up web jobs between ticks without running due plans".
+  - 로컬 브라우저 흐름(스텁 워커, 스크래치 DB): 틀린 코드 → "코드가 맞지 않아요" → 코드 → NVDA → 확인 → 미리 돌려보기 → (토요일이라) "미국 장이 닫혀 있어요. 9월 28일 (월) 22:32에 다시 시도해요." → 지금 사기 → 예약됨 + 플랜 기록 링크 + 멈추기, 6.1초. 스텁 워커는 이 상황에서 decideCycle이 내는 결과(market_closed, 다음 개장 +2분)만 흉내 냈다 — 실제 체결 증거가 아니다.
+- [~] 코드별 캡, 7일 자동 stop, 리셋
+  - 캡: 코드당 총액 = 샌드박스 캡(`judgeTotalUsd`, 원장), 남은 한도 표시. 7일: 플랜 `expiresAt` → `runCycle`이 stopped(expired). 리셋(코드 사용량 초기화)은 만들지 않았다 — 운영 절차가 정해지면 → [HUMAN] 결정.
 - 수용: 리허설 3분 이내 완주 3회 연속, 실패 경로(장 마감·캡 초과) 문구 확인
+  - [x] 실패 경로 문구: 장 마감(예약됨), 코드 오류, 한도 소진(`judge.code.error.exhausted`, `code_exhausted` 409 — `apps/web/test/judge.test.ts`), 미리보기 실패(`judge.preview.failed`).
+  - [ ] [HUMAN] 배포 + 워커 가동 상태에서 3분 완주 3회(돈 결정 R1–R4 이후).
 
 ### M2-03 플랜 상세·정지·전액 상환 · 기준: UX·기술
+- [x] 코드(9/26): `apps/web/app/plans/[id]/page.tsx` — 이름·상태·주체, 원금·이자(체인에서 읽음; 스킬 플랜은 지갑 포지션)·모은 주식(평균 매수가)·다음 매수, 한도 막대(`plan.limits`), 지킴이(열린 판정 또는 "이상 없음 · 마지막 점검", 이용률·USDT·규모·가격영향 기준), 기록 타임라인(결과 필터 칩, 시뮬레이션 기록 표시, 사이클별 영수증 링크), 사이클 없는 예치·상환 영수증, 보유 주식(배수), 소유 심사위원에게만 [플랜 멈추기](`components/plan/StopPlan.tsx`: 확인 → stop 잡 → 폴링 → 새로고침; 이자 플랜은 원금 전부 꺼냄 안내). 없는 플랜은 404.
 - 수용: 이자 모드 정지 시 상환 영수증 표시
+  - [~] 화면: 상환 영수증(`kind=redeem`)은 "이자 통장에서 꺼냈어요" + BscScan으로 표시된다. 실제 상환 영수증은 live 실행이 필요 → [HUMAN] 돈 결정 이후.
 
 ### M2-04 위험 고지·안전 기본값·용어 치환 · 기준: UX
-- [ ] UX_COPY §5 전문, 금지어 린트 스크립트(`pnpm lint:copy`)
+- [x] UX_COPY §5 전문, 금지어 린트 스크립트(`pnpm lint:copy`)
+  - `/risk`와 이자 모드 모달이 §5 전문을 쓴다(`components/RiskText.tsx`). {apy}·{score}는 워커가 기록한 값만(APY는 DeFi 목록 `apyBps`를 6시간마다, 보안 점수는 프로토콜 상세 `securityScore`를 가디언 틱마다 — `main.ts`, `guardian.ts`); 값이 없으면 그 문장을 빼고 "불러올 수 없어요"를 단다.
+  - 안전 기본값: 체험은 적립만·정규장이 기본, 이자 모드는 고지 동의 후에만.
+  - `pnpm lint:copy`(`apps/web/scripts/copy.ts lint`, `pnpm lint`에 포함): UX_COPY와 생성 파일 일치, KR/EN 자리표시자 일치, §6 금지어를 문구·웹 소스·`skills/`에서 검사.
 - 수용: 금지어 0건
+  - [x] `lint:copy — 252 keys, 11 banned words, 0 problems`.
 
 ### M2-05 KR/EN i18n · 기준: UX
 - 수용: 모든 문자열이 키 기반, 언어 토글
+  - [x] `pnpm copy:gen`이 docs/UX_COPY.md(§3·§4·§5·§7)에서 `apps/web/lib/i18n/copy.ts`를 만든다(252키, KR/EN). 화면은 `t(key)`만 쓴다(키는 타입으로 검사). 값이 빠진 자리표시자가 있는 문장은 통째로 뺀다(미국 주가 없는 `why.bought.*`의 괴리 문장, 추정하지 않는 수수료).
+  - [x] 언어: 쿠키(KO/EN 토글) → 없으면 브라우저 언어(한국어면 ko, 아니면 en). 시간: 브라우저 시간대를 쿠키로(`components/LocaleSync.tsx`), 없으면 ko=서울·en=UTC.
+  - §7은 에이전트 초안(DESIGN_BRIEF [신규 문구] KR + 영어)이다 → [HUMAN] 강민서 검토·확정.
+  - 증거: `apps/web/test/i18n.test.ts`(생성 파일 일치, 자리표시자 일치, 문장 빼기, 포맷), ui:check KO/EN 28회.
 
 ### M2-06 가디언 · 기준: 기술·창의·UX
 - [~] PLAN §7 규칙, 이벤트 표시, 전액 상환 액션(시뮬 성공 시만)
@@ -245,7 +264,7 @@
     - `guardian.test.ts`(core, 경계값).
     - `packages/db/src/guardian.test.ts`(24h 전 표본, 페그 이탈 시점).
     - `scheduler.test.ts`: USDT 0.985 35분 → 열림·알림·매수 SKIPPED·서명 0 → 회복 시 해제. TVL −33% → yield 플랜 paused(`guardian:tvl_drop`).
-  - 남음: M2 웹에서 이벤트 표시(UI).
+  - [x] 웹 표시(9/26): 플랜 상세 지킴이 패널(열린 판정·감시 항목·마지막 점검), 홈 "믿을 수 있는 이유"의 지킴이 상태.
 - 수용: 규칙별 테스트, 수동 트리거로 UI 표시 확인
 
 ### M2-07 기업행동·섹터 후보 · 기준: 창의·기술
@@ -279,8 +298,11 @@
 - 수용: 등록 tx·에이전트 ID가 README에
 
 ### M2-11 /dx 페이지 · 기준: DX
-- [ ] p50/p95·오류코드·리전, 테이프 차트 3종(정규장 vs 장외 괴리, 규모별 가격영향, 발행사 비교), 발견 목록
+- [x] p50/p95·오류코드·리전, 테이프 차트 3종(정규장 vs 장외 괴리, 규모별 가격영향, 발행사 비교), 발견 목록
+  - 코드(9/26): `apps/web/app/dx/page.tsx` + `lib/server/dx.ts`(`GET /api/dx/metrics`·`/api/dx/tape`와 같은 로더) — 요약 4개(호출·오류율·전체 p95 — 그룹 평균이 아니라 전체 호출의 백분위, `summarizeCalls().total`·테이프 견적 수), 엔드포인트 표(코드 칩), 지역 표, 시간대별 괴리 막대(미국 주가가 있던 표본만, n 표시), 발행사·크기별 가격영향 막대, 발행사 비교 표, 발견 목록(dx_events).
 - 수용: 실데이터 렌더, 캡션에 측정 방법
+  - [x] 캡션: 블록마다 `측정 방법: …`.
+  - [~] 렌더는 로컬(스크래치 DB의 합성 행 — 배치 확인용)로만 확인. 실데이터 렌더는 배포 후 → [HUMAN] 배포된 /dx 확인.
 
 ### M2-12 health·smoke·모니터·알림 · 기준: 기술
 - 수용: `/api/judge/smoke` 전 항목 녹색, 모니터가 실패를 텔레그램으로 1회 전달(테스트)

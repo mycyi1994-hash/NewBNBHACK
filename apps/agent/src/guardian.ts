@@ -8,7 +8,7 @@
  *   - redeem_all: yield plans are paused and, in live mode only, their whole position is redeemed
  *     — only after the redeem simulation passes; otherwise a human is asked.
  */
-import { BinanceApiError, getProtocolTvl, getTokenPrices } from '@ijaro/binance';
+import { BinanceApiError, getProtocolSummary, getTokenPrices } from '@ijaro/binance';
 import { BSC_USDT } from '@ijaro/chain';
 import {
   evaluateGuardian,
@@ -79,7 +79,16 @@ async function readInputs(deps: CycleDeps, unavailable: string[]): Promise<Guard
     }
   }
   try {
-    const tvl = await getProtocolTvl(deps.client, 'venus');
+    const { tvl, securityScore } = await getProtocolSummary(deps.client, 'venus');
+    // Shown with the risk disclosure (UX_COPY §5 {score}); not a guardian rule.
+    if (securityScore !== null && /^\d+(\.\d+)?$/.test(securityScore)) {
+      await insertGuardianSample(deps.db, {
+        ts,
+        metric: 'venus_security_score',
+        value: securityScore,
+        source: 'defi-data',
+      });
+    }
     if (tvl !== null) {
       await insertGuardianSample(deps.db, {
         ts,

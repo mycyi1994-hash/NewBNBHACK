@@ -4,9 +4,15 @@
  */
 import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import type { Db } from './index.js';
+import { isoTime, usdText } from './mappers.js';
 import { guardianEvents, guardianSamples } from './schema.js';
 
-export type GuardianMetric = 'venus_tvl_usd' | 'usdt_price_usd' | 'venus_utilization_bps';
+export type GuardianMetric =
+  | 'venus_tvl_usd'
+  | 'usdt_price_usd'
+  | 'venus_utilization_bps'
+  /** Recorded for the risk disclosure (UX_COPY §5), not a rule input. */
+  | 'venus_security_score';
 
 export async function insertGuardianSample(
   db: Db,
@@ -99,4 +105,23 @@ export async function guardianVerdictFor(
     (a) => a.action === 'pause_buys' || a.action === 'redeem_all',
   );
   return blocking ? { blocked: true, rule: blocking.rule } : { blocked: false };
+}
+
+/** The newest sample of each metric (the guardian panel and the risk disclosure show them). */
+export async function latestGuardianSamples(
+  db: Db,
+): Promise<Partial<Record<GuardianMetric, { value: string; ts: string; source: string }>>> {
+  const rows = await db.execute<{
+    metric: GuardianMetric;
+    value: string;
+    ts: string;
+    source: string;
+  }>(
+    sql`select distinct on (metric) metric, value, ts, source from guardian_samples order by metric, ts desc`,
+  );
+  const latest: Partial<Record<GuardianMetric, { value: string; ts: string; source: string }>> = {};
+  for (const row of rows) {
+    latest[row.metric] = { value: usdText(row.value), ts: isoTime(row.ts), source: row.source };
+  }
+  return latest;
 }

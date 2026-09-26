@@ -1,0 +1,49 @@
+'use client';
+/**
+ * The language toggle (M2-05) and the viewer's time zone: both live in cookies the server reads,
+ * so every page renders in one language and in local time without a second request.
+ */
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import type { Lang } from '../lib/i18n/translate';
+
+const YEAR = 60 * 60 * 24 * 365;
+
+function setCookie(name: string, value: string) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${YEAR}; SameSite=Lax`;
+}
+
+export function LocaleSync({ lang, tz, label }: { lang: Lang; tz: string; label: string }) {
+  const router = useRouter();
+  useEffect(() => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (zone && zone !== tz) {
+      setCookie('ijaro_tz', zone);
+      router.refresh();
+    }
+  }, [tz, router]);
+  const choose = (next: Lang) => {
+    if (next === lang) return;
+    setCookie('ijaro_lang', next);
+    router.refresh();
+  };
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="flex overflow-hidden rounded-full border border-line text-sm"
+    >
+      {(['ko', 'en'] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => choose(option)}
+          aria-pressed={option === lang}
+          className={`px-2.5 py-1 font-medium ${option === lang ? 'bg-ink text-white' : 'text-muted hover:text-ink'}`}
+        >
+          {option === 'ko' ? 'KO' : 'EN'}
+        </button>
+      ))}
+    </div>
+  );
+}

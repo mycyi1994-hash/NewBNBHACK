@@ -14,13 +14,14 @@ import {
   listCycles,
   listGuardianEvents,
   resolveGuardianEvents,
+  updatePlan,
 } from '@ijaro/db';
 import { inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';
 import { cleanup, ROUTER } from '../test/harness.js';
 import { createWorld, testInstrument, testPlan } from '../test/world.js';
-import { schedulerTick } from './scheduler.js';
+import { processJobs, schedulerTick } from './scheduler.js';
 
 const url = agentTestUrl;
 const MIN = 60_000;
@@ -166,6 +167,23 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
       outcomeKind: 'BOUGHT',
       whyKey: 'why.bought.regular',
     });
+  });
+
+  it('picks up web jobs between ticks without running due plans', async () => {
+    await calm();
+    const due = await plan(); // due now: only a tick may run it
+    const judged = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
+    const w = await createWorld(db, '2026-09-28T14:00:00.000Z');
+    await enqueueJob(db, { id: `job-poll-${judged}`, kind: 'preview', planId: judged });
+    const polled = await processJobs(w.deps('live'), w.deps('simulate'));
+    expect(polled).toEqual({
+      jobs: [{ id: `job-poll-${judged}`, kind: 'preview', status: 'done' }],
+      errors: [],
+    });
+    expect(await listCycles(db, { planIds: [due] })).toEqual([]);
+    expect(w.chain.sent).toEqual([]);
+    expect(await processJobs(w.deps('live'), w.deps('simulate'))).toEqual({ jobs: [], errors: [] });
+    await updatePlan(db, due, { status: 'stopped' }); // later ticks must not buy it
   });
 
   it('runs preview, run and stop jobs from the web; preview never signs', async () => {

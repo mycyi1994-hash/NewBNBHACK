@@ -27,6 +27,11 @@ import { reconcileOutbox, type Reconciliation } from './executor/send.js';
 import { guardianTick, redeemPlanPosition, type GuardianReport } from './guardian.js';
 
 export const TICK_MS = 5 * 60_000;
+/**
+ * Web jobs are also polled between ticks, so a judge's preview or run starts within seconds
+ * (the 3-minute Judge Mode path), always under the tick's one-at-a-time lock (main.ts).
+ */
+export const JOB_POLL_MS = 3_000;
 const MAX_JOBS_PER_TICK = 20;
 
 export interface TickReport {
@@ -104,6 +109,30 @@ export async function processJob(
   }
 }
 
+/** Every queued web job, oldest first (at most MAX_JOBS_PER_TICK); a failed job never stops the rest. */
+export async function processJobs(
+  deps: CycleDeps,
+  simulate: CycleDeps,
+): Promise<Pick<TickReport, 'jobs' | 'errors'>> {
+  const done: Pick<TickReport, 'jobs' | 'errors'> = { jobs: [], errors: [] };
+  for (let n = 0; n < MAX_JOBS_PER_TICK; n++) {
+    const job = await claimJob(deps.db);
+    if (!job) break;
+    try {
+      await finishJob(deps.db, job.id, {
+        status: 'done',
+        result: await processJob(deps, simulate, job),
+      });
+      done.jobs.push({ id: job.id, kind: job.kind, status: 'done' });
+    } catch (error) {
+      await finishJob(deps.db, job.id, { status: 'failed', error: message(error) });
+      done.jobs.push({ id: job.id, kind: job.kind, status: 'failed' });
+      done.errors.push(`job ${job.id}: ${message(error)}`);
+    }
+  }
+  return done;
+}
+
 export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promise<TickReport> {
   const report: TickReport = {
     at: deps.now().toISOString(),
@@ -136,21 +165,9 @@ export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promi
   await guard('guardian', async () => {
     report.guardian = await guardianTick(deps);
   });
-  for (let n = 0; n < MAX_JOBS_PER_TICK; n++) {
-    const job = await claimJob(deps.db);
-    if (!job) break;
-    try {
-      await finishJob(deps.db, job.id, {
-        status: 'done',
-        result: await processJob(deps, simulate, job),
-      });
-      report.jobs.push({ id: job.id, kind: job.kind, status: 'done' });
-    } catch (error) {
-      await finishJob(deps.db, job.id, { status: 'failed', error: message(error) });
-      report.jobs.push({ id: job.id, kind: job.kind, status: 'failed' });
-      report.errors.push(`job ${job.id}: ${message(error)}`);
-    }
-  }
+  const jobs = await processJobs(deps, simulate);
+  report.jobs.push(...jobs.jobs);
+  report.errors.push(...jobs.errors);
   for (const plan of await duePlans(deps.db, deps.now())) {
     if (plan.ownerKind === 'skill') continue; // decided by /next, signed by the owner
     await guard(`cycle ${plan.id}`, async () => {

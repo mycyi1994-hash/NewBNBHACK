@@ -139,6 +139,7 @@ export interface EndpointSummary extends CallStats {
 
 /** The numbers behind /dx (M2-11) as data: per endpoint and per region. */
 export function summarizeCalls(records: readonly ApiCallRecord[]): {
+  total: CallStats;
   endpoints: EndpointSummary[];
   regions: (CallStats & { region: string })[];
 } {
@@ -152,5 +153,5 @@ export function summarizeCalls(records: readonly ApiCallRecord[]): {
     region,
     ...stats(rows),
   }));
-  return { endpoints, regions };
+  return { total: stats(records), endpoints, regions };
 }

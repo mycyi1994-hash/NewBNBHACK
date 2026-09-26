@@ -330,15 +330,20 @@ export async function getTokenPrices(
 }
 
 /** POST /defi/data/protocol/detail: the protocol's TVL (USD, as text) among other facts. */
-export async function getProtocolTvl(
+/** Protocol TVL and the platform's security score (fixtures/defi-data/getProtocolDetail-*). */
+export async function getProtocolSummary(
   client: BinanceClient,
   defiProtocolId: string,
-): Promise<string | null> {
-  const res = await client.request<{ tvl?: string | null }>('defi-data', 'getProtocolDetail', {
-    method: 'POST',
-    path: '/api/v1/defi/data/protocol/detail',
-    body: { defiProtocolId },
-    retries: 2,
-  });
-  return res.data.tvl ?? null;
+): Promise<{ tvl: string | null; securityScore: string | null }> {
+  const res = await client.request<{ tvl?: string | null; securityScore?: string | null }>(
+    'defi-data',
+    'getProtocolDetail',
+    {
+      method: 'POST',
+      path: '/api/v1/defi/data/protocol/detail',
+      body: { defiProtocolId },
+      retries: 2,
+    },
+  );
+  return { tvl: res.data.tvl ?? null, securityScore: res.data.securityScore ?? null };
 }

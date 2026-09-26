@@ -4,13 +4,24 @@
  * STALE with its time, or UNAVAILABLE with a reason.
  */
 import {
+  nextRegularOpen,
+  OPEN_SETTLE_MS,
+  regularClose,
   toUnits,
+  usSession,
   VENUE_MIN_USD,
   type Instrument,
   type InstrumentMarket,
   type QuoteObservation,
 } from '@ijaro/core';
-import { isoTime, latestTapeSamples, type Db, type TapeSampleRow } from '@ijaro/db';
+import {
+  instrumentFromRow,
+  isoTime,
+  latestTapeSamples,
+  listInstruments,
+  type Db,
+  type TapeSampleRow,
+} from '@ijaro/db';
 
 /**
  * Two tape intervals (10 min each, M0-08): one missed run is still LIVE, two are STALE. Older than
@@ -112,3 +123,38 @@ export function estimateQuote(
     ...(row.executionMode ? { executionMode: row.executionMode } : {}),
   };
 }
+
+/**
+ * The US session by our NYSE calendar and each registered token's last recorded state (Watch
+ * screen, Judge Mode, GET /api/market/status), with the tape's data state.
+ */
+export async function marketStatus(db: Db, now = new Date()) {
+  const tape = await tapeView(db, now);
+  const instruments = (await listInstruments(db)).map(instrumentFromRow);
+  const markets = marketsFromTape(instruments, tape.rows);
+  const open = nextRegularOpen(now);
+  return {
+    at: now.toISOString(),
+    session: usSession(now),
+    regularClose: regularClose(now)?.toISOString() ?? null,
+    nextRegularOpen: open.toISOString(),
+    nextBuyWindow: new Date(open.getTime() + OPEN_SETTLE_MS).toISOString(),
+    data: { state: tape.state, sampledAt: tape.sampledAt, ageSeconds: tape.ageSeconds },
+    instruments: markets.map((m) => ({
+      id: m.instrument.id,
+      ticker: m.instrument.ticker,
+      issuer: m.instrument.issuer,
+      symbol: m.instrument.symbol,
+      address: m.instrument.address,
+      multiplier: m.instrument.multiplier,
+      reasonCode: m.status.reasonCode,
+      reasonMsg: m.status.reasonMsg,
+      onchainSharePriceUsd: m.onchainSharePriceUsd,
+      stockPriceUsd: m.independentSharePriceUsd,
+      gapPct: gapPctText(m.onchainSharePriceUsd, m.independentSharePriceUsd),
+      venueMinUsd: m.venueMinUsd,
+    })),
+  };
+}
+
+export type MarketStatus = Awaited<ReturnType<typeof marketStatus>>;

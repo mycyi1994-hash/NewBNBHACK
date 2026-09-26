@@ -15,6 +15,7 @@ import {
 import {
   createDb,
   insertPlan,
+  planSpendOnDay,
   remainingSpend,
   reserveSpend,
   settleSpend,
@@ -191,6 +192,22 @@ describe.skipIf(!url)('spend ledger on Postgres', () => {
       Array.from({ length: 8 }, () => ({ ok: false, reason: 'plan_daily' })),
     );
     expect(usdText(await remainingSpend(db, s))).toBe('1');
+  });
+
+  it("sums a plan's reserved and spent amounts for one day, not released ones", async () => {
+    const p = await plan();
+    const day = isolatedDay();
+    const s = scope(p, day, { globalDailyUsd: '50', planDailyUsd: '10' });
+    const first = await newCycle(db, p.id, 0);
+    const second = await newCycle(db, p.id, 1);
+    const third = await newCycle(db, p.id, 2);
+    await reserveSpend(db, { ...s, cycleId: first, amountUsd: '2' });
+    await reserveSpend(db, { ...s, cycleId: second, amountUsd: '3' });
+    await reserveSpend(db, { ...s, cycleId: third, amountUsd: '4' });
+    await settleSpend(db, second, 'spent', '2.5');
+    await settleSpend(db, third, 'released');
+    expect(usdText(await planSpendOnDay(db, p.id, day))).toBe('4.5');
+    expect(usdText(await planSpendOnDay(db, p.id, isolatedDay()))).toBe('0');
   });
 
   it('reserves once per cycle', async () => {

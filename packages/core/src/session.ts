@@ -58,6 +58,13 @@ export function usSession(at: Date): UsSession {
   return 'overnight';
 }
 
+/** When the regular session in progress at `at` closes (16:00 ET, 13:00 on early closes); null outside it. */
+export function regularClose(at: Date): Date | null {
+  if (usSession(at) !== 'regular') return null;
+  const { date } = newYorkParts(at);
+  return newYorkTimeOn(date, NYSE_EARLY_CLOSE.has(date) ? 13 * 60 : 16 * 60);
+}
+
 /** The UTC instant of `minutes` after midnight, New York time, on New York date `ymd`. */
 export function newYorkTimeOn(ymd: string, minutes: number): Date {
   const [y = NaN, m = NaN, d = NaN] = ymd.split('-').map(Number);

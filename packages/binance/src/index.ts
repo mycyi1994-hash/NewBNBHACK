@@ -58,7 +58,7 @@ export {
   buildSwap,
   estimateGasLimit,
   getApproveTransaction,
-  getProtocolTvl,
+  getProtocolSummary,
   getQuote,
   getRwaPrices,
   getTokenPrices,

@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @ijaro/web --filter @ijaro/agent dev",
     "typecheck": "pnpm -r typecheck",
-    "lint": "eslint . --max-warnings=0 && prettier --check .",
+    "lint": "eslint . --max-warnings=0 && prettier --check . && tsx apps/web/scripts/copy.ts lint",
     "format": "prettier --write .",
     "test": "vitest run",
     "fetch-docs": "bash scripts/fetch-docs.sh",
@@ -30,7 +30,10 @@
     "registry": "tsx scripts/registry.ts",
     "spike:quotes": "tsx scripts/spike-quotes.ts",
     "spike:venus": "tsx scripts/spike-venus.ts",
-    "coverage:core": "vitest run --project @ijaro/core --coverage"
+    "coverage:core": "vitest run --project @ijaro/core --coverage",
+    "copy:gen": "tsx apps/web/scripts/copy.ts gen",
+    "lint:copy": "tsx apps/web/scripts/copy.ts lint",
+    "ui:check": "tsx scripts/ui-check.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
