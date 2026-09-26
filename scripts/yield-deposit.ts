@@ -25,6 +25,7 @@ import {
   getPlan,
   insertReceipt,
   migrateDb,
+  openGuardianActions,
   planFromRow,
   updatePlan,
   usdText,
@@ -109,6 +110,11 @@ if (!planId || (!usd && !recordHash)) {
           : 'already recorded',
       );
     } else if (usd) {
+      const blocking = (await openGuardianActions(rt.database.db, planId)).find((a) =>
+        ['stop_deposits', 'redeem_all', 'pause_buys'].includes(a.action),
+      );
+      if (blocking)
+        throw new Error(`the guardian holds new deposits: ${blocking.rule} (${blocking.action})`);
       const amount = toUnits(usd, 18);
       const cap = toUnits(String(config.caps.maxPrincipalUsd), 18);
       const after = toUnits(plan.principalUsd, 18) + amount;

@@ -23,6 +23,7 @@ const M1_TABLES = [
   'cycles',
   'dx_events',
   'guardian_events',
+  'guardian_samples',
   'holdings',
   'jobs',
   'judge_codes',

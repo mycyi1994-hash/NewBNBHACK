@@ -9,6 +9,7 @@ import { BSC_USDT, decodeApprove, decodeVenusCall, encodeApprove } from '@ijaro/
 import { createDb, lastOutboxNonce, type Db } from '@ijaro/db';
 import { getAddress, type Hex } from 'viem';
 import { afterAll, describe, expect, it } from 'vitest';
+import { agentTestUrl } from '../../test/db.js';
 import {
   cleanup,
   fakeApi,
@@ -242,7 +243,7 @@ describe('redeemFromVenus (simulate)', () => {
   });
 });
 
-const url = process.env.IJARO_TEST_DATABASE_URL;
+const url = agentTestUrl;
 
 describe.skipIf(!url)('Venus live path on Postgres (fake chain)', () => {
   const { db, close } = createDb(url ?? 'postgres://unused');

@@ -85,8 +85,8 @@ export interface FakeChain extends ChainPort {
   sent: MinedTx[];
   /** What mining a transaction does: its status and logs (default: success, no logs). */
   onMine: (tx: MinedTx) => { status: 'success' | 'reverted'; logs: Log[] };
-  /** When false, receipts never arrive (the wait times out). */
-  mines: boolean;
+  /** Whether a transaction gets mined when waited for (false: the wait times out). */
+  mines: boolean | ((tx: MinedTx) => boolean);
   accept(raw: Hex): Hex;
 }
 
@@ -119,12 +119,15 @@ export function fakeChain(startNonce = 0): FakeChain {
     balanceOf: () => Promise.resolve(10n ** 21n),
     exchangeRate: () => Promise.resolve(10n ** 28n),
     underlyingOf: () => Promise.resolve(BSC_USDT),
+    venusMarketState: () =>
+      Promise.resolve({ mintPaused: false, redeemPaused: false, utilizationBps: 7_278 }),
     pendingNonce: () => Promise.resolve(minedNonce + mempool.size),
     minedNonce: () => Promise.resolve(minedNonce),
     sendRaw: (raw) => Promise.resolve(chain.accept(raw)),
     waitForReceipt(hash) {
       const tx = mempool.get(hash);
-      if (!tx || !chain.mines) return Promise.resolve(mined.get(hash));
+      const mines = typeof chain.mines === 'function' ? tx && chain.mines(tx) : chain.mines;
+      if (!tx || !mines) return Promise.resolve(mined.get(hash));
       mempool.delete(hash);
       minedNonce += 1;
       block += 1n;

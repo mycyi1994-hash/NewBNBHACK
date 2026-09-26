@@ -304,3 +304,41 @@ export async function getRwaPrices(
   });
   return res.data;
 }
+
+/** POST /market/price (body shape measured, DECISIONS V-09): current USD prices of tokens. */
+export async function getTokenPrices(
+  client: BinanceClient,
+  addresses: readonly string[],
+): Promise<{ tokenContractAddress: string; price: string | null }[]> {
+  const res = await client.request<{ tokenContractAddress: string; price?: string | null }[]>(
+    'market',
+    'getTokenPrice',
+    {
+      method: 'POST',
+      path: '/api/v1/dex/market/price',
+      body: addresses.map((tokenContractAddress) => ({
+        binanceChainId: BSC,
+        tokenContractAddress,
+      })),
+      retries: 2,
+    },
+  );
+  return res.data.map((p) => ({
+    tokenContractAddress: p.tokenContractAddress,
+    price: p.price ?? null,
+  }));
+}
+
+/** POST /defi/data/protocol/detail: the protocol's TVL (USD, as text) among other facts. */
+export async function getProtocolTvl(
+  client: BinanceClient,
+  defiProtocolId: string,
+): Promise<string | null> {
+  const res = await client.request<{ tvl?: string | null }>('defi-data', 'getProtocolDetail', {
+    method: 'POST',
+    path: '/api/v1/defi/data/protocol/detail',
+    body: { defiProtocolId },
+    retries: 2,
+  });
+  return res.data.tvl ?? null;
+}

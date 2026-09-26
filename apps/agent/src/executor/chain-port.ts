@@ -2,7 +2,14 @@
  * The chain operations the executor needs, behind a narrow port so tests can run the whole buy
  * path against an in-memory chain. `viemChainPort` is the real one (BSC RPC with fallback).
  */
-import { readAllowance, readTokenBalance, vTokenAbi, type BscClient } from '@ijaro/chain';
+import {
+  readAllowance,
+  readTokenBalance,
+  readVTokenState,
+  vTokenAbi,
+  type BscClient,
+} from '@ijaro/chain';
+import { utilizationBps } from '@ijaro/core';
 import { getAddress, WaitForTransactionReceiptTimeoutError, type Hex, type Log } from 'viem';
 
 export interface ReceiptLike {
@@ -20,6 +27,10 @@ export interface ChainPort {
   exchangeRate(vToken: string): Promise<bigint>;
   /** Venus vToken underlying() — the market's asset. */
   underlyingOf(vToken: string): Promise<string>;
+  /** Venus market guard flags and utilisation (guardian inputs, PLAN §7). */
+  venusMarketState(
+    vToken: string,
+  ): Promise<{ mintPaused: boolean; redeemPaused: boolean; utilizationBps: number }>;
   /** Next nonce including the sender's pending transactions. */
   pendingNonce(address: string): Promise<number>;
   /** Next nonce counting mined transactions only. */
@@ -57,6 +68,14 @@ export function viemChainPort(bsc: BscClient): ChainPort {
       }),
     underlyingOf: (vToken) =>
       bsc.readContract({ address: getAddress(vToken), abi: vTokenAbi, functionName: 'underlying' }),
+    async venusMarketState(vToken) {
+      const state = await readVTokenState(bsc, vToken);
+      return {
+        mintPaused: state.mintPaused,
+        redeemPaused: state.redeemPaused,
+        utilizationBps: utilizationBps(state.cash, state.totalBorrows, state.totalReserves),
+      };
+    },
     pendingNonce: (address) =>
       bsc.getTransactionCount({ address: getAddress(address), blockTag: 'pending' }),
     minedNonce: (address) =>

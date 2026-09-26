@@ -14,6 +14,7 @@ import {
   boughtOutcome,
   decideCycle,
   fromUnits,
+  guardianVerdict,
   nextDue,
   sameMultiplier,
   sharesFromTokens,
@@ -34,6 +35,7 @@ import {
   insertGuardianEvent,
   insertReceipt,
   openCycle,
+  openGuardianActions,
   planFromRow,
   releasePlanLock,
   remainingSpend,
@@ -129,7 +131,7 @@ export function planCaps(config: Config, plan: Plan) {
   };
 }
 
-async function recordReceipt(
+export async function recordReceipt(
   deps: CycleDeps,
   planId: string,
   cycleId: number | null,
@@ -151,7 +153,7 @@ async function recordReceipt(
 }
 
 /** Adds a confirmed buy to the plan's holding; a multiplier change since the last write is logged. */
-async function addToHolding(
+export async function addToHolding(
   deps: CycleDeps,
   planId: string,
   instrument: Instrument,
@@ -232,12 +234,15 @@ async function cycleBody(
   setPlan: (patch: PlanPatch) => void,
 ): Promise<CycleReport> {
   const started = deps.now();
-  const dueAt = options.manual ? started.toISOString() : plan.nextDueAt;
-  const { cycle, created } = await openCycle(deps.db, {
-    planId: plan.id,
-    dueAt,
-    executionMode: deps.mode,
-  });
+  // A scheduled cycle is idempotent on (plan, due time); every manual request is a cycle of its
+  // own, so a second one in the same millisecond moves one millisecond on.
+  let dueAt = options.manual ? started.toISOString() : plan.nextDueAt;
+  let opened = await openCycle(deps.db, { planId: plan.id, dueAt, executionMode: deps.mode });
+  for (let bump = 1; options.manual && !opened.created && bump <= 10; bump++) {
+    dueAt = new Date(started.getTime() + bump).toISOString();
+    opened = await openCycle(deps.db, { planId: plan.id, dueAt, executionMode: deps.mode });
+  }
+  const { cycle, created } = opened;
   if (!created && cycle.state !== 'running') return storedReport(cycle);
   const step = (entry: Record<string, unknown>) => appendCycleStep(deps.db, cycle.id, entry);
   const caps = planCaps(deps.config, plan);
@@ -275,6 +280,10 @@ async function cycleBody(
       harvestedUnspentUsd: decimal(harvested),
     };
   };
+
+  // Open guardian verdicts (PLAN §7): a pause_buys or redeem_all rule makes the cycle SKIPPED.
+  const guardian = guardianVerdict(await openGuardianActions(deps.db, plan.id));
+  if (guardian.blocked) await step({ step: 'GUARDIAN', rule: guardian.rule });
 
   const quotes: QuoteObservation[] = [];
   const routes = new Map<string, QuoteRoute>();
@@ -362,12 +371,18 @@ async function cycleBody(
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const input: CycleInput = {
       now: deps.now(),
-      // A manual run acts on a paused plan as if it were active and due now.
-      plan: { ...plan, status: 'active', nextDueAt: dueAt },
+      // A manual run acts on a paused plan as if it were active and due when it started (the
+      // cycle's key may sit a millisecond later).
+      plan: {
+        ...plan,
+        status: 'active',
+        nextDueAt: options.manual ? started.toISOString() : dueAt,
+      },
       caps: { minBuyUsd: caps.minBuyUsd, maxPerTxUsd: caps.maxPerTxUsd },
       dailyRemainingUsd: usdText(dailyRemainingUsd),
       dailyLimitUsd: caps.dailyLimitUsd,
       markets: snapshot.markets,
+      guardian,
       quotes,
     };
     const pos = await position();

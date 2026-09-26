@@ -25,6 +25,7 @@
     "tape:once": "tsx scripts/tape-once.ts",
     "cycle:once": "tsx scripts/cycle-once.ts",
     "yield:deposit": "tsx scripts/yield-deposit.ts",
+    "plan:status": "tsx scripts/plan-status.ts",
     "smoke": "node scripts/not-yet.mjs smoke M2-12",
     "registry": "tsx scripts/registry.ts",
     "spike:quotes": "tsx scripts/spike-quotes.ts",

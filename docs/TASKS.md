@@ -169,7 +169,17 @@
 - 수용: **메인넷 영수증 3종(deposit, redeem, swap)**, 이자 표시. 이자 부족 시 적립 병행으로 체결하되 영수증에 구분 표기
 
 ### M1-06 스케줄러·창구·멱등 · 기준: 기술
-- [ ] 5분 틱, 락, 멱등키, `nextDueAt`(개장+2분), DEFERRED(market_closed) 기록과 retryAt
+- [~] 5분 틱, 락, 멱등키, `nextDueAt`(개장+2분), DEFERRED(market_closed) 기록과 retryAt
+  - 코드(9/26): `apps/agent/src/scheduler.ts` `schedulerTick`(5분). 순서는 outbox 정리(live) → 대기 사이클 마무리(`awaiting.ts`) → 가디언 → 웹 jobs(preview는 항상 simulate) → due 플랜을 하나씩(서명자 하나).
+    - 락: `plans.lock_until` 조건부 UPDATE.
+    - 멱등: 예약 사이클은 (plan, due_at). 수동 실행은 요청마다 새 사이클.
+    - 다음 due: `packages/core/src/schedule.ts` `nextDue`(core 100%).
+    - 워커 `main.ts`가 테이프와 함께 돌린다. live는 설정·활성 플랜일 때만 서명한다.
+  - 증거: `scheduler.test.ts`. 시간을 옮겨 가며 확인했다.
+    - 토요일 11:00 ET 틱: DEFERRED(market_closed, retryAt 월 13:32Z).
+    - 일요일: 실행 없음.
+    - 월 09:33 ET 틱: 자동 BOUGHT, 다음 due 화 09:32.
+  - 남음: [PC] 배포 워커 로그로 실주말→월요일 확인(G5).
 - 수용: 주말 실행 시 DEFERRED 레코드 생성, 월요일 개장 후 자동 매수(로그로 증명)
 
 ### M1-07 에러 분류 v1 · 기준: 기술·DX
@@ -184,12 +194,15 @@
   - 남음: [HUMAN/PC] 텔레그램 토큰이 있는 호스트에서 `pnpm alert:test` 1회(`result sent`) 인용.
 
 ### M1-08 홀딩·배수 · 기준: 창의·UX
-- [~] 영수증마다 multiplier 스냅샷, 변경 감지 이벤트, shares 재계산
-  - 계산 완료: `packages/core/src/holdings.ts` — `sharesFromTokens`(정확, 내림), `revalueHolding`(배수 변경 감지), `upcomingMultiplierChange`(bStocks `newUIMultiplier`·`effectiveAt` 예정 안내). 남음: 영수증 저장 시 스냅샷·이벤트 연결(M1-03/04 이후).
+- [x] 영수증마다 multiplier 스냅샷, 변경 감지 이벤트, shares 재계산
+  - 계산 완료: `packages/core/src/holdings.ts` — `sharesFromTokens`(정확, 내림), `revalueHolding`(배수 변경 감지), `upcomingMultiplierChange`(bStocks `newUIMultiplier`·`effectiveAt` 예정 안내).
+  - 연결(9/26): 매수 영수증마다 `addToHolding`이 배수를 스냅샷하고 전체 토큰 × 현재 배수로 shares를 다시 계산한다. 배수가 바뀌었으면 `guardian_events`(`multiplier_changed`, warn, from/to)를 남긴다. 증거: `cycle.test.ts` "a buy on top of a holding written at another multiplier…".
 - 수용: 배수 변경 시뮬레이션 테스트 — `holdings.test.ts`(분할로 배수 1→10이면 2주 → 20주, balanceOf 불변)
 
 ### M1-09 하우스 플랜 가동 · 기준: 기술
-- [ ] H-SAFE(일 $5, 정규장), H-YIELD(원금 확정액, 주 1회) 9/30부터 연속 가동
+- [~] H-SAFE(일 $5, 정규장), H-YIELD(원금 확정액, 주 1회) 9/30부터 연속 가동
+  - 코드 준비(9/26): `pnpm db:seed`(둘 다 paused), `pnpm yield:deposit`(원금), `pnpm plan:status --activate`(live면 `y`, 원금 없는 yield는 DB가 거부 → 안내 문구). 워커가 활성 플랜을 5분 틱으로 돌린다.
+  - 남음: [HUMAN] 하우스 지갑 충전·원금 결정(REPLAN R1–R4). 그 뒤 활성화와 연속 가동(G5).
 - 수용: 10/4까지 사이클 레코드 ≥ 4일치, FAILED 0 또는 원인 기록
 
 ---
@@ -216,11 +229,33 @@
 - 수용: 모든 문자열이 키 기반, 언어 토글
 
 ### M2-06 가디언 · 기준: 기술·창의·UX
-- [ ] PLAN §7 규칙, 이벤트 표시, 전액 상환 액션(시뮬 성공 시만)
+- [~] PLAN §7 규칙, 이벤트 표시, 전액 상환 액션(시뮬 성공 시만)
+  - 규칙(9/26): `packages/core/src/guardian.ts` `evaluateGuardian`(순수, core 100%).
+    - 프로토콜 일시중지: MINT → redeem_all, REDEEM → pause_buys.
+    - TVL 24h −30% → redeem_all.
+    - 이용률 > 95% → stop_deposits.
+    - USDT < 0.99 30분 → pause_buys.
+    - 괴리·가격영향·한도·종목 상태는 decideCycle 단계에 있다.
+  - 실행: `apps/agent/src/guardian.ts` `guardianTick`.
+    - 입력을 `guardian_samples`에 남긴다(마이그레이션 0007: 온체인 플래그·이용률, DeFi TVL, Market USDT 가격).
+    - 발동 1회 기록·알림. 입력이 읽힌 규칙만 해제한다.
+    - redeem_all은 yield 플랜을 멈추고, live에서만 시뮬 SUCCESS 후 상환한다(실패하면 알림 후 사람 판단).
+    - `runCycle`은 열린 판정으로 SKIPPED(guardian). `yield:deposit`은 stop_deposits면 거부한다.
+  - 증거:
+    - `guardian.test.ts`(core, 경계값).
+    - `packages/db/src/guardian.test.ts`(24h 전 표본, 페그 이탈 시점).
+    - `scheduler.test.ts`: USDT 0.985 35분 → 열림·알림·매수 SKIPPED·서명 0 → 회복 시 해제. TVL −33% → yield 플랜 paused(`guardian:tvl_drop`).
+  - 남음: M2 웹에서 이벤트 표시(UI).
 - 수용: 규칙별 테스트, 수동 트리거로 UI 표시 확인
 
 ### M2-07 기업행동·섹터 후보 · 기준: 창의·기술
 - 수용: PAUSED/LIMITED 픽스처로 SKIPPED 사유 표시, 섹터 후보 대체 테스트
+  - [x] 기업행동 부분.
+    - decideCycle: ASSET_PAUSED·ASSET_LIMITED를 발행사를 바꾸지 않고 SKIPPED(corporate_action)로 처리한다. earnings·배당·분할 키가 있고, 나머지는 detail에 남긴다. 증거: `decide.test.ts`.
+    - 실측 목록 재생: `apps/agent/src/market.test.ts`. `fixtures/rwa/getRwaTokenList-20260924-1.json`에는 기업행동이 없어서 대신 두 가지를 확인했다.
+      - 장외에 TRADING인 bStocks도 정규장 플랜은 목 09:32 ET로 DEFERRED.
+      - 실제 Ondo `MARKET_PAUSED "Paused for session transition"`은 API nextOpenTime + 2분으로 DEFERRED.
+  - [ ] 섹터 후보 대체: 구현하지 않았다. REPLAN R10이 "섹터 타깃 지금 컷"을 제안했고, DESIGN_BRIEF도 분야 선택을 그리지 않는다. 컷라인은 사람 합의가 필요하다 → [HUMAN] 결정 대기.
 
 ### M2-08 Skill API · 기준: AW 특별상·기술
 - [ ] `/api/plans`, `/preview`, `/next`, `/report`, `/stop`, 토큰 발급·검증, 레이트리밋

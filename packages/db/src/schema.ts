@@ -335,8 +335,28 @@ export const guardianEvents = pgTable(
   },
   (table) => [
     index('guardian_events_ts_idx').on(table.ts),
-    check('guardian_events_action_ck', oneOf('action', ['warn', 'pause_buys', 'redeem_all'])),
+    check(
+      'guardian_events_action_ck',
+      oneOf('action', ['warn', 'pause_buys', 'stop_deposits', 'redeem_all']),
+    ),
   ],
+);
+
+/**
+ * Guardian inputs over time (PLAN §7): rules that compare with the past — TVL against 24 h ago,
+ * USDT below its peg for 30 minutes — read their history from here.
+ */
+export const guardianSamples = pgTable(
+  'guardian_samples',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    ts: at('ts').notNull(),
+    /** 'venus_tvl_usd' | 'usdt_price_usd' | 'venus_utilization_bps'. */
+    metric: text('metric').notNull(),
+    value: numeric('value', { precision: 38, scale: 18 }).notNull(),
+    source: text('source').notNull(),
+  },
+  (table) => [index('guardian_samples_metric_ts_idx').on(table.metric, table.ts)],
 );
 
 /** Judge codes, stored as SHA-256 hashes of the codes given in JUDGE_CODES. */
