@@ -33,8 +33,9 @@ export interface VenusMarket {
   investmentId: string;
   /** vUSDT, verified on chain: underlying() is BSC USDT. */
   vToken: Hex;
-  /** The supply APY the DeFi API listed at discovery, in basis points (UX_COPY §5 {apy}). */
+  /** The supply APY the DeFi API listed at discovery: bps for comparisons, the display string to show. */
   apyBps?: number;
+  apyDisplay?: string;
 }
 
 /** Gas estimates get a margin; the bound in signableTx still applies. */
@@ -86,6 +87,7 @@ export async function discoverVenusUsdt(
     investmentId: usdt.investmentId,
     vToken,
     ...(typeof usdt.apyBps === 'number' ? { apyBps: usdt.apyBps } : {}),
+    ...(typeof usdt.apyDisplay === 'string' ? { apyDisplay: usdt.apyDisplay } : {}),
   };
 }
 

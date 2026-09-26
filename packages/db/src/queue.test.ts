@@ -12,6 +12,7 @@ import {
   violatedConstraint,
 } from '../test/helpers.js';
 import {
+  abandonRunningJobs,
   claimJob,
   createDb,
   enqueueJob,
@@ -87,6 +88,26 @@ describe.skipIf(!url)('jobs and tx_outbox on Postgres', () => {
         enqueueJob(db, { id: `job-${randomUUID()}`, kind: 'run', planId: 'nope' }),
       ),
     ).toBe('jobs_plan_id_plans_id_fk');
+  });
+
+  it('closes jobs a stopped worker left running, and leaves queued ones alone', async () => {
+    const p = await plan();
+    const running = `job-${randomUUID()}`;
+    const queued = `job-${randomUUID()}`;
+    await enqueueJob(db, { id: running, kind: 'run', planId: p.id });
+    expect((await claimJob(db, ['run']))?.id).toBe(running);
+    await enqueueJob(db, { id: queued, kind: 'preview', planId: p.id });
+    // Every running job counts (the concurrency test above leaves some claimed).
+    expect(
+      await abandonRunningJobs(db, new Date(Date.now() + 1000), 'worker restarted'),
+    ).toBeGreaterThanOrEqual(1);
+    expect(await getJob(db, running)).toMatchObject({
+      status: 'failed',
+      error: 'worker restarted',
+    });
+    expect((await getJob(db, running))?.finishedAt).not.toBeNull();
+    expect((await getJob(db, queued))?.status).toBe('queued');
+    await claimJob(db, ['preview']); // leave the queue as other tests expect it
   });
 
   it('records a signed transaction before broadcast, one per sender nonce', async () => {

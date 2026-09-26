@@ -62,6 +62,24 @@ export async function getJob(db: Db, id: string): Promise<JobRow | undefined> {
   return row;
 }
 
+/**
+ * Jobs a worker left 'running' when it stopped (it is the only worker, so at boot every running job
+ * is one of these). They are closed as failed rather than run again: a run may already have
+ * broadcast, and the outbox and awaiting-cycle checks finish that on-chain truth by themselves.
+ */
+export async function abandonRunningJobs(
+  db: Db,
+  startedBefore: Date,
+  reason: string,
+): Promise<number> {
+  const rows = await db
+    .update(jobs)
+    .set({ status: 'failed', error: reason, finishedAt: sql`now()` })
+    .where(and(eq(jobs.status, 'running'), sql`${jobs.startedAt} < ${startedBefore.toISOString()}`))
+    .returning({ id: jobs.id });
+  return rows.length;
+}
+
 /** Jobs left 'running' by a worker that died are queued again (their work is idempotent). */
 export async function requeueStaleJobs(db: Db, olderThan: Date): Promise<number> {
   const rows = await db

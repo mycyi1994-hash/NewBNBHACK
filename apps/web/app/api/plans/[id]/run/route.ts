@@ -6,13 +6,13 @@ import { toUnits } from '@ijaro/core';
 import { usdText } from '@ijaro/db';
 import { judgeOf, ownedPlan } from '../../../../../lib/server/auth';
 import { context } from '../../../../../lib/server/context';
-import { problem, readBody, unavailable } from '../../../../../lib/server/http';
+import { guard, problem, readBody, unavailable } from '../../../../../lib/server/http';
 import { queueJob } from '../../../../../lib/server/jobs';
 import { RunBody } from '../../../../../lib/server/schemas';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(
+async function handlePOST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -37,3 +37,5 @@ export async function POST(
   }
   return queueJob(db, plan.id, 'run');
 }
+
+export const POST = guard('database', handlePOST);

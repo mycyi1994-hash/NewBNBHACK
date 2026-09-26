@@ -4,7 +4,7 @@
  */
 import { RiskText } from '../../components/RiskText';
 import { Card, Pill, StateBadge } from '../../components/ui';
-import { bpsPct, timeText } from '../../lib/format';
+import { timeText } from '../../lib/format';
 import { locale } from '../../lib/i18n/server';
 import { context } from '../../lib/server/context';
 import { venusInfo } from '../../lib/server/house';
@@ -17,7 +17,7 @@ export default async function RiskPage() {
   const { db } = context();
   const now = new Date();
   const venus = db ? await settle('database', () => venusInfo(db)) : null;
-  const apy = venus?.ok ? bpsPct(venus.value.apyBps) : null;
+  const apy = venus?.ok ? venus.value.apy : null;
   const score = venus?.ok ? venus.value.securityScore : null;
   const updated = venus?.ok
     ? [venus.value.apyAt, venus.value.scoreAt].filter(Boolean).sort()[0]

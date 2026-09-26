@@ -19,6 +19,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GET as nextRoute } from '../app/api/plans/[id]/next/route';
+import { POST as previewRoute } from '../app/api/plans/[id]/preview/route';
 import { POST as reportRoute } from '../app/api/plans/[id]/report/route';
 import { GET as planRoute } from '../app/api/plans/[id]/route';
 import { POST as createPlan } from '../app/api/plans/route';
@@ -217,6 +218,15 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
       },
     });
     expect(res.text).not.toMatch(/"(data|calldata|signature)"\s*:\s*"0x/);
+
+    // The worker previews only what the house wallet would sign; a skill plan uses /next.
+    const preview = await call<Problem>(previewRoute, {
+      path: `/api/plans/${id}/preview`,
+      method: 'POST',
+      id,
+      token,
+    });
+    expect([preview.status, preview.body.error.code]).toEqual([409, 'use_next']);
 
     // Only the plan's own token opens it.
     expect((await next(id)).status).toBe(401);

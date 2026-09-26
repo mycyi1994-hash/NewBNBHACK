@@ -6,13 +6,20 @@ import { instrumentFromRow, listInstruments, planFromRow, readWorkerStatus } fro
 import { skillOf, ownedPlan } from '../../../../../lib/server/auth';
 import { webChain } from '../../../../../lib/server/chain';
 import { context } from '../../../../../lib/server/context';
-import { json, rateLimited, readBody, tooMany, unavailable } from '../../../../../lib/server/http';
+import {
+  guard,
+  json,
+  rateLimited,
+  readBody,
+  tooMany,
+  unavailable,
+} from '../../../../../lib/server/http';
 import { recordReport } from '../../../../../lib/server/report';
 import { ReportRequest } from '../../../../../lib/server/schemas';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(
+async function handlePOST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -42,3 +49,5 @@ export async function POST(
   const status = result.status === 'pending' ? 202 : result.status === 'rejected' ? 422 : 200;
   return json(result, status);
 }
+
+export const POST = guard('database', handlePOST);

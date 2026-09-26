@@ -289,7 +289,10 @@
   - [x] `/next`: `steps[].run`(baw argv), `why`(UX_COPY 키)·`reason`, `expiresAt` — `skill.test.ts`.
 
 ### M2-09 Wallet Skill v1 · 기준: AW 특별상·DX
-- [ ] `skills/ijaro/SKILL.md` + references(plan.md, run.md, safety.md), 설치 경로 확정
+- [x] `skills/ijaro/SKILL.md` + references(plan.md, run.md, safety.md), 설치 경로 확정
+  - (9/26) Skills Hub `binance-agentic-wallet` 형식(frontmatter name/description/metadata, `requires` baw·curl·jq, 선행 스킬). 라우팅: 플랜 만들기(`POST /api/plans`, 토큰은 `~/.config/ijaro/config.json` 600에만 — 대화에 출력 금지), 이자 모드 예치(`defi preview DEPOSIT` → 확인 → `defi deposit` → `/report`), 실행(`/next` 단계: redeem → quote(`acceptMinToCoinAmount`·심볼 확인) → swap(`market-order list`로 FINISHED/FAILED까지) → `/report`), 상태·정지. 안전: 위험 고지 동의, 매 상태 변경 전 미리보기·확인, **토큰 주소를 공식 RWA 목록(스킬 허브가 문서화한 공개 엔드포인트 `…/rwa/stock/detail/list/ai?type=3|1`)과 대조**, 세션 만료 2시간 전 알림, orderId≠체결, 오류 원문 전달.
+  - `/next`가 내는 argv를 벤더 문서와 대조: `market-order quote|swap`(`--fromTokenQty --fromToken --toToken --binanceChainId --slippage --json`), `market-order list --orderId`, `defi preview --action REDEEM`·`defi redeem --investmentId --tokenAddress --amount` — `docs/vendor/binance-skills-hub/.../binance-agentic-wallet/references/{market-order,defi}.md`와 일치.
+  - 설치 경로(Claude Code 개인 스킬): `git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK ijaro-src && mkdir -p ~/.claude/skills && cp -r ijaro-src/skills/ijaro ~/.claude/skills/` + `IJARO_URL`. `/skill` 화면과 README에 같은 줄. 설정 저장 jq 명령은 로컬에서 실행 확인(jq 1.7).
 - [ ] [HUMAN+에이전트] Claude Code에서 실제 실행: 안전 모드 $5 매수 1건, 이자 모드 예치 1건 → `docs/skill-demo.md`(마스킹)
 - 수용: 클린 머신 설치→첫 실행 ≤ 10분, 소감·막힘이 dx/LOG.md에
 
@@ -320,10 +323,22 @@
 
 ### M3-02 모바일·접근성·성능 QA · 기준: UX
 ### M3-03 README 심사위원 경로 · 기준: 전체
-- [ ] 한 문장, 링크, 영상, Judge Mode, 영수증 표(자동 생성 스크립트), 모듈 매트릭스, DX 링크, 실행법, 위험 고지, 라이선스
+- [~] 한 문장, 링크, 영상, Judge Mode, 영수증 표(자동 생성 스크립트), 모듈 매트릭스, DX 링크, 실행법, 위험 고지, 라이선스
+  - (9/26) `README.md`: EN 한 줄, 60초 요약, 3분 체험 경로, 영수증 표 자리 + `pnpm receipts:table`(DB → 마크다운, `scripts/receipts-table.ts`), 모듈 매트릭스(PLAN §6.1에 코드 기준 상태 열 — 미사용·미구현도 그대로), 스킬 설치, 구조, 안전 장치, 위험, 실행법, 문서 지도.
+  - [ ] [HUMAN] 라이브 링크·영상·DX 리포트 링크·라이선스 확정, 영수증 표 붙이기(돈 결정 이후).
 ### M3-04 영상 촬영 · 기준: 전체 — DEMO.md
 ### M3-05 보안 점검 · 기준: 기술 — 시크릿 스캔, 캡 검증, CSP, `pnpm audit`
+- [x] (9/26) `docs/SECURITY.md`. 시크릿 스캔(전체 git 이력: 공개 테스트 키·가짜 벡터·가짜 예시 URL뿐, 추적 env 파일은 `.env.example`만), 캡 검증(설정 한 곳·원장 잠금·정확 승인·시뮬레이션 필수), CSP(`apps/web/proxy.ts`, 요청마다 nonce, 인라인 스크립트 금지; 홈 스크립트 7개 전부 nonce, ui:check CSP 위반 0) + HSTS·nosniff·DENY·Referrer·Permissions(`next.config.ts`), `pnpm audit --prod` 취약점 0(전체는 drizzle-kit 개발 경로 esbuild moderate 1 — 개발 서버 문제, 미사용 → [HUMAN] 수용 확인).
+  - 점검 중 고친 자금 안전 버그: 스킬 플랜 정지·가디언 상환이 하우스 지갑에서 상환될 수 있던 경로 차단(D-19, 테스트는 수정 전 실패 확인), 스킬 플랜 run/preview 잡 거부.
+  - 공개 응답에서 원문 오류 제거(DB 호스트·RPC URL 누출 방지): 화면·API·smoke는 라벨만, 원문은 서버 로그.
 ### M3-06 장애 리허설 · 기준: 기술 — API 다운·RPC 다운·워커 재시작·DB 복구, UI 3상태 확인, RUNBOOK 작성
+- [x] RUNBOOK: `docs/RUNBOOK.md`(구성, 매일 점검, 멈추기, 장애별 절차 — API·RPC·워커·아웃박스·DB·가디언, 캡 변경은 사람 yes 먼저, 충전, 배포, 명령 모음).
+- [x] 리허설(로컬, 9/26):
+  - DB 다운: 닫힌 포트 DB로 `next start` → 7개 화면 200 + "불러올 수 없어요 (database unavailable)", API는 처음엔 500 → **고침**: `guard()`로 503 `{"state":"UNAVAILABLE","reason":"database unavailable"}`, smoke는 red 503 `database unreachable`(테스트 `read.test.ts`, 응답에 호스트 없음 확인).
+  - RPC 다운: smoke `rpc` red 503(`read.test.ts`).
+  - 워커 재시작: 이전 워커가 `running`으로 남긴 잡을 부팅 때 실패로 닫음(**새로 추가** — 전에는 영원히 running, `requeueStaleJobs`는 호출되지 않았음; `queue.test.ts`).
+  - UI 3상태: LIVE/STALE/UNAVAILABLE — `read.test.ts`(테이프 없음 → 25분 전 → 1분 전), 빈 DB 화면 캡처.
+  - [ ] [HUMAN] 배포 환경에서 API 다운(키 교체)·Fly 재시작·Neon 복구 리허설 1회.
 ### M3-07 [-] 모드 D 웹 지갑 연결 (기본 컷)
 ### M3-08 [-] BNB 스테이킹 이자원 (기본 컷)
 

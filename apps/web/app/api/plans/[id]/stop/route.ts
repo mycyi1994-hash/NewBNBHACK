@@ -1,12 +1,12 @@
 /** POST /api/plans/:id/stop — queued for the worker; poll /api/jobs/:jobId (SPEC §8.2). */
 import { callerOf, ownedPlan } from '../../../../../lib/server/auth';
 import { context } from '../../../../../lib/server/context';
-import { unavailable } from '../../../../../lib/server/http';
+import { guard, unavailable } from '../../../../../lib/server/http';
 import { queueJob } from '../../../../../lib/server/jobs';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(
+async function handlePOST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -17,3 +17,5 @@ export async function POST(
   if (plan instanceof Response) return plan;
   return queueJob(db, plan.id, 'stop');
 }
+
+export const POST = guard('database', handlePOST);

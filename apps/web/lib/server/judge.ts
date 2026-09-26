@@ -1,6 +1,6 @@
 /** What a judge code may still spend (sandbox cap across its plans; house daily cap). */
 import type { Config } from '@ijaro/config';
-import { remainingSpend, usdText, utcDay, type Db } from '@ijaro/db';
+import { remainingSpend, syncJudgeCodes, usdText, utcDay, type Db } from '@ijaro/db';
 
 export async function judgeRemaining(
   db: Db,
@@ -21,4 +21,25 @@ export async function judgeRemaining(
     },
   });
   return { capUsd: cap, remainingUsd: usdText(remaining) };
+}
+
+let synced: Promise<number> | undefined;
+
+/**
+ * Makes judge_codes match JUDGE_CODES once per server instance (hashes only), so a code list
+ * changed in the web's env takes effect on the next deploy. An empty list changes nothing — it
+ * never disables every code because a variable was left unset.
+ */
+export function ensureJudgeCodes(db: Db, config: Config): Promise<number> {
+  if (config.judgeCodes.length === 0) return Promise.resolve(0);
+  synced ??= syncJudgeCodes(db, config.judgeCodes).catch((error: unknown) => {
+    synced = undefined;
+    throw error;
+  });
+  return synced;
+}
+
+/** Tests: forget that the codes were synced. */
+export function resetJudgeCodeSync(): void {
+  synced = undefined;
 }

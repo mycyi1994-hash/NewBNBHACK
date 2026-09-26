@@ -71,3 +71,22 @@ export function rateLimited(key: string, max: number, windowMs: number, now = Da
 }
 
 export const tooMany = () => problem(429, 'rate_limited', 'too many requests, try again shortly');
+
+/**
+ * Wraps a route handler: a failure it did not handle (the database is down, a read timed out)
+ * becomes 503 UNAVAILABLE with a label — never a 500 page, never the raw message (it can carry
+ * hosts); the real error goes to the server log (M3-06 rehearsal).
+ */
+export function guard<A extends unknown[]>(
+  label: string,
+  handler: (...args: A) => Promise<Response>,
+): (...args: A) => Promise<Response> {
+  return async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      console.error(`web: ${label} failed —`, error instanceof Error ? error.message : error);
+      return unavailable(`${label} unavailable`);
+    }
+  };
+}

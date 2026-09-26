@@ -5,7 +5,7 @@
  * every check passes, degraded when something is stale, red when something is down (HTTP 503).
  */
 import { fromUnits } from '@ijaro/core';
-import { apiCalls, isoTime, listReceipts, readWorkerStatus } from '@ijaro/db';
+import { apiCalls, isoTime, listReceipts, readWorkerStatus, type Db } from '@ijaro/db';
 import { desc, sql } from 'drizzle-orm';
 import { webChain } from '../../../../lib/server/chain';
 import { context } from '../../../../lib/server/context';
@@ -23,17 +23,20 @@ const API_FRESH_MS = 30 * 60_000;
 const units = (value: unknown): bigint =>
   typeof value === 'string' && /^\d+$/.test(value) ? BigInt(value) : 0n;
 
+/**
+ * Runs one check. A failure is reported as a label only: error messages can carry a database host
+ * or an RPC URL with a key in it, and this endpoint is public. The message goes to the server log.
+ */
 async function timed<T>(
+  label: string,
   work: () => Promise<T>,
 ): Promise<{ value?: T; ms: number; error?: string }> {
   const started = Date.now();
   try {
     return { value: await work(), ms: Date.now() - started };
   } catch (error) {
-    return {
-      ms: Date.now() - started,
-      error: error instanceof Error ? error.message.split('\n')[0] : String(error),
-    };
+    console.error(`smoke: ${label} —`, error instanceof Error ? error.message : error);
+    return { ms: Date.now() - started, error: `${label} unreachable` };
   }
 }
 
@@ -51,12 +54,38 @@ export async function GET(): Promise<Response> {
       503,
     );
   }
-  const ping = await timed(() => db.execute(sql`select 1`));
-  checks.database = ping.error
-    ? { state: 'red', detail: { error: ping.error } }
-    : { state: 'green', detail: { ms: ping.ms } };
+  const rpc = await timed('rpc', () => webChain(config).blockNumber());
+  checks.rpc = rpc.error
+    ? { state: 'red', detail: { error: rpc.error } }
+    : { state: 'green', detail: { block: rpc.value?.toString(), ms: rpc.ms } };
 
-  const tick = await readWorkerStatus(db, 'tick').catch(() => undefined);
+  const ping = await timed('database', () => db.execute(sql`select 1`));
+  if (ping.error) {
+    // Everything else lives in the database: report what is known and stop.
+    checks.database = { state: 'red', detail: { error: ping.error } };
+    return json({ status: 'red', at: now.toISOString(), checks }, 503);
+  }
+  checks.database = { state: 'green', detail: { ms: ping.ms } };
+  try {
+    await databaseChecks(db, now, checks);
+  } catch (error) {
+    console.error('smoke: database —', error instanceof Error ? error.message : error);
+    checks.database = { state: 'red', detail: { error: 'database unreachable' } };
+    return json({ status: 'red', at: now.toISOString(), checks }, 503);
+  }
+
+  const states = Object.values(checks).map((c) => c.state);
+  const status = states.includes('red')
+    ? 'red'
+    : states.includes('degraded')
+      ? 'degraded'
+      : 'green';
+  return json({ status, at: now.toISOString(), checks }, status === 'red' ? 503 : 200);
+}
+
+/** The worker, Web3 API, house, receipt and tape checks — all read from what the worker records. */
+async function databaseChecks(db: Db, now: Date, checks: Record<string, Check>): Promise<void> {
+  const tick = await readWorkerStatus(db, 'tick');
   const tickAge = tick ? now.getTime() - Date.parse(isoTime(tick.updatedAt)) : null;
   checks.worker = !tick
     ? { state: 'red', detail: { reason: 'no tick recorded' } }
@@ -95,12 +124,7 @@ export async function GET(): Promise<Response> {
         },
       };
 
-  const rpc = await timed(() => webChain(config).blockNumber());
-  checks.rpc = rpc.error
-    ? { state: 'red', detail: { error: rpc.error } }
-    : { state: 'green', detail: { block: rpc.value?.toString(), ms: rpc.ms } };
-
-  const house = await readWorkerStatus(db, 'house').catch(() => undefined);
+  const house = await readWorkerStatus(db, 'house');
   checks.house = !house
     ? { state: 'degraded', detail: { reason: 'no balance recorded' } }
     : {
@@ -132,12 +156,4 @@ export async function GET(): Promise<Response> {
     state: tape.state === 'LIVE' ? 'green' : tape.state === 'STALE' ? 'degraded' : 'red',
     detail: { state: tape.state, sampledAt: tape.sampledAt, ageSeconds: tape.ageSeconds },
   };
-
-  const states = Object.values(checks).map((c) => c.state);
-  const status = states.includes('red')
-    ? 'red'
-    : states.includes('degraded')
-      ? 'degraded'
-      : 'green';
-  return json({ status, at: now.toISOString(), checks }, status === 'red' ? 503 : 200);
 }

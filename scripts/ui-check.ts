@@ -37,6 +37,12 @@ try {
       page.on('pageerror', (error) =>
         problems.push(`${lang} ${width}px ${page.url()}: ${error.message}`),
       );
+      // Console errors include Content-Security-Policy violations (M3-05).
+      page.on('console', (message) => {
+        if (message.type() === 'error') {
+          problems.push(`${lang} ${width}px ${page.url()}: ${message.text()}`);
+        }
+      });
       for (const route of pages) {
         const response = await page.goto(`${base}${route}`, { waitUntil: 'networkidle' });
         const status = response?.status() ?? 0;

@@ -7,6 +7,7 @@ import { findJudgeCode } from '@ijaro/db';
 import { context } from '../../../../lib/server/context';
 import {
   clientIp,
+  guard,
   json,
   problem,
   rateLimited,
@@ -14,13 +15,13 @@ import {
   tooMany,
   unavailable,
 } from '../../../../lib/server/http';
-import { judgeRemaining } from '../../../../lib/server/judge';
+import { ensureJudgeCodes, judgeRemaining } from '../../../../lib/server/judge';
 import { JudgeSessionBody } from '../../../../lib/server/schemas';
 import { sessionCookie, signSession, SESSION_TTL_MS } from '../../../../lib/server/session';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   const { config, db } = context();
   if (!db) return unavailable('no DATABASE_URL');
   if (!config.sessionSecret)
@@ -28,6 +29,7 @@ export async function POST(request: Request): Promise<Response> {
   if (rateLimited(`session:${clientIp(request)}`, 10, 60_000)) return tooMany();
   const body = await readBody(request, JudgeSessionBody);
   if (body instanceof Response) return body;
+  await ensureJudgeCodes(db, config);
   const judge = await findJudgeCode(db, body.code);
   if (!judge) return problem(401, 'bad_code', 'the code does not match');
 
@@ -57,3 +59,5 @@ export async function POST(request: Request): Promise<Response> {
     },
   );
 }
+
+export const POST = guard('database', handlePOST);

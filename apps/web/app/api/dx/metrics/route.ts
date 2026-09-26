@@ -4,12 +4,14 @@
  */
 import { context } from '../../../../lib/server/context';
 import { dxMetrics } from '../../../../lib/server/dx';
-import { intParam, json, unavailable } from '../../../../lib/server/http';
+import { guard, intParam, json, unavailable } from '../../../../lib/server/http';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request): Promise<Response> {
+async function handleGET(request: Request): Promise<Response> {
   const { db } = context();
   if (!db) return unavailable('no DATABASE_URL');
   return json(await dxMetrics(db, intParam(request, 'days', 7, 1, 30)));
 }
+
+export const GET = guard('database', handleGET);

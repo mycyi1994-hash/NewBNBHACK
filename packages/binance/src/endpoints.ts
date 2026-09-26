@@ -257,6 +257,8 @@ export interface DeFiInvestment {
   investType?: string;
   investable?: boolean;
   apyBps?: number;
+  /** Pre-formatted by the API ("3.16%"); the one to show — apyBps is for sorting only (skills hub defi.md). */
+  apyDisplay?: string;
   assetTokenList?: { tokenAddress?: string; tokenSymbol?: string }[];
 }
 

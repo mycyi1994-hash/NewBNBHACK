@@ -17,13 +17,20 @@ import {
 import { skillOf, ownedPlan } from '../../../../../lib/server/auth';
 import { webChain } from '../../../../../lib/server/chain';
 import { context } from '../../../../../lib/server/context';
-import { json, problem, rateLimited, tooMany, unavailable } from '../../../../../lib/server/http';
+import {
+  guard,
+  json,
+  problem,
+  rateLimited,
+  tooMany,
+  unavailable,
+} from '../../../../../lib/server/http';
 import { tapeView } from '../../../../../lib/server/market';
 import { nextFor } from '../../../../../lib/server/next';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
+async function handleGET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -86,3 +93,5 @@ export async function GET(
   });
   return json(answer);
 }
+
+export const GET = guard('database', handleGET);

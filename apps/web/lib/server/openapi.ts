@@ -344,6 +344,7 @@ export function openApiDocument(serverUrl: string) {
             202: json(ref('Queued'), 'Queued'),
             401: problem('unauthorized'),
             404: problem('not_found'),
+            409: problem('use_next: skill plans are decided by GET /next'),
             429: problem('too_many_jobs: ten per plan per ten minutes'),
           },
         },

@@ -3,6 +3,7 @@
  * finishing a cycle whose swap confirmed late, and jobs from the web. Real Postgres (the agent
  * tests' own database), fake API and chain, public test key.
  */
+import { randomUUID } from 'node:crypto';
 import {
   createDb,
   enqueueJob,
@@ -184,6 +185,55 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
     expect(w.chain.sent).toEqual([]);
     expect(await processJobs(w.deps('live'), w.deps('simulate'))).toEqual({ jobs: [], errors: [] });
     await updatePlan(db, due, { status: 'stopped' }); // later ticks must not buy it
+  });
+
+  it("never redeems a skill plan's position from the house wallet (stop job, guardian)", async () => {
+    await calm();
+    const skill = () =>
+      plan({
+        ownerKind: 'skill',
+        ownerRef: `sk_${randomUUID()}`,
+        walletAddress: '0x000000000000000000000000000000000000dEaD',
+        mode: 'yield',
+        contributionUsd: '0',
+        principalUsd: '100',
+        vtokenUnits: '4700000000',
+      });
+    const stopped = await skill();
+    const w = await createWorld(db, '2026-09-28T14:00:00.000Z');
+    await enqueueJob(db, { id: `job-skill-stop-${stopped}`, kind: 'stop', planId: stopped });
+    await enqueueJob(db, { id: `job-skill-run-${stopped}`, kind: 'run', planId: stopped });
+    await processJobs(w.deps('live'), w.deps('simulate'));
+    expect(await getJob(db, `job-skill-stop-${stopped}`)).toMatchObject({
+      status: 'done',
+      result: { status: 'stopped', redeemed: 'users_wallet' },
+    });
+    expect(await getJob(db, `job-skill-run-${stopped}`)).toMatchObject({
+      status: 'failed',
+      error: 'skill plans run in their own wallet (GET /next)',
+    });
+    expect((await getPlan(db, stopped))?.status).toBe('stopped');
+
+    // A 30 % TVL drop in live mode pauses the skill plan but redeems nothing for it. (House yield
+    // plans from earlier tests would rightly be redeemed; stop them so only the skill plan is left.)
+    for (const id of planIds) await updatePlan(db, id, { status: 'stopped' });
+    const held = await skill();
+    await insertGuardianSample(db, {
+      ts: '2026-09-27T14:00:00.000Z',
+      metric: 'venus_tvl_usd',
+      value: '1353914642',
+      source: 'defi-data',
+    });
+    w.market.venusTvl = '900000000';
+    const report = await schedulerTick(w.deps('live'), w.deps('simulate'));
+    expect(report.guardian?.paused).toContain(held);
+    expect(report.guardian?.redeemed).not.toContain(held);
+    expect(await getPlan(db, held)).toMatchObject({
+      status: 'paused',
+      pausedReason: 'guardian:tvl_drop',
+    });
+    expect(w.api.calls.filter((path) => path.includes('/defi/transaction'))).toEqual([]);
+    expect(w.chain.sent).toEqual([]);
   });
 
   it('runs preview, run and stop jobs from the web; preview never signs', async () => {

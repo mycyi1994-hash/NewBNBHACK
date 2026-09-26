@@ -23,6 +23,7 @@ import { JudgePlanBody, SkillPlanBody } from '../../../lib/server/schemas';
 import { context } from '../../../lib/server/context';
 import {
   clientIp,
+  guard,
   json,
   problem,
   rateLimited,
@@ -36,7 +37,7 @@ export const dynamic = 'force-dynamic';
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const units = (value: string) => toUnits(value, 18);
 
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   const { config, db } = context();
   if (!db) return unavailable('no DATABASE_URL');
   const now = new Date();
@@ -171,3 +172,5 @@ export async function POST(request: Request): Promise<Response> {
     201,
   );
 }
+
+export const POST = guard('database', handlePOST);

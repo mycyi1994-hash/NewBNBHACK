@@ -19,7 +19,7 @@ import {
   tapeState,
   whyText,
 } from '../components/ui';
-import { bpsPct, money, sharesText, signedPct, timeText } from '../lib/format';
+import { money, sharesText, signedPct, timeText } from '../lib/format';
 import { locale } from '../lib/i18n/server';
 import type { Lang, T } from '../lib/i18n/translate';
 import { context } from '../lib/server/context';
@@ -199,7 +199,7 @@ async function GuardianLine({ t }: { t: T }) {
 
 function VenusLine({ t, venus }: { t: T; venus: Settled<VenusInfo> | typeof unavailable }) {
   if (!venus.ok) return null;
-  const apy = bpsPct(venus.value.apyBps);
+  const apy = venus.value.apy;
   const score = venus.value.securityScore;
   if (!apy || !score) return null;
   return <p className="mt-3 text-xs text-muted">{t('home.counter.apy', { apy, score })}</p>;

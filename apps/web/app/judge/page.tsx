@@ -5,7 +5,6 @@
 import { cookies } from 'next/headers';
 import { JudgeFlow, type Venue } from '../../components/judge/JudgeFlow';
 import { StateBadge } from '../../components/ui';
-import { bpsPct } from '../../lib/format';
 import { locale } from '../../lib/i18n/server';
 import { context } from '../../lib/server/context';
 import { venusInfo } from '../../lib/server/house';
@@ -61,7 +60,7 @@ export default async function JudgePage() {
       venues={venues}
       session={budget?.ok ? { remainingUsd: budget.value.remainingUsd } : null}
       risk={{
-        apy: venus.ok ? bpsPct(venus.value.apyBps) : null,
+        apy: venus.ok ? venus.value.apy : null,
         score: venus.ok ? venus.value.securityScore : null,
       }}
     />

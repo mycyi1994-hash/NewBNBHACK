@@ -59,6 +59,11 @@ export async function processJob(
   simulate: CycleDeps,
   job: JobRow,
 ): Promise<Record<string, unknown>> {
+  if (job.kind === 'run' || job.kind === 'preview') {
+    const owner = (await getPlan(deps.db, job.planId))?.ownerKind;
+    // The worker signs only for the house wallet's plans; a skill plan is signed by its own wallet.
+    if (owner === 'skill') throw new Error('skill plans run in their own wallet (GET /next)');
+  }
   switch (job.kind) {
     case 'preview':
       return plain(await runCycle(simulate, job.planId, { manual: true }));

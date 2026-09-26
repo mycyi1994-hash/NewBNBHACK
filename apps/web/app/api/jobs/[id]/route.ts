@@ -1,11 +1,11 @@
 /** GET /api/jobs/:id — a queued job's state and, when done, the worker's report. */
 import { getJob, isoTime } from '@ijaro/db';
 import { context } from '../../../../lib/server/context';
-import { json, problem, unavailable } from '../../../../lib/server/http';
+import { guard, json, problem, unavailable } from '../../../../lib/server/http';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
+async function handleGET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -25,3 +25,5 @@ export async function GET(
     finishedAt: job.finishedAt ? isoTime(job.finishedAt) : null,
   });
 }
+
+export const GET = guard('database', handleGET);

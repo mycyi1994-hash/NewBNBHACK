@@ -141,7 +141,14 @@ export async function redeemPlanPosition(
   deps: CycleDeps,
   plan: PlanRow,
   outcome: { status: 'paused' | 'stopped'; reason: string },
-): Promise<'redeemed' | 'nothing_to_redeem' | 'not_live' | 'failed'> {
+): Promise<'redeemed' | 'nothing_to_redeem' | 'users_wallet' | 'not_live' | 'failed'> {
+  // Only house and judge plans hold a position in the house wallet. A skill plan's principal sits
+  // in the user's own wallet (its vtoken_units come from the user's reports): the worker never
+  // redeems it — that would take house funds — the user does, through the skill.
+  if (plan.ownerKind === 'skill') {
+    await updatePlan(deps.db, plan.id, { status: outcome.status, pausedReason: outcome.reason });
+    return 'users_wallet';
+  }
   const vTokens = BigInt(plan.vtokenUnits);
   if (plan.mode !== 'yield' || vTokens <= 1n) {
     await updatePlan(deps.db, plan.id, { status: outcome.status, pausedReason: outcome.reason });

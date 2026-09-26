@@ -32,7 +32,8 @@ export interface Interest {
 }
 
 export interface VenusInfo {
-  apyBps: number | null;
+  /** The API's display string without its "%" ("3.16"), shown as is — never recomputed from bps. */
+  apy: string | null;
   /** When the DeFi API listed that APY (the worker refreshes it every six hours). */
   apyAt: string | null;
   securityScore: string | null;
@@ -44,9 +45,10 @@ export async function venusInfo(db: Db): Promise<VenusInfo> {
     readWorkerStatus(db, 'venus'),
     latestGuardianSamples(db),
   ]);
-  const value = status?.value as { apyBps?: unknown; verifiedAt?: unknown } | undefined;
+  const value = status?.value as { apyDisplay?: unknown; verifiedAt?: unknown } | undefined;
+  const display = typeof value?.apyDisplay === 'string' ? value.apyDisplay.trim() : '';
   return {
-    apyBps: typeof value?.apyBps === 'number' ? value.apyBps : null,
+    apy: /^\d[\d,]*(\.\d+)?%$/.test(display) ? display.slice(0, -1) : null,
     apyAt: typeof value?.verifiedAt === 'string' ? value.verifiedAt : null,
     securityScore: samples.venus_security_score?.value ?? null,
     scoreAt: samples.venus_security_score?.ts ?? null,

@@ -33,7 +33,8 @@
     "coverage:core": "vitest run --project @ijaro/core --coverage",
     "copy:gen": "tsx apps/web/scripts/copy.ts gen",
     "lint:copy": "tsx apps/web/scripts/copy.ts lint",
-    "ui:check": "tsx scripts/ui-check.ts"
+    "ui:check": "tsx scripts/ui-check.ts",
+    "receipts:table": "tsx scripts/receipts-table.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -14,6 +14,7 @@
 import { assertUsdt } from '@ijaro/chain';
 import { describeConfig, loadConfig } from '@ijaro/config';
 import {
+  abandonRunningJobs,
   insertTapeSamples,
   listInstruments,
   listPlans,
@@ -37,6 +38,13 @@ console.log(`agent: configuration valid — ${JSON.stringify(describeConfig(conf
 
 const rt = createRuntime(config);
 await migrateDb(rt.database.db);
+const abandoned = await abandonRunningJobs(
+  rt.database.db,
+  new Date(),
+  'the worker restarted while this job ran — see the plan history for what happened on chain',
+);
+if (abandoned > 0)
+  console.log(`agent: ${abandoned} job(s) left running by the last worker closed as failed`);
 await assertUsdt(rt.bsc);
 
 // The scheduler needs the house address; without it the worker only records the tape.

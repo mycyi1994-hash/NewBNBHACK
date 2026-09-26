@@ -8,12 +8,14 @@ import {
   createDb,
   getJob,
   getPlan,
+  judgeCodes,
   openCycle,
   reserveSpend,
   sha256Hex,
   utcDay,
   type PlanRow,
 } from '@ijaro/db';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GET as getJobRoute } from '../app/api/jobs/[id]/route';
 import { POST as session } from '../app/api/judge/session/route';
@@ -23,6 +25,7 @@ import { POST as run } from '../app/api/plans/[id]/run/route';
 import { POST as stop } from '../app/api/plans/[id]/stop/route';
 import { POST as createPlan } from '../app/api/plans/route';
 import { resetContext } from '../lib/server/context';
+import { resetJudgeCodeSync } from '../lib/server/judge';
 import { SESSION_TTL_MS } from '../lib/server/session';
 import { webTestUrl } from './db';
 import { addJudgeCodes, call, cleanup, cookieFrom, testInstrument } from './harness';
@@ -330,5 +333,35 @@ describe.skipIf(!webTestUrl)('Judge Mode routes', () => {
     expect(statuses[10]).toBe(429);
     const row: PlanRow | undefined = await getPlan(db, id);
     expect(row?.status).toBe('paused');
+  });
+  // Last in this file: a sync disables every code missing from JUDGE_CODES.
+  it('takes JUDGE_CODES from the environment (hashes only); an empty list disables nothing', async () => {
+    const fromEnv = `env-${randomUUID()}`;
+    const saved = process.env.JUDGE_CODES;
+    try {
+      // Empty (the test default): the codes added directly above keep working.
+      expect((await call(session, { path: '/api/judge/session', body: { code } })).status).toBe(
+        200,
+      );
+      process.env.JUDGE_CODES = fromEnv;
+      await resetContext();
+      resetJudgeCodeSync();
+      const res = await call(session, { path: '/api/judge/session', body: { code: fromEnv } });
+      expect(res.status).toBe(200);
+      const [row] = await db
+        .select()
+        .from(judgeCodes)
+        .where(eq(judgeCodes.codeHash, sha256Hex(fromEnv)));
+      expect(row).toMatchObject({ disabled: false });
+      // Codes no longer listed stop working.
+      expect((await call(session, { path: '/api/judge/session', body: { code } })).status).toBe(
+        401,
+      );
+      await db.delete(judgeCodes).where(eq(judgeCodes.codeHash, sha256Hex(fromEnv)));
+    } finally {
+      process.env.JUDGE_CODES = saved;
+      await resetContext();
+      resetJudgeCodeSync();
+    }
   });
 });

@@ -1,34 +1,101 @@
 # 이자로 (Ijaro) — Interest buys the stock. Principal stays.
 
-> BNB Hack: Tokenized Stocks Edition 출품 프로젝트. **상태: M0 부트스트랩(G0) 완료 — 워크스페이스·설정 검증·Web3 API 클라이언트(오프라인)·공식 문서 대조. 다음은 G1(API 키 필요).**
-> 빌드 2026-09-23 → 내부 제출 10-09 → 마감 10-11 12:00 UTC → 심사 10-12~23.
+> **EN, one line:** an agent that keeps your principal in a USDT savings pool (Venus on BNB Smart Chain) and buys tokenized US stocks (bStocks / Ondo) with the interest — or a fixed amount in safe mode — **only during the US regular session**, under hard caps, with an on-chain receipt and a one-sentence reason for every action.
 
-원금은 USDT 이자 통장(Venus)에 그대로 두고, **이자(또는 정한 적립금)로만** 미국 주식 토큰(bStocks / Ondo, BSC 메인넷)을
-**미국 정규장에만** 자동 매수하는 에이전트. 안전 모드(적립만)가 기본값이고, 모든 매수는 Transaction API로 미리 돌려본 뒤
-영수증과 이유 한 줄을 남긴다. 심사위원은 코드 하나로 3분 안에 완주한다.
+BNB Hack: Tokenized Stocks Edition 출품작. 빌드 9/23 → 내부 제출 10/9 → 마감 10/11 12:00 UTC.
 
-## 심사위원께
-제출 시 이 섹션이 `docs/DEMO.md` §2의 구조로 채워진다: 라이브 링크 · 영상 · 3분 체험 · 실기록 표 · 모듈 매트릭스 · DX 리포트.
+**Live:** 배포 후 기입 · **Video:** M4-02 · **DX report:** M4-01 · **Judge Mode:** 제출 폼의 심사위원 코드
+
+## 60초 요약
+
+원금은 USDT 이자 통장(Venus)에 그대로 두고, **이자(또는 정한 적립금)로만** 미국 주식 조각을 **미국 정규장에만** 삽니다. 안전 모드(적립만)가 기본값입니다. 결정은 모델이 아니라 결정 규칙(`packages/core` `decideCycle`, 커버리지 100%)이 하고, 모든 매수는 Binance Web3 **Transaction API로 미리 돌려본 뒤에만** 서명합니다. 매 사이클은 영수증(BscScan)과 이유 한 줄(`why.*`)을 남기고, 못 사는 이유(장 마감·가격 괴리·한도·지킴이)도 그대로 보여 줍니다.
+
+## 3분 체험 (Judge Mode, `/judge`)
+
+홈 → **심사위원 코드로 체험하기** → 코드 → 종목(NVDA 등) → 적립만 · $5 · 정규장 → **미리 돌려보기**(워커가 블록체인에서 시뮬레이션) → **지금 사기** → 영수증 또는 "예약됨"(장이 닫혀 있으면 다음 개장 +2분에 자동 매수) → **플랜 멈추기**.
+코드 1개 = 최대 $5, 돈은 이자로의 하우스 지갑에서 나갑니다. 플랜은 7일 뒤 자동 종료.
+
+## 이자로가 직접 돌린 기록
+
+`pnpm receipts:table`이 DB에서 이 표를 만듭니다(시각 · 플랜 · 행동 · 결과/사유 · 영수증). **현재 영수증 0개** — 하우스 지갑 충전과 live 전환은 사람의 돈 결정(REPLAN R1–R4)을 기다립니다. 받는 대로 여기에 붙입니다.
+
+## 모듈 매트릭스 (PLAN §6.1 + 코드 기준 상태)
+
+| 모듈 | 이자로에서 쓰는 곳 | 상태 |
+| --- | --- | --- |
+| RWA Data API | 토큰 목록(주소·배수·상태 코드·다음 개장), RWA 가격, 미국 주가 — 레지스트리·테이프·결정 | 사용 중(프랑크푸르트 워커, 테이프 10분) |
+| Market API | USDT 가격(디페그 지킴이) | 코드 완료 |
+| Trading API | 견적(가격영향·경로), 정확 금액 승인 calldata, 스왑 calldata | 견적 사용 중(테이프), 서명 경로는 live 대기 |
+| Transaction API | 모든 서명 전 시뮬레이션, 브로드캐스트(RPC 대체 경로), 상태 조회 | 코드 완료, live 대기 |
+| DeFi API | Venus USDT 투자·APY(`apyDisplay`), TVL·보안 점수(지킴이·위험 고지), 예치·상환 calldata | 코드 완료 |
+| Wallet API | — (하우스 잔고는 BSC RPC로 읽음) | 미사용 |
+| Agentic Wallet / Wallet Skills | `skills/ijaro`: 서버는 `/next`로 `baw` 명령만, 서명은 사용자 기기, `/report`는 체인 확인 | 코드·문서 완료, 실제 실행 데모는 사람(M2-09) |
+| b402 Payments | — | 미구현(M3-01, 컷 후보) |
+| BNB Agent Studio | — | 미구현(M2-10) |
+| BSC | viem 읽기·쓰기, 영수증 Transfer 로그로 수량 확정, Venus vToken | 사용 중 |
+
+## 내 AI 비서로 쓰기 (Agentic Wallet, 모드 C)
+
+```bash
+git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK ijaro-src \
+  && mkdir -p ~/.claude/skills && cp -r ijaro-src/skills/ijaro ~/.claude/skills/
+export IJARO_URL=<사이트 주소>
+```
+
+그다음 "이자로 시작해줘". 필요: `binance-agentic-wallet` 스킬과 `baw`. 서버는 결정만 하고(키·세션을 저장하지 않음), 모든 거래는 사용자 확인 뒤 사용자 지갑이 서명합니다. API 계약: `/api/openapi`(OpenAPI 3.1).
+
+## 구조
+
+```
+apps/web        Next.js: 화면(홈·체험·플랜·비서·데이터·위험)과 API. 서명하지 않고 Web3 API도 부르지 않음
+apps/agent      워커(유일한 서명자): 테이프 10분, 틱 5분(아웃박스·대기 사이클·지킴이·잡·기한 된 플랜), 웹 잡 3초
+packages/core   결정 규칙 decideCycle, 지킴이 규칙, 금액·주 수 계산, NYSE 달력 — 순수 함수, 커버리지 100%
+packages/binance  Web3 API 클라이언트: HMAC 서명, 레이트리밋, 오류 분류표(SPEC §11), 호출 계측(api_calls)
+packages/chain  viem: ERC-20·Venus·영수증 로그
+packages/db     Drizzle 스키마·마이그레이션(되돌리기 포함)·지출 원장(advisory lock)·아웃박스·잡
+skills/ijaro    Wallet Skill (SKILL.md + references)
+```
+
+## 안전 장치 (요약 — 자세히는 [`docs/SECURITY.md`](docs/SECURITY.md))
+
+- 하드 캡은 env 한 곳에서 읽고 코드가 강제: 1회 $25 · 하루 $50(하우스), 심사위원 코드당 $5. 지출은 원장에 잠금 아래 예약.
+- 정확 금액 승인만, 서명 전 calldata 해독·검증, **시뮬레이션 SUCCESS 없이는 서명 없음**, 3분 안에 영수증이 없으면 아웃박스 PENDING으로 새 서명 차단.
+- 지킴이: Venus 일시정지·TVL 24시간 −30%·이용률 95%·USDT 0.99 30분 → 매수 중단/전액 상환(live에서 시뮬레이션 통과 시에만).
+- 모든 데이터 블록은 실시간 / n분 전 / 불러올 수 없음(이유) 중 하나. 없는 숫자를 만들지 않습니다.
+- CSP(요청마다 nonce), HSTS, 화면 375px 가로 스크롤 없음·KO/EN(`pnpm ui:check`).
+
+## 위험
+
+[`/risk`](apps/web/app/risk/page.tsx) — 이자로는 은행이 아닙니다. 원금을 잃을 수 있습니다(Venus 해킹, USDT 디페그). 이자율은 매일 바뀌고 주가는 오르내립니다. 안전 모드(적립만)가 기본값입니다.
+
+## 실행
+
+```bash
+pnpm i
+cp .env.example .env          # EXECUTION_MODE=simulate(기본)는 아무것도 서명하지 않음. 웹은 키 없이 뜨고,
+                              # 워커의 테이프·결정에는 Binance Web3 API 키가 필요(Q-01: 한 리전에서만 사용)
+pnpm db:migrate && pnpm db:seed   # DATABASE_URL 필요(Postgres)
+pnpm dev                      # 웹 + 워커. 데이터가 없으면 화면은 "불러올 수 없어요(이유)"로 정직하게 뜹니다
+pnpm typecheck && pnpm lint && pnpm test   # 테스트 DB: IJARO_TEST_DATABASE_URL
+pnpm smoke --url http://localhost:3000     # /api/judge/smoke
+```
+
+운영 절차는 [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
 ## 문서 지도
-| 문서 | 용도 | 먼저 읽을 사람 |
-| --- | --- | --- |
-| [`CLAUDE.md`](CLAUDE.md) | 코딩 에이전트 운영 규칙 | Opus 5.5 |
-| [`docs/JUDGING.md`](docs/JUDGING.md) | 공식 채점 기준(원문)과 기능 매핑, 자가채점 | 전원 |
-| [`docs/PLAN.md`](docs/PLAN.md) | 마스터 기획서: 목표, 사용자, 범위, 흐름, 일정, 컷라인, 3인 검토 회의록 | 전원 |
-| [`docs/SPEC.md`](docs/SPEC.md) | 기술 명세: 모듈, 데이터 모델, 에이전트 루프, 가디언, 에러 분류, 보안 | 엔지니어 |
-| [`docs/TASKS.md`](docs/TASKS.md) | 티켓 백로그(M0~M4), 수용 기준 | 엔지니어 |
-| [`docs/GOALS.md`](docs/GOALS.md) | `/goal`에 붙여넣는 지시서 10개(G0~G9), 순서와 선행 조건 | 운영자·Opus 5.5 |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | 잠긴 결정, 1일차에 닫을 질문 | 전원 |
-| [`docs/DX_PROTOCOL.md`](docs/DX_PROTOCOL.md) | 개발자 경험 리포트(25%) 증거 체계 | 전원 |
-| [`docs/UX_COPY.md`](docs/UX_COPY.md) | 화면 문구 KR/EN, 위험 고지, 금지어 | 제품·엔지니어 |
-| [`docs/DEMO.md`](docs/DEMO.md) | 4분 영상 스크립트, README 심사 경로 | 제품 |
-| [`dx/LOG.md`](dx/LOG.md) | 개발자 경험 로그(시간순) | 전원 |
 
-## 시작하기 (Opus 5.5)
-1. 레포 루트에서 Claude Code를 auto 모드로 연다.
-2. `docs/GOALS.md`의 **G0** 블록을 `/goal ` 뒤에 붙여넣는다. 골이 끝나면 선행 조건을 채우고 G1, G2… 순서로.
-3. 골 없이 수동으로 할 때는 `CLAUDE.md`를 읽고 `docs/TASKS.md`의 M0-01부터.
+| 문서 | 용도 |
+| --- | --- |
+| [`docs/JUDGING.md`](docs/JUDGING.md) | 공식 채점 기준(원문)과 기능 매핑 |
+| [`docs/PLAN.md`](docs/PLAN.md) | 기획: 목표·사용자·범위·흐름·일정·컷라인 |
+| [`docs/SPEC.md`](docs/SPEC.md) | 기술 명세: 모듈·데이터 모델·에이전트 루프·지킴이·오류 분류 |
+| [`docs/TASKS.md`](docs/TASKS.md) | 티켓과 증거 |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | 잠긴 결정·열린 질문 |
+| [`docs/DX_PROTOCOL.md`](docs/DX_PROTOCOL.md) · [`dx/LOG.md`](dx/LOG.md) | 개발자 경험 증거 |
+| [`docs/UX_COPY.md`](docs/UX_COPY.md) | 화면 문구 KR/EN(§7은 사람 확정 전 초안) |
+| [`docs/SECURITY.md`](docs/SECURITY.md) · [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | 보안 점검·운영 |
+| [`CLAUDE.md`](CLAUDE.md) · [`docs/GOALS.md`](docs/GOALS.md) | 코딩 에이전트 운영 규칙·골 |
 
 ## 라이선스
+
 제출 전 확정(MIT 권장).

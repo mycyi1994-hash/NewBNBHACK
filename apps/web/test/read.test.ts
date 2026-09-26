@@ -206,7 +206,8 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
     try {
       const down = await call<Smoke>(smoke, { path: '/api/judge/smoke' });
       expect(down.status).toBe(503);
-      expect(down.body.checks.rpc).toEqual({ state: 'red', detail: { error: 'fetch failed' } });
+      // A label only: RPC errors can carry the RPC URL (with a key) and this endpoint is public.
+      expect(down.body.checks.rpc).toEqual({ state: 'red', detail: { error: 'rpc unreachable' } });
     } finally {
       chain.rpcDown = false;
     }
@@ -363,6 +364,31 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
       avgGapPct: '0.0000',
       gapSamples: expect.any(Number) as unknown,
     });
+  });
+
+  it('answers 503 UNAVAILABLE, not a 500 page, when the database does not answer (M3-06)', async () => {
+    await resetContext();
+    const saved = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = 'postgres://postgres:ci@127.0.0.1:1/unreachable';
+    try {
+      for (const handler of [house, instrumentsRoute, marketStatus, receiptsRoute, dxMetrics]) {
+        const res = await call(handler, { path: '/api/x' });
+        expect(res.status).toBe(503);
+        expect(res.body).toEqual({ state: 'UNAVAILABLE', reason: 'database unavailable' });
+        expect(res.text).not.toContain('127.0.0.1');
+      }
+      const res = await call<Smoke>(smoke, { path: '/api/judge/smoke' });
+      expect(res.status).toBe(503);
+      expect(res.body.status).toBe('red');
+      expect(res.body.checks.database).toEqual({
+        state: 'red',
+        detail: { error: 'database unreachable' },
+      });
+      expect(res.text).not.toContain('127.0.0.1');
+    } finally {
+      process.env.DATABASE_URL = saved;
+      await resetContext();
+    }
   });
 
   it('answers UNAVAILABLE, not an error, for a web without a database', async () => {
