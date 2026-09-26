@@ -19,6 +19,8 @@
     "db:rollback": "tsx scripts/db-rollback.ts",
     "db:seed": "tsx scripts/db-seed.ts",
     "dx:metrics": "tsx scripts/dx-metrics.ts",
+    "dx:events": "tsx scripts/dx-events.ts",
+    "alert:test": "tsx scripts/alert-test.ts",
     "db:count": "tsx scripts/db-count.ts",
     "tape:once": "tsx scripts/tape-once.ts",
     "cycle:once": "node scripts/not-yet.mjs cycle:once M1-03",

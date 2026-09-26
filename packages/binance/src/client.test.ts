@@ -187,6 +187,63 @@ describe('BinanceClient.request', () => {
     ).rejects.toMatchObject({ code: 42900, retryable: true, httpStatus: 429 });
   });
 
+  it('retries transient failures of idempotent calls with backoff, when asked', async () => {
+    const serverError = () =>
+      new Response(JSON.stringify({ code: 50000, msg: 'Internal server error', data: null }));
+    const { client, records } = harness([
+      serverError(),
+      new TypeError('fetch failed'),
+      new Response(OK([])),
+    ]);
+    const response = await client.request('market', 'getSupportedChains', {
+      method: 'GET',
+      path: '/api/v1/dex/market/supported/chain',
+      retries: 2,
+    });
+    expect(response.retryCount).toBe(2);
+    expect(records.map((r) => [r.code, r.retryCount, r.ts])).toEqual([
+      ['50000', 0, '2026-09-23T12:00:00.000Z'],
+      [null, 1, '2026-09-23T12:00:00.500Z'],
+      ['0', 2, '2026-09-23T12:00:01.500Z'],
+    ]);
+  });
+
+  it('stops after the allowed retries and never retries by default', async () => {
+    const serverError = () =>
+      new Response(JSON.stringify({ code: 50001, msg: 'Service unavailable', data: null }));
+    const twice = harness([serverError(), serverError()]);
+    await expect(
+      twice.client.request('market', 'getSupportedChains', {
+        method: 'GET',
+        path: '/api/v1/dex/market/supported/chain',
+        retries: 1,
+      }),
+    ).rejects.toMatchObject({ code: 50001, retryable: true });
+    expect(twice.records).toHaveLength(2);
+
+    const once = harness([serverError()]);
+    await expect(
+      once.client.request('market', 'getSupportedChains', {
+        method: 'GET',
+        path: '/api/v1/dex/market/supported/chain',
+      }),
+    ).rejects.toMatchObject({ code: 50001 });
+    expect(once.records).toHaveLength(1);
+  });
+
+  it('does not retry a business error even when retries are allowed', async () => {
+    const expired = JSON.stringify({ code: 40401, msg: 'expired', data: null });
+    const { client, records } = harness([new Response(expired)]);
+    await expect(
+      client.request('trading', 'buildSwapTransaction', {
+        method: 'GET',
+        path: '/api/v1/dex/aggregator/swap',
+        retries: 3,
+      }),
+    ).rejects.toMatchObject({ code: 40401, retryable: false });
+    expect(records).toHaveLength(1);
+  });
+
   it('refuses a signed call without credentials, before any network I/O', async () => {
     const { client, sent } = harness([], { apiKey: undefined, apiSecret: undefined });
     await expect(

@@ -68,6 +68,12 @@ export interface QuoteObservation {
   /** Trading API code when the quote failed. */
   errorCode?: string;
   errorMsg?: string;
+  /**
+   * What the agent's error taxonomy (packages/binance, SPEC §11) makes of `errorCode`, for codes
+   * this engine does not name itself: `next_issuer` rules the issuer out for this cycle (40421
+   * insufficient liquidity, 40365/40366 Ondo pair or size), `market_closed` defers.
+   */
+  errorAction?: 'next_issuer' | 'market_closed';
 }
 
 export interface CycleInput {
@@ -154,6 +160,7 @@ function corporateActionWhy(status: TokenStatus): WhyKey {
 function exclusionOf(quote: QuoteObservation): string | undefined {
   if (quote.errorCode === NO_LIQUIDITY_CODE) return 'no_liquidity';
   if (quote.errorCode === VENUE_MINIMUM_CODE) return 'venue_minimum';
+  if (quote.errorCode !== undefined && quote.errorAction === 'next_issuer') return quote.errorCode;
   // RFQ orders are signed EIP-712 messages that the Transaction API cannot simulate; they stay
   // off until a human approves that spending path (DECISIONS Q-15).
   if (!quote.errorCode && quote.executionMode === 'RFQ') return 'rfq_not_enabled';
@@ -329,7 +336,7 @@ export function decideCycle(input: CycleInput): Decision {
   if (!last) return { kind: 'quote', instrumentId, spendUsd: decimal(plannedSpend) };
 
   if (last.errorCode !== undefined) {
-    if (OFF_HOURS_QUOTE_CODES.has(last.errorCode)) {
+    if (OFF_HOURS_QUOTE_CODES.has(last.errorCode) || last.errorAction === 'market_closed') {
       return marketClosed(
         regular ? nowMs + RETRY_LATER_MS : nextRegularOpen(now).getTime() + OPEN_SETTLE_MS,
         last.errorCode,

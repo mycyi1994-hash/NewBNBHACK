@@ -146,8 +146,15 @@
 - 수용: 주말 실행 시 DEFERRED 레코드 생성, 월요일 개장 후 자동 매수(로그로 증명)
 
 ### M1-07 에러 분류 v1 · 기준: 기술·DX
-- [ ] SPEC §11 매핑, 재시도·백오프, 429, 알림(FAILED만), 미지 코드 최초 관측 시 dx 이벤트
+- [~] SPEC §11 매핑, 재시도·백오프, 429, 알림(FAILED만), 미지 코드 최초 관측 시 dx 이벤트
+  - 분류(2026-09-26, 클라우드 세션): `packages/binance/src/taxonomy.ts` `classifyError()` — (모듈, 코드) → 행동(`retry`·`requote`·`next_issuer`·`market_closed`·`reduce_size`·`rpc_fallback`·`defer`·`fail`)·운영 알림 여부·문구 키·문서화 여부. 코드는 모듈별 공식 오류 표에서만 가져왔다(40470처럼 모듈마다 뜻이 다른 코드 포함). 표에 없는 코드는 `documented:false` → 사이클은 안전하게 FAILED, 운영 알림.
+  - 재시도·429: `RequestOptions.retries`(기본 0, 멱등 호출만) — 일시 오류(네트워크·타임아웃·5xx·50000/50001·40432·40465·40482·40483)에 0.5 s·1 s·2 s… 백오프. 429는 기존대로 Retry-After 후 1회. `BinanceApiError.classify()`.
+  - 엔진 연결: `QuoteObservation.errorAction`(`next_issuer`·`market_closed`) — 에이전트가 분류 결과를 넘기면 40421·40365·40366도 다음 발행사로 넘어간다(core 100% 유지).
+  - 알림: `apps/agent/src/alerts.ts` — 텔레그램(설정 시) 또는 로그, 같은 키 1시간 1회, 토큰은 로그·본문에서 가림. `cycleAlert()`는 FAILED에만 알림. `pnpm alert:test`로 1회 발송 확인(여기선 토큰이 없어 `channel log, result logged`).
+  - dx 이벤트: `dx_events` 표(마이그레이션 0005, (종류, 모듈, 엔드포인트, 코드)당 1행) + `watchDxFindings`(api_calls 싱크 래퍼)가 문서에 없는 코드·봉투 아닌 응답의 첫 관측만 알림. `pnpm dx:events [--mark-logged]`가 dx/LOG.md 형식(사실만)으로 출력.
 - 수용: 코드별 단위 테스트, 알림 1회 실동작
+  - 코드별 테스트 **확인**: `taxonomy.test.ts`(SPEC §11 표 33행 + 무코드 실패 + 공식 표 5개와 양방향 대조), `replay.test.ts`(실측 픽스처 재생: 40401, 42900/429 재시도·포기, 40375 최소액, 40484, code 0 안의 simulate FAILED·SUCCESS), `client.test.ts` 재시도·백오프, `alerts.test.ts`, `dx-watch.test.ts`, `dx.test.ts`. 전체 `pnpm test` 31파일 300개 통과.
+  - 남음: [HUMAN/PC] 텔레그램 토큰이 있는 호스트에서 `pnpm alert:test` 1회(`result sent`) 인용.
 
 ### M1-08 홀딩·배수 · 기준: 창의·UX
 - [~] 영수증마다 multiplier 스냅샷, 변경 감지 이벤트, shares 재계산

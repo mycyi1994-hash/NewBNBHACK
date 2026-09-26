@@ -1,8 +1,8 @@
-export { BinanceClient } from './client.js';
+export { BinanceClient, retryBackoffMs } from './client.js';
 export type { ApiResponse, BinanceClientOptions, RateLimitInfo, RequestOptions } from './client.js';
 export { B402_SUCCESS_CODE, parseEnvelope } from './envelope.js';
 export type { EnvelopeResult } from './envelope.js';
-export { BinanceApiError, RATE_LIMIT_CODE, isRateLimited, isRetryable } from './errors.js';
+export { BinanceApiError, RATE_LIMIT_CODE, isRateLimited } from './errors.js';
 export type { BinanceApiErrorInit, ErrorKind } from './errors.js';
 export { createFixtureRecorder } from './fixtures.js';
 export type { FixtureEntry, FixtureRecorder, FixtureRecorderOptions } from './fixtures.js';
@@ -33,4 +33,21 @@ export type { AuthInput, PreHashParts, Query, QueryValue, WireTarget } from './s
 export { REQUEST_ID_HEADERS, maskSensitive, redactValues, requestIdOf } from './telemetry.js';
 export type { ApiCallRecord, ApiCallSink } from './telemetry.js';
 export { isSuccess, percentile, renderMetricsMarkdown } from './metrics.js';
+export { SimulationFailedError, parseSimulation, requireSimulationSuccess } from './simulation.js';
+export type { AllowanceChange, SimulationResult } from './simulation.js';
+export {
+  classifyError,
+  documentedCodes,
+  dxFindingOf,
+  isTransient,
+  moduleCodes,
+  venueMinimumUsd,
+} from './taxonomy.js';
+export type {
+  ClassifiableError,
+  DxFindingKind,
+  ErrorAction,
+  ErrorCategory,
+  ErrorClass,
+} from './taxonomy.js';
 export type { CallStats, MetricsMeta } from './metrics.js';

@@ -2,6 +2,7 @@
  * Drizzle schema. M0: `api_calls` (SPEC §3.1 item 2, §10), `instruments` (M0-05), `tape_samples`
  * (M0-08). M1-01: the plan and execution tables of SPEC §4 v2 — plans, cycles, receipts,
  * holdings, spend_ledger, guardian_events, judge_codes, skill_tokens, tx_outbox and jobs.
+ * M1-07: dx_events, the first sighting of each undocumented error code or response shape.
  * USD amounts are numeric(38,18) read as strings: no floats touch money. Foreign keys never cascade
  * (receipts are never deleted with their plan) and CHECK constraints back the money rules in code.
  */
@@ -421,5 +422,36 @@ export const jobs = pgTable(
     index('jobs_status_idx').on(table.status, table.createdAt),
     check('jobs_kind_ck', oneOf('kind', ['preview', 'run', 'stop'])),
     check('jobs_status_ck', oneOf('status', ['queued', 'running', 'done', 'failed'])),
+  ],
+);
+
+/**
+ * DX findings (SPEC §10, M1-07): the first time an error code or response shape that the official
+ * docs do not list is seen, per endpoint. `pnpm dx:events` prints them for dx/LOG.md.
+ */
+export const dxEvents = pgTable(
+  'dx_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    /** When the call was made (api_calls.ts of the first sighting). */
+    ts: at('ts').notNull(),
+    /** 'unknown_code' | 'undocumented_shape'. */
+    kind: text('kind').notNull(),
+    module: text('module').notNull(),
+    endpoint: text('endpoint').notNull(),
+    /** '' when the response carried no code. */
+    code: text('code').notNull(),
+    httpStatus: integer('http_status'),
+    /** Masked like api_calls.msg. */
+    msg: text('msg'),
+    requestId: text('request_id'),
+    region: text('region'),
+    meaning: text('meaning').notNull(),
+    /** Set once the finding has been copied into dx/LOG.md. */
+    loggedAt: at('logged_at'),
+  },
+  (table) => [
+    uniqueIndex('dx_events_first_uq').on(table.kind, table.module, table.endpoint, table.code),
+    check('dx_events_kind_ck', oneOf('kind', ['unknown_code', 'undocumented_shape'])),
   ],
 );

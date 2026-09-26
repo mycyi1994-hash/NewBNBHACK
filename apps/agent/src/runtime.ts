@@ -7,14 +7,18 @@ import path from 'node:path';
 import { BinanceClient, createFixtureRecorder } from '@ijaro/binance';
 import { createBscClient } from '@ijaro/chain';
 import { findWorkspaceRoot, type Config } from '@ijaro/config';
-import { createApiCallSink, createDb } from '@ijaro/db';
+import { createApiCallSink, createDb, recordDxEvent } from '@ijaro/db';
 import { privateKeyToAccount } from 'viem/accounts';
+import { createAlerter, type Alerter } from './alerts.js';
+import { watchDxFindings } from './dx-watch.js';
 
 export interface Runtime {
   config: Config;
   client: BinanceClient;
   bsc: ReturnType<typeof createBscClient>;
   database: ReturnType<typeof createDb>;
+  /** Telegram when configured, the log otherwise (FAILED cycles, first-sighting DX events). */
+  alerter: Alerter;
   /** Checksummed house address, or undefined when HOUSE_WALLET_PRIVATE_KEY is unset. */
   houseAddress: `0x${string}` | undefined;
   /** Values to redact from fixtures and logs (house address in all spellings). */
@@ -32,11 +36,19 @@ export function houseRedactions(address: string | undefined): string[] {
 export function createRuntime(config: Config, options: { fixtures?: boolean } = {}): Runtime {
   if (!config.databaseUrl) throw new Error('DATABASE_URL is required (api_calls, instruments)');
   const database = createDb(config.databaseUrl);
-  const sink = createApiCallSink(database.db);
   const houseAddress = config.houseWalletPrivateKey
     ? privateKeyToAccount(config.houseWalletPrivateKey).address
     : undefined;
   const redact = houseRedactions(houseAddress);
+  const { botToken, opsChatId } = config.telegram;
+  const alerter = createAlerter({
+    telegram: botToken && opsChatId ? { botToken, chatId: opsChatId } : undefined,
+    redact,
+  });
+  const sink = watchDxFindings(createApiCallSink(database.db), {
+    record: (event) => recordDxEvent(database.db, event),
+    alerter,
+  });
   const sinkErrors: unknown[] = [];
   const root = findWorkspaceRoot() ?? process.cwd();
   const client = new BinanceClient({
@@ -56,6 +68,7 @@ export function createRuntime(config: Config, options: { fixtures?: boolean } = 
     client,
     bsc: createBscClient(config.bsc),
     database,
+    alerter,
     houseAddress,
     redact,
     sinkErrors,

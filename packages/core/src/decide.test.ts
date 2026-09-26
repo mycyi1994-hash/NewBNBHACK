@@ -510,6 +510,42 @@ describe('decideCycle — QUOTE', () => {
     });
   });
 
+  it('tries the next issuer for any code the taxonomy says this issuer cannot fill', () => {
+    const quotes = [
+      quote('NVDA:bstocks', '6', {
+        errorCode: '40421',
+        errorMsg: 'Insufficient liquidity for this trading pair',
+        errorAction: 'next_issuer',
+      }),
+    ];
+    expect(decideCycle(input({ plan: bigSafe, quotes }))).toEqual({
+      kind: 'quote',
+      instrumentId: 'NVDA:ondo',
+      spendUsd: '6',
+    });
+    const both = [
+      ...quotes,
+      quote('NVDA:ondo', '6', { errorCode: '40366', errorAction: 'next_issuer' }),
+    ];
+    const d = terminal(decideCycle(input({ plan: bigSafe, quotes: both })));
+    expect(d.outcome).toMatchObject({
+      kind: 'SKIPPED',
+      reason: 'no_instrument',
+      detail: 'NVDA:bstocks:40421, NVDA:ondo:40366',
+    });
+  });
+
+  it('defers on a code the taxonomy classifies as market closed', () => {
+    const quotes = [
+      quote('NVDA:bstocks', '5', { errorCode: '40999', errorAction: 'market_closed' }),
+    ];
+    expect(terminal(decideCycle(input({ quotes }))).outcome).toMatchObject({
+      kind: 'DEFERRED',
+      reason: 'market_closed',
+      detail: '40999',
+    });
+  });
+
   it('does not execute RFQ routes until a human enables them (Q-15)', () => {
     const rfq = (id: string) => quote(id, '6', { executionMode: 'RFQ' });
     expect(decideCycle(input({ plan: bigSafe, quotes: [rfq('NVDA:bstocks')] }))).toMatchObject({

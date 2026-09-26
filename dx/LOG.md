@@ -383,3 +383,18 @@
   - 표기(`pause`와 `paused`)를 하나로 통일해 주세요.
   - 독립 기초자산 가격(`stockInfo.price` 상당)을 Web3 API에서도 제공해 주세요.
 - 증거: `fixtures/rwa/getRwaTokenList-20260924-1.json`(statusInfo 분포 위와 같음); 위 스킬 파일.
+
+## 2026-09-26 17:59 UTC — [web3api][docs][error] 오류 표와 실제 응답 대조: 메시지 두 건이 다르고 RWA Data에는 오류 코드 페이지가 없음
+- 목표: 에러 분류표 v1(M1-07, `packages/binance/src/taxonomy.ts`)을 모듈별 공식 오류 표와 대조. 이 세션은 API를 호출하지 않았다. 실측 픽스처만 대조했다.
+- 기대: 표의 Message 열과 실제 `msg`가 같다. 모든 모듈에 오류 코드 페이지가 있다.
+- 실제:
+  - Trading `40401`: 표(L3051)는 `Quote expired. Please request a new quote`, 실제 응답은 `quoteId=a1dbc1ee… not found or expired`다(`fixtures/trading/buildSwapTransaction-20260924-2.json`).
+  - `42900`(HTTP 429): 표(L1901·L2048·L3013)는 `Request rate limit exceeded. Please refer to the API docs and reduce request frequency`, 실제는 `Rate limit exceeded`다. `data`는 문서 형식의 `null`이 아니라 `""`다(`fixtures/trading/getAggregatedQuote-20260924-12.json`).
+  - 제품별 오류 코드 페이지는 WebSocket(L1406)·Wallet(L1837)·Transaction(L1983)·Trading(L2947)·Market(L3351)·DeFi(L4221)·B402(L5054) 7개다. RWA Data(`/api/v1/dex/market/rwa/...`)의 페이지는 없다.
+  - `40304`(컴플라이언스)는 DeFi 표(L4304)에만 있다. Trading·Transaction·Market·Wallet 표의 IP 컴플라이언스 코드는 40301–40303이다.
+  - 표와 우리 분류의 대조: 5개 페이지(Trading·Transaction·DeFi·Market·Wallet)의 코드 전부가 분류되어 있다. 우리가 모듈 전용으로 분류한 코드도 전부 해당 페이지에 있다(`taxonomy.test.ts` "code map vs the official error tables").
+- 문서: § Error Codes (Trading API) › Quote, Rate Limit Errors; § Error Codes (DeFi API) › Compliance Errors.
+- 잃은 시간: [HUMAN]
+- 우회: 분기는 `msg`가 아니라 (모듈, 코드)로 한다. 40375의 최소액만 `msg`에서 읽는다(`venueMinimumUsd`). RWA 호출의 오류는 게이트웨이 공통 코드로 분류한다. 표에 없는 코드나 봉투 아닌 응답은 첫 관측 때 `dx_events`에 남고 알림이 간다(`pnpm dx:events`).
+- 요청: 표의 Message를 실제 응답 문구와 맞추기. RWA Data 오류 코드 페이지 추가. 40304가 어느 모듈에서 오는지 명시.
+- 증거: 위 픽스처 2개; `packages/binance/src/taxonomy.test.ts`, `packages/binance/src/replay.test.ts`.

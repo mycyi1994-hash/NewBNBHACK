@@ -21,6 +21,7 @@ import {
 
 const M1_TABLES = [
   'cycles',
+  'dx_events',
   'guardian_events',
   'holdings',
   'jobs',
@@ -96,11 +97,13 @@ describe.skipIf(!url)('migrations round trip on Postgres', () => {
     // Only the latest migration can be reverted.
     await expect(rollbackMigration(db, tags[0] ?? '')).rejects.toThrow(/only the latest/);
 
-    await rollbackMigration(db, '0004_m1_core');
+    // Back to M0: only the tables of the first four migrations remain.
+    const m0 = tags.slice(0, tags.indexOf('0004_m1_core'));
+    for (const tag of tags.slice(m0.length).reverse()) await rollbackMigration(db, tag);
     expect(await tableNames(db)).toEqual(['api_calls', 'instruments', 'tape_samples']);
-    expect(await appliedMigrations(db)).toEqual(tags.slice(0, -1));
+    expect(await appliedMigrations(db)).toEqual(m0);
 
-    for (const tag of [...tags.slice(0, -1)].reverse()) await rollbackMigration(db, tag);
+    for (const tag of [...m0].reverse()) await rollbackMigration(db, tag);
     expect(await tableNames(db)).toEqual([]);
     expect(await appliedMigrations(db)).toEqual([]);
 

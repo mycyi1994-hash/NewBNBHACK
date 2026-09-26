@@ -5,6 +5,7 @@ import postgres from 'postgres';
 import { apiCalls, instruments, tapeSamples } from './schema.js';
 
 export * from './auth.js';
+export * from './dx.js';
 export * from './ledger.js';
 export * from './mappers.js';
 export * from './migrations.js';

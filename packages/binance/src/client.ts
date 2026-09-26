@@ -7,7 +7,6 @@
 import {
   BinanceApiError,
   isRateLimited,
-  isRetryable,
   type BinanceApiErrorInit,
   type ErrorKind,
 } from './errors.js';
@@ -17,7 +16,13 @@ import { stringifyJsonLossless } from './json.js';
 import { envelopeFlavour, rateLimitGroup, type ApiModule } from './modules.js';
 import { RateLimiter, retryAfterMs, systemClock, type Clock } from './rate-limit.js';
 import { authHeaders, buildTarget, fillPathParams, formatTimestamp, type Query } from './sign.js';
+import { isTransient } from './taxonomy.js';
 import { maskSensitive, requestIdOf, type ApiCallRecord, type ApiCallSink } from './telemetry.js';
+
+/** Backoff before retry `attempt` (0-based) of a transient failure: 0.5 s, 1 s, 2 s, … ≤ 8 s. */
+export function retryBackoffMs(attempt: number): number {
+  return Math.min(8_000, 500 * 2 ** attempt);
+}
 
 export interface BinanceClientOptions {
   baseUrl: string;
@@ -56,6 +61,12 @@ export interface RequestOptions {
   /** Unsigned calls are only for reachability probes. Default true. */
   signed?: boolean;
   recordFixture?: boolean;
+  /**
+   * Extra attempts after a transient failure (SPEC §11: network, timeout, 5xx, 50000/50001, and
+   * the module codes the taxonomy marks `retry`), with `retryBackoffMs` between them. Only for
+   * idempotent calls; default 0. A 429 is always retried once after Retry-After, independently.
+   */
+  retries?: number;
 }
 
 export interface RateLimitInfo {
@@ -122,7 +133,12 @@ export class BinanceClient {
         httpStatus: extra.httpStatus ?? null,
         code: extra.code ?? null,
         msg,
-        retryable: isRetryable(kind, extra.httpStatus ?? null, extra.code ?? null),
+        retryable: isTransient({
+          kind,
+          module,
+          httpStatus: extra.httpStatus ?? null,
+          code: extra.code ?? null,
+        }),
         requestId: extra.requestId ?? null,
         ...(extra.retryAfterMs === undefined ? {} : { retryAfterMs: extra.retryAfterMs }),
       });
@@ -138,6 +154,7 @@ export class BinanceClient {
     );
     const bodyText = opts.body === undefined ? '' : stringifyJsonLossless(opts.body);
     const group = rateLimitGroup(module);
+    const retries = opts.retries ?? 0;
 
     for (let attempt = 0; ; attempt++) {
       await this.limiter.acquire(`${opts.method} ${opts.path}`, group);
@@ -192,6 +209,10 @@ export class BinanceClient {
           retryCount: attempt,
           fixturePath: null,
         });
+        if (attempt < retries) {
+          await this.clock.sleep(retryBackoffMs(attempt));
+          continue;
+        }
         throw fail(kind, msg);
       }
       const latencyMs = this.clock.now() - started;
@@ -260,17 +281,23 @@ export class BinanceClient {
       }
 
       const waitMs = retryAfterMs(response.headers.get('retry-after'), this.clock.now());
-      if (isRateLimited(response.status, envelope.code)) {
-        this.limiter.pause(waitMs ?? 1_000);
-        // SPEC §11: on 429, honour Retry-After and retry once with a fresh timestamp/signature.
-        if (attempt === 0) continue;
-      }
-      throw fail(envelope.kind, maskSensitive(envelope.msg, this.secrets), {
+      const error = fail(envelope.kind, maskSensitive(envelope.msg, this.secrets), {
         httpStatus: response.status,
         code: envelope.code,
         requestId,
         ...(waitMs === undefined ? {} : { retryAfterMs: waitMs }),
       });
+      if (isRateLimited(response.status, envelope.code)) {
+        this.limiter.pause(waitMs ?? 1_000);
+        // SPEC §11: on 429, honour Retry-After and retry once with a fresh timestamp/signature.
+        if (attempt === 0) continue;
+        throw error;
+      }
+      if (error.retryable && attempt < retries) {
+        await this.clock.sleep(waitMs ?? retryBackoffMs(attempt));
+        continue;
+      }
+      throw error;
     }
   }
 

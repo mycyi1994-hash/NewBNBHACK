@@ -1,4 +1,5 @@
 import type { ApiModule } from './modules.js';
+import { classifyError, type ErrorClass } from './taxonomy.js';
 
 /**
  * - `api`: the server answered with an envelope whose code is not success (often HTTP 200).
@@ -22,7 +23,7 @@ export interface BinanceApiErrorInit {
   cause?: unknown;
 }
 
-/** SPEC §3.1 item 3: every failure is normalized to this shape. Code mapping (§11) is M1-07. */
+/** SPEC §3.1 item 3: every failure is normalized to this shape; `classify()` maps it (§11). */
 export class BinanceApiError extends Error {
   readonly kind: ErrorKind;
   readonly module: ApiModule;
@@ -50,24 +51,16 @@ export class BinanceApiError extends Error {
     this.requestId = init.requestId ?? null;
     this.retryAfterMs = init.retryAfterMs;
   }
+
+  /** What to do about it (SPEC §11 taxonomy): action, alert, copy key, documented or not. */
+  classify(): ErrorClass {
+    return classifyError(this);
+  }
 }
 
 /** Gateway rate-limit body code (llms-full.txt § Authentication › Error Codes). */
 export const RATE_LIMIT_CODE = 42900;
-const SERVER_CODES = new Set([50000, 50001]);
 
 export function isRateLimited(httpStatus: number | null, code: number | string | null): boolean {
   return httpStatus === 429 || code === RATE_LIMIT_CODE;
-}
-
-/** Transient by the docs' own wording: rate limits, 5xx, 50000/50001, and no-response failures. */
-export function isRetryable(
-  kind: ErrorKind,
-  httpStatus: number | null,
-  code: number | string | null,
-): boolean {
-  if (kind === 'network' || kind === 'timeout') return true;
-  if (isRateLimited(httpStatus, code)) return true;
-  if (httpStatus !== null && httpStatus >= 500) return true;
-  return typeof code === 'number' && SERVER_CODES.has(code);
 }
