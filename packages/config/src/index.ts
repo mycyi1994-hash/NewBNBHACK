@@ -95,6 +95,11 @@ export const envSchema = z
           message: 'must not contain duplicates',
         }),
     ),
+    // Signs the judge session cookie (web only). Unset: Judge Mode sessions are unavailable.
+    SESSION_SECRET: z.preprocess(
+      blankToUndefined,
+      z.string().trim().min(32, { message: 'must be at least 32 characters' }).optional(),
+    ),
     TELEGRAM_BOT_TOKEN: optionalText,
     TELEGRAM_OPS_CHAT_ID: optionalText,
     // Telemetry label for api_calls.region. Unset stays unset rather than guessing a region.
@@ -156,6 +161,7 @@ export interface Config {
   readonly executionMode: 'simulate' | 'live';
   readonly caps: Caps;
   readonly judgeCodes: readonly string[];
+  readonly sessionSecret: string | undefined;
   readonly telegram: {
     readonly botToken: string | undefined;
     readonly opsChatId: string | undefined;
@@ -206,6 +212,7 @@ export function parseConfig(input: EnvInput): Config {
       maxPrincipalUsd: env.MAX_PRINCIPAL_USD,
     },
     judgeCodes: env.JUDGE_CODES,
+    sessionSecret: env.SESSION_SECRET,
     telegram: { botToken: env.TELEGRAM_BOT_TOKEN, opsChatId: env.TELEGRAM_OPS_CHAT_ID },
     regionTag: env.REGION_TAG,
     appUrl: env.NEXT_PUBLIC_APP_URL,
@@ -255,6 +262,7 @@ export function describeConfig(config: Config): Record<string, unknown> {
     database: db ? `${db.protocol}//${db.host}${db.pathname}` : 'unset',
     houseWalletKey: config.houseWalletPrivateKey !== undefined,
     judgeCodes: config.judgeCodes.length,
+    sessionSecret: config.sessionSecret !== undefined,
     telegram: config.telegram.botToken !== undefined && config.telegram.opsChatId !== undefined,
     appUrl: config.appUrl,
   };

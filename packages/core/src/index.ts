@@ -10,4 +10,5 @@ export * from './holdings.js';
 export * from './schedule.js';
 export * from './session.js';
 export * from './types.js';
+export * from './venues.js';
 export * from './why.js';

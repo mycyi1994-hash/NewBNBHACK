@@ -258,8 +258,16 @@
   - [ ] 섹터 후보 대체: 구현하지 않았다. REPLAN R10이 "섹터 타깃 지금 컷"을 제안했고, DESIGN_BRIEF도 분야 선택을 그리지 않는다. 컷라인은 사람 합의가 필요하다 → [HUMAN] 결정 대기.
 
 ### M2-08 Skill API · 기준: AW 특별상·기술
-- [ ] `/api/plans`, `/preview`, `/next`, `/report`, `/stop`, 토큰 발급·검증, 레이트리밋
+- [x] `/api/plans`, `/preview`, `/next`, `/report`, `/stop`, 토큰 발급·검증, 레이트리밋
+  - 코드(9/26): `apps/web/app/api/**/route.ts` 18개 + `apps/web/lib/server/*`. 웹은 서명하지 않고 Binance Web3 API도 부르지 않는다(워커가 쓴 DB·공개 BSC RPC만 읽고, 실행은 `jobs`로 워커에 넘긴다; Q-01 단일 키·리전).
+    - 심사위원: `POST /api/judge/session`(코드 SHA-256 대조, HMAC 서명 쿠키 `ijaro_judge` HttpOnly·SameSite=Lax·7일, 코드 원문 저장 없음) → `POST /api/plans`(샌드박스 캡 이내, 등록 티커만, 코드당 총액·시간당 5개) → `/run`·`/preview`·`/stop`(202 + `/api/jobs/:id` 폴링, 플랜당 10분 10건).
+    - 스킬(mode C): `POST /api/plans {owner:"skill"}` → 토큰 `ijr_…` 1회 표시(해시만 저장). `GET /next` = decideCycle(테이프 추정가·지갑의 Venus 포지션·가디언·플랜 한도) → `baw` argv(quote의 `acceptMinToCoinAmount` = 추정치 −1%, swap의 `confirm`·`report`), 사유 키, `expiresAt` +5분; calldata·서명 없음. `POST /report` = 체인 확인(채굴·성공·플랜 지갑 발신·Transfer 로그)만 기록, 한도 초과는 기록 후 `report_over_limit`로 정지, 예치 보고로 yield 플랜 활성화.
+    - 레이트리밋: 코드 시도 IP당 분 10회, 스킬 플랜 IP당 시간 5개, `/next` 플랜당 분 30회, `/report` 분 20회(인스턴스 메모리) + 지속 한도(플랜 수·잡 수·지출 원장)는 Postgres.
+  - 이 과정에서 고친 것: 지출 원장의 하우스 일 한도(`global_day`)가 스킬 플랜(사용자 지갑) 지출까지 더하던 버그 → 하우스·심사위원 플랜만 합산(`packages/db/src/ledger.ts`, 테스트 "keeps skill plans … out of the house wallet's daily cap"은 수정 전 실패 `expected '3' to be '5'` → 수정 후 통과). 캡 값 변경 없음.
+  - 증거: `apps/web/test/{judge,skill,read,openapi}.test.ts` 22개(웹 전용 DB `<test db>_web`, 가짜 체인). 전체 `pnpm test` 45파일 371개 통과, core 100%. `next build --webpack` 성공(API 19개 경로). 로컬 `next start`(스크래치 DB) 실측: 잘못된 코드 401 → 코드 200 + 쿠키 → $6 `over_cap` → $5 플랜 `paused(awaiting_run)` → `/run` 202 → 잡 `queued`; 스킬 플랜 201 + 토큰 → `/next` 토큰 없음 401, 테이프 없음 `wait data_unavailable` → 미채굴 해시 `/report` 202 `pending`(공개 RPC 조회).
 - 수용: OpenAPI 문서, `/next` 응답에 baw 명령 파라미터·사유·만료 시각
+  - [x] `GET /api/openapi`(OpenAPI 3.1, 요청 본문은 라우트가 검증에 쓰는 zod 스키마에서 생성 — `lib/server/schemas.ts`). `openapi.test.ts`가 라우트 파일·메서드와 문서를 1:1 대조.
+  - [x] `/next`: `steps[].run`(baw argv), `why`(UX_COPY 키)·`reason`, `expiresAt` — `skill.test.ts`.
 
 ### M2-09 Wallet Skill v1 · 기준: AW 특별상·DX
 - [ ] `skills/ijaro/SKILL.md` + references(plan.md, run.md, safety.md), 설치 경로 확정
@@ -276,6 +284,9 @@
 
 ### M2-12 health·smoke·모니터·알림 · 기준: 기술
 - 수용: `/api/judge/smoke` 전 항목 녹색, 모니터가 실패를 텔레그램으로 1회 전달(테스트)
+  - [x] 코드(9/26): `GET /api/health`, `GET /api/judge/smoke`(DB·워커 마지막 틱 15분·Web3 API는 워커의 `api_calls` 마지막 성공 30분·BSC RPC 블록·하우스 잔고·마지막 영수증·테이프; red면 503). `pnpm smoke [--url] [--strict] [--alert]`(`scripts/smoke.ts`), 모니터 `.github/workflows/monitor.yml`(30분마다 `pnpm smoke --alert`, 저장소 변수 `IJARO_APP_URL` 없으면 꺼짐, 기본 브랜치에서만 cron 동작).
+  - 증거: `read.test.ts`(틱 없음 → red 503, 전부 기록 → green, RPC 다운 → red). 로컬 실측 `pnpm smoke --url http://127.0.0.1:3100 --alert` → `database green, worker red(no tick recorded), web3api red, rpc green(block 124196543), house degraded, receipts degraded, tape red` → `status: red`, exit 1, 알림 채널 log(텔레그램 미설정).
+  - [ ] [HUMAN] 배포된 웹 + 워커에서 전 항목 녹색, `IJARO_APP_URL`·`TELEGRAM_BOT_TOKEN`·`TELEGRAM_OPS_CHAT_ID` 설정 후 모니터 텔레그램 1회 수신 확인.
 
 ---
 

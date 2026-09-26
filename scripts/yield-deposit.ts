@@ -21,16 +21,7 @@ import {
 import { BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
 import { loadConfig } from '@ijaro/config';
 import { fromUnits, toUnits } from '@ijaro/core';
-import {
-  getPlan,
-  insertReceipt,
-  migrateDb,
-  openGuardianActions,
-  planFromRow,
-  updatePlan,
-  usdText,
-  type Db,
-} from '@ijaro/db';
+import { applyDeposit, getPlan, migrateDb, openGuardianActions, planFromRow } from '@ijaro/db';
 import type { Hex } from 'viem';
 import { confirmSpend } from './confirm.js';
 
@@ -44,30 +35,16 @@ const usd = valueOf('--usd');
 const recordHash = valueOf('--record') as Hex | undefined;
 const live = args.includes('--live');
 
-/** Adds a confirmed deposit to the plan, once per transaction hash. */
-async function applyDeposit(db: Db, planId: string, sent: SentTx, vTokens: bigint, usdt: bigint) {
-  const fresh = await insertReceipt(db, {
-    cycleId: null,
-    planId,
-    kind: sent.kind,
-    txHash: sent.txHash,
-    explorerUrl: `https://bscscan.com/tx/${sent.txHash}`,
-    chainId: 56,
-    amounts: sent.amounts,
-    broadcastVia: sent.broadcastVia,
-    simulatedAt: sent.simulatedAt,
-    blockNumber: sent.receipt.blockNumber.toString(),
-    status: 'success',
-  });
-  if (!fresh || sent.kind !== 'deposit') return fresh;
-  const row = await getPlan(db, planId);
-  if (!row) throw new Error(`plan ${planId} vanished`);
-  await updatePlan(db, planId, {
-    principalUsd: fromUnits(toUnits(usdText(row.principalUsd), 18) + usdt, 18),
-    vtokenUnits: (BigInt(row.vtokenUnits) + vTokens).toString(),
-  });
-  return true;
-}
+/** SentTx → the facts the receipts table keeps. */
+const factsOf = (sent: SentTx) => ({
+  kind: sent.kind,
+  txHash: sent.txHash,
+  broadcastVia: sent.broadcastVia,
+  blockNumber: sent.receipt.blockNumber,
+  status: 'success' as const,
+  simulatedAt: sent.simulatedAt,
+  amounts: sent.amounts,
+});
 
 if (!planId || (!usd && !recordHash)) {
   console.log('usage: pnpm yield:deposit --plan <id> --usd <amount> [--live] | --record <txHash>');
@@ -103,7 +80,10 @@ if (!planId || (!usd && !recordHash)) {
         simulatedAt: new Date().toISOString(),
         amounts: { vTokensMinted: vTokens.toString(), usdtSpent: usdt.toString() },
       };
-      const fresh = await applyDeposit(rt.database.db, planId, sent, vTokens, usdt);
+      const fresh = await applyDeposit(rt.database.db, planId, factsOf(sent), {
+        vTokens,
+        usdtSpent: usdt,
+      });
       console.log(
         fresh
           ? `recorded: +${fromUnits(usdt, 18)} USDT principal, +${vTokens} vTokens`
@@ -155,21 +135,23 @@ if (!planId || (!usd && !recordHash)) {
           });
           if (result.kind === 'deposited') {
             for (const sent of result.sent) {
-              await applyDeposit(
-                rt.database.db,
-                planId,
-                sent,
-                result.vTokensMinted,
-                result.usdtSpent,
-              );
+              const deposit = sent.kind === 'deposit';
+              await applyDeposit(rt.database.db, planId, factsOf(sent), {
+                vTokens: deposit ? result.vTokensMinted : 0n,
+                usdtSpent: deposit ? result.usdtSpent : 0n,
+              });
               console.log(`  ${sent.kind}: https://bscscan.com/tx/${sent.txHash}`);
             }
             console.log(
               `deposited ${fromUnits(result.usdtSpent, 18)} USDT → ${result.vTokensMinted} vTokens`,
             );
           } else if (result.kind === 'pending') {
-            for (const sent of result.sent)
-              await applyDeposit(rt.database.db, planId, sent, 0n, 0n);
+            for (const sent of result.sent) {
+              await applyDeposit(rt.database.db, planId, factsOf(sent), {
+                vTokens: 0n,
+                usdtSpent: 0n,
+              });
+            }
             console.log(
               `pending: ${result.txHash}; once mined run: pnpm yield:deposit --plan ${planId} --record ${result.txHash}`,
             );

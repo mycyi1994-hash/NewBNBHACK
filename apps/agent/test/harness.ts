@@ -117,6 +117,7 @@ export function fakeChain(startNonce = 0): FakeChain {
     allowance: (token, owner, spender) =>
       Promise.resolve(chain.allowances.get(allowanceKey(token, owner, spender)) ?? 0n),
     balanceOf: () => Promise.resolve(10n ** 21n),
+    nativeBalance: () => Promise.resolve(2n * 10n ** 16n),
     exchangeRate: () => Promise.resolve(10n ** 28n),
     underlyingOf: () => Promise.resolve(BSC_USDT),
     venusMarketState: () =>

@@ -110,6 +110,10 @@ export const tapeSamples = pgTable(
     openState: boolean('open_state'),
     marketStatus: text('market_status'),
     reasonCode: text('reason_code'),
+    /** statusInfo.reasonMsg (corporate action kind: cash_dividend, earnings, …). */
+    reasonMsg: text('reason_msg'),
+    /** statusInfo.nextOpenTime (unix ms), when the API gives one. */
+    nextOpenTime: bigint('next_open_time', { mode: 'number' }),
     tokenPrice: text('token_price'),
     referencePrice: text('reference_price'),
     /** Independent US stock price per share (RWA Dynamic V2 stockInfo.price); null off-hours. */
@@ -484,3 +488,13 @@ export const dxEvents = pgTable(
     check('dx_events_kind_ck', oneOf('kind', ['unknown_code', 'undocumented_shape'])),
   ],
 );
+
+/**
+ * What the worker last did, for /api/judge/smoke and the Watch screen: `tick` (scheduler), `tape`
+ * (last run), `house` (balances). One row per key, overwritten.
+ */
+export const workerStatus = pgTable('worker_status', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: at('updated_at').notNull().defaultNow(),
+});

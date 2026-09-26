@@ -235,6 +235,11 @@ export async function insertReceipt(db: Db, row: ReceiptInsert): Promise<boolean
   return created.length > 0;
 }
 
+export async function receiptByHash(db: Db, txHash: string): Promise<ReceiptRow | undefined> {
+  const [row] = await db.select().from(receipts).where(eq(receipts.txHash, txHash)).limit(1);
+  return row;
+}
+
 export async function listReceipts(
   db: Db,
   filter: { planIds?: readonly string[]; limit?: number } = {},

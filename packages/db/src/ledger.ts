@@ -11,7 +11,10 @@ import { spendLedger } from './schema.js';
 const SPEND_LOCK = 471_203_001;
 
 export interface SpendCaps {
-  /** Everything the house wallet may spend in one UTC day. */
+  /**
+   * Everything the house wallet may spend in one UTC day: house and judge plans together. A skill
+   * plan spends from the user's own wallet, so for it this is its own plan's day.
+   */
   globalDailyUsd: string;
   /** This plan's own daily limit. */
   planDailyUsd: string;
@@ -41,9 +44,16 @@ export function utcDay(at: Date): string {
 
 function usageQuery(scope: SpendScope) {
   const judge = scope.ownerKind === 'judge' && scope.ownerRef !== null;
+  // The house wallet pays for house and judge plans; a skill plan's wallet is the user's own, so
+  // neither side's spending may use up the other's room.
+  const houseWallet = scope.ownerKind === 'house' || scope.ownerKind === 'judge';
   return sql`
     select
-      coalesce(sum(amount_usd) filter (where day = ${scope.day}), 0)::numeric as global_day,
+      ${
+        houseWallet
+          ? sql`coalesce(sum(amount_usd) filter (where day = ${scope.day} and plan_id in (select id from plans where owner_kind in ('house', 'judge'))), 0)::numeric`
+          : sql`coalesce(sum(amount_usd) filter (where day = ${scope.day} and plan_id = ${scope.planId}), 0)::numeric`
+      } as global_day,
       coalesce(sum(amount_usd) filter (where day = ${scope.day} and plan_id = ${scope.planId}), 0)::numeric as plan_day,
       ${
         judge

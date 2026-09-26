@@ -129,3 +129,28 @@ export function renderMetricsMarkdown(
   }
   return `${lines.join('\n')}\n`;
 }
+
+export interface EndpointSummary extends CallStats {
+  module: string;
+  endpoint: string;
+  /** Result code → count ('0' success, 'no response', 'HTTP 403', 40375 …). */
+  codes: Record<string, number>;
+}
+
+/** The numbers behind /dx (M2-11) as data: per endpoint and per region. */
+export function summarizeCalls(records: readonly ApiCallRecord[]): {
+  endpoints: EndpointSummary[];
+  regions: (CallStats & { region: string })[];
+} {
+  const endpoints = groupBy(records, (r) => `${r.module}\u0000${r.endpoint}`).map(([key, rows]) => {
+    const [module = '', endpoint = ''] = key.split('\u0000');
+    const codes: Record<string, number> = {};
+    for (const row of rows) codes[codeLabel(row)] = (codes[codeLabel(row)] ?? 0) + 1;
+    return { module, endpoint, ...stats(rows), codes };
+  });
+  const regions = groupBy(records, (r) => r.region ?? 'unset').map(([region, rows]) => ({
+    region,
+    ...stats(rows),
+  }));
+  return { endpoints, regions };
+}

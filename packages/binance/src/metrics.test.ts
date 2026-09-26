@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSuccess, percentile, renderMetricsMarkdown } from './metrics.js';
+import { isSuccess, percentile, renderMetricsMarkdown, summarizeCalls } from './metrics.js';
 import type { ApiCallRecord } from './telemetry.js';
 
 // Unit-test input for the aggregation maths, not recorded API data.
@@ -85,5 +85,71 @@ describe('renderMetricsMarkdown', () => {
     });
     expect(md).toContain('0 HTTP attempts');
     expect(md).toContain('No failed calls recorded.');
+  });
+});
+
+describe('summarizeCalls', () => {
+  it('groups by endpoint with code counts and by region', () => {
+    const base = {
+      ts: '2026-09-24T00:00:00.000Z',
+      method: 'GET',
+      msg: null,
+      requestId: null,
+      retryCount: 0,
+      fixturePath: null,
+    };
+    const summary = summarizeCalls([
+      {
+        ...base,
+        region: 'fra',
+        module: 'trading',
+        endpoint: 'getAggregatedQuote',
+        httpStatus: 200,
+        code: '0',
+        latencyMs: 100,
+      },
+      {
+        ...base,
+        region: 'fra',
+        module: 'trading',
+        endpoint: 'getAggregatedQuote',
+        httpStatus: 200,
+        code: '40375',
+        latencyMs: 300,
+      },
+      {
+        ...base,
+        region: null,
+        module: 'rwa',
+        endpoint: 'getRwaTokenList',
+        httpStatus: null,
+        code: null,
+        latencyMs: 15000,
+      },
+    ]);
+    expect(summary.endpoints).toEqual([
+      {
+        module: 'rwa',
+        endpoint: 'getRwaTokenList',
+        calls: 1,
+        errors: 1,
+        p50Ms: 15000,
+        p95Ms: 15000,
+        codes: { 'no response': 1 },
+      },
+      {
+        module: 'trading',
+        endpoint: 'getAggregatedQuote',
+        calls: 2,
+        errors: 1,
+        p50Ms: 100,
+        p95Ms: 300,
+        codes: { '0': 1, '40375': 1 },
+      },
+    ]);
+    expect(summary.regions.map((r) => [r.region, r.calls])).toEqual([
+      ['fra', 2],
+      ['unset', 1],
+    ]);
   });
 });

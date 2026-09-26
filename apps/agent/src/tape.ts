@@ -155,6 +155,8 @@ export async function sampleTape(deps: TapeDeps): Promise<TapeSampleInsert[]> {
         openState: status?.openState ?? null,
         marketStatus: status?.marketStatus ?? null,
         reasonCode: status?.reasonCode ?? (statusError ? 'UNAVAILABLE' : null),
+        reasonMsg: status?.reasonMsg ?? null,
+        nextOpenTime: status?.nextOpenTime ?? null,
         tokenPrice: price?.tokenPrice ?? null,
         referencePrice: price?.referencePrice ?? null,
         stockPrice: stock?.ok ? stock.stockPrice : null,

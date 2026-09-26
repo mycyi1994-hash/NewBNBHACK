@@ -16,6 +16,7 @@ import {
   type Why,
 } from '@ijaro/core';
 import {
+  addToHolding,
   cyclesAwaitingTx,
   getPlan,
   instrumentFromRow,
@@ -32,7 +33,7 @@ import {
 import { eq } from 'drizzle-orm';
 import type { Hex } from 'viem';
 import { cycleAlert } from './alerts.js';
-import { addToHolding, recordReceipt, type CycleDeps } from './cycle.js';
+import { recordReceipt, type CycleDeps } from './cycle.js';
 
 interface AwaitingStep {
   step: 'AWAITING';
@@ -89,7 +90,7 @@ export async function completeAwaitingCycles(deps: CycleDeps): Promise<string[]>
       });
       const spentUsd = spent > 0n ? fromUnits(spent, 18) : pending.decision.spendUsd;
       await settleSpend(deps.db, cycle.id, 'spent', spentUsd);
-      await addToHolding(deps, plan.id, instrument, received, spentUsd);
+      await addToHolding(deps.db, plan.id, instrument, received, spentUsd);
       const bought = boughtOutcome(pending.decision, instrument, received.toString());
       outcome = bought.outcome;
       why = bought.why;

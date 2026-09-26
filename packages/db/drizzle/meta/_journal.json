@@ -57,6 +57,13 @@
       "when": 1790447509250,
       "tag": "0007_guardian_samples",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790448701576,
+      "tag": "0008_tape_status_worker",
+      "breakpoints": true
     }
   ]
 }

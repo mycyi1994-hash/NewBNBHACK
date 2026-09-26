@@ -32,6 +32,7 @@ const M1_TABLES = [
   'skill_tokens',
   'spend_ledger',
   'tx_outbox',
+  'worker_status',
 ];
 
 describe('migration files', () => {

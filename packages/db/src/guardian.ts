@@ -89,3 +89,14 @@ export async function openGuardianActions(
     .filter((row) => row.planId === null || row.planId === planId)
     .map(({ rule, action }) => ({ rule, action }));
 }
+
+/** decideCycle's guardian input for a plan: blocked while a pause_buys or redeem_all rule is open. */
+export async function guardianVerdictFor(
+  db: Db,
+  planId: string,
+): Promise<{ blocked: false } | { blocked: true; rule: string }> {
+  const blocking = (await openGuardianActions(db, planId)).find(
+    (a) => a.action === 'pause_buys' || a.action === 'redeem_all',
+  );
+  return blocking ? { blocked: true, rule: blocking.rule } : { blocked: false };
+}

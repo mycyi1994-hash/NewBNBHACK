@@ -7,9 +7,22 @@
  *   5. every active plan that is due, one at a time (one signer, one nonce sequence).
  * A failure in one plan is logged and alerted; the tick goes on with the next.
  */
-import { claimJob, duePlans, finishJob, getPlan, type JobRow } from '@ijaro/db';
+import { BSC_USDT } from '@ijaro/chain';
+import { nextDue } from '@ijaro/core';
+import {
+  claimJob,
+  duePlans,
+  finishJob,
+  getPlan,
+  planFromRow,
+  updatePlan,
+  usdText,
+  writeWorkerStatus,
+  type JobRow,
+} from '@ijaro/db';
 import { completeAwaitingCycles } from './awaiting.js';
 import { runCycle, type CycleDeps, type CycleReport } from './cycle.js';
+import { startYieldPlan } from './deposit.js';
 import { reconcileOutbox, type Reconciliation } from './executor/send.js';
 import { guardianTick, redeemPlanPosition, type GuardianReport } from './guardian.js';
 
@@ -44,8 +57,39 @@ export async function processJob(
   switch (job.kind) {
     case 'preview':
       return plain(await runCycle(simulate, job.planId, { manual: true }));
-    case 'run':
-      return plain(await runCycle(deps, job.planId, { manual: true }));
+    case 'run': {
+      const plan = await getPlan(deps.db, job.planId);
+      if (!plan) throw new Error(`plan ${job.planId} not found`);
+      // A yield plan starts with its principal (Judge Mode "이자로 사기").
+      if (plan.mode === 'yield' && usdText(plan.principalUsd) === '0') {
+        const depositUsd = (job.payload as { depositUsd?: unknown }).depositUsd;
+        if (typeof depositUsd !== 'string')
+          throw new Error('a yield plan starts with payload.depositUsd');
+        return startYieldPlan(deps, plan, depositUsd);
+      }
+      const report = await runCycle(deps, job.planId, { manual: true });
+      // A judge's first run starts the plan: it keeps running on its own until it expires (7 days)
+      // or the code's cap is used up. A deferred first run starts at the time it was deferred to.
+      if (
+        deps.mode === 'live' &&
+        plan.status === 'paused' &&
+        plan.pausedReason === 'awaiting_run'
+      ) {
+        const retryAt =
+          report.status === 'done' && report.outcome.kind === 'DEFERRED'
+            ? report.outcome.retryAt
+            : undefined;
+        const next = nextDue(planFromRow(plan).cadence, deps.now(), retryAt);
+        await updatePlan(
+          deps.db,
+          plan.id,
+          next.kind === 'stop'
+            ? { status: 'stopped', pausedReason: 'done' }
+            : { status: 'active', pausedReason: null, nextDueAt: next.nextDueAt },
+        );
+      }
+      return plain(report);
+    }
     case 'stop': {
       const plan = await getPlan(deps.db, job.planId);
       if (!plan) throw new Error(`plan ${job.planId} not found`);
@@ -113,5 +157,25 @@ export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promi
       report.cycles.push(await runCycle(deps, plan.id));
     });
   }
+  await guard('house balance', async () => {
+    const [usdt, bnb] = await Promise.all([
+      deps.chain.balanceOf(BSC_USDT, deps.house),
+      deps.chain.nativeBalance(deps.house),
+    ]);
+    await writeWorkerStatus(deps.db, 'house', {
+      usdtUnits: usdt.toString(),
+      bnbWei: bnb.toString(),
+      at: deps.now().toISOString(),
+    });
+  });
+  await writeWorkerStatus(deps.db, 'tick', {
+    at: report.at,
+    mode: deps.mode,
+    cycles: report.cycles.map((c) => ({ planId: c.planId, status: c.status })),
+    jobs: report.jobs.length,
+    completed: report.completed.length,
+    guardianOpen: report.guardian?.actions.map((a) => a.rule) ?? [],
+    errors: report.errors,
+  });
   return report;
 }

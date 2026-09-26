@@ -32,7 +32,7 @@ export {
 export type { AuthInput, PreHashParts, Query, QueryValue, WireTarget } from './sign.js';
 export { REQUEST_ID_HEADERS, maskSensitive, redactValues, requestIdOf } from './telemetry.js';
 export type { ApiCallRecord, ApiCallSink } from './telemetry.js';
-export { isSuccess, percentile, renderMetricsMarkdown } from './metrics.js';
+export { isSuccess, percentile, renderMetricsMarkdown, summarizeCalls } from './metrics.js';
 export { SimulationFailedError, parseSimulation, requireSimulationSuccess } from './simulation.js';
 export type { AllowanceChange, SimulationResult } from './simulation.js';
 export {
@@ -50,7 +50,7 @@ export type {
   ErrorCategory,
   ErrorClass,
 } from './taxonomy.js';
-export type { CallStats, MetricsMeta } from './metrics.js';
+export type { CallStats, EndpointSummary, MetricsMeta } from './metrics.js';
 export {
   BSC,
   broadcastSigned,

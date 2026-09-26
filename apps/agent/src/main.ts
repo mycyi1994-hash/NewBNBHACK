@@ -18,6 +18,7 @@ import {
   listPlans,
   migrateDb,
   tapeSlotRecorded,
+  writeWorkerStatus,
 } from '@ijaro/db';
 import type { CycleDeps } from './cycle.js';
 import { discoverVenusUsdt } from './executor/venus.js';
@@ -42,6 +43,10 @@ if (rt.houseAddress) {
   const simulate = config.executionMode === 'live' ? executorDeps(rt, 'simulate') : deps;
   try {
     deps.venus = simulate.venus = await discoverVenusUsdt(simulate);
+    await writeWorkerStatus(rt.database.db, 'venus', {
+      ...deps.venus,
+      verifiedAt: new Date().toISOString(),
+    });
   } catch (error) {
     console.log(
       `agent: Venus market UNAVAILABLE (${error instanceof Error ? error.message : String(error)}) — yield plans and the Venus guardian rules wait`,
@@ -121,6 +126,13 @@ async function tapeTick() {
     });
     const written = await insertTapeSamples(rt.database.db, rows);
     const errors = rows.filter((r) => r.errorCode).length;
+    await writeWorkerStatus(rt.database.db, 'tape', {
+      slotAt: slot.toISOString(),
+      sampledAt: rows[0]?.sampledAt ?? null,
+      rows: rows.length,
+      written,
+      quoteErrors: errors,
+    });
     console.log(
       `tape: slot ${slot.toISOString()} sampled ${rows[0]?.sampledAt} ${written}/${rows.length} rows written (${instruments.length} instruments × sizes), ${errors} quote errors, session ${rows[0]?.session}`,
     );

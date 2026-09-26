@@ -77,7 +77,7 @@ describe.skipIf(!url)('spend ledger on Postgres', () => {
     expect(usdText(await remainingSpend(db, s))).toBe('0');
   });
 
-  it('counts every plan against the global daily cap', async () => {
+  it('counts every house-wallet plan against the global daily cap', async () => {
     const day = isolatedDay();
     const caps = { globalDailyUsd: '8', planDailyUsd: '5' };
     const a = await plan();
@@ -99,6 +99,34 @@ describe.skipIf(!url)('spend ledger on Postgres', () => {
     expect(usdText(await remainingSpend(db, scope(b, day, caps)))).toBe('3');
     // Another day starts from zero.
     expect(usdText(await remainingSpend(db, scope(b, isolatedDay(), caps)))).toBe('5');
+  });
+
+  it("keeps skill plans (the user's own wallet) out of the house wallet's daily cap", async () => {
+    const day = isolatedDay();
+    const house = await plan();
+    const skill = await plan({ ownerKind: 'skill', ownerRef: `sk_${randomUUID()}` });
+    const houseCaps = { globalDailyUsd: '8', planDailyUsd: '5' };
+    const skillCaps = { globalDailyUsd: '5', planDailyUsd: '5' };
+    expect(
+      await reserveSpend(db, {
+        ...scope(skill, day, skillCaps),
+        cycleId: await newCycle(db, skill.id),
+        amountUsd: '5',
+      }),
+    ).toMatchObject({ ok: true });
+    // The skill wallet's $5 leaves the house's $8 untouched…
+    expect(usdText(await remainingSpend(db, scope(house, day, houseCaps)))).toBe('5');
+    expect(
+      await reserveSpend(db, {
+        ...scope(house, day, houseCaps),
+        cycleId: await newCycle(db, house.id),
+        amountUsd: '5',
+      }),
+    ).toMatchObject({ ok: true });
+    // …and the house's spending does not count against the skill plan's own day.
+    const second = await plan({ ownerKind: 'skill', ownerRef: `sk_${randomUUID()}` });
+    expect(usdText(await remainingSpend(db, scope(second, day, skillCaps)))).toBe('5');
+    expect(usdText(await remainingSpend(db, scope(skill, day, skillCaps)))).toBe('0');
   });
 
   it('frees a released reservation and keeps the actual amount of a spent one', async () => {

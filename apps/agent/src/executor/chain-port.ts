@@ -23,6 +23,8 @@ export interface ReceiptLike {
 export interface ChainPort {
   allowance(token: string, owner: string, spender: string): Promise<bigint>;
   balanceOf(token: string, holder: string): Promise<bigint>;
+  /** BNB balance (wei): gas money. */
+  nativeBalance(address: string): Promise<bigint>;
   /** Venus vToken exchangeRateStored (underlying per vToken, 1e18-scaled). */
   exchangeRate(vToken: string): Promise<bigint>;
   /** Venus vToken underlying() — the market's asset. */
@@ -60,6 +62,7 @@ export function viemChainPort(bsc: BscClient): ChainPort {
   return {
     allowance: (token, owner, spender) => readAllowance(bsc, token, owner, spender),
     balanceOf: (token, holder) => readTokenBalance(bsc, token, holder),
+    nativeBalance: (address) => bsc.getBalance({ address: getAddress(address) }),
     exchangeRate: (vToken) =>
       bsc.readContract({
         address: getAddress(vToken),

@@ -16,13 +16,11 @@ import {
   fromUnits,
   guardianVerdict,
   nextDue,
-  sameMultiplier,
   sharesFromTokens,
   toUnits,
   type CycleInput,
   type CycleOutcome,
   type ExecuteDecision,
-  type Instrument,
   type Plan,
   type QuoteObservation,
   type Why,
@@ -30,10 +28,8 @@ import {
 import {
   acquirePlanLock,
   appendCycleStep,
-  getHolding,
+  addToHolding,
   getPlan,
-  insertGuardianEvent,
-  insertReceipt,
   openCycle,
   openGuardianActions,
   planFromRow,
@@ -41,8 +37,8 @@ import {
   remainingSpend,
   reserveSpend,
   settleSpend,
+  recordReceiptFacts,
   updateCycle,
-  upsertHolding,
   usdText,
   utcDay,
   type CycleRow,
@@ -137,52 +133,14 @@ export async function recordReceipt(
   cycleId: number | null,
   sent: SentTx,
 ) {
-  await insertReceipt(deps.db, {
-    cycleId,
-    planId,
+  await recordReceiptFacts(deps.db, planId, cycleId, {
     kind: sent.kind,
     txHash: sent.txHash,
-    explorerUrl: `https://bscscan.com/tx/${sent.txHash}`,
-    chainId: 56,
-    amounts: sent.amounts,
     broadcastVia: sent.broadcastVia,
-    simulatedAt: sent.simulatedAt,
-    blockNumber: sent.receipt.blockNumber.toString(),
+    blockNumber: sent.receipt.blockNumber,
     status: sent.receipt.status === 'success' ? 'success' : 'failed',
-  });
-}
-
-/** Adds a confirmed buy to the plan's holding; a multiplier change since the last write is logged. */
-export async function addToHolding(
-  deps: CycleDeps,
-  planId: string,
-  instrument: Instrument,
-  received: bigint,
-  spentUsd: string,
-) {
-  const existing = await getHolding(deps.db, planId, instrument.id);
-  if (existing && !sameMultiplier(existing.multiplierAtLastUpdate, instrument.multiplier)) {
-    await insertGuardianEvent(deps.db, {
-      rule: 'multiplier_changed',
-      action: 'warn',
-      planId,
-      detail: {
-        instrumentId: instrument.id,
-        from: existing.multiplierAtLastUpdate,
-        to: instrument.multiplier,
-      },
-    });
-  }
-  const tokens = BigInt(existing?.tokens ?? '0') + received;
-  const cost = units(existing ? usdText(existing.costUsd) : '0') + units(spentUsd);
-  await upsertHolding(deps.db, {
-    planId,
-    instrumentId: instrument.id,
-    tokens: tokens.toString(),
-    decimals: instrument.decimals,
-    multiplierAtLastUpdate: instrument.multiplier,
-    shares: sharesFromTokens(tokens, instrument.decimals, instrument.multiplier),
-    costUsd: decimal(cost),
+    simulatedAt: sent.simulatedAt,
+    amounts: sent.amounts,
   });
 }
 
@@ -542,7 +500,7 @@ async function cycleBody(
         txHashes.push(swap.sent.txHash);
         const spentUsd = swap.spentUnits > 0n ? decimal(swap.spentUnits) : decision.spendUsd;
         await settleSpend(deps.db, cycle.id, 'spent', spentUsd);
-        await addToHolding(deps, plan.id, market.instrument, swap.receivedTokens, spentUsd);
+        await addToHolding(deps.db, plan.id, market.instrument, swap.receivedTokens, spentUsd);
         if (decision.interestUsd !== null) {
           const used = units(decision.interestUsd);
           harvested = harvested > used ? harvested - used : 0n;

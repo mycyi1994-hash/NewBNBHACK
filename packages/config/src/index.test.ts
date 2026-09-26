@@ -61,6 +61,20 @@ describe('env schema vs .env.example', () => {
   });
 });
 
+describe('session secret', () => {
+  it('is optional, never shown, and must be long enough to sign cookies', () => {
+    expect(parseConfig({}).sessionSecret).toBeUndefined();
+    const secret = 's'.repeat(32);
+    const config = parseConfig({ SESSION_SECRET: secret });
+    expect(config.sessionSecret).toBe(secret);
+    expect(JSON.stringify(describeConfig(config))).not.toContain(secret);
+    expect(describeConfig(config).sessionSecret).toBe(true);
+    expect(() => parseConfig({ SESSION_SECRET: 'short' })).toThrow(
+      'SESSION_SECRET must be at least 32 characters',
+    );
+  });
+});
+
 describe('caps', () => {
   it('are frozen', () => {
     const { caps } = parseConfig({});

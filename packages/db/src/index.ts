@@ -12,8 +12,11 @@ export * from './mappers.js';
 export * from './migrations.js';
 export * from './plans.js';
 export * from './queue.js';
+export * from './record.js';
 export * from './schema.js';
 export * from './seed.js';
+export * from './status.js';
+export * from './tape-summary.js';
 
 export type InstrumentRow = typeof instruments.$inferSelect;
 export type TapeSampleInsert = typeof tapeSamples.$inferInsert;
