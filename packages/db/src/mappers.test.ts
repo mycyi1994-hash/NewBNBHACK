@@ -21,6 +21,7 @@ const planRow: PlanRow = {
   principalUsd: '0.000000000000000000',
   contributionUsd: '5.000000000000000000',
   harvestedUnspentUsd: '0.000000000000000000',
+  vtokenUnits: '0',
   cadence: 'once',
   window: 'anytime',
   maxPerBuyUsd: '5.000000000000000000',

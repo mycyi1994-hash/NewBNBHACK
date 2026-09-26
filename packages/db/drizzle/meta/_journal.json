@@ -43,6 +43,13 @@
       "when": 1790445246559,
       "tag": "0005_dx_events",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790446411529,
+      "tag": "0006_outbox_nonce_vtokens",
+      "breakpoints": true
     }
   ]
 }

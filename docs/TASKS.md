@@ -129,16 +129,43 @@
 - 수용: 테스트 ≥ 30, 커버리지 100%(core) — **확인**(2026-09-24 05:21 UTC): `pnpm coverage:core` → `Statements 100% (243/243)`, `Branches 100% (212/212)`, `Functions 100% (34/34)`, `Lines 100% (211/211)`(임계 100% 강제). 전체 `pnpm test` 18파일 183개 통과(DB 포함).
 
 ### M1-03 HouseWalletExecutor · 기준: 기술
-- [ ] 정확 승인 → Transaction API 시뮬레이션 → viem 서명 → Transaction API 브로드캐스트(RPC 폴백) → 영수증 폴링 → 실수령량 파싱
-- [ ] `pnpm cycle:once --plan H-SAFE --live` (확인 프롬프트)
+- [x] 정확 승인 → Transaction API 시뮬레이션 → viem 서명 → Transaction API 브로드캐스트(RPC 폴백) → 영수증 폴링 → 실수령량 파싱
+  - 코드(2026-09-26, 클라우드 세션):
+    - `packages/binance/src/endpoints.ts`: 문서 필드명의 타입 래퍼. 견적·승인·스왑·시뮬레이션·가스·브로드캐스트·상세·DeFi 빌드. 멱등 호출만 재시도한다.
+    - `packages/chain/src/tx.ts`: approve·mint·redeem 디코드, 영수증 Transfer 합산, 가스 상한 있는 서명용 tx.
+    - `apps/agent/src/executor/send.ts`: nonce → 서명 → outbox SIGNED → 브로드캐스트(Transaction API, 컴플라이언스 외 실패는 RPC) → PENDING → 영수증(3분) → CONFIRMED/FAILED. `reconcileOutbox`가 부팅·사이클 전에 하우스 행만 정리한다(받은 적 없는 바이트는 그대로 재전송).
+    - `apps/agent/src/executor/trade.ts`: 정확 승인 검증·허용량 확인·시뮬레이션 후 전송. 스왑은 발신자·value·경로·시뮬레이션·견적 나이를 검증한다.
+    - `apps/agent/src/cycle.ts` `runCycle`: decideCycle 단계마다 I/O. 캡 예약, 영수증, 홀딩(배수 변경 시 guardian_events), 원장 정산, 다음 due, FAILED 알림. 안전 규칙: DECISIONS D-17.
+  - 증거: `apps/agent/src/cycle.test.ts` 6개. 실제 Postgres, 가짜 API·체인, 공개 테스트 키로 수행했다.
+    - simulate: 승인 시뮬 SUCCESS, 스왑 시뮬 allowance FAILED, 서명 0.
+    - live: 호출 순서 quote → approve-transaction → simulate → broadcast → swap → simulate → broadcast. 허용량 = 정확히 $5, nonce 연속, receipts approve·swap, holdings, outbox CONFIRMED×2, 다음 due 9/29 09:32 ET.
+    - 무제한 승인은 서명 0으로 FAILED 처리하고 알림을 보냈다.
+    - 토요일: 견적 없이 DEFERRED, 월 09:32로 넘어갔다.
+    - 40431: RPC 폴백.
+    - 영수증 미도착: awaiting_tx → 다른 플랜 `outbox_busy` → 채굴 후 정리하고 매수.
+- [x] `pnpm cycle:once --plan H-SAFE --live` (확인 프롬프트)
+  - `scripts/cycle-once.ts`: simulate 패스를 먼저 돌려 금액·주소·시뮬 결과를 출력한다. `--live`는 `EXECUTION_MODE=live`, 하우스 키, 대화형 터미널에서 `y` 입력이 모두 있어야 한다(`scripts/confirm.ts`, TTY가 아니면 거부). `executorDeps(rt, 'live')`도 설정이 live가 아니면 서명자를 주지 않는다.
+  - 남음: [PC] simulate 실행 출력 인용(GOALS G3-3). [HUMAN] 메인넷 실행(G4).
 - 수용: **메인넷 NVDAB(또는 결정된 발행사) $5 매수 1건**, `receipts` 저장, BscScan 링크, 사유 한 줄. [HUMAN] 지출 승인 기록
 
 ### M1-04 안전 모드 완주 · 기준: 기술
-- [ ] 스케줄러 없이 CLI로 사이클 전체(DUE→RECORD), 홀딩 갱신(주식 수)
+- [~] 스케줄러 없이 CLI로 사이클 전체(DUE→RECORD), 홀딩 갱신(주식 수)
+  - 코드·테스트 완료(9/26): `pnpm cycle:once`가 `runCycle`로 DUE→RECORD 전체를 수행한다. 수동 실행은 일정을 바꾸지 않는다. 홀딩 shares = tokens × 배수(`sharesFromTokens`)이고, `cycle.test.ts` live 시나리오로 검증했다. 남음: [PC] 실데이터 simulate 실행 1회 인용.
 - 수용: 사이클 레코드 + 홀딩 shares 계산 검증
 
 ### M1-05 이자 모드 완주 · 기준: 기술·창의
-- [ ] 예치(DeFi API 콜데이터→시뮬→브로드캐스트), 이자 조회(온체인·DeFi API 교차), 상환, 매수
+- [~] 예치(DeFi API 콜데이터→시뮬→브로드캐스트), 이자 조회(온체인·DeFi API 교차), 상환, 매수
+  - 코드(9/26): `apps/agent/src/executor/venus.ts`.
+    - `discoverVenusUsdt`: DeFi Data로 투자를 찾고, 예치 빌드로 vToken을 찾고, 온체인 `underlying()`이 USDT인지 확인한다.
+    - `depositPrincipal`: DEPOSIT이 `mint(정확한 금액)`인지, 대상이 vUSDT인지 확인한다. APPROVE 항목은 쓰지 않고 정확 승인을 쓴다.
+    - `redeemFromVenus`: 플랜 보유 vToken 이하이고 요청액 가치 이하일 때만 상환한다. 지연일이 있으면 거부한다.
+    - 플랜별 `plans.vtoken_units`(마이그레이션 0006). `runCycle`은 이자 → 상환 → 매수 순이고 `harvested_unspent_usd`를 갱신한다.
+    - `pnpm yield:deposit --plan <id> --usd <n> [--live]`: 원금 캡을 확인하고 `y`를 받는다. 원금·vToken은 확정 영수증에서 1회만 기록한다. 늦은 영수증은 `--record <tx>`로 기록한다.
+  - 증거: `venus.test.ts` 7개(1 USDT 실측 콜데이터 사용).
+    - 시뮬된 승인은 정확 금액이었다(API 항목은 2^256−1).
+    - 잘못된 금액·시장은 거부했다. 원금을 건드리는 상환과 지연 상환도 거부했다.
+    - live 예치 → 상환에서 로그로 vToken 발행과 USDT 수령을 파싱했다.
+  - 남음: [HUMAN] 원금 결정(REPLAN R1), 메인넷 영수증 3종(G4).
 - 수용: **메인넷 영수증 3종(deposit, redeem, swap)**, 이자 표시. 이자 부족 시 적립 병행으로 체결하되 영수증에 구분 표기
 
 ### M1-06 스케줄러·창구·멱등 · 기준: 기술

@@ -21,8 +21,23 @@ export interface MigrationEntry {
   when: number;
 }
 
+/** pg_advisory_lock key held while migrating. */
+const MIGRATION_LOCK = 471_203_002;
+
+/**
+ * Applies pending migrations. Concurrent callers (two workers booting, parallel test projects on
+ * a fresh database) queue on an advisory lock held on one reserved connection, so the second
+ * finds everything applied instead of racing to create the same tables (ci run #8).
+ */
 export async function migrateDb(db: Db): Promise<void> {
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  const connection = await db.$client.reserve();
+  try {
+    await connection`select pg_advisory_lock(${MIGRATION_LOCK})`;
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+  } finally {
+    await connection`select pg_advisory_unlock(${MIGRATION_LOCK})`;
+    connection.release();
+  }
 }
 
 /** Every migration drizzle-kit generated, oldest first. */

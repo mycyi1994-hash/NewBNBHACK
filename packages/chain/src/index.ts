@@ -183,6 +183,8 @@ export async function readVTokenBalance(
  */
 export const BSC_USDT: Address = '0x55d398326f99059fF775485246999027B3197955';
 
+export * from './tx.js';
+
 export async function assertUsdt(client: BscClient): Promise<Erc20Meta> {
   const meta = await readErc20Meta(client, BSC_USDT);
   if (meta.symbol !== 'USDT' || meta.decimals !== 18) {

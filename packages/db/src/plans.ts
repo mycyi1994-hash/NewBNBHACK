@@ -86,7 +86,13 @@ export async function acquirePlanLock(
 export type PlanPatch = Partial<
   Pick<
     PlanInsert,
-    'status' | 'pausedReason' | 'nextDueAt' | 'harvestedUnspentUsd' | 'principalUsd' | 'expiresAt'
+    | 'status'
+    | 'pausedReason'
+    | 'nextDueAt'
+    | 'harvestedUnspentUsd'
+    | 'principalUsd'
+    | 'vtokenUnits'
+    | 'expiresAt'
   >
 >;
 

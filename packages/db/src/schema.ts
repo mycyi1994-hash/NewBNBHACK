@@ -158,6 +158,11 @@ export const plans = pgTable(
     contributionUsd: usd('contribution_usd').notNull().default('0'),
     /** Interest redeemed from Venus but not yet spent (SPEC §5.3 v2). */
     harvestedUnspentUsd: usd('harvested_unspent_usd').notNull().default('0'),
+    /**
+     * Venus vToken base units this plan owns, from its own deposit and redeem receipts. The house
+     * wallet's position is shared by every yield plan, so a plan's interest comes from these.
+     */
+    vtokenUnits: text('vtoken_units').notNull().default('0'),
     /** 'weekly' | 'daily' | 'once'. */
     cadence: text('cadence').notNull(),
     /** 'regular_session' | 'anytime'. */
@@ -386,7 +391,11 @@ export const txOutbox = pgTable(
     updatedAt: at('updated_at').notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('tx_outbox_nonce_uq').on(table.chainId, table.fromAddress, table.nonce),
+    // A transaction refused by every broadcast path never used its nonce on chain; it keeps its
+    // row (FAILED, broadcast_via null) and must not block the next transaction at that nonce.
+    uniqueIndex('tx_outbox_nonce_uq')
+      .on(table.chainId, table.fromAddress, table.nonce)
+      .where(sql`not (status = 'FAILED' and broadcast_via is null)`),
     uniqueIndex('tx_outbox_hash_uq').on(table.txHash),
     index('tx_outbox_status_idx').on(table.status),
     check('tx_outbox_status_ck', oneOf('status', ['SIGNED', 'PENDING', 'CONFIRMED', 'FAILED'])),

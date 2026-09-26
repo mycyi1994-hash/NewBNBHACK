@@ -54,6 +54,7 @@ export default defineConfig(
       'packages/config/**',
       '**/*.test.ts',
       'packages/*/test/**',
+      'apps/*/test/**',
       'scripts/fetch-docs-browser.mjs',
     ],
     rules: { 'no-restricted-properties': 'off' },

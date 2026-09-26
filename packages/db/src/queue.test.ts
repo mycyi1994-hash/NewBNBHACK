@@ -108,16 +108,19 @@ describe.skipIf(!url)('jobs and tx_outbox on Postgres', () => {
     expect(
       await violatedConstraint(recordSigned(db, { ...signed, nonce: 7, txHash: hex(32) })),
     ).toBe('tx_outbox_nonce_uq');
+    // Signed but not broadcast yet: the nonce is not known to be used on chain.
+    expect(await lastOutboxNonce(db, 56, from)).toBeUndefined();
     const second = await recordSigned(db, { ...signed, kind: 'swap', nonce: 8, txHash: hex(32) });
-    expect(await lastOutboxNonce(db, 56, from)).toBe(8);
-    // Another chain or sender has its own nonces.
-    expect(await lastOutboxNonce(db, 97, from)).toBeUndefined();
 
     await markOutbox(db, first.txHash, {
       status: 'PENDING',
       broadcastVia: 'transaction_api',
       attempted: true,
     });
+    expect(await lastOutboxNonce(db, 56, from)).toBe(7);
+    expect(await lastOutboxNonce(db, 56, from.toUpperCase().replace('0X', '0x'))).toBe(7);
+    // Another chain has its own nonces.
+    expect(await lastOutboxNonce(db, 97, from)).toBeUndefined();
     const pending = (await unsettledOutbox(db)).filter((r) => r.fromAddress === from);
     expect(pending.map((r) => [r.nonce, r.status, r.attempts])).toEqual([
       [7, 'PENDING', 1],
@@ -125,10 +128,22 @@ describe.skipIf(!url)('jobs and tx_outbox on Postgres', () => {
     ]);
 
     await markOutbox(db, first.txHash, { status: 'CONFIRMED' });
-    await markOutbox(db, second.txHash, { status: 'FAILED', error: 'receipt status 0' });
+    await markOutbox(db, second.txHash, { status: 'FAILED', error: 'refused by every path' });
     expect((await unsettledOutbox(db)).filter((r) => r.fromAddress === from)).toEqual([]);
     expect(await violatedConstraint(markOutbox(db, second.txHash, { status: 'LOST' }))).toBe(
       'tx_outbox_status_ck',
     );
+
+    // Never broadcast: its nonce is free again for the next transaction.
+    const retry = await recordSigned(db, { ...signed, kind: 'swap', nonce: 8, txHash: hex(32) });
+    expect(retry.nonce).toBe(8);
+    expect(await lastOutboxNonce(db, 56, from)).toBe(7);
+    await markOutbox(db, retry.txHash, { status: 'PENDING', broadcastVia: 'rpc', attempted: true });
+    await markOutbox(db, retry.txHash, { status: 'FAILED', error: 'receipt status 0 (reverted)' });
+    // A transaction mined as a failure did use its nonce.
+    expect(await lastOutboxNonce(db, 56, from)).toBe(8);
+    expect(
+      await violatedConstraint(recordSigned(db, { ...signed, nonce: 8, txHash: hex(32) })),
+    ).toBe('tx_outbox_nonce_uq');
   });
 });

@@ -51,3 +51,28 @@ export type {
   ErrorClass,
 } from './taxonomy.js';
 export type { CallStats, MetricsMeta } from './metrics.js';
+export {
+  BSC,
+  broadcastSigned,
+  buildDeFi,
+  buildSwap,
+  estimateGasLimit,
+  getApproveTransaction,
+  getQuote,
+  getRwaPrices,
+  getTransactionDetail,
+  listDeFiInvestments,
+  simulateCall,
+} from './endpoints.js';
+export type {
+  ApproveTransaction,
+  DeFiBuild,
+  DeFiCall,
+  DeFiInvestment,
+  EvmCall,
+  QuoteRoute,
+  RwaPrice,
+  SwapBuild,
+  SwapTx,
+  TransactionDetail,
+} from './endpoints.js';

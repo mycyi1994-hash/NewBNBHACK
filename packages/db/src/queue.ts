@@ -3,7 +3,7 @@
  * `tx_outbox`, signed transactions recorded before they are broadcast. A job is claimed with
  * FOR UPDATE SKIP LOCKED, so concurrent claimers never take the same one.
  */
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { Db } from './index.js';
 import { jobs, txOutbox } from './schema.js';
 
@@ -107,7 +107,10 @@ export async function unsettledOutbox(db: Db): Promise<OutboxRow[]> {
     .orderBy(asc(txOutbox.nonce));
 }
 
-/** Highest nonce recorded for the sender, or undefined when none. */
+/**
+ * Highest nonce the sender used on chain as far as we know: rows that were broadcast (a row
+ * refused by every broadcast path never consumed its nonce). Undefined when none.
+ */
 export async function lastOutboxNonce(
   db: Db,
   chainId: number,
@@ -116,7 +119,13 @@ export async function lastOutboxNonce(
   const [row] = await db
     .select({ nonce: txOutbox.nonce })
     .from(txOutbox)
-    .where(and(eq(txOutbox.chainId, chainId), eq(txOutbox.fromAddress, fromAddress)))
+    .where(
+      and(
+        eq(txOutbox.chainId, chainId),
+        sql`lower(${txOutbox.fromAddress}) = lower(${fromAddress})`,
+        isNotNull(txOutbox.broadcastVia),
+      ),
+    )
     .orderBy(desc(txOutbox.nonce))
     .limit(1);
   return row?.nonce;

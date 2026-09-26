@@ -19,5 +19,8 @@
     "@ijaro/core": "workspace:*",
     "@ijaro/db": "workspace:*",
     "viem": "2.56.8"
+  },
+  "devDependencies": {
+    "drizzle-orm": "0.45.3"
   }
 }
