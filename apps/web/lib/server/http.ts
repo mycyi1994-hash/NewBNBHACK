@@ -14,6 +14,9 @@ export function problem(status: number, code: string, message: string): Response
 
 export const unavailable = (reason: string) => json({ state: 'UNAVAILABLE', reason }, 503);
 
+/** Every request body here is a few hundred bytes; anything far larger is refused unread. */
+const MAX_BODY_CHARS = 16_384;
+
 /** The validated JSON body, or a 400. With `optional`, an empty body reads as `{}`. */
 export async function readBody<T>(
   request: Request,
@@ -23,6 +26,7 @@ export async function readBody<T>(
   let raw: unknown;
   try {
     const text = await request.text();
+    if (text.length > MAX_BODY_CHARS) return problem(413, 'too_large', 'the body is too large');
     raw = options.optional && text.trim() === '' ? {} : JSON.parse(text);
   } catch {
     return problem(400, 'bad_json', 'the body must be JSON');

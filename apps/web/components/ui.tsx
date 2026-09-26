@@ -113,6 +113,8 @@ const OUTCOME_TONE: Record<string, Tone> = {
 };
 
 export function OutcomeBadge({ t, kind }: { t: T; kind: string | null | undefined }) {
+  // A dry run (simulate mode, or a Judge Mode preview) bought nothing: it says so.
+  if (kind === 'SIMULATED') return <Pill tone="info">{t('outcome.simulated')}</Pill>;
   if (kind === 'BOUGHT' || kind === 'DEFERRED' || kind === 'SKIPPED' || kind === 'FAILED') {
     return <Pill tone={OUTCOME_TONE[kind] ?? 'neutral'}>{t(`outcome.${kind}`)}</Pill>;
   }

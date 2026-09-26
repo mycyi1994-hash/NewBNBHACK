@@ -229,7 +229,21 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
           }}
           empty={t('home.feed.empty')}
           items={v.cycles.map((c) => {
-            const outcome = c.outcome as { kind?: string; interestUsd?: string | null } | null;
+            const outcome = c.outcome as {
+              kind?: string;
+              interestUsd?: string | null;
+              spendUsd?: string;
+              expectedShares?: string | null;
+            } | null;
+            // A dry run has no reason key: its line is what it would have bought.
+            const line =
+              outcome?.kind === 'SIMULATED'
+                ? t('judge.preview.line', {
+                    usd: money(outcome.spendUsd),
+                    ticker: v.plan.ticker,
+                    shares: sharesText(outcome.expectedShares),
+                  })
+                : whyText(t, lang, tz, c.why);
             const receipts = v.receipts.filter((r) => r.cycleId === c.id);
             return {
               id: c.id,
@@ -241,7 +255,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
                       {timeText(c.startedAt, lang, tz)}
                     </span>
                     <OutcomeBadge t={t} kind={outcome?.kind ?? null} />
-                    {c.executionMode === 'simulate' ? (
+                    {c.executionMode === 'simulate' && outcome?.kind !== 'SIMULATED' ? (
                       <Pill tone="neutral" icon={false}>
                         {t('outcome.simulated')}
                       </Pill>
@@ -252,7 +266,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
                       </Pill>
                     ) : null}
                   </div>
-                  <p className="text-sm">{whyText(t, lang, tz, c.why)}</p>
+                  <p className="text-sm">{line}</p>
                   <div className="flex flex-wrap gap-3">
                     {receipts.map((r) => (
                       <ReceiptLink key={r.txHash} t={t} href={r.explorerUrl} />

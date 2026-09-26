@@ -250,6 +250,8 @@ describe.skipIf(!webTestUrl)('Judge Mode routes', () => {
     expect([over.status, over.body.error.code]).toEqual([400, 'over_cap']);
     const garbled = await post('{"depositUsd":');
     expect([garbled.status, garbled.body.error.code]).toEqual([400, 'bad_json']);
+    const huge = await post(JSON.stringify({ depositUsd: '5', pad: 'x'.repeat(20_000) }));
+    expect([huge.status, huge.body.error.code]).toEqual([413, 'too_large']);
 
     const queued = await post({ depositUsd: '5' });
     expect(queued.status).toBe(202);
