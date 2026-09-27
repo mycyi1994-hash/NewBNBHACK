@@ -5,6 +5,8 @@
 
 ## 1. 공식 채점 기준 (원문 그대로)
 
+2026-09-27 [주최 측 공식 페이지](https://www.bnbchain.org/en/hackathons/tokenized-stocks) 재확인. 아래 자체 목표(모듈 7개, 3분 완주 등)는 공식 최소 요구사항과 구분한다. Agentic Wallet / Wallet Skills와 Agent Studio는 선택 사항이다.
+
 > Scores are pooled after each judge has worked through every project on their own.
 
 | Criterion | Weight | What we look at |
@@ -103,8 +105,8 @@
 
 ## 6. 제출물 체크리스트 (공식 "What to Submit")
 
-- [ ] 작동하는 프로젝트: Binance Web3 API 모듈 1개 이상 (우리는 7개 이상) + Agentic Wallet/Wallet Skills
-- [ ] 공개 레포 (라이선스 포함)
+- [ ] 작동하는 프로젝트: Binance Web3 API 모듈 1개 이상. Agentic Wallet/Wallet Skills는 선택(가중 평가), 모듈 7개 이상은 자체 목표
+- [ ] 공개 레포. 라이선스 명시는 별도 권장 사항(공식 What to Submit에 명시된 필수 항목은 아님)
 - [ ] 데모 영상 ≤ 4분 (강력 권장)
 - [ ] 배포 링크 또는 심사위원이 따라 할 수 있는 지침
 - [ ] Developer Experience Report (공식 템플릿 폼 제출) — 7항목: Onboarding / Documentation issues / API pitfalls / AI stack feedback / Tokenized-stock specifics / Redesign suggestions / Requested capabilities

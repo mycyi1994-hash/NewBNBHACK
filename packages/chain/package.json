@@ -1,0 +1,21 @@
+{
+  "name": "@yieldvest/chain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. --project @yieldvest/chain"
+  },
+  "dependencies": {
+    "@yieldvest/config": "workspace:*",
+    "@yieldvest/core": "workspace:*",
+    "viem": "2.56.8"
+  },
+  "devDependencies": {
+    "vitest": "5.0.1"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "recordedAt": "2026-09-24T00:51:28.944Z",
+  "module": "defi-transaction",
+  "endpoint": "buildDeFiDepositTransaction",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/defi/transaction/deposit",
+    "body": {
+      "address": "[redacted]",
+      "investmentId": "5b77bfd8d8f7c18e9ee0d8f331c4d78f56744eed8addbe2e9970c0ef37e763cb",
+      "token": {
+        "tokenAddress": "0x55d398326f99059fF775485246999027B3197955",
+        "amount": "1"
+      },
+      "simulate": true
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:51:29 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "4",
+      "x-oc-used-weight": "1",
+      "x-amz-cf-id": "GLNB9zQAXjVzexpZHG-19nbSn75yEDNW1fO8u6c4Etgv6-KFwoDzdA=="
+    },
+    "body": {
+      "code": 40484,
+      "msg": "Insufficient balance. Please cancel the transaction, check your balance, and try again.",
+      "data": null,
+      "timestamp": 1790211089472,
+      "success": false
+    }
+  }
+}

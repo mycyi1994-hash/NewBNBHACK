@@ -1,11 +1,13 @@
 # CLAUDE.md — Operating manual for the coding agent
 
-You are the engineer on **이자로 (Ijaro)**, an entry for *BNB Hack: Tokenized Stocks Edition*
+You are the engineer on **Yieldvest** (formerly 이자로 / Ijaro), an entry for *BNB Hack: Tokenized Stocks Edition*
 (build until **Sun 11 Oct 2026 12:00 UTC**, internal submit target **Fri 9 Oct**).
 Three senior planners wrote `docs/`. You build what they specified, in the order they specified,
 and you keep the evidence trail they demand. You do not redesign the product on your own.
 
 ## Read in this order, every session
+
+**Frontend design:** the user-approved Yieldvest UI, logo, motion, and reference screenshot are in `frontend-preview/` (standalone React/Vite, illustrative data). It is integrated into `apps/web` (DECISIONS D-25): its CSS is ported verbatim to `apps/web/app/styles/preview.css` and `motion.css`, real-app additions live in `app.css`, and every value comes from the server — never from the preview's demo state. Keep the user's English, BNB-yellow/black neobank direction; [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md) maps each preview view to its page.
 
 1. `docs/JUDGING.md` — the official scoring criteria (verbatim) and how every feature maps to them. **Never forget these.**
 2. `docs/PLAN.md` — what we build, for whom, scope tiers, milestones, cut lines, review minutes.
@@ -13,7 +15,7 @@ and you keep the evidence trail they demand. You do not redesign the product on 
 4. `docs/TASKS.md` — the ticket backlog. Work strictly top-down unless a human reorders it.
 5. `docs/DECISIONS.md` — locked decisions and open questions. If you resolve a ⚠️VERIFY item, write the result here.
 6. `docs/DX_PROTOCOL.md` — how to log developer-experience evidence (25% of the score).
-7. `docs/UX_COPY.md` — every user-facing string, KR + EN. Do not invent copy.
+7. `docs/UX_COPY.md` — every user-facing string (the web shows the EN column only, D-26). Do not invent copy.
 8. `docs/GOALS.md` — the `/goal` directives (G0–G9). When you are running under a goal, its numbered
    conditions are the contract, and you end **every** turn with a `GOAL STATUS` block: one line per
    condition, `PASS` or `FAIL`, followed by the evidence (quoted command output, tx hash, file path).
@@ -68,8 +70,9 @@ Agentic Wallet is described by the organizers as "optional, **heavily weighted i
    their model, executing our rules.)
 7. **Timebox.** A spike is ≤ 2 hours. Blocked for > 30 minutes → write the open question in
    `docs/DECISIONS.md`, take the fallback listed there, move on.
-8. **Language.** Code, comments, commits, identifiers: English. UI strings: KR + EN via keys from
-   `docs/UX_COPY.md`. Docs may be Korean.
+8. **Language.** Code, comments, commits, identifiers: English. UI strings: **English only** (DECISIONS D-26,
+   a human decision), via keys from `docs/UX_COPY.md` — the file keeps its `KR / EN` format, the web renders EN.
+   Docs may be Korean.
 9. **Quality gates.** Before every commit: `pnpm typecheck && pnpm lint && pnpm test`.
    Before every deploy: `pnpm smoke` (calls `/api/judge/smoke` on the target).
 10. **Never-cut list** (PLAN §8) is sacred. Cut lines apply only with human agreement.
@@ -84,7 +87,7 @@ packages/core   Domain: plan/cycle types, decideCycle(), guardian rules, amount 
 packages/binance  Binance Web3 API client: signing, per-endpoint rate limiter, envelope, logging hook
 packages/chain  viem: BSC reads/writes, Venus vToken, BEP-677 multiplier, ERC-20
 packages/db     Drizzle schema + migrations (Postgres)
-skills/ijaro    Wallet Skill (SKILL.md + references) for Claude Code / OpenClaw + baw
+skills/yieldvest    Wallet Skill (SKILL.md + references) for Claude Code / OpenClaw + baw
 scripts/        fetch-docs.sh, reach, dx:metrics, cycle:once
 fixtures/       recorded real API responses (redacted)
 dx/             LOG.md (human+agent evidence), metrics.md (generated), findings/, REPORT_DRAFT.md (humans only)

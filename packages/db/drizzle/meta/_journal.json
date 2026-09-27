@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790187277922,
+      "tag": "0000_api_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790210465256,
+      "tag": "0001_instruments_tape",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790216588334,
+      "tag": "0002_tape_slot",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790227470711,
+      "tag": "0003_tape_stock_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790444211574,
+      "tag": "0004_m1_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790445246559,
+      "tag": "0005_dx_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790446411529,
+      "tag": "0006_outbox_nonce_vtokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790447509250,
+      "tag": "0007_guardian_samples",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790448701576,
+      "tag": "0008_tape_status_worker",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790487950858,
+      "tag": "0009_audit_checks",
+      "breakpoints": true
+    }
+  ]
+}

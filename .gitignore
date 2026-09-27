@@ -3,6 +3,7 @@ dist/
 .next/
 .turbo/
 coverage/
+*.tsbuildinfo
 
 # secrets
 .env
@@ -14,10 +15,13 @@ coverage/
 .baw/
 
 # vendored docs (fetched by scripts/fetch-docs.sh)
-docs/vendor/
+docs/vendor/*
 !docs/vendor/ENDPOINTS.md
 
 # local
 .DS_Store
 *.log
 .claude/settings.local.json
+
+# Agent worktrees created by the Claude Code harness (never part of the repo)
+.claude/worktrees/

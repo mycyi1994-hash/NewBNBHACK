@@ -1,4 +1,4 @@
-# PLAN.md — 이자로 (Ijaro) 마스터 기획서
+# PLAN.md — Yieldvest 마스터 기획서
 
 > **한 줄:** 원금은 USDT 예치에 그대로 두고, 이자(또는 정한 적립금)로 미국 주식 토큰을 정규장에만 자동 매수하는 에이전트.
 > **영문 태그라인:** *Interest buys the stock. Principal stays.*
@@ -101,8 +101,8 @@
 7. 플랜은 7일간 자동 사이클을 돌고(캡 내), 심사위원은 나중에 다시 와서 기록을 본다.
 
 ### 5.2 저축형 투자자의 플랜 (모드 C)
-1. Claude Code에 `npx skills add mycyi1994-hash/NewBNBHACK/skills/ijaro` (정확한 경로는 M2-09에서 확정).
-2. "이자로 시작해줘. USDT 500 맡기고 이자로 NVDA 사줘."
+1. Claude Code에 `npx skills add mycyi1994-hash/NewBNBHACK/skills/yieldvest` (정확한 경로는 M2-09에서 확정).
+2. "Yieldvest 시작해줘. USDT 500 맡기고 이자로 NVDA 사줘."
 3. 스킬이 우리 API로 플랜을 만들고(`POST /api/plans`), 위험 고지를 사용자에게 읽히고, `baw defi deposit`으로 예치(사용자 확인).
 4. 이후 비서가 켜질 때마다 `GET /api/plans/:id/next` → 결정("지금 $2.10 이자로 NVDAB 매수, 견적·주소·사유") → `baw market-order swap` → 결과를 `POST /report`.
 5. 세션 만료가 가까우면 스킬이 먼저 알린다(`wallet settings`의 `sessionExpireTime`).
@@ -123,7 +123,7 @@ apps/agent (5분 틱, 테이프, 가디언, 알림)     apps/web (Watch · Judge
       │                                            │
    하우스 지갑 (viem 서명 → Transaction API 브로드캐스트)   Postgres (packages/db)
                                                    │
-                                     skills/ijaro ── 사용자 비서 ── baw (사용자 지갑)
+                                     skills/yieldvest ── 사용자 비서 ── baw (사용자 지갑)
 [BSC 메인넷] Venus vUSDT · 주식 토큰(BEP-20/BEP-677) · PancakeSwap/RFQ 유동성
 [Agent Studio] 하우스 에이전트 신원(ERC-8004) · 런타임/MCP (Should)
 ```
@@ -174,7 +174,7 @@ apps/agent (5분 틱, 테이프, 가디언, 알림)     apps/web (Watch · Judge
 
 **컷라인 (10/4 저녁 판단, 뒤에 있을수록 먼저 자른다):** 모드 D → BNB 스테이킹 → 발행사 간 최적 체결 → 텔레그램 사용자 알림 → x402 공식 에이전트 호출 → b402 유료 엔드포인트 → 섹터 타깃 → Agent Studio 런타임(신원 등록은 유지).
 
-**절대 컷 금지:** 하우스 에이전트 라이브 루프와 영수증, Judge Mode, 안전·이자 두 모드, 에러 처리와 3상태 표시, KR/EN 문구, 계측·테이프·/dx, README 경로, 영상, 사람이 쓴 DX 리포트.
+**절대 컷 금지:** 하우스 에이전트 라이브 루프와 영수증, Judge Mode, 안전·이자 두 모드, 에러 처리와 3상태 표시, KR/EN 문구(9/27 D-26: 사람 결정으로 화면은 영어만), 계측·테이프·/dx, README 경로, 영상, 사람이 쓴 DX 리포트.
 
 ## 9. 제출물 매핑
 JUDGING §6 체크리스트를 따른다. README 첫 화면 구성: 한 문장 → 라이브 링크 → 영상 → Judge Mode 안내 → 하우스 영수증 표 → 모듈 매트릭스 → DX 리포트 링크 → 실행 방법 → 위험 고지.

@@ -1,0 +1,55 @@
+{
+  "recordedAt": "2026-09-24T00:51:40.982Z",
+  "module": "defi-data",
+  "endpoint": "listDeFiInvestments",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/defi/data/investment/list",
+    "body": {
+      "investType": "Earn",
+      "defiProtocolId": "venus",
+      "binanceChainId": "56",
+      "tokenAddressList": [
+        "0x55d398326f99059fF775485246999027B3197955"
+      ],
+      "page": 1,
+      "size": 20
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:51:41 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "4",
+      "x-oc-used-weight": "1",
+      "x-amz-cf-id": "q4zGLYVyoVO7OJpuJeRoRyFPCPwQjucdmTEMYXPRzJOZrL4PKeW1CA=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "page": 1,
+        "size": 20,
+        "total": 1,
+        "list": [
+          {
+            "binanceChainId": "56",
+            "defiProtocolId": "venus",
+            "protocolName": "Venus",
+            "investmentId": "5b77bfd8d8f7c18e9ee0d8f331c4d78f56744eed8addbe2e9970c0ef37e763cb",
+            "investmentName": "USDT",
+            "investType": "Earn",
+            "apyType": "APY",
+            "apyBps": 316,
+            "apyDisplay": "3.16%",
+            "tvl": "185541887.44"
+          }
+        ]
+      },
+      "timestamp": 1790211101405,
+      "success": true
+    }
+  }
+}

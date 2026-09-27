@@ -1,0 +1,103 @@
+{
+  "recordedAt": "2026-09-24T00:48:22.092Z",
+  "module": "defi-data",
+  "endpoint": "getProtocolDetail",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/defi/data/protocol/detail",
+    "body": {
+      "defiProtocolId": "venus"
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:48:22 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "4",
+      "x-oc-used-weight": "1",
+      "x-amz-cf-id": "FdnBZxPk8NEzJmTlHRpcF090kG58Wg7bAlHVZLvjaXCUXpZhQuBsqg=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "defiProtocolId": "venus",
+        "protocolName": "Venus",
+        "protocolLogo": "https://bin.bnbstatic.com/image/admin_mgs_image_upload/20241028/0d696959-4857-4e0d-a2b5-3022264d34b5.jpg",
+        "description": "Venus Protocol is a decentralized lending platform that lives on the BNB Chain. At its core, Venus is a money market protocol that enables lenders to generate yield on their tokens by providing loans, and borrowers to take out loans using $XVS and a variety of other currencies as collateral.",
+        "websiteUrl": "https://venus.io/",
+        "investType": [
+          "Earn"
+        ],
+        "supportedChains": [
+          "56"
+        ],
+        "tvl": "1353914642",
+        "tags": [
+          "DeFi",
+          "Lending"
+        ],
+        "founded": "2020",
+        "fdv": "98120577.97",
+        "totalFunding": null,
+        "socialLinks": {
+          "x": "https://x.com/VenusProtocol",
+          "discord": null,
+          "github": "https://github.com/SwipeWallet/Venus-Protocol",
+          "linkedin": "https://www.linkedin.com/company/venus-protocol/",
+          "telegram": null,
+          "gitbook": "",
+          "website": "https://venus.io/"
+        },
+        "team": [
+          {
+            "name": "Devita",
+            "role": "CM",
+            "twitter": "https://x.com/devitaivenus",
+            "linkedin": null,
+            "bio": "Devita is the community manager of Venus Protocol."
+          }
+        ],
+        "fundRaising": [],
+        "securityScore": "93.1",
+        "dimensionScores": {
+          "codeSecurity": "96",
+          "fundamentalHealth": "92.5",
+          "operationalResilience": "84.96",
+          "communityTrust": "98",
+          "governanceStrength": "88.45",
+          "marketStability": "94.18"
+        },
+        "highlights": [
+          "Project has security audits"
+        ],
+        "faq": [
+          {
+            "title": "What is Venus Protocol?",
+            "answer": "Venus Protocol is a trusted decentralized finance lending and borrowing protocol that's deployed on the BNB Chain. it combines the stablecoin minting facility of Maker and the algorithmic money markets developed by Compound, providing a simplified user experience and core capabilities in a single application."
+          },
+          {
+            "title": "What is XVS?",
+            "answer": "XVS is the governance token for the Venus protocol. By supplying certain tokens, you can earn XVS from the protocols as extra rewards on top of base interest. XVS token holders can also propose and vote on changes to the Venus protocol."
+          },
+          {
+            "title": "How does the staking mechanism work in Venus Protocol?",
+            "answer": "Venus allows users to stake various assets, including stablecoins, core pool assets (like BTCB, ETH, TRX), and XVS. Users can provide liquidity to these pools and earn interest. Users can withdraw funds on demand or receive Venus Tokens (vTokens) representing your stake. vTokens are as freely tradable as any other cryptographic asset on BNB Chain."
+          },
+          {
+            "title": "What risks should I be aware of when borrowing from Venus Protocol?",
+            "answer": "When borrowing from Venus, you should be aware of risks such as liquidation risk if your collateral value falls below the required threshold, and interest rate fluctuations that can increase your borrowing costs."
+          },
+          {
+            "title": "How are interest rates calculated for borrowed assets on Venus?",
+            "answer": "Interest rates on Venus are algorithmically determined based on supply and demand dynamics for each asset. When demand to borrow an asset increases, the interest rate rises, and vice versa. The loan interest is calculated per block and compounded into your borrow balance. Therefore, the “Token borrowed” balance under \"Overall position\" reflects your total borrowed plus the accrued interest."
+          }
+        ]
+      },
+      "timestamp": 1790210902895,
+      "success": true
+    }
+  }
+}

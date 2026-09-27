@@ -1,0 +1,88 @@
+{
+  "recordedAt": "2026-09-24T00:46:47.171Z",
+  "module": "trading",
+  "endpoint": "getAggregatedQuote",
+  "request": {
+    "method": "GET",
+    "path": "/build/api/v1/dex/aggregator/quote?binanceChainId=56&amount=5000000000000000000&fromTokenAddress=0x55d398326f99059fF775485246999027B3197955&toTokenAddress=0x205812CdBed920aFf76C6580abD681a46D11efc7&userWalletAddress=[redacted]",
+    "body": null
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:46:47 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "2",
+      "x-oc-used-weight": "3",
+      "x-amz-cf-id": "4zyqZt2rQwse2TcCBfNeEX1HlXqMkb6PXQWJLcEstcBY99YBOcXhQQ=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": [
+        {
+          "quoteId": "c293ce67d78740759a14f3237adc65de",
+          "vendorName": "LiquidMesh",
+          "executionMode": "SWAP",
+          "binanceChainId": "56",
+          "fromTokenAmount": "5000000000000000000",
+          "toTokenAmount": "6749737326446592",
+          "tradeFee": "0.02331233",
+          "estimateGasFee": "450000",
+          "priceImpactPercent": "0.0000000000",
+          "router": "0x55d398326f99059ff775485246999027b3197955--0x205812cdbed920aff76c6580abd681a46d11efc7",
+          "fromToken": {
+            "tokenContractAddress": "0x55d398326f99059fF775485246999027B3197955",
+            "tokenSymbol": "USDT",
+            "tokenUnitPrice": "0.99978276164743",
+            "decimal": "18",
+            "isHoneyPot": false,
+            "taxRate": "0"
+          },
+          "toToken": {
+            "tokenContractAddress": "0x205812CdBed920aFf76C6580abD681a46D11efc7",
+            "tokenSymbol": "QQQB",
+            "tokenUnitPrice": "740.66647483562952891429000000",
+            "decimal": "18",
+            "isHoneyPot": false,
+            "taxRate": "0"
+          },
+          "dexRouterList": [
+            {
+              "dexProtocol": {
+                "dexName": "Kipseli",
+                "percent": "100.00"
+              },
+              "fromToken": {
+                "tokenContractAddress": "0x55d398326f99059ff775485246999027b3197955",
+                "tokenSymbol": "USDT",
+                "tokenUnitPrice": "0.99978276164743",
+                "decimal": "18",
+                "isHoneyPot": false,
+                "taxRate": "0"
+              },
+              "fromTokenIndex": "0",
+              "toToken": {
+                "tokenContractAddress": "0x205812cdbed920aff76c6580abd681a46d11efc7",
+                "tokenSymbol": "QQQB",
+                "tokenUnitPrice": "740.66647483562952891429000000",
+                "decimal": "18",
+                "isHoneyPot": false,
+                "taxRate": "0"
+              },
+              "toTokenIndex": "1"
+            }
+          ],
+          "approveTarget": "0xB44446b0c8E56988c34f7Ff73Ae904982b5FdDA5",
+          "isBest": true,
+          "feeAmount": null,
+          "feeToken": null,
+          "actualSwapAmount": null
+        }
+      ],
+      "timestamp": 1790210807584,
+      "success": true
+    }
+  }
+}

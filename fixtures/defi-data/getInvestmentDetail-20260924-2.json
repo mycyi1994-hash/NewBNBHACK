@@ -1,0 +1,61 @@
+{
+  "recordedAt": "2026-09-24T00:50:39.841Z",
+  "module": "defi-data",
+  "endpoint": "getInvestmentDetail",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/defi/data/investment/detail",
+    "body": {
+      "investmentId": "5b77bfd8d8f7c18e9ee0d8f331c4d78f56744eed8addbe2e9970c0ef37e763cb"
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:50:40 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "3",
+      "x-oc-used-weight": "2",
+      "x-amz-cf-id": "y87C9xhNBR4LWLGL1ro5P_0rsnQVkDJM_5fgLkShgRRLp0qUIHJ52Q=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "binanceChainId": "56",
+        "defiProtocolId": "venus",
+        "protocolName": "Venus",
+        "protocolLogo": "https://bin.bnbstatic.com/image/admin_mgs_image_upload/20241028/0d696959-4857-4e0d-a2b5-3022264d34b5.jpg",
+        "investmentId": "5b77bfd8d8f7c18e9ee0d8f331c4d78f56744eed8addbe2e9970c0ef37e763cb",
+        "investmentName": "USDT",
+        "investType": "Earn",
+        "investable": true,
+        "apyBps": 316,
+        "apyDisplay": "3.16%",
+        "apyType": "APY",
+        "tvl": "185541887.44",
+        "poolAddress": null,
+        "feeRate": null,
+        "assetTokenList": [
+          {
+            "tokenAddress": "0x55d398326f99059ff775485246999027b3197955",
+            "tokenName": "Tether USDT",
+            "tokenSymbol": "USDT"
+          }
+        ],
+        "rewardTokenList": [
+          {
+            "tokenAddress": "0x55d398326f99059ff775485246999027b3197955",
+            "tokenName": "Tether USDT",
+            "tokenSymbol": "USDT"
+          }
+        ],
+        "lpTokenList": [],
+        "borrowTokenList": []
+      },
+      "timestamp": 1790211040256,
+      "success": true
+    }
+  }
+}

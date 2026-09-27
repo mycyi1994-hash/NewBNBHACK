@@ -1,0 +1,41 @@
+{
+  "recordedAt": "2026-09-24T00:51:44.110Z",
+  "module": "transaction",
+  "endpoint": "simulateTransactions",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/dex/pre-transaction/simulate",
+    "body": {
+      "binanceChainId": "56",
+      "evmTx": {
+        "from": "[redacted]",
+        "to": "0xfD5840Cd36d94D7229439859C0112a4185BC0255",
+        "value": "0",
+        "data": "0xdb006a7500000000000000000000000000000000000000000000000000000000e0d32c75"
+      }
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:51:44 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "2",
+      "x-oc-used-weight": "3",
+      "x-amz-cf-id": "ygB_qsLr7hCl_R6-aaIErnz3LV4yA5Ma6tJI_hsP9SE2DbPLiTo91w=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "status": "FAILED",
+        "failReason": "execution reverted: math error",
+        "balanceChanges": [],
+        "allowanceChanges": []
+      },
+      "timestamp": 1790211104592,
+      "success": true
+    }
+  }
+}

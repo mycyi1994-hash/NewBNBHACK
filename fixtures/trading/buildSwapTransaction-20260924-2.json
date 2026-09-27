@@ -1,0 +1,28 @@
+{
+  "recordedAt": "2026-09-24T00:52:51.443Z",
+  "module": "trading",
+  "endpoint": "buildSwapTransaction",
+  "request": {
+    "method": "GET",
+    "path": "/build/api/v1/dex/aggregator/swap?binanceChainId=56&amount=50000000000000000000&fromTokenAddress=0x55d398326f99059fF775485246999027B3197955&toTokenAddress=0x02Fca66C1D1aFB4E2A7884261eB00F63598a7436&userWalletAddress=[redacted]&quoteId=a1dbc1ee44ac47fb983a27281144a764&slippagePercent=0.5",
+    "body": null
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:52:51 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "4",
+      "x-oc-used-weight": "1",
+      "x-amz-cf-id": "SCyR33bGl7RcttuonRy3knsTN5iy22kiP7d1F-T-ayg7SAPK4DLG0Q=="
+    },
+    "body": {
+      "code": 40401,
+      "msg": "quoteId=a1dbc1ee44ac47fb983a27281144a764 not found or expired",
+      "data": null,
+      "timestamp": 1790211171902,
+      "success": false
+    }
+  }
+}

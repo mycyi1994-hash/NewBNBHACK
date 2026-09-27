@@ -1,0 +1,9 @@
+/*
+ * The approved Yieldvest design (frontend-preview, DECISIONS D-25): dark canvas, BNB yellow for the
+ * flow of interest and the main action, pale receipt panels, Inter Variable. preview.css and
+ * motion.css are verbatim ports; app.css adds what the real app needs (live, stale and unavailable
+ * states, forms, tables, the pages the preview did not have).
+ */
+@import './styles/preview.css';
+@import './styles/motion.css';
+@import './styles/app.css';

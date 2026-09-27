@@ -1,0 +1,21 @@
+# Secrets never enter the build context (CLAUDE.md rule 5, SPEC §14). Fly injects them at runtime.
+.env
+.env*
+**/.env
+**/.env*
+*.pem
+*.key
+.studio/
+.baw/
+
+# Not needed in the worker image
+.git/
+**/node_modules/
+**/.next/
+**/dist/
+**/coverage/
+*.log
+*.tsbuildinfo
+docs/vendor/
+fixtures/
+dx/

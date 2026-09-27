@@ -1,0 +1,60 @@
+{
+  "recordedAt": "2026-09-24T00:51:42.840Z",
+  "module": "defi-transaction",
+  "endpoint": "buildDeFiDepositTransaction",
+  "request": {
+    "method": "POST",
+    "path": "/build/api/v1/defi/transaction/deposit",
+    "body": {
+      "address": "[redacted]",
+      "investmentId": "5b77bfd8d8f7c18e9ee0d8f331c4d78f56744eed8addbe2e9970c0ef37e763cb",
+      "token": {
+        "tokenAddress": "0x55d398326f99059fF775485246999027B3197955",
+        "amount": "1"
+      },
+      "simulate": false
+    }
+  },
+  "response": {
+    "httpStatus": 200,
+    "headers": {
+      "content-type": "application/json;charset=UTF-8",
+      "date": "Thu, 24 Sep 2026 00:51:43 GMT",
+      "x-oc-ratelimit-limit": "5",
+      "x-oc-ratelimit-remaining": "3",
+      "x-oc-used-weight": "2",
+      "x-amz-cf-id": "aHp05zKGc19d-qj-9bLt6I9Cgft0-nirT0vJatxYgFCWk7Qr6tTvZw=="
+    },
+    "body": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "dataList": [
+          {
+            "callDataType": "APPROVE",
+            "from": "[redacted]",
+            "to": "0x55d398326f99059fF775485246999027B3197955",
+            "value": "0x0",
+            "data": "0x095ea7b3000000000000000000000000fd5840cd36d94d7229439859c0112a4185bc0255ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "gasLimit": "63448",
+            "gasPrice": "64407210",
+            "maxPriorityFeePerGas": "64407210",
+            "maxFeePerGas": "64407210"
+          },
+          {
+            "callDataType": "DEPOSIT",
+            "from": "[redacted]",
+            "to": "0xfD5840Cd36d94D7229439859C0112a4185BC0255",
+            "value": "0x0",
+            "data": "0xa0712d680000000000000000000000000000000000000000000000000de0b6b3a7640000",
+            "gasPrice": "64407210",
+            "maxPriorityFeePerGas": "64407210",
+            "maxFeePerGas": "64407210"
+          }
+        ]
+      },
+      "timestamp": 1790211103319,
+      "success": true
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@yieldvest/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. --project @yieldvest/db",
+    "db:generate": "drizzle-kit generate",
+    "db:generate:check": "drizzle-kit check"
+  },
+  "dependencies": {
+    "@yieldvest/binance": "workspace:*",
+    "@yieldvest/core": "workspace:*",
+    "drizzle-orm": "0.45.3",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11"
+  }
+}
