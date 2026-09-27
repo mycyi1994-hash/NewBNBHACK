@@ -399,3 +399,37 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Workaround: branch on (module, code), not on `msg`. Only the 40375 minimum amount is read from `msg` (`venueMinimumUsd`). Errors from RWA calls are classified with the gateway's common codes. A code not in the tables, or a response that is not an envelope, is recorded in `dx_events` on first sighting, and an alert goes out (`pnpm dx:events`).
 - Ask: make the tables' Message match the actual response text. Add an RWA Data error code page. State which module 40304 comes from.
 - Evidence: the 2 fixtures above; `packages/binance/src/taxonomy.test.ts`, `packages/binance/src/replay.test.ts`.
+
+## 2026-09-27 14:09 UTC — [bag][edge] Installing the `bag` CLI pulls 280 packages and 469 MB, including the AWS and Azure deploy SDKs and a deprecated native addon
+- Goal: install the Agent Studio CLI to answer DECISIONS Q-09 (M0-10).
+- Expected: a light CLI; a cloud provider's SDK only once that provider is chosen.
+- Actual: `npm i @bnbagent/studio-cli@0.0.14` (Node 22.22.2) added 280 packages in 38 s. `node_modules` is 469 MB: `@bnbagent` 117 MB, `@azure` 107 MB, `viem` 72 MB, `@aws-sdk` 39 MB. `npm warn deprecated prebuild-install@7.1.3` comes from `@bnbagent/deploy-cli@0.6.6 → @bnbagent/deploy-provider-azure@0.6.6 → @azure/identity-cache-persistence@1.3.2 → keytar@7.9.0` (a native addon), installed even for an agent that never deploys to Azure.
+- Docs: the `@bnbagent/studio-cli` README › "Start with the skill" › Requirements (Node 22, pnpm 10, Bun 1.3 for deploys, Docker for container paths; nothing about install size).
+- Time lost: 0 (the install took 38 s).
+- Workaround: install it in a throwaway folder, outside the repo.
+- Ask: ship the AWS, Azure and NodeOps deploy providers as optional packages that `bag deploy --provider …` installs on first use.
+- Evidence: this session's `npm i` output, `du -sh node_modules/*` and `npm ls prebuild-install`.
+
+## 2026-09-27 14:11 UTC — [bag][docs] ERC-8004 registration on BSC mainnet costs about $0.006 of gas, or nothing through the default sponsored relay; the registry address is only in the SDK
+- Goal: the "ERC-8004 registration cost" part of Q-09, without sending a transaction.
+- Expected: the registry address per network and the cost in the Studio docs.
+- Actual: the README gives neither. The addresses are in the SDK network config (`@bnbagent/sdk@0.6.0`, `dist/chunk-EP32RMKA.js`): mainnet `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` (chain 56, paymaster `https://bsc-megafuel.nodereal.io/`), testnet `0x8004A818BFB912233c491871b3d84c89A494BD9e`. Read-only calls at block 124346561 (14:11:32 UTC): the mainnet address has code (130 bytes, a proxy), `name()` "AgentIdentity", `symbol()` "AGENT". `register(string agentURI)` is nonpayable (no fee). `eth_estimateGas` for it from an unfunded address: 163,268 gas; at the 0.05 gwei gas price that is 0.0000081634 BNB ≈ $0.0064 (Chainlink BNB/USD on BSC `0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE`: 780.11, updated 14:11:17 UTC). `bag erc8004 register` uses the MegaFuel sponsored-gas relay by default (`--no-paymaster` pays from the wallet).
+- Docs: `bag erc8004 register --help`; README › "Fund a BSC testnet seller" ("Canonical ERC-8004 and testnet ERC-8183 calls may use the configured sponsored-gas path").
+- Time lost: 5 minutes (finding the addresses in the bundled SDK).
+- Workaround: read the SDK's network config, then check the contract on-chain.
+- Ask: list the registry address per network and the expected registration gas in the README.
+- Evidence: the block number and calls above (reproducible with `eth_call` and `eth_estimateGas` against any BSC RPC).
+
+## 2026-09-27 14:12 UTC — [bag][missing] Agent Studio covers seller agents only: identity commands need a seller project, and the managed runtime is a 48-hour testnet sandbox
+- Goal: Q-09 — can the Studio runtime run our worker, and how is the wallet provided?
+- Expected: a way to give an existing autonomous agent (ours is a scheduled worker that buys, and sells nothing) an ERC-8004 identity, and optionally a place to run it.
+- Actual:
+  - `bag --help`: "Scaffold, run, deploy, and monetize a single seller agent on BNB Chain."
+  - `bag erc8004 show` outside a scaffolded project: `error: No studio.toml found in cwd or any parent directory.` The identity commands need a `bag init` seller project (A2A, MCP and x402/MPP faces around a `runWork` hook).
+  - Runtimes: the managed BNB trial is "a 48-hour BSC testnet sandbox in the operator's cloud" (`bag init --destination platform` "forces bsc-testnet"; "a trial wallet key is transmitted to the operator"). The self-hosted targets are AWS AgentCore, Azure Foundry and CreateOS in your own account. The entry points are request-driven (A2A on port 9000, MCP at `/mcp`, `/x402`); no scheduled or long-running workload is described.
+  - Wallets: an `evm-local` keystore in `.studio/wallets/`, a Trust Wallet Agent Kit wallet, or a bounded Altana session.
+- Docs: README › "What Studio builds", "Deployment targets", "Wallet choices"; `bag init --help`.
+- Time lost: 0.
+- Workaround: the worker stays on our own runtime (Fly, Frankfurt). For an identity, a separate identity wallet can call `register(agentURI)` through `@bnbagent/sdk`, or through a minimal `bag init` project (DECISIONS D-28).
+- Ask: an identity-only command (register an existing agent's URI from a given keystore, without a seller project), and a documented pattern for scheduled or operator agents.
+- Evidence: the CLI output above (`@bnbagent/studio-cli@0.0.14`).

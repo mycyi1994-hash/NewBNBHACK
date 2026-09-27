@@ -80,7 +80,7 @@ under `https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/mark
 
 ### 3.3 BNB Agent Studio (`bag`)
 - Purpose: an ERC-8004 identity for the house agent; if possible, runtime and MCP registration.
-- ⚠️VERIFY(M0-10): whether the runtime can run an arbitrary Node worker, how the wallet is provided, how to expose the ERC-8183 task interface, cost.
+- ⚠️VERIFY(M0-10): whether the runtime can run an arbitrary Node worker, how the wallet is provided, how to expose the ERC-8183 task interface, cost. Answered 9/27: DECISIONS Q-09 and D-28 (runtime no-go, identity only; ERC-8183 does not apply because Yieldvest sells nothing).
 
 ### 3.4 Chain constants (on-chain verification required before use)
 | Name | Address | Verification |
