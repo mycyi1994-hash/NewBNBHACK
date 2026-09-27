@@ -401,6 +401,35 @@ describe('BinanceClient.request', () => {
     expect(records[0]!.msg).toBe('bad key [redacted] for 0x1111…1111');
   });
 
+  it('keeps a redacted address out of api_calls.msg and fixtures in every spelling', async () => {
+    // Only the checksummed form is listed; calldata carries it bare and lowercase.
+    const house = '0xAbCdEf0000000000000000000000000000000001';
+    const bare = house.slice(2).toLowerCase();
+    const calldata = `0x095ea7b3${'0'.repeat(24)}${bare}${'0'.repeat(58)}f4240`;
+    const root = path.join(await mkdtemp(path.join(tmpdir(), 'ijaro-fixtures-')), 'fixtures');
+    const reply = JSON.stringify({ code: 40001, msg: `bad calldata ${calldata}`, data: null });
+    const { client, records } = harness([new Response(reply)], {
+      redact: [house],
+      fixtures: createFixtureRecorder({ rootDir: root }),
+    });
+    await client
+      .request('transaction', 'simulateTransactions', {
+        method: 'POST',
+        path: '/api/v1/dex/pre-transaction/simulate',
+        body: { binanceChainId: '56', evmTx: { from: house, data: calldata } },
+        recordFixture: true,
+      })
+      .catch(() => undefined);
+    expect(records[0]!.msg).toBe(
+      `bad calldata 0x095ea7b3${'0'.repeat(24)}[redacted]${'0'.repeat(58)}f4240`,
+    );
+    const saved = await readFile(
+      path.join(path.dirname(root), records[0]!.fixturePath ?? ''),
+      'utf8',
+    );
+    expect(saved.toLowerCase()).not.toContain(bare);
+  });
+
   it('warns when the server clock drifts from ours', async () => {
     const skews: number[] = [];
     const serverTime = Date.parse('2026-09-23T12:00:03.000Z');

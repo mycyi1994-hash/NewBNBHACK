@@ -6,6 +6,7 @@
  * for GET. The signature test compares this module with the official connector byte for byte.
  */
 import { createHmac } from 'node:crypto';
+import { maskSensitive } from './telemetry.js';
 
 export type QueryValue = string | number | boolean | bigint;
 export type Query = Readonly<Record<string, QueryValue | null | undefined>>;
@@ -59,7 +60,11 @@ export interface WireTarget {
  * parsing leaves the result untouched — otherwise the signature would not match the wire.
  */
 export function buildTarget(baseUrl: string, apiPath: string, query?: Query): WireTarget {
-  if (!apiPath.startsWith('/')) throw new Error(`API path must start with "/": ${apiPath}`);
+  // Paths and queries can carry a wallet (userWalletAddress, path parameters): errors show them
+  // with every address shortened, like api_calls.msg.
+  if (!apiPath.startsWith('/')) {
+    throw new Error(`API path must start with "/": ${maskSensitive(apiPath)}`);
+  }
   const base = new URL(baseUrl);
   const basePath = base.pathname.replace(/\/+$/, '');
   const search = encodeQuery(query);
@@ -67,7 +72,7 @@ export function buildTarget(baseUrl: string, apiPath: string, query?: Query): Wi
   const url = `${base.origin}${requestPath}`;
   const parsed = new URL(url);
   if (`${parsed.pathname}${parsed.search}` !== requestPath) {
-    throw new Error(`request path would be rewritten on the wire: ${requestPath}`);
+    throw new Error(`request path would be rewritten on the wire: ${maskSensitive(requestPath)}`);
   }
   return { url, requestPath };
 }

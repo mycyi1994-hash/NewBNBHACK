@@ -42,15 +42,23 @@ export function requestIdOf(headers: Headers): string | null {
 }
 
 const ADDRESS = /0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/g;
+const HEX_VALUE = /^(?:0x)?[0-9a-f]+$/i;
 
-/** Replaces each listed value (hex compared case-insensitively) with `[redacted]`. */
+/**
+ * Replaces each listed value with `[redacted]`. A hex value (an address, a key) is matched in any
+ * case, with or without its 0x prefix: calldata carries addresses bare and lowercase, so passing
+ * the checksummed address alone also hides it inside `0x095ea7b3000…`. Other values match
+ * exactly. Values shorter than 4 characters (hex: 4 digits) are ignored.
+ */
 export function redactValues(text: string, values: readonly string[]): string {
   let out = text;
   for (const value of values) {
-    if (value.length < 4) continue;
-    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const hex = HEX_VALUE.test(value);
+    const needle = hex ? value.replace(/^0x/i, '') : value;
+    if (needle.length < 4) continue;
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     out = out.replace(
-      new RegExp(escaped, /^0x[0-9a-fA-F]+$/.test(value) ? 'gi' : 'g'),
+      hex ? new RegExp(`(?:0x)?${escaped}`, 'gi') : new RegExp(escaped, 'g'),
       '[redacted]',
     );
   }
