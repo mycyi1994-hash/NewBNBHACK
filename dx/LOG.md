@@ -1,266 +1,267 @@
-# dx/LOG.md — 개발자 경험 로그 (시간순, 추가만)
+# dx/LOG.md — Developer experience log (chronological, append-only)
 
-형식은 `docs/DX_PROTOCOL.md` §3.1. 에이전트는 사실(기대·실제·증거)만, 사람은 `- 소감:` 줄을 덧붙인다.
-시각은 UTC. 태그: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b402][auth|docs|error|latency|edge|missing]`.
+Format: `docs/DX_PROTOCOL.md` §3.1. The agent writes facts only (Expected, Actual, Evidence); humans add a `- Impression:` line.
+Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b402][auth|docs|error|latency|edge|missing]`.
+> Entries up to 2026-09-27 were written in Korean and translated to English on 2026-09-27; facts, numbers and evidence are unchanged.
 
 ---
 
-## 2026-09-23 — 프로젝트 시작 (기획)
-- 대회 공식 페이지의 규칙·채점 기준·리소스 목록을 확보했고, Binance Skills Hub(`binance-agentic-wallet` v1.12.0, `binance-tokenized-securities-info` v1.1)를 읽었다.
-- 기획 환경에서는 `web3.binance.com`, `developers.binance.com`, `bnbchain.org`가 네트워크 정책으로 차단되어 공식 문서를 직접 읽지 못했다. 엔드포인트·서명 규약은 선행 빌더 메모에서 가져왔고 전부 ⚠️VERIFY로 표시했다.
-- 다음 항목부터는 실제 개발 경험을 기록한다: 포털 로그인 시각 → 키 발급 시각 → 첫 미서명 호출 → 첫 서명 호출.
+## 2026-09-23 — Project start (planning)
+- Obtained the rules, scoring criteria and resource list from the official competition page, and read the Binance Skills Hub (`binance-agentic-wallet` v1.12.0, `binance-tokenized-securities-info` v1.1).
+- In the planning environment, `web3.binance.com`, `developers.binance.com` and `bnbchain.org` were blocked by network policy, so we could not read the official docs directly. Endpoints and signing conventions were taken from earlier builders' notes and all marked ⚠️VERIFY.
+- From the next entry on, we record actual development experience: portal login time → key issuance time → first unsigned call → first signed call.
 
-## 2026-09-23 17:44 UTC — [web3api][docs] llms.txt·llms-full.txt가 curl에 HTTP 202 + 빈 본문(AWS WAF 챌린지)
-- 목표: `bash scripts/fetch-docs.sh`로 공식 LLM용 문서 받기(M0-02).
-- 기대: `https://web3.binance.com/en/dev-docs/llms.txt`, `…/llms-full.txt`가 200 + Markdown.
-- 실제: 두 URL 모두 `HTTP/2 202`, `x-amzn-waf-action: challenge`, `content-length: 0`(CloudFront POP IAD12). 브라우저 UA를 줘도 같음. `curl -f`는 202를 성공으로 보므로 원래 스크립트는 **빈 파일을 만들고 성공 종료**했을 것. 헤드리스 Chromium으로 열면 첫 응답 202 → 챌린지 스크립트 실행 후 200(llms.txt 11,485자, llms-full.txt 425,947자·8,416줄, 각 ~5.5 s).
-- 문서: llms-full.txt § llms.txt — "Download and use as context"(L914 부근). LLM·에이전트용 파일인데 비브라우저 클라이언트가 못 받음.
-- 잃은 시간: 약 15분(원인 파악 + 브라우저 폴백 작성).
-- 우회: `scripts/fetch-docs.sh`가 200·Markdown 여부를 검사하고 실패 시 `scripts/fetch-docs-browser.mjs`(Playwright Chromium)로 받음.
-- 요청: `/en/dev-docs/*.txt`, `*.md`를 WAF 챌린지 대상에서 제외하거나, 챌린지 시 200이 아닌 4xx를 반환.
-- 증거: 이 세션의 curl 헤더 출력(위 값), `docs/vendor/llms-full.txt` sha256 `ea604b558bd3349c…`(2026-09-23 17:52 UTC 수신). 환경: 미국 소재 클라우드 샌드박스 egress(한국 회선 아님).
+## 2026-09-23 17:44 UTC — [web3api][docs] llms.txt and llms-full.txt return HTTP 202 + an empty body to curl (AWS WAF challenge)
+- Goal: fetch the official LLM-oriented docs with `bash scripts/fetch-docs.sh` (M0-02).
+- Expected: `https://web3.binance.com/en/dev-docs/llms.txt` and `…/llms-full.txt` return 200 + Markdown.
+- Actual: both URLs return `HTTP/2 202`, `x-amzn-waf-action: challenge`, `content-length: 0` (CloudFront POP IAD12). Same with a browser UA. `curl -f` treats 202 as success, so the original script would have **created an empty file and exited successfully**. Opened in headless Chromium: first response 202 → 200 after the challenge script runs (llms.txt 11,485 chars, llms-full.txt 425,947 chars and 8,416 lines, ~5.5 s each).
+- Docs: llms-full.txt § llms.txt — "Download and use as context" (around L914). It is a file meant for LLMs and agents, yet non-browser clients cannot fetch it.
+- Time lost: about 15 min (finding the cause + writing the browser fallback).
+- Workaround: `scripts/fetch-docs.sh` checks for 200 and Markdown, and on failure fetches with `scripts/fetch-docs-browser.mjs` (Playwright Chromium).
+- Ask: exempt `/en/dev-docs/*.txt` and `*.md` from the WAF challenge, or return a 4xx instead of 200 when challenging.
+- Evidence: curl header output from this session (values above), `docs/vendor/llms-full.txt` sha256 `ea604b558bd3349c…` (received 2026-09-23 17:52 UTC). Environment: US-based cloud sandbox egress (not a Korean network connection).
 
-## 2026-09-23 17:51 UTC — [web3api][docs] `POST /api/v1/dex/market/price` 요청 body 스키마가 어디에도 없음(커넥터도 body를 못 보냄)
-- 목표: `pnpm reach`의 Market 가격 배치 호출 구현(M0-03).
-- 기대: 배치(최대 100개) body의 필드 정의.
-- 실제: llms-full.txt에는 "Supports batch queries, up to 100 tokens per request"(L3307)와 "Batch request list exceeds 100 items"(L3392)뿐. API Reference 항목(L7757)엔 파라미터 표가 없음. 공식 커넥터 `@binance-web3/wallet@12.3.0`의 `GetTokenPriceRequest`는 `recvWindow`, `nonce`만 있고 빌더 `getTokenPrice`(dist/index.mjs L1651)는 body를 항상 `{}`로 둠 → 타입이 있는 메서드로는 이 엔드포인트를 쓸 수 없음. `getTokenTradingInfo`(L1693, `POST /price-info`), `getTokenBasicInfo`(L1609, `POST /token/basic-info`)도 동일.
-- 문서: llms-full.txt § Introduction (Market API) › General Data; § API Reference › General Data › "Get Token Price".
-- 잃은 시간: 20분.
-- 우회: 응답 필드(`binanceChainId`, `tokenContractAddress`)로 추정한 배열 body를 `pnpm reach`에서 "UNVERIFIED — DECISIONS V-09"로 표시하고 G1 실호출로 확정 예정. 커넥터 사용자는 `restAPI.sendSignedRequest(path, 'POST', {}, body)`로 우회 가능.
-- 요청: 세 POST 엔드포인트의 request body 스키마를 문서와 OpenAPI(커넥터 생성원)에 추가.
-- 증거: `docs/vendor/ENDPOINTS.md` "Doc ↔ connector anomalies"(`pnpm endpoints`가 자동 검출), DECISIONS V-09.
+## 2026-09-23 17:51 UTC — [web3api][docs] No request body schema anywhere for `POST /api/v1/dex/market/price` (the connector cannot send a body either)
+- Goal: implement the Market price batch call in `pnpm reach` (M0-03).
+- Expected: field definitions for the batch body (up to 100 items).
+- Actual: llms-full.txt has only "Supports batch queries, up to 100 tokens per request" (L3307) and "Batch request list exceeds 100 items" (L3392). The API Reference entry (L7757) has no parameter table. In the official connector `@binance-web3/wallet@12.3.0`, `GetTokenPriceRequest` has only `recvWindow` and `nonce`, and the builder `getTokenPrice` (dist/index.mjs L1651) always sets the body to `{}` → this endpoint cannot be used through the typed method. Same for `getTokenTradingInfo` (L1693, `POST /price-info`) and `getTokenBasicInfo` (L1609, `POST /token/basic-info`).
+- Docs: llms-full.txt § Introduction (Market API) › General Data; § API Reference › General Data › "Get Token Price".
+- Time lost: 20 min.
+- Workaround: an array body inferred from the response fields (`binanceChainId`, `tokenContractAddress`) is marked "UNVERIFIED — DECISIONS V-09" in `pnpm reach`, to be confirmed by a G1 live call. Connector users can work around it with `restAPI.sendSignedRequest(path, 'POST', {}, body)`.
+- Ask: add the request body schema for the three POST endpoints to the docs and to the OpenAPI spec (the connector's generation source).
+- Evidence: `docs/vendor/ENDPOINTS.md` "Doc ↔ connector anomalies" (detected automatically by `pnpm endpoints`), DECISIONS V-09.
 
-## 2026-09-23 17:51 UTC — [web3api][auth] 커넥터가 recvWindow·nonce를 문서와 다른 헤더 이름으로 보냄
-- 목표: 서명 헤더를 문서와 커넥터 두 출처로 교차 확인(M0-02 V-04).
-- 기대: 문서대로 `X-OC-RECV-WINDOW`, `X-OC-NONCE`.
-- 실제: 커넥터 빌더는 `localVarHeaderParameter["recvWindow"]`, `["nonce"]`(dist/index.mjs L336 등 모든 연산)로 넣어 **`recvWindow`, `nonce`라는 이름의 헤더**가 나감. 게이트웨이가 이 이름을 인식하는지는 문서에 없음.
-- 문서: llms-full.txt § Authentication › Step 2 — Understand Required Headers(L144).
-- 잃은 시간: 0(대조 중 발견).
-- 우회: 우리 클라이언트는 문서 이름(`X-OC-RECV-WINDOW`, `X-OC-NONCE`)으로 보냄. 실제 수용 여부는 G1에서 `recvWindow` 변경 호출로 확인 예정.
-- 요청: 커넥터 헤더명을 문서와 일치시키거나 문서에 별칭을 명시.
-- 증거: `packages/binance/node_modules/@binance-web3/wallet/dist/index.mjs` L336.
+## 2026-09-23 17:51 UTC — [web3api][auth] The connector sends recvWindow and nonce under header names that differ from the docs
+- Goal: cross-check the signing headers against two sources, the docs and the connector (M0-02 V-04).
+- Expected: `X-OC-RECV-WINDOW` and `X-OC-NONCE`, as documented.
+- Actual: the connector builder sets them as `localVarHeaderParameter["recvWindow"]` and `["nonce"]` (dist/index.mjs L336, and likewise in every operation), so **headers named `recvWindow` and `nonce`** go out. The docs do not say whether the gateway recognizes these names.
+- Docs: llms-full.txt § Authentication › Step 2 — Understand Required Headers(L144).
+- Time lost: 0 (found while cross-checking).
+- Workaround: our client sends the documented names (`X-OC-RECV-WINDOW`, `X-OC-NONCE`). Whether they are actually accepted will be checked in G1 with a call that changes `recvWindow`.
+- Ask: make the connector's header names match the docs, or document the aliases.
+- Evidence: `packages/binance/node_modules/@binance-web3/wallet/dist/index.mjs` L336.
 
-## 2026-09-23 17:53 UTC — [tx][edge] 커넥터 `simulateTransactions()`가 evmTx·solTx·tronTx를 모두 필수로 요구
-- 목표: Transaction API 시뮬레이션 파라미터 확인(SPEC §5.8).
-- 기대: 체인에 맞는 tx 하나만 전달.
-- 실제: 커넥터 타입 설명은 "`evmTx`, `solTx`, and `tronTx` are marked required in this schema for rendering purposes only; in practice supply exactly one"인데, 빌더(dist/index.mjs L2962)는 세 값 모두 `assertParamExists`로 강제 → EVM만 넘기면 `RequiredError`. 셋을 다 넘기면 셋 다 body에 실림.
-- 문서: 커넥터 `SimulateTransactionsRequest` 설명; llms-full.txt에는 simulate 파라미터 설명 없음(§ API Reference › Transaction API › "Simulate Transactions", L8106).
-- 잃은 시간: 0.
-- 우회: 우리 클라이언트로 직접 호출(EVM tx만).
-- 요청: OpenAPI에서 `oneOf`로 표현하고 커넥터 필수 검사 제거.
-- 증거: 위 소스 위치, `docs/vendor/ENDPOINTS.md` Transaction API 표.
+## 2026-09-23 17:53 UTC — [tx][edge] Connector `simulateTransactions()` requires all of evmTx, solTx and tronTx
+- Goal: confirm the Transaction API simulation parameters (SPEC §5.8).
+- Expected: pass only the one tx for the chain in question.
+- Actual: the connector type description says "`evmTx`, `solTx`, and `tronTx` are marked required in this schema for rendering purposes only; in practice supply exactly one", but the builder (dist/index.mjs L2962) enforces all three with `assertParamExists` → passing only EVM gives `RequiredError`. Passing all three puts all three in the body.
+- Docs: connector `SimulateTransactionsRequest` description; llms-full.txt has no description of the simulate parameters (§ API Reference › Transaction API › "Simulate Transactions", L8106).
+- Time lost: 0.
+- Workaround: call it directly with our own client (EVM tx only).
+- Ask: express it as `oneOf` in the OpenAPI spec and remove the connector's required-parameter check.
+- Evidence: source location above, `docs/vendor/ENDPOINTS.md` Transaction API table.
 
-## 2026-09-23 17:53 UTC — [trading][auth] 커넥터 `getRfqOrderStatus()`가 GET에 JSON body를 싣고 서명함
-- 목표: RFQ 주문 상태 조회 경로 확인.
-- 기대: 문서상 GET의 서명 body는 `""`(§ Authentication › 3.1, L193).
-- 실제: 빌더(dist/index.mjs L2466)가 `orderId`를 경로에 넣으면서 body에도 넣음 → `GET /build/api/v1/dex/aggregator/order/{orderId}`에 `{"orderId":"…"}` body가 실리고 그 body로 서명. 서버가 GET body를 `""`로 보고 검증하면 40102가 날 것(실호출 미확인).
-- 문서: § Integration Flow (Trading API) › RFQ Mode (L2678).
-- 잃은 시간: 0.
-- 우회: 우리 클라이언트는 GET body를 거부(`client.test.ts` "never sends a GET body").
-- 요청: 커넥터에서 path 파라미터를 body에서 제거.
-- 증거: `packages/binance/src/signature-vectors.test.ts` "documents a connector anomaly…"(커넥터가 실제로 body를 싣는 것을 테스트로 고정).
+## 2026-09-23 17:53 UTC — [trading][auth] Connector `getRfqOrderStatus()` puts a JSON body on a GET and signs it
+- Goal: confirm the path for querying RFQ order status.
+- Expected: per the docs, the signed body of a GET is `""` (§ Authentication › 3.1, L193).
+- Actual: the builder (dist/index.mjs L2466) puts `orderId` in the path and also in the body → `GET /build/api/v1/dex/aggregator/order/{orderId}` carries a `{"orderId":"…"}` body and is signed with that body. If the server verifies with the GET body taken as `""`, it would fail with 40102 (not confirmed with a live call).
+- Docs: § Integration Flow (Trading API) › RFQ Mode (L2678).
+- Time lost: 0.
+- Workaround: our client refuses a GET body (`client.test.ts` "never sends a GET body").
+- Ask: remove path parameters from the body in the connector.
+- Evidence: `packages/binance/src/signature-vectors.test.ts` "documents a connector anomaly…" (a test pins down that the connector really does send the body).
 
-## 2026-09-23 17:55 UTC — [web3api][docs] 서명 예제가 존재하지 않는 메서드·경로를 씀
-- 목표: 서명 문자열 규칙 확인(V-02).
-- 기대: 예제가 실제 엔드포인트를 사용.
-- 실제: GET 예제는 `GET /build/api/v1/dex/market/price?chainId=1&symbol=ETH%20USDT`(L220, L311)인데 API Reference의 `/market/price`는 **POST**(L7757)이고 `chainId`·`symbol` 파라미터는 없음(체인 파라미터명은 `binanceChainId`). POST 예제 경로 `/build/api/v1/dex/swap`(L231)은 API Reference에 없음(스왑은 `GET /api/v1/dex/aggregator/swap`).
-- 문서: llms-full.txt § Authentication › 3.1 Build the Pre-Hash String, Step 4 — Send the Request.
-- 잃은 시간: 5분.
-- 우회: 서명 규칙 자체는 예제 문자열과 커넥터 결과로 검증(`signature-vectors.test.ts`의 문서 pre-hash 테스트).
-- 요청: 예제를 실제 엔드포인트(예: `GET /api/v1/dex/market/rwa/tokens?binanceChainId=56`)와 알려진 secret→signature 쌍으로 교체.
-- 증거: 위 줄 번호(snapshot sha256 `ea604b558bd3349c…`).
+## 2026-09-23 17:55 UTC — [web3api][docs] The signing examples use methods and paths that do not exist
+- Goal: confirm the signing string rules (V-02).
+- Expected: the examples use real endpoints.
+- Actual: the GET example is `GET /build/api/v1/dex/market/price?chainId=1&symbol=ETH%20USDT` (L220, L311), but `/market/price` in the API Reference is **POST** (L7757) and has no `chainId` or `symbol` parameters (the chain parameter is named `binanceChainId`). The POST example path `/build/api/v1/dex/swap` (L231) is not in the API Reference (swap is `GET /api/v1/dex/aggregator/swap`).
+- Docs: llms-full.txt § Authentication › 3.1 Build the Pre-Hash String, Step 4 — Send the Request.
+- Time lost: 5 min.
+- Workaround: the signing rule itself was verified against the example strings and the connector's output (the docs pre-hash test in `signature-vectors.test.ts`).
+- Ask: replace the examples with a real endpoint (e.g. `GET /api/v1/dex/market/rwa/tokens?binanceChainId=56`) and a known secret→signature pair.
+- Evidence: line numbers above (snapshot sha256 `ea604b558bd3349c…`).
 
-## 2026-09-23 17:58 UTC — [web3api][error] 오류가 HTTP 몇으로 오는지 페이지마다 다름
-- 목표: 엔벨로프 파서 설계(V-05).
-- 기대: 한 가지 규칙.
-- 실제: § Authentication › Error Codes(L407)는 40001=400, 40101~40103=401, 40104=403, 42900=429, 50000=500, 50001=503. 반면 Market(L3358)·Trading(L2954)·Transaction(L1990)·Wallet(L1844) 오류 페이지는 "All … responses — including errors — return HTTP 200"이고 같은 표에 40101~40104·42900도 싣고 있음. DeFi(L4241)는 "gateway-layer errors are not returned as HTTP 200 — 401, 429". Authentication의 오류 body 예시에는 `success` 필드가 없음(L422).
-- 문서: 위 각 섹션.
-- 잃은 시간: 10분.
-- 우회: HTTP 상태와 무관하게 body `code`로 판정하고, 엔벨로프가 없으면 transport 오류(`packages/binance/src/envelope.ts`, 테스트 `envelope.test.ts`).
-- 요청: 게이트웨이 오류와 비즈니스 오류의 HTTP 상태를 한 표로 명시.
-- 증거: 실측 1건 — 서명 없는 GET은 HTTP 401 + body `code 40101`(아래 18:16 항목).
+## 2026-09-23 17:58 UTC — [web3api][error] Which HTTP status an error comes back with differs from page to page
+- Goal: design the envelope parser (V-05).
+- Expected: a single rule.
+- Actual: § Authentication › Error Codes (L407) gives 40001=400, 40101~40103=401, 40104=403, 42900=429, 50000=500, 50001=503. By contrast, the Market (L3358), Trading (L2954), Transaction (L1990) and Wallet (L1844) error pages say "All … responses — including errors — return HTTP 200" and also list 40101~40104 and 42900 in the same table. DeFi (L4241) says "gateway-layer errors are not returned as HTTP 200 — 401, 429". The error body example in Authentication has no `success` field (L422).
+- Docs: each section above.
+- Time lost: 10 min.
+- Workaround: decide by the body `code` regardless of HTTP status; no envelope means a transport error (`packages/binance/src/envelope.ts`, test `envelope.test.ts`).
+- Ask: state the HTTP status of gateway errors and business errors in a single table.
+- Evidence: 1 live measurement — an unsigned GET gives HTTP 401 + body `code 40101` (18:16 entry below).
 
-## 2026-09-23 17:58 UTC — [web3api][docs] 레이트리밋 응답 헤더 표를 해석할 수 없음
-- 목표: 토큰버킷과 429 처리 설계(V-06).
-- 기대: 차원별 한도·잔여를 읽는 헤더.
-- 실제: 표(L396–401)가 차원마다 헤더 하나씩을 매핑: Per IP → `X-OC-RateLimit-Limit`, Per API Key → `X-OC-RateLimit-Remaining`, Per User·Per Endpoint → `X-OC-Used-Weight`. Limit/Remaining은 차원이 아니라 값의 종류라서 어느 차원의 값인지 알 수 없음. 429의 `Retry-After` 단위(초)만 명확.
-- 문서: llms-full.txt § Authentication › Rate Limits.
-- 잃은 시간: 5분.
-- 우회: 429가 나면 모든 버킷을 `Retry-After`만큼 멈춤(`rate-limit.ts` `pause`), 헤더 값은 api_calls·응답에 원값으로 기록.
-- 요청: 헤더가 어느 차원의 값인지(또는 차원별 헤더)를 명시.
-- 증거: L396–401.
+## 2026-09-23 17:58 UTC — [web3api][docs] The rate limit response header table cannot be interpreted
+- Goal: design the token bucket and 429 handling (V-06).
+- Expected: headers that give the limit and the remaining count per dimension.
+- Actual: the table (L396–401) maps one header to each dimension: Per IP → `X-OC-RateLimit-Limit`, Per API Key → `X-OC-RateLimit-Remaining`, Per User and Per Endpoint → `X-OC-Used-Weight`. Limit/Remaining are kinds of value, not dimensions, so there is no telling which dimension a value belongs to. Only the unit of `Retry-After` on a 429 (seconds) is clear.
+- Docs: llms-full.txt § Authentication › Rate Limits.
+- Time lost: 5 min.
+- Workaround: on a 429, pause every bucket for `Retry-After` (`rate-limit.ts` `pause`); header values are recorded raw in api_calls and the responses.
+- Ask: state which dimension each header's value belongs to (or provide per-dimension headers).
+- Evidence: L396–401.
 
-## 2026-09-23 18:00 UTC — [b402][docs] B402 응답은 "모든 엔드포인트 OCResult" 규칙의 예외
-- 목표: 모듈별 엔벨로프 확인.
-- 기대: Overview의 `OCResult<T>` `{code:number, msg, data, timestamp, success}`(L94).
-- 실제: B402 성공 코드는 문자열 `"000000000"`(L4855), 오류 코드 `1160101…1160409`. 커넥터 타입의 B402 응답은 `{status, type, code: string, errorData, data, subData, params}`이고 `msg`·`success`가 없음. llms-full.txt에는 이 엔벨로프 필드 설명이 없음(커넥터 타입에만 있음). 요청 body도 `{"body": {...}}`로 한 번 감싸야 함.
-- 문서: § Overview › Unified Response Format; § Integration Guide (B402) › Read and Cache Supported Configurations(L4881); § Error Codes (B402)(L5057).
-- 잃은 시간: 10분.
-- 우회: 모듈별 파서(`envelope.ts`의 `b402` 분기, 문자열 코드 보존).
-- 요청: Overview에 B402 예외와 엔벨로프 필드를 명시.
-- 증거: `docs/vendor/ENDPOINTS.md` §2.
+## 2026-09-23 18:00 UTC — [b402][docs] B402 responses are an exception to the "OCResult for every endpoint" rule
+- Goal: confirm the envelope of each module.
+- Expected: the Overview's `OCResult<T>` `{code:number, msg, data, timestamp, success}` (L94).
+- Actual: the B402 success code is the string `"000000000"` (L4855); error codes are `1160101…1160409`. The B402 response in the connector types is `{status, type, code: string, errorData, data, subData, params}`, with no `msg` or `success`. llms-full.txt has no description of these envelope fields (they exist only in the connector types). The request body must also be wrapped once, as `{"body": {...}}`.
+- Docs: § Overview › Unified Response Format; § Integration Guide (B402) › Read and Cache Supported Configurations(L4881); § Error Codes (B402)(L5057).
+- Time lost: 10 min.
+- Workaround: a per-module parser (the `b402` branch in `envelope.ts`, which keeps the string code).
+- Ask: state the B402 exception and its envelope fields in the Overview.
+- Evidence: `docs/vendor/ENDPOINTS.md` §2.
 
-## 2026-09-23 18:00 UTC — [defi][docs] DeFi 예제 값이 BSC 전용 API와 맞지 않음
-- 목표: 예치 build 응답 형태 확인(Q-05).
-- 기대: BSC 예제.
-- 실제: deposit 요청 예제의 `token.tokenAddress`가 `0xdac17f958d2ee523a2206206994597c13d831ec7`(이더리움 메인넷 USDT, L3774)인데 DeFi API는 BSC만 지원(L3496). 응답 예제의 `DEPOSIT` 항목 `data`가 `0xa9059cbb…`(L3803) — ERC-20 `transfer(address,uint256)` 선택자. "APPROVE … to the spender contract returned in that item's `to`"(L4130)라고 하지만 예제의 APPROVE `to`는 토큰 컨트랙트(L3790)이고 spender는 calldata 안에 있음.
-- 문서: § Integration Flow (DeFi API) › Step 2 — Build the Transaction; › Calldata Validity & Approvals.
-- 잃은 시간: 10분.
-- 우회: M0-07에서 실제 build 응답을 픽스처로 받아 APPROVE calldata를 디코드해 spender 확인 예정.
-- 요청: BSC 값으로 된 실제 응답 예제로 교체.
-- 증거: 위 줄 번호.
+## 2026-09-23 18:00 UTC — [defi][docs] DeFi example values do not fit a BSC-only API
+- Goal: confirm the shape of the deposit build response (Q-05).
+- Expected: BSC examples.
+- Actual: `token.tokenAddress` in the deposit request example is `0xdac17f958d2ee523a2206206994597c13d831ec7` (Ethereum mainnet USDT, L3774), but the DeFi API supports only BSC (L3496). The `data` of the `DEPOSIT` item in the response example is `0xa9059cbb…` (L3803) — the ERC-20 `transfer(address,uint256)` selector. The docs say "APPROVE … to the spender contract returned in that item's `to`" (L4130), but the example's APPROVE `to` is the token contract (L3790) and the spender is inside the calldata.
+- Docs: § Integration Flow (DeFi API) › Step 2 — Build the Transaction; › Calldata Validity & Approvals.
+- Time lost: 10 min.
+- Workaround: in M0-07 we plan to capture a real build response as a fixture, decode the APPROVE calldata and confirm the spender.
+- Ask: replace them with a real response example that uses BSC values.
+- Evidence: line numbers above.
 
-## 2026-09-23 18:00 UTC — [defi][edge] DeFi build의 APPROVE는 무제한 승인만 제공
-- 목표: 예치 흐름에 정확 금액 승인 적용(CLAUDE.md 규칙 5).
-- 기대: 금액만큼 approve하는 옵션.
-- 실제: "APPROVE is an unlimited allowance — … approves the maximum amount (`type(uint256).max`)"(L4130). 금액 지정 파라미터 없음(커넥터 `BuildDeFiDepositTransactionRequest`에도 없음). Trading `/approve-transaction`은 `approveAmount`를 받음(L2416).
-- 문서: § Integration Flow (DeFi API) › Calldata Validity & Approvals.
-- 잃은 시간: 0.
-- 우회: 결정 대기 — DECISIONS Q-16(APPROVE 항목 대신 같은 spender로 정확 금액 approve를 직접 인코딩).
-- 요청: DeFi build에 `approveAmount`(또는 exact 모드) 추가.
-- 증거: L4130, `docs/DECISIONS.md` Q-16.
+## 2026-09-23 18:00 UTC — [defi][edge] DeFi build's APPROVE offers only an unlimited approval
+- Goal: use exact-amount approvals in the deposit flow (CLAUDE.md rule 5).
+- Expected: an option to approve just the amount.
+- Actual: "APPROVE is an unlimited allowance — … approves the maximum amount (`type(uint256).max`)" (L4130). No parameter to set the amount (not in the connector's `BuildDeFiDepositTransactionRequest` either). Trading `/approve-transaction` accepts `approveAmount` (L2416).
+- Docs: § Integration Flow (DeFi API) › Calldata Validity & Approvals.
+- Time lost: 0.
+- Workaround: awaiting a decision — DECISIONS Q-16 (instead of the APPROVE item, encode an exact-amount approve to the same spender ourselves).
+- Ask: add `approveAmount` (or an exact mode) to DeFi build.
+- Evidence: L4130, `docs/DECISIONS.md` Q-16.
 
-## 2026-09-23 18:00 UTC — [defi][error] 오류 코드 40470이 모듈마다 뜻이 다름
-- 목표: 에러 분류표(SPEC §11) 입력 정리.
-- 기대: 코드 하나에 뜻 하나.
-- 실제: DeFi `40470` = "Requested DeFi resource not found"(L4332), Trading `40470` = "Tax token cannot configure referral fee on the same side"(L3079). DeFi 페이지는 자기 범위가 "does not collide with the DEX Swap range 40461–40469"라고 씀(L4342) — 40470은 그 범위 밖이라 실제로 충돌.
-- 문서: § Error Codes (DeFi API) › DeFi Data Query Errors; § Error Codes (Trading API) › Custom Fee.
-- 잃은 시간: 0.
-- 우회: 오류를 (모듈, 코드)로 식별(`BinanceApiError.module`, api_calls.module).
-- 요청: 전역 코드 레지스트리 공개.
-- 증거: 위 줄 번호.
+## 2026-09-23 18:00 UTC — [defi][error] Error code 40470 means different things in different modules
+- Goal: collect the inputs for the error taxonomy (SPEC §11).
+- Expected: one meaning per code.
+- Actual: DeFi `40470` = "Requested DeFi resource not found" (L4332), Trading `40470` = "Tax token cannot configure referral fee on the same side" (L3079). The DeFi page says its range "does not collide with the DEX Swap range 40461–40469" (L4342) — 40470 is outside that range, so it does in fact collide.
+- Docs: § Error Codes (DeFi API) › DeFi Data Query Errors; § Error Codes (Trading API) › Custom Fee.
+- Time lost: 0.
+- Workaround: identify errors by (module, code) (`BinanceApiError.module`, api_calls.module).
+- Ask: publish a global code registry.
+- Evidence: line numbers above.
 
-## 2026-09-23 18:01 UTC — [defi][docs] 금액·시각 단위가 모듈마다 다름
-- 목표: 금액 계산 규칙 정리(M0-07 `amounts.ts` 준비).
-- 기대: 전 모듈 공통 단위.
-- 실제: Trading `amount`는 최소 단위 정수 문자열(커넥터 `GetAggregatedQuoteRequest.amount` "1000000 = 1 USDT (decimals=6)"). DeFi는 "Amounts: Human-readable decimal strings (e.g. "1000.5"), not the token's smallest unit"(L3684), "Timestamps: Unix time in seconds"(L3685). 엔벨로프·RWA 시각은 ms.
-- 문서: § DeFi Introduction › Data Format Conventions.
-- 잃은 시간: 0.
-- 우회: 금액 타입을 모듈별로 분리할 예정(M0-07). 10^18배 실수 위험 기록.
-- 요청: 전 모듈 단위 통일 또는 필드명에 단위 표기.
-- 증거: L3684–3685.
+## 2026-09-23 18:01 UTC — [defi][docs] Amount and time units differ by module
+- Goal: settle the amount math rules (prep for M0-07 `amounts.ts`).
+- Expected: units common to all modules.
+- Actual: Trading `amount` is an integer string in the smallest unit (connector `GetAggregatedQuoteRequest.amount` "1000000 = 1 USDT (decimals=6)"). DeFi uses "Amounts: Human-readable decimal strings (e.g. "1000.5"), not the token's smallest unit" (L3684) and "Timestamps: Unix time in seconds" (L3685). Envelope and RWA times are in ms.
+- Docs: § DeFi Introduction › Data Format Conventions.
+- Time lost: 0.
+- Workaround: amount types will be split by module (M0-07). Noting the risk of a 10^18x mistake.
+- Ask: unify units across all modules, or put the unit in the field name.
+- Evidence: L3684–3685.
 
-## 2026-09-23 18:01 UTC — [tx][docs] 브로드캐스트 body 설명이 오류 페이지와 흐름 문서에서 다름
-- 목표: 브로드캐스트 요청 형태 확인(Q-14).
-- 기대: 한 가지 body.
-- 실제: Transaction API 오류 페이지의 40001 원인에 "Broadcast request is missing both `evmTx` and `solTx` (one is required)"(L2024). Trading·DeFi 통합 흐름과 커넥터는 `{binanceChainId, address, signedTransaction, enableMevProtection}`(L2575, L4065).
-- 문서: § Error Codes (Transaction API) › Parameter Errors; § Integration Flow › Step 5.
-- 잃은 시간: 0.
-- 우회: 흐름 문서·커넥터 형태를 따름, G1/M1-03 실호출로 확인.
-- 요청: 오류 설명 수정(아마 simulate에 해당).
-- 증거: 위 줄 번호.
+## 2026-09-23 18:01 UTC — [tx][docs] The broadcast body is described differently on the error page and in the flow docs
+- Goal: confirm the shape of the broadcast request (Q-14).
+- Expected: one body.
+- Actual: among the causes of 40001, the Transaction API error page lists "Broadcast request is missing both `evmTx` and `solTx` (one is required)" (L2024). The Trading and DeFi integration flows and the connector use `{binanceChainId, address, signedTransaction, enableMevProtection}` (L2575, L4065).
+- Docs: § Error Codes (Transaction API) › Parameter Errors; § Integration Flow › Step 5.
+- Time lost: 0.
+- Workaround: follow the shape from the flow docs and the connector; confirm with a G1/M1-03 live call.
+- Ask: fix the error description (it probably belongs to simulate).
+- Evidence: line numbers above.
 
-## 2026-09-23 18:02 UTC — [trading][docs] bStock 예시에 Ondo 접미사 토큰
-- 목표: 발행사별 토큰 구분 규칙 확인(M0-05 준비).
-- 기대: 예시가 접미사 규칙과 일치(Ondo `…on`, bStock `…B`, xStocks `…x`, L7430–7432).
-- 실제: "BStock tokens (type=3): Exchange-traded stock tokens (e.g. PALLon/Palladium, TSLAB/Tesla)"(L2242) — `PALLon`은 Ondo 접미사.
-- 문서: § Introduction (Trading API) › Equity Token Trading (RWA).
-- 잃은 시간: 0.
-- 우회: 발행사 판정은 접미사가 아니라 RWA 목록의 `platformId`로(M0-05).
-- 요청: 예시 수정.
-- 증거: L2242.
+## 2026-09-23 18:02 UTC — [trading][docs] An Ondo-suffix token in the bStock example
+- Goal: confirm the rule for telling tokens apart by issuer (prep for M0-05).
+- Expected: the examples match the suffix rule (Ondo `…on`, bStock `…B`, xStocks `…x`, L7430–7432).
+- Actual: "BStock tokens (type=3): Exchange-traded stock tokens (e.g. PALLon/Palladium, TSLAB/Tesla)" (L2242) — `PALLon` has the Ondo suffix.
+- Docs: § Introduction (Trading API) › Equity Token Trading (RWA).
+- Time lost: 0.
+- Workaround: determine the issuer from `platformId` in the RWA list, not from the suffix (M0-05).
+- Ask: fix the example.
+- Evidence: L2242.
 
-## 2026-09-23 18:03 UTC — [rwa][docs] RWA 응답 필드 설명이 llms-full.txt에 없고 커넥터 타입에만 있음
-- 목표: 가격 괴리 가드(SPEC §5.5)의 참조가 정의 확인(Q-06).
-- 기대: RWA Data 섹션에 응답 필드 설명.
-- 실제: llms-full.txt의 RWA 설명은 기능 표(L3332–3341)와 API Reference 한 줄뿐. `referencePrice`가 "A per-share converted price derived from the on-chain token price, not an official quote from the traditional stock market"이라는 핵심 정의, `statusInfo`(openState·marketStatus·reasonCode·reasonMsg·nextOpenTime), `tokenToShareRatio`는 커넥터 `index.d.mts` 주석에만 있음.
-- 문서: § Introduction (Market API) › RWA Data; § API Reference › RWA Data.
-- 잃은 시간: 10분.
-- 우회: `pnpm endpoints`가 커넥터 타입에서 필드를 뽑아 ENDPOINTS.md에 기록.
-- 요청: llms-full.txt에 엔드포인트별 파라미터·응답 필드 표 포함.
-- 증거: `docs/vendor/ENDPOINTS.md` §3·RWA 표, DECISIONS Q-06.
+## 2026-09-23 18:03 UTC — [rwa][docs] RWA response field descriptions are not in llms-full.txt, only in the connector types
+- Goal: confirm the definition of the reference price for the price gap guard (SPEC §5.5) (Q-06).
+- Expected: response field descriptions in the RWA Data section.
+- Actual: llms-full.txt describes RWA only with a feature table (L3332–3341) and one line in the API Reference. The key definition that `referencePrice` is "A per-share converted price derived from the on-chain token price, not an official quote from the traditional stock market", `statusInfo` (openState, marketStatus, reasonCode, reasonMsg, nextOpenTime) and `tokenToShareRatio` exist only in comments in the connector's `index.d.mts`.
+- Docs: § Introduction (Market API) › RWA Data; § API Reference › RWA Data.
+- Time lost: 10 min.
+- Workaround: `pnpm endpoints` extracts the fields from the connector types and writes them to ENDPOINTS.md.
+- Ask: include per-endpoint parameter and response field tables in llms-full.txt.
+- Evidence: `docs/vendor/ENDPOINTS.md` §3 and RWA table, DECISIONS Q-06.
 
-## 2026-09-23 18:12 UTC — [web3api][auth] 문서의 JS 서명 헬퍼는 `'`가 든 쿼리에서 서명과 전송 바이트가 달라짐(추정, 실측 전)
-- 목표: 서명 대상 문자열 = 전송 문자열 보장(V-02).
-- 기대: 문서 예제를 따르면 안전.
-- 실제: 문서 JS 헬퍼는 `encodeURIComponent`로 쿼리를 만듦(L332). `encodeURIComponent("'")`는 `'`를 그대로 두지만 WHATWG URL 파서(Node fetch, axios의 `new URL`)는 쿼리의 `'`를 `%27`로 바꿔 보냄 → `keyword=McDonald's` 같은 값이면 서명한 path와 전송 path가 달라 40102가 날 것으로 예상. 오프라인 재현: `new URL("https://h/p?q='").search === "?q=%27"`. 커넥터는 URLSearchParams로 만든 뒤 그 결과로 서명해 문제없음(공백은 `+`).
-- 문서: § Authentication › Complete JavaScript Example.
-- 잃은 시간: 10분.
-- 우회: 우리 인코더는 RFC 3986 엄격 인코딩(`!'()*`까지 인코딩) + 전송 전 `new URL()` 왕복 검사(`sign.ts` `buildTarget`, `sign.test.ts`).
-- 요청: 예제를 "전송할 URL 문자열에서 path+query를 떼어 서명"하는 방식으로.
-- 증거: `packages/binance/src/sign.test.ts` "encodes the apostrophe…". 서버 측 확인은 G1(`rwa/search`에 `'` 포함 keyword).
+## 2026-09-23 18:12 UTC — [web3api][auth] The docs' JS signing helper signs different bytes than it sends for a query containing `'` (presumed, not yet measured)
+- Goal: guarantee that the signed string = the sent string (V-02).
+- Expected: following the docs example is safe.
+- Actual: the docs' JS helper builds the query with `encodeURIComponent` (L332). `encodeURIComponent("'")` leaves `'` as is, but the WHATWG URL parser (Node fetch, axios's `new URL`) sends a `'` in the query as `%27` → with a value like `keyword=McDonald's`, the signed path and the sent path differ, and 40102 is expected. Offline repro: `new URL("https://h/p?q='").search === "?q=%27"`. The connector builds the query with URLSearchParams and signs that result, so it has no problem (a space becomes `+`).
+- Docs: § Authentication › Complete JavaScript Example.
+- Time lost: 10 min.
+- Workaround: our encoder does strict RFC 3986 encoding (encoding even `!'()*`) + a `new URL()` round-trip check before sending (`sign.ts` `buildTarget`, `sign.test.ts`).
+- Ask: change the example to "take path+query from the URL string that will be sent, and sign that".
+- Evidence: `packages/binance/src/sign.test.ts` "encodes the apostrophe…". Server-side confirmation in G1 (a keyword containing `'` on `rwa/search`).
 
-## 2026-09-23 18:16 UTC — [web3api][auth] 첫 호출(서명 없음): HTTP 401, code 40101 "API Key is required", 641 ms
-- 목표: `pnpm reach` 미서명 도달 확인(M0-03).
-- 기대: 키 없이 게이트웨이까지 도달, 문서상 40101 메시지는 "Invalid API Key"(L1890).
-- 실제: `GET https://web3.binance.com/build/api/v1/dex/market/supported/chain` → HTTP 401, body `code 40101`, msg `"API Key is required"`, 641 ms(재실행 374 ms), 응답 `timestamp` 기준 시계 차 +454 ms. API 경로는 WAF 챌린지 없음(문서 사이트와 다름). 지역 차단 코드(40301) 없음 — 단 이 호출은 **미국 소재 클라우드 샌드박스**에서 나갔고 키 없는 요청이라 지역 판정 단계 전일 수 있음. 한국 회선 결과가 아님(Q-01은 M0-04에서).
-- 문서: § Authentication › Error Codes; § Error Codes (Market API) › Authentication & Authorization Errors.
-- 잃은 시간: 0.
-- 우회: 없음.
-- 요청: 40101 메시지를 문서와 일치(또는 문서에 메시지 변형 명시).
-- 증거: `pnpm reach` 출력(REGION_TAG unset), 샌드박스 로컬 DB `api_calls` 1행(`market/getSupportedChains`, 401, 40101) — 커밋하지 않음.
+## 2026-09-23 18:16 UTC — [web3api][auth] First call (unsigned): HTTP 401, code 40101 "API Key is required", 641 ms
+- Goal: confirm unsigned reachability with `pnpm reach` (M0-03).
+- Expected: reach the gateway without a key; per the docs, the 40101 message is "Invalid API Key" (L1890).
+- Actual: `GET https://web3.binance.com/build/api/v1/dex/market/supported/chain` → HTTP 401, body `code 40101`, msg `"API Key is required"`, 641 ms (rerun 374 ms), clock skew +454 ms against the response `timestamp`. No WAF challenge on the API path (unlike the docs site). No region-block code (40301) — but this call went out from a **US-based cloud sandbox** and was a keyless request, so it may not have reached the region check stage. Not a result from a Korean network connection (Q-01 is covered in M0-04).
+- Docs: § Authentication › Error Codes; § Error Codes (Market API) › Authentication & Authorization Errors.
+- Time lost: 0.
+- Workaround: none.
+- Ask: make the 40101 message match the docs (or document the message variants).
+- Evidence: `pnpm reach` output (REGION_TAG unset), 1 row in `api_calls` in the sandbox's local DB (`market/getSupportedChains`, 401, 40101) — not committed.
 
-## 2026-09-23 18:20 UTC — [web3api][latency] 커넥터 기본 타임아웃 1,000 ms·재시도 3회(실측 필요)
-- 목표: 타임아웃 기본값 결정.
-- 기대: 견적 같은 느린 호출에 맞는 기본값.
-- 실제: `@binance/common@2.4.9` `ConfigurationRestAPI` 기본 `timeout: param.timeout ?? 1e3`(dist/index.mjs L672), `retries 3`, `backoff 1000`. 실제 p95가 1 s를 넘는 엔드포인트가 있으면 커넥터 사용자는 기본값에서 타임아웃을 겪게 됨. 위 미서명 호출이 641 ms였으므로 서명·견적 호출 실측 필요.
-- 문서: llms-full.txt에 커넥터 타임아웃 언급 없음(§ JavaScript, L1096).
-- 잃은 시간: 0.
-- 우회: 우리 클라이언트 기본 15 s, 모든 호출의 지연을 api_calls에 기록해 p95로 판단.
-- 요청: 문서에 권장 타임아웃과 엔드포인트별 지연 목표 공개.
-- 증거: 위 소스 위치. p50/p95는 `pnpm dx:metrics`(G1 이후).
+## 2026-09-23 18:20 UTC — [web3api][latency] Connector default timeout 1,000 ms and 3 retries (needs live measurement)
+- Goal: decide the default timeout.
+- Expected: a default that suits slow calls such as quotes.
+- Actual: `@binance/common@2.4.9` `ConfigurationRestAPI` defaults: `timeout: param.timeout ?? 1e3` (dist/index.mjs L672), `retries 3`, `backoff 1000`. If any endpoint's real p95 is over 1 s, connector users will hit timeouts with the defaults. The unsigned call above took 641 ms, so signed and quote calls need live measurement.
+- Docs: llms-full.txt does not mention the connector timeout (§ JavaScript, L1096).
+- Time lost: 0.
+- Workaround: our client defaults to 15 s; the latency of every call is recorded in api_calls, and we judge by p95.
+- Ask: publish a recommended timeout and per-endpoint latency targets in the docs.
+- Evidence: source location above. p50/p95 from `pnpm dx:metrics` (after G1).
 
-## 2026-09-24 00:03 UTC — [web3api][auth] 개발자 포털 → API 키 발급
-- 목표: Web3 API 키 발급(M0-00)
-- 기대:
-- 실제: 포털 연 시각 00:00 UTC, 키 발급 00:03 UTC. 막힌 곳:
-- 문서: https://web3.binance.com/en/dev-docs/authentication
-- 잃은 시간:
-- 우회:
-- 요청:
-- 증거:
-- 소감:
+## 2026-09-24 00:03 UTC — [web3api][auth] Developer portal → API key issued
+- Goal: get a Web3 API key issued (M0-00)
+- Expected:
+- Actual: portal opened at 00:00 UTC, key issued at 00:03 UTC. Where we got stuck:
+- Docs: https://web3.binance.com/en/dev-docs/authentication
+- Time lost:
+- Workaround:
+- Ask:
+- Evidence:
+- Impression:
 
-## 2026-09-24 00:17 UTC — [web3api][auth] 첫 서명 호출 성공(한국 개발 PC): RWA 목록·가격 배치 모두 200
-- 목표: `pnpm reach`로 서명 호출 도달 확인(M0-03, M0-04 (a) 한국 개발기).
-- 기대: 문서대로 서명한 요청이 HTTP 200·`code 0`, 한국 회선에서 지역·IP 차단 코드(40301~40303) 없음.
-- 실제: 사용자 PC(Windows, Node v24.14.1, REGION_TAG=kr-dev)에서 2026-09-24T00:17:25Z 실행.
-  - 미서명 `GET /api/v1/dex/market/supported/chain` → HTTP 401, code 40101 "API Key is required", 139 ms.
-  - 서명 `GET /api/v1/dex/market/rwa/tokens?binanceChainId=56` → HTTP 200, code 0, 186 ms, 토큰 488개(platformId `ondo` 442, `bstock` 46). BSC 목록에 다른 platformId(xStocks 등)는 없음.
-  - 서명 `POST /api/v1/dex/market/price`, body `[{"binanceChainId":"56","tokenContractAddress":"0x…"}]` 3개(문서·커넥터에 스키마 없음, DECISIONS V-09) → HTTP 200, code 0, 58 ms, 가격 3건(SOXSon, CRWDon, PANWon).
-  - 응답 `timestamp` 기준 시계 차 +342 ms. 요청 id로 `x-amz-cf-id` 형식 값이 잡힘(문서에 요청 id 헤더 없음).
-  - 서명 오류(40102)·시각 오류(40103) 없이 통과, 지역·IP 차단 코드 없음.
-- 문서: llms-full.txt § Authentication; § Introduction (Market API) › General Data(가격 배치 body 미기재).
-- 잃은 시간: Binance 쪽 0. 같은 실행의 api_calls 기록 실패는 로컬 DB 설정 문제(5432 포트의 다른 PostgreSQL이 응답, 28P01)로 Binance와 무관.
-- 우회: 가격 배치 body는 응답 필드에서 추정한 배열 형식을 썼고 수용됨.
-- 요청: `POST /market/price`, `/price-info`, `/token/basic-info`의 request body 스키마를 문서에 추가.
-- 증거: 사용자 PC `pnpm reach` 출력(대화에 공유, 2026-09-24 00:17:25 UTC). api_calls 행은 로컬 DB 수정 후 재실행 시 생김.
+## 2026-09-24 00:17 UTC — [web3api][auth] First signed call succeeded (Korean dev PC): RWA list and price batch both 200
+- Goal: confirm signed-call reachability with `pnpm reach` (M0-03, M0-04 (a) Korean dev machine).
+- Expected: a request signed as documented gets HTTP 200 and `code 0`; no region or IP block codes (40301~40303) on a Korean network connection.
+- Actual: run on the user's PC (Windows, Node v24.14.1, REGION_TAG=kr-dev) at 2026-09-24T00:17:25Z.
+  - Unsigned `GET /api/v1/dex/market/supported/chain` → HTTP 401, code 40101 "API Key is required", 139 ms.
+  - Signed `GET /api/v1/dex/market/rwa/tokens?binanceChainId=56` → HTTP 200, code 0, 186 ms, 488 tokens (platformId `ondo` 442, `bstock` 46). No other platformId (xStocks etc.) in the BSC list.
+  - Signed `POST /api/v1/dex/market/price`, body `[{"binanceChainId":"56","tokenContractAddress":"0x…"}]` with 3 entries (no schema in the docs or the connector, DECISIONS V-09) → HTTP 200, code 0, 58 ms, 3 prices (SOXSon, CRWDon, PANWon).
+  - Clock skew +342 ms against the response `timestamp`. An `x-amz-cf-id`-style value was captured as the request id (no request id header in the docs).
+  - Passed with no signature errors (40102) or timestamp errors (40103); no region or IP block codes.
+- Docs: llms-full.txt § Authentication; § Introduction (Market API) › General Data (price batch body not documented).
+- Time lost: 0 on the Binance side. The api_calls write failure in the same run was a local DB configuration problem (a different PostgreSQL answered on port 5432, 28P01), unrelated to Binance.
+- Workaround: for the price batch body we used the array format inferred from the response fields, and it was accepted.
+- Ask: add the request body schema for `POST /market/price`, `/price-info` and `/token/basic-info` to the docs.
+- Evidence: `pnpm reach` output on the user's PC (shared in the conversation, 2026-09-24 00:17:25 UTC). The api_calls rows appear on a rerun after the local DB is fixed.
 
-## 2026-09-24 00:28 UTC — [web3api][telemetry] api_calls 첫 기록 성공(한국 개발 PC)
-- 목표: `pnpm reach`의 모든 시도를 api_calls에 기록(M0-03 수용).
-- 기대: 00:17 첫 서명 호출 때와 같은 결과 + `api_calls: 3 rows recorded`.
-- 실제: 00:28:12 UTC 실행에서 3행 기록(id 1–3: getSupportedChains 401/40101 128 ms, getRwaTokenList 200/0 144 ms, getTokenPrice 200/0 64 ms, region kr-dev, 요청 id 모두 채워짐). 00:37:01 재실행에서 3행 추가 → `SELECT count(*) FROM api_calls; → 6`(00:37:35 UTC).
-- 그 전 오류: 00:17 실행에서 api_calls 기록만 실패 — PostgreSQL `28P01`(비밀번호 인증 실패). 원인: DATABASE_URL이 가리킨 5432 포트에 다른 PostgreSQL 인스턴스가 떠 있었음. 로컬 DB를 5433으로 옮겨 해결. Binance 쪽 오류(40102 서명, 40103 시각, 4030x 지역)는 첫 서명 호출 전후 모두 0건.
-- 문서: 해당 없음(로컬 설정).
-- 잃은 시간: [HUMAN]
-- 우회: DATABASE_URL 포트 5433.
-- 요청: 없음.
-- 증거: `pnpm reach` 출력(00:37:01 UTC) `api_calls: 3 rows recorded`; `pnpm db:count`.
+## 2026-09-24 00:28 UTC — [web3api][telemetry] First successful api_calls write (Korean dev PC)
+- Goal: record every `pnpm reach` attempt in api_calls (M0-03 acceptance).
+- Expected: the same results as the first signed call at 00:17 + `api_calls: 3 rows recorded`.
+- Actual: the 00:28:12 UTC run recorded 3 rows (id 1–3: getSupportedChains 401/40101 128 ms, getRwaTokenList 200/0 144 ms, getTokenPrice 200/0 64 ms, region kr-dev, request ids all filled in). The 00:37:01 rerun added 3 rows → `SELECT count(*) FROM api_calls; → 6` (00:37:35 UTC).
+- Earlier error: in the 00:17 run, only the api_calls write failed — PostgreSQL `28P01` (password authentication failed). Cause: a different PostgreSQL instance was running on port 5432, which DATABASE_URL pointed to. Fixed by moving the local DB to 5433. Binance-side errors (40102 signature, 40103 timestamp, 4030x region): 0, both before and after the first signed call.
+- Docs: not applicable (local setup).
+- Time lost: [HUMAN]
+- Workaround: DATABASE_URL port 5433.
+- Ask: none.
+- Evidence: `pnpm reach` output (00:37:01 UTC) `api_calls: 3 rows recorded`; `pnpm db:count`.
 
-## 2026-09-24 00:41 UTC — [rwa][onchain] bStocks 배수 함수명은 문서에 없음 — 바이트코드에서 찾음
-- 목표: bStocks `uiMultiplier` 읽기(M0-05, DECISIONS Q-13).
-- 기대: llms-full.txt나 RWA API 설명에 온체인 ABI(배수 함수명)가 있음.
-- 실제: 문서에 없음. NVDAB(`0x02fc…7436`)는 beacon proxy(EIP-1967 beacon 슬롯 → `0x156d…93a3`, `implementation()` → `0xCFEd…4e46`). 구현 바이트코드의 PUSH4 셀렉터에서 `uiMultiplier()`·`newUIMultiplier()`·`effectiveAt()` 확인. NVDAB uiMultiplier `1000778223752807865`(1e18 스케일) = API `tokenToShareRatio` `1.000778223752807865`, effectiveAt 0. Ondo NVDAon(beacon `0xc046…3315`, 구현 `0x578f…50fd`)에는 이 함수들이 없음 → Ondo 배수는 API `tokenToShareRatio`뿐.
-- 문서: llms-full.txt § RWA에 필드 설명 없음; 커넥터 `GetRwaTokenListResponseDataInner.tokenToShareRatio`.
-- 잃은 시간: [HUMAN]
-- 우회: 바이트코드 셀렉터 스캔 후 `packages/chain` `readBstockMultiplier`.
-- 요청: bStocks 토큰 ABI(배수·예정 배수·발효 시각 함수)를 RWA 문서에 명시. Ondo 배수의 온체인 출처가 있다면 명시.
-- 증거: `pnpm registry` 출력(00:45:40 UTC) `uiMultiplier … = API tokenToShareRatio …` 4건.
+## 2026-09-24 00:41 UTC — [rwa][onchain] The bStocks multiplier function names are not in the docs — found them in the bytecode
+- Goal: read the bStocks `uiMultiplier` (M0-05, DECISIONS Q-13).
+- Expected: the on-chain ABI (multiplier function names) is in llms-full.txt or the RWA API description.
+- Actual: not in the docs. NVDAB (`0x02fc…7436`) is a beacon proxy (EIP-1967 beacon slot → `0x156d…93a3`, `implementation()` → `0xCFEd…4e46`). Found `uiMultiplier()`, `newUIMultiplier()` and `effectiveAt()` among the PUSH4 selectors of the implementation bytecode. NVDAB uiMultiplier `1000778223752807865` (1e18 scale) = API `tokenToShareRatio` `1.000778223752807865`, effectiveAt 0. Ondo NVDAon (beacon `0xc046…3315`, implementation `0x578f…50fd`) does not have these functions → for Ondo, the only multiplier is the API `tokenToShareRatio`.
+- Docs: no field description in llms-full.txt § RWA; connector `GetRwaTokenListResponseDataInner.tokenToShareRatio`.
+- Time lost: [HUMAN]
+- Workaround: scanned the bytecode selectors, then `packages/chain` `readBstockMultiplier`.
+- Ask: document the bStocks token ABI (functions for the multiplier, the scheduled multiplier and the effective time) in the RWA docs. If the Ondo multiplier has an on-chain source, document it.
+- Evidence: `pnpm registry` output (00:45:40 UTC) `uiMultiplier … = API tokenToShareRatio …`, 4 cases.
 
-## 2026-09-24 00:45 UTC — [rwa] statusInfo가 발행사마다 다름: bStocks는 marketStatus·nextOpen/Close가 null
-- 목표: 장 상태로 정규장 창구 판단(SPEC §5.2).
-- 기대: 모든 RWA 토큰의 `statusInfo`에 `marketStatus`와 `nextOpenTime`/`nextCloseTime`.
-- 실제: Ondo 5종은 `marketStatus:"overnight"`, `nextCloseTime 1790236500000`(2026-09-24T07:55Z), `nextOpenTime 1790236860000`(08:01Z) — 정규장이 아니라 Ondo 24/5 세션의 경계. bStocks 4종은 `openState:true, marketStatus:null, reasonCode:"TRADING", nextOpenTime:null, nextCloseTime:null`(US 장외인 00:45Z에도 TRADING).
-- 문서: 커넥터 `GetRwaTokenListResponseDataInnerStatusInfo`(값 목록만, 발행사별 차이 설명 없음).
-- 잃은 시간: [HUMAN]
-- 우회: 테이프에 우리 시계 기준 `session`(regular/pre/post/overnight/weekend/holiday, America/New_York) 태그를 같이 기록(`packages/core/src/session.ts`).
-- 요청: 발행사별 statusInfo 의미와 null 조건 문서화.
-- 증거: `fixtures/rwa/getRwaTokenList-20260924-1.json`; tape_samples `market_status` 열.
+## 2026-09-24 00:45 UTC — [rwa] statusInfo differs by issuer: for bStocks, marketStatus and nextOpen/Close are null
+- Goal: decide the regular-session window from the market status (SPEC §5.2).
+- Expected: every RWA token's `statusInfo` has `marketStatus` and `nextOpenTime`/`nextCloseTime`.
+- Actual: the 5 Ondo tokens have `marketStatus:"overnight"`, `nextCloseTime 1790236500000` (2026-09-24T07:55Z), `nextOpenTime 1790236860000` (08:01Z) — the boundaries of Ondo's 24/5 session, not of the regular session. The 4 bStocks have `openState:true, marketStatus:null, reasonCode:"TRADING", nextOpenTime:null, nextCloseTime:null` (TRADING even at 00:45Z, which is US off-hours).
+- Docs: connector `GetRwaTokenListResponseDataInnerStatusInfo` (list of values only, no explanation of the differences between issuers).
+- Time lost: [HUMAN]
+- Workaround: the tape also records a `session` tag based on our own clock (regular/pre/post/overnight/weekend/holiday, America/New_York) (`packages/core/src/session.ts`).
+- Ask: document what statusInfo means for each issuer and when it is null.
+- Evidence: `fixtures/rwa/getRwaTokenList-20260924-1.json`; tape_samples `market_status` column.
 
-## 2026-09-24 00:46 UTC — [trading] M0-06 소액 견적 표(장외, US overnight)
-- 목표: NVDA·QQQ × bStocks·Ondo에 $1/$5/$50 USDT 견적(M0-06).
-- 기대: 문서대로 Ondo는 RFQ, bStock은 SWAP/RFQ 혼합; Ondo 최소액은 msg에(예시 "20 USD").
-- 실제: 2026-09-24T00:46:45Z, US 세션 overnight(정규장 아님), `userWalletAddress`=하우스 지갑.
+## 2026-09-24 00:46 UTC — [trading] M0-06 small-amount quote table (off-hours, US overnight)
+- Goal: $1/$5/$50 USDT quotes for NVDA and QQQ × bStocks and Ondo (M0-06).
+- Expected: as documented, Ondo is RFQ and bStock is a SWAP/RFQ mix; the Ondo minimum amount is in msg (example "20 USD").
+- Actual: 2026-09-24T00:46:45Z, US session overnight (not the regular session), `userWalletAddress`=house wallet.
 
 | instrument | USD | expectedOut (tokens) | implied USD/token | priceImpact % | vendor / mode | route | error | ms |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -277,124 +278,124 @@
 | QQQon | 5 | — | — | — | — | — | 40375 "Minimum order amount is 5 USD." | — |
 | QQQon | 50 | 0.067266855205420944 | 743.3081 | -0.0000000000 | LiquidMesh/SWAP | Rfq Halfmoon 100.00% | — | 285 |
 
-  - 추가 측정(00:48 UTC): NVDAon $5.01·$5.05·$5.10·$6 → 견적 OK. $5.00은 거부, $5.01은 통과 — "5 USD"가 초과 조건인지 USDT 단가(0.99975) 환산 때문인지는 미확인. NVDAB $0.10도 견적 OK(bStock 최소액 관측 안 됨).
-  - Ondo도 `LiquidMesh/SWAP`(dex 이름 "Rfq Halfmoon")이고 `/swap` 응답도 `executionMode SWAP`, `tx` 있음, `rfq` null — 문서 "Ondo는 항상 RFQ"와 다름.
-  - 그런데 Ondo 견적에서 `userWalletAddress`를 빼면 `40001 "userWalletAddress is required for RFQ (Ondo) quote"`(bStock은 없어도 OK).
-  - priceImpact에 음수 0 `"-0.0000000000"`이 섞여 옴.
-- 문서: § Introduction (Trading API) › Equity Token Trading (L2235); § Error Codes (Trading API) › RFQ Orders (L3092).
-- 잃은 시간: [HUMAN]
-- 우회: 테이프·결정은 응답의 `executionMode`를 그대로 기록·사용(발행사로 추정하지 않음). 최소액은 테이프에서 관측.
-- 요청: Ondo 경로가 SWAP으로 나오는 조건, 최소액 비교 규칙(≥ vs >, USD 환산 기준), priceImpact 부호 규칙 문서화.
-- 증거: `pnpm spike:quotes` 출력; `fixtures/trading/getAggregatedQuote-20260924-*.json`(지갑 주소 `[redacted]`).
+  - Additional measurement (00:48 UTC): NVDAon $5.01, $5.05, $5.10, $6 → quote OK. $5.00 rejected, $5.01 passes — unconfirmed whether "5 USD" is a strictly-greater-than condition or an effect of conversion at the USDT unit price (0.99975). NVDAB $0.10 also quotes OK (no bStock minimum observed).
+  - Ondo is also `LiquidMesh/SWAP` (dex name "Rfq Halfmoon"), and its `/swap` response is also `executionMode SWAP`, with `tx` present and `rfq` null — unlike the docs' "Ondo is always RFQ".
+  - Yet leaving `userWalletAddress` out of an Ondo quote gives `40001 "userWalletAddress is required for RFQ (Ondo) quote"` (bStock is OK without it).
+  - priceImpact values include a negative 0, `"-0.0000000000"`.
+- Docs: § Introduction (Trading API) › Equity Token Trading (L2235); § Error Codes (Trading API) › RFQ Orders (L3092).
+- Time lost: [HUMAN]
+- Workaround: the tape and the decisions record and use the response's `executionMode` as is (not inferred from the issuer). Minimum amounts are observed on the tape.
+- Ask: document when the Ondo route comes back as SWAP, the minimum-amount comparison rule (≥ vs >, the basis for USD conversion) and the priceImpact sign rule.
+- Evidence: `pnpm spike:quotes` output; `fixtures/trading/getAggregatedQuote-20260924-*.json` (wallet address `[redacted]`).
 
-## 2026-09-24 00:52 UTC — [trading] quoteId TTL 실측: 35초 뒤 /swap → 40401
-- 목표: Q-04 견적 유효시간 확인. `/swap`은 콜데이터 생성만(서명·브로드캐스트 없음).
-- 기대: 문서 TTL 30초.
-- 실제: NVDAB $50 견적 직후 `/swap` OK(96 ms, `executionMode SWAP`, `tx.to 0xB444…DdA5`), 35초 뒤 같은 quoteId → `40401 "quoteId=… not found or expired"`(109 ms). NVDAon도 같음(0초 OK 100 ms, 35초 40401 84 ms).
-- 문서: § Key Constraints (L2276) — 일치.
-- 잃은 시간: 0.
-- 우회: 해당 없음. 재견적 기준은 30초 미만.
-- 요청: 없음.
-- 증거: `fixtures/trading/buildSwapTransaction-20260924-*.json`.
+## 2026-09-24 00:52 UTC — [trading] quoteId TTL measured: /swap after 35 s → 40401
+- Goal: confirm the Q-04 quote validity period. `/swap` only builds calldata (no signing or broadcast).
+- Expected: documented TTL of 30 s.
+- Actual: `/swap` right after an NVDAB $50 quote: OK (96 ms, `executionMode SWAP`, `tx.to 0xB444…DdA5`); the same quoteId 35 s later → `40401 "quoteId=… not found or expired"` (109 ms). Same for NVDAon (0 s OK 100 ms, 35 s 40401 84 ms).
+- Docs: § Key Constraints (L2276) — matches.
+- Time lost: 0.
+- Workaround: not applicable. The re-quote threshold is under 30 s.
+- Ask: none.
+- Evidence: `fixtures/trading/buildSwapTransaction-20260924-*.json`.
 
-## 2026-09-24 00:55 UTC — [rwa] referencePrice = tokenPrice ÷ tokenToShareRatio (정확히)
-- 목표: Q-06 참조가 정의 실측.
-- 기대: 커넥터 설명대로 온체인가에서 파생.
-- 실제: 테이프 최신 행 9종 모두 `tokenPrice / multiplier`와 `referencePrice`의 상대 오차 ≤ 5.4e-10(예: NVDAB 224.695137 = 224.695137). 독립 시세가 아니라 온체인가를 주당으로 환산한 값.
-- 문서: 커넥터 `GetRwaTokenPriceResponseDataInner.referencePrice` 설명과 일치; llms-full.txt에는 필드 설명 없음.
-- 잃은 시간: 0.
-- 우회: SPEC §5.5 괴리 가드(`onchain/reference − 1`)는 이 값으로는 항상 ≈0 — 사람 결정 필요(DECISIONS Q-06).
-- 요청: 독립 기초자산 시세(underlying-market의 `marketData`)와의 관계 문서화.
-- 증거: tape_samples ⨝ instruments 쿼리(00:55 UTC).
+## 2026-09-24 00:55 UTC — [rwa] referencePrice = tokenPrice ÷ tokenToShareRatio (exactly)
+- Goal: measure the Q-06 reference price definition live.
+- Expected: derived from the on-chain price, as the connector description says.
+- Actual: in the latest tape rows, for all 9 instruments, the relative error between `tokenPrice / multiplier` and `referencePrice` is ≤ 5.4e-10 (e.g. NVDAB 224.695137 = 224.695137). It is the on-chain price converted per share, not an independent market price.
+- Docs: matches the connector's `GetRwaTokenPriceResponseDataInner.referencePrice` description; no field description in llms-full.txt.
+- Time lost: 0.
+- Workaround: with this value, the SPEC §5.5 gap guard (`onchain/reference − 1`) is always ≈0 — needs a human decision (DECISIONS Q-06).
+- Ask: document how it relates to an independent underlying-asset market price (`marketData` from underlying-market).
+- Evidence: tape_samples ⨝ instruments query (00:55 UTC).
 
-## 2026-09-24 00:49 UTC — [defi] Venus USDT: poolAddress null, simulate=true는 미충전 주소를 40484로 거부, APPROVE는 무제한
-- 목표: M0-07 — Venus 정보, USDT 투자 항목, 예치·상환 콜데이터, Transaction API 시뮬레이션(브로드캐스트 없음).
-- 기대: investment detail에 vToken 주소(`poolAddress`); build `simulate=true`가 `preview`를 줌.
-- 실제:
+## 2026-09-24 00:49 UTC — [defi] Venus USDT: poolAddress null, simulate=true rejects an unfunded address with 40484, APPROVE is unlimited
+- Goal: M0-07 — Venus info, the USDT investment item, deposit and redeem calldata, Transaction API simulation (no broadcast).
+- Expected: investment detail has the vToken address (`poolAddress`); build with `simulate=true` returns a `preview`.
+- Actual:
   - protocol/detail venus: securityScore `"93.1"`, TVL `1353914642`, dimensionScores codeSecurity 96 / fundamentalHealth 92.5 / operationalResilience 84.96 / communityTrust 98 / governanceStrength 88.45 / marketStability 94.18 (458 ms).
-  - investment/list(Earn, venus, BSC, USDT) → 1건 `investmentId 5b77bfd8…63cb` "USDT", `apyBps 316`(3.16%), `tvl 185541887.44`. detail도 같고 `poolAddress: null`.
-  - position/list(하우스) → `{"totalValue":"0","addressList":[]}` (1,664 ms — 이번 세션 최장).
-  - deposit 1 USDT `simulate=true` → HTTP 200 `40484 "Insufficient balance…"`; redeem `simulate=true` → 같은 코드 `40484 "You don't have any position in this investment product."`(다른 원인에 같은 코드). `simulate=false`로는 둘 다 code 0: deposit `dataList` = APPROVE, DEPOSIT; redeem = REDEEM, `redeemDelayDays []`(즉시).
-  - APPROVE 디코드: `USDT.approve(spender 0xfD58…0255, type(uint256).max)` — 무제한(Q-16). DEPOSIT `to` = 같은 `0xfD58…0255`, 셀렉터 `0xa0712d68` = `mint(uint256)`. REDEEM 셀렉터 `0xdb006a75` = `redeem(uint256)`(vToken 수량 기준). DEPOSIT/REDEEM 항목에는 `gasLimit` 없음.
-  - 온체인(블록 123664140): `0xfD5840Cd36d94D7229439859C0112a4185BC0255` `symbol()`=vUSDT, decimals 8, `underlying()`=USDT. exchangeRateStored `265115854764046092440821898`(1 vUSDT = 0.026511585 USDT), cash 50,523,730.69 / borrows 135,119,487.09 / reserves 52.89 → 이용률 72.78%. Comptroller `0xfD36…8384` actionPaused MINT=false REDEEM=false. supplyRatePerBlock `445461184` → 블록당 복리 연 1.89%(0.75초 블록 가정, 42,048,000/년) — API apyBps 316(3.16%)과 1.27%p 차이(원인 미확인: 보상 포함 여부가 문서에 없음, 블록 수 가정도 미검증).
-  - Transaction API simulate(하우스 주소, 잔고 USDT 0·BNB 0): APPROVE → `status SUCCESS`, allowanceChanges `preAmount 0 → postAmount 1157…9935`(무제한) (93 ms); DEPOSIT → `status FAILED`, `failReason "execution reverted: BEP20: transfer amount exceeds balance"` (114 ms); REDEEM → `FAILED "execution reverted: math error"` (127 ms). 시뮬레이션은 단일 tx라 APPROVE 결과가 DEPOSIT에 이어지지 않음.
-- 문서: § Integration Flow (DeFi API) › Step 2, Step 3 (L3755, L3820), › Calldata Validity & Approvals (L4119); § Error Codes (DeFi API).
-- 잃은 시간: [HUMAN]
-- 우회: vToken 주소는 DEPOSIT 항목 `to`에서 얻고 온체인 `symbol()/underlying()`로 검증(`scripts/spike-venus.ts`). 미충전 지갑은 `simulate=false`로 콜데이터 확보.
-- 요청: investment detail에 vToken 주소 채우기; 40484 원인별 코드 분리; 다중 tx(approve→deposit) 시뮬레이션 또는 state override; APY 구성(기본 이자 vs 보상) 명시; 정확 금액 approve 옵션.
-- 증거: `pnpm spike:venus` 출력; `fixtures/defi-data/*-20260924-*.json`, `fixtures/defi-transaction/*-20260924-*.json`, `fixtures/transaction/simulateTransactions-20260924-{1,2,3}.json`(하우스 주소 `[redacted]`).
+  - investment/list(Earn, venus, BSC, USDT) → 1 item `investmentId 5b77bfd8…63cb` "USDT", `apyBps 316` (3.16%), `tvl 185541887.44`. detail is the same, with `poolAddress: null`.
+  - position/list(house) → `{"totalValue":"0","addressList":[]}` (1,664 ms — the longest this session).
+  - deposit 1 USDT `simulate=true` → HTTP 200 `40484 "Insufficient balance…"`; redeem `simulate=true` → the same code, `40484 "You don't have any position in this investment product."` (same code for a different cause). With `simulate=false`, both return code 0: deposit `dataList` = APPROVE, DEPOSIT; redeem = REDEEM, `redeemDelayDays []` (immediate).
+  - APPROVE decoded: `USDT.approve(spender 0xfD58…0255, type(uint256).max)` — unlimited (Q-16). DEPOSIT `to` = the same `0xfD58…0255`, selector `0xa0712d68` = `mint(uint256)`. REDEEM selector `0xdb006a75` = `redeem(uint256)` (in vToken units). The DEPOSIT/REDEEM items have no `gasLimit`.
+  - On-chain (block 123664140): `0xfD5840Cd36d94D7229439859C0112a4185BC0255` `symbol()`=vUSDT, decimals 8, `underlying()`=USDT. exchangeRateStored `265115854764046092440821898` (1 vUSDT = 0.026511585 USDT), cash 50,523,730.69 / borrows 135,119,487.09 / reserves 52.89 → utilization 72.78%. Comptroller `0xfD36…8384` actionPaused MINT=false REDEEM=false. supplyRatePerBlock `445461184` → 1.89% a year compounded per block (assuming 0.75 s blocks, 42,048,000/year) — 1.27%p off from the API apyBps 316 (3.16%) (cause unconfirmed: the docs do not say whether rewards are included, and the block-count assumption is also unverified).
+  - Transaction API simulate (house address, balances USDT 0, BNB 0): APPROVE → `status SUCCESS`, allowanceChanges `preAmount 0 → postAmount 1157…9935` (unlimited) (93 ms); DEPOSIT → `status FAILED`, `failReason "execution reverted: BEP20: transfer amount exceeds balance"` (114 ms); REDEEM → `FAILED "execution reverted: math error"` (127 ms). The simulation is single-tx, so the APPROVE result does not carry over to DEPOSIT.
+- Docs: § Integration Flow (DeFi API) › Step 2, Step 3 (L3755, L3820), › Calldata Validity & Approvals (L4119); § Error Codes (DeFi API).
+- Time lost: [HUMAN]
+- Workaround: take the vToken address from the DEPOSIT item's `to` and verify it on-chain with `symbol()/underlying()` (`scripts/spike-venus.ts`). For an unfunded wallet, get the calldata with `simulate=false`.
+- Ask: fill in the vToken address in investment detail; separate codes for each cause of 40484; multi-tx (approve→deposit) simulation or state override; state the APY composition (base interest vs rewards); an exact-amount approve option.
+- Evidence: `pnpm spike:venus` output; `fixtures/defi-data/*-20260924-*.json`, `fixtures/defi-transaction/*-20260924-*.json`, `fixtures/transaction/simulateTransactions-20260924-{1,2,3}.json` (house address `[redacted]`).
 
-## 2026-09-24 01:50 UTC — [tape] 로컬 테이프 64분 가동: 9회 × 27행
-- 목표: M0-08 로컬 — 10분마다 9종 × $5/$50/$500 견적과 가격·장 상태를 tape_samples에.
-- 기대: 매 실행 27행, 오류는 문서화된 코드만.
-- 실제: 00:45:51Z(`pnpm tape:once`)부터 01:50:00Z까지 9회 243행, `tape_samples` count 54(00:46:26Z) → 81(00:59:37Z) → 243(01:50:31Z). 매 실행 27행, 기록된 견적 오류 5행 = Ondo 5종 × $5 `40375 "Minimum order amount is 5 USD."`. 한 실행 약 13초(견적 27건 순차). 세션 태그 전부 `overnight`. 다만 아래 항목대로 실행마다 429가 섞였고(재시도로 모두 복구) 01:52 이후 수정.
-- 문서: 해당 없음.
-- 잃은 시간: 0.
-- 우회: 아래 항목.
-- 요청: 없음.
-- 증거: 에이전트 콘솔 로그(`tape: 2026-09-24T01:50:00.007Z 27 rows …`); `pnpm db:count`.
+## 2026-09-24 01:50 UTC — [tape] Local tape ran for 64 min: 9 runs × 27 rows
+- Goal: M0-08 local — every 10 min, 9 instruments × $5/$50/$500 quotes plus prices and market status into tape_samples.
+- Expected: 27 rows per run; errors only with documented codes.
+- Actual: 9 runs and 243 rows from 00:45:51Z (`pnpm tape:once`) to 01:50:00Z; `tape_samples` count 54 (00:46:26Z) → 81 (00:59:37Z) → 243 (01:50:31Z). 27 rows per run; recorded quote errors: 5 rows = 5 Ondo instruments × $5 `40375 "Minimum order amount is 5 USD."`. One run takes about 13 s (27 quotes in sequence). Session tags all `overnight`. However, as described in the entry below, every run had 429s mixed in (all recovered by retry); fixed after 01:52.
+- Docs: not applicable.
+- Time lost: 0.
+- Workaround: see the entry below.
+- Ask: none.
+- Evidence: agent console log (`tape: 2026-09-24T01:50:00.007Z 27 rows …`); `pnpm db:count`.
 
-## 2026-09-24 01:52 UTC — [web3api][ratelimit] 엔드포인트당 5 RPS를 지켰는데 429: 게이트웨이는 슬라이딩 1초 창
-- 목표: 레이트리밋 준수(엔드포인트당 5/s) 확인.
-- 기대: 클라이언트 토큰버킷(용량 5, 초당 5)이면 429 없음.
-- 실제: 00:45–01:50 UTC `getAggregatedQuote`에서 HTTP 429 / `42900 "Rate limit exceeded"` 44건(테이프 실행마다 약 5건), `Retry-After: 1`, 재시도 1회로 모두 200. 헤더 기록(`fixtures/trading/getAggregatedQuote-20260924-1…6.json`): 00:46:45.311Z부터 65 ms 간격으로 `x-oc-ratelimit-remaining` 4→3→2→1→0, 6번째(00:46:45.733Z, 첫 요청 후 422 ms)가 429. 버킷은 5개 소진 후 200 ms 뒤 6번째를 허용하므로 1초 안에 6건이 나감 — 게이트웨이는 "임의의 1초 창에 5건"으로 셈. 창 1,050 ms로 바꾼 뒤(01:53)에도 2건: (a) 429 뒤 `Retry-After` 대기로 늦게 나간 재시도를 창이 원래 슬롯 시각으로 기록, (b) 5번째 앞 요청의 지연이 427 ms로 커서 게이트웨이 도착 시각이 우리 송신 시각보다 늦음.
-- 문서: § Authentication › Rate Limits (L392) — "per endpoint 5 RPS"만 있고 창 방식(고정/슬라이딩, 도착 기준) 설명 없음.
-- 잃은 시간: [HUMAN]
-- 우회: `packages/binance/src/rate-limit.ts` 엔드포인트·DeFi 그룹 제한을 슬라이딩 창(5건 / 1,000 ms + 여유 250 ms)으로, 실제 송신 시각(429 대기 포함)을 기록. 01:54:58Z `pnpm tape:once` → api_calls 29건, 429 0건, 재시도 0건.
-- 요청: 레이트리밋 창 방식과 기준 시각(도착/처리)을 문서에 명시; `X-OC-RateLimit-Reset` 같은 창 리셋 헤더 제공.
-- 증거: api_calls `http_status=429` 44행(00:45:52Z–01:50:08Z); 위 픽스처 헤더; `rate-limit.test.ts` "replays the 2026-09-24 quote burst…", "counts a retry at the time it is sent after a 429 pause".
+## 2026-09-24 01:52 UTC — [web3api][ratelimit] 429 despite keeping to 5 RPS per endpoint: the gateway uses a sliding 1-second window
+- Goal: confirm rate limit compliance (5/s per endpoint).
+- Expected: with a client token bucket (capacity 5, 5 per second), no 429.
+- Actual: 00:45–01:50 UTC, `getAggregatedQuote` got HTTP 429 / `42900 "Rate limit exceeded"` 44 times (about 5 per tape run), `Retry-After: 1`, all 200 after 1 retry. Header records (`fixtures/trading/getAggregatedQuote-20260924-1…6.json`): from 00:46:45.311Z at 65 ms intervals, `x-oc-ratelimit-remaining` 4→3→2→1→0, and the 6th (00:46:45.733Z, 422 ms after the first request) got 429. After the 5 tokens are used up, the bucket allows the 6th 200 ms later, so 6 requests go out within 1 second — the gateway counts "5 in any 1-second window". Even after changing the window to 1,050 ms (01:53) there were 2: (a) the window recorded a retry that went out late, after the `Retry-After` wait following a 429, at its original slot time; (b) the request 5 places earlier had a large latency of 427 ms, so its arrival time at the gateway was later than our send time.
+- Docs: § Authentication › Rate Limits (L392) — only "per endpoint 5 RPS"; nothing on the window type (fixed/sliding, arrival-based).
+- Time lost: [HUMAN]
+- Workaround: in `packages/binance/src/rate-limit.ts`, the per-endpoint and DeFi group limits became a sliding window (5 requests / 1,000 ms + 250 ms margin), recording the actual send time (including the 429 wait). 01:54:58Z `pnpm tape:once` → api_calls: 29, 429s: 0, retries: 0.
+- Ask: document the rate limit window type and its reference time (arrival/processing); provide a window-reset header such as `X-OC-RateLimit-Reset`.
+- Evidence: api_calls `http_status=429` 44 rows (00:45:52Z–01:50:08Z); the fixture headers above; `rate-limit.test.ts` "replays the 2026-09-24 quote burst…", "counts a retry at the time it is sent after a 429 pause".
 
-## 2026-09-24 02:11 UTC — [chain][edge] 정정: 00:49 항목의 Venus APY 차이는 우리 블록 간격 가정 오류
-- 목표: 00:49 항목의 "온체인 환산 연 1.89% vs API `apyBps 316`(3.16%)" 차이 원인 확인.
-- 기대: 0.75초 블록(연 42,048,000블록)으로 `supplyRatePerBlock`을 환산하면 API APY와 같다.
-- 실제: BSC 블록 간격 실측 0.45015초 — 블록 123654005(2026-09-23T23:35:40Z) → 123674005(2026-09-24T02:05:43Z), 20,000블록에 9,003초(`eth_getBlockByNumber`, bsc-dataseed.bnbchain.org). 연 70,056,648블록으로 `supplyRatePerBlock 445461184`를 블록당 복리하면 3.170% ≈ API 3.16%. 1.27%p 차이는 우리 가정(0.75초) 탓이고 API 문제가 아님. 기본 공급 이자만으로 맞으므로 `apyBps`에 XVS 보상은 없거나 0.
-- 문서: 해당 없음(블록 간격은 체인 파라미터). DeFi API 문서에 `apyBps` 구성 설명이 없는 점은 그대로.
-- 잃은 시간: [HUMAN]
-- 우회: 해당 없음. `packages/core` `supplyApyFromRatePerBlock`는 연 블록 수를 인자로 받으므로 호출하는 쪽이 실측값을 넘긴다.
-- 요청: 00:49 항목의 "APY 구성(기본 이자 vs 보상) 명시"는 차이라는 근거가 사라져 우선순위를 낮춤(구성 명시 자체는 여전히 유용).
-- 증거: 위 두 블록의 번호·타임스탬프; DECISIONS Q-12.
+## 2026-09-24 02:11 UTC — [chain][edge] Correction: the Venus APY gap in the 00:49 entry was an error in our block-interval assumption
+- Goal: find the cause of the gap in the 00:49 entry, "1.89% a year converted on-chain vs API `apyBps 316` (3.16%)".
+- Expected: converting `supplyRatePerBlock` with 0.75 s blocks (42,048,000 blocks a year) matches the API APY.
+- Actual: measured BSC block interval 0.45015 s — block 123654005 (2026-09-23T23:35:40Z) → 123674005 (2026-09-24T02:05:43Z), 9,003 s for 20,000 blocks (`eth_getBlockByNumber`, bsc-dataseed.bnbchain.org). Compounding `supplyRatePerBlock 445461184` per block over 70,056,648 blocks a year gives 3.170% ≈ API 3.16%. The 1.27%p gap was due to our assumption (0.75 s), not an API problem. Base supply interest alone matches, so `apyBps` has no XVS rewards, or they are 0.
+- Docs: not applicable (the block interval is a chain parameter). The DeFi API docs still do not explain what `apyBps` is made of.
+- Time lost: [HUMAN]
+- Workaround: not applicable. `packages/core` `supplyApyFromRatePerBlock` takes blocks per year as an argument, so the caller passes the measured value.
+- Ask: "state the APY composition (base interest vs rewards)" from the 00:49 entry is lowered in priority, since the gap it rested on is gone (stating the composition is still useful in itself).
+- Evidence: numbers and timestamps of the two blocks above; DECISIONS Q-12.
 
-## 2026-09-24 02:31 UTC — [web3api][region] 프랑크푸르트(Fly fra) 첫 호출: 도달 OK, 한국보다 2~4배 느림, 병행 호출에 40303 없음
-- 목표: M0-04 (b)·M0-08 — 프랑크푸르트 워커에서 도달 확인, 같은 키를 한국과 병행할 때 40303 여부(DECISIONS Q-01).
-- 기대: 제한 지역 아님 → 도달 OK. 문서상 "concurrent multi-region access"는 40303 위험.
-- 실제: Fly 머신 `d8de470f023428`(fra) `pnpm reach` 02:31:42Z — 미서명 401/40101 356 ms, 서명 RWA 목록 200/0 350 ms, 가격 배치 200/0 253 ms, 시계 차 10 ms. 같은 세 호출이 한국 PC(02:33:02Z)에선 146 / 150 / 58 ms — 게이트웨이까지는 한국이 더 가까움. 한국 호출은 워커의 마지막 호출(02:32:27Z) 36초 뒤였고 40303 없음(같은 초 겹침·장시간 병행은 미관측). 워커 첫 실행 api_calls `region=fra` 33행, 429 0건(슬라이딩 창 제한 적용 후).
-- 문서: § Service-Restricted Countries & Regions; § Authentication › Error Codes(40301–40304 설명, 다중 지역 판정 기준·시간창은 없음).
-- 잃은 시간: 0.
-- 우회: 서버는 fra 한 곳, 한국 PC의 API 호출은 일회성 확인만.
-- 요청: 40303 "frequent location switching or concurrent multi-region access"의 판정 기준(시간창, 요청 수)과, 개발(다른 지역)과 운영에 키를 나눠야 하는지 문서화.
-- 증거: 호스트 `pnpm reach` 출력; Neon `SELECT region, count(*) … FROM api_calls GROUP BY region` → `fra 33`(02:31:55Z); 한국 PC `pnpm reach` 출력(02:33:02Z).
+## 2026-09-24 02:31 UTC — [web3api][region] First call from Frankfurt (Fly fra): reachability OK, 2~4x slower than Korea, no 40303 on parallel calls
+- Goal: M0-04 (b) and M0-08 — confirm reachability from the Frankfurt worker, and whether 40303 appears when the same key is used in parallel with Korea (DECISIONS Q-01).
+- Expected: not a restricted region → reachability OK. Per the docs, "concurrent multi-region access" risks 40303.
+- Actual: Fly machine `d8de470f023428` (fra) `pnpm reach` 02:31:42Z — unsigned 401/40101 356 ms, signed RWA list 200/0 350 ms, price batch 200/0 253 ms, clock skew 10 ms. The same three calls from the Korean PC (02:33:02Z): 146 / 150 / 58 ms — Korea is closer to the gateway. The Korean calls came 36 s after the worker's last call (02:32:27Z), and there was no 40303 (overlap within the same second and long-running parallel use were not observed). Worker's first run: api_calls `region=fra` 33 rows, 429s: 0 (after the sliding-window limit was applied).
+- Docs: § Service-Restricted Countries & Regions; § Authentication › Error Codes (describes 40301–40304; no criteria or time window for the multi-region determination).
+- Time lost: 0.
+- Workaround: the server runs in fra only; API calls from the Korean PC are one-off checks only.
+- Ask: document the criteria for 40303 "frequent location switching or concurrent multi-region access" (time window, request count), and whether development (in another region) and production should use separate keys.
+- Evidence: host `pnpm reach` output; Neon `SELECT region, count(*) … FROM api_calls GROUP BY region` → `fra 33` (02:31:55Z); Korean PC `pnpm reach` output (02:33:02Z).
 
-## 2026-09-24 05:21 UTC — [rwa][docs] statusInfo 값 목록과 독립 주가가 Web3 API 문서에 없고 Skills Hub 스킬에만 있음; 실제 `paused` ≠ 문서 `pause`
-- 목표: M1-02 결정 엔진의 ASSET(거래 정지·기업행동)·PRICE(괴리) 규칙을 공식 문서 값으로 고정.
-- 기대: Web3 API RWA 문서(llms-full.txt)에 RWA 목록 `statusInfo`의 `marketStatus`·`reasonCode`·`reasonMsg` 값 목록과, 참조가와 별개인 기초자산 주가 필드가 있음.
-- 실제:
-  - llms-full.txt에서 `reasonCode`·`statusInfo`·`MARKET_PAUSED`·`nextOpenTime`을 검색하면 0건이다.
-  - 값 목록은 Skills Hub `binance-tokenized-securities-info/SKILL.md`(공개 bapi 문서)의 "Reason Codes"·"Corporate Actions" 표에만 있다. 코드는 TRADING, MARKET_CLOSED, MARKET_PAUSED, ASSET_PAUSED(cash_dividend·stock_dividend·stock_split·merger·acquisition·spinoff·maintenance·corporate action), ASSET_LIMITED(earnings), UNSUPPORTED, MARKET_MAINTENANCE다.
-  - 그 표의 `marketStatus` 목록은 `pause`인데, 2026-09-24 00:45 UTC Web3 API RWA 목록의 Ondo 97종은 `marketStatus:"paused"`(reasonCode `MARKET_PAUSED`, reasonMsg "Paused for session transition")였다. 같은 시각 Ondo 81종은 `UNSUPPORTED`, 264종은 `TRADING`이었다. bStocks 46종은 `TRADING`에 `marketStatus:null`이었다.
-  - 참조가와 별개인 US 주가는 같은 스킬의 RWA Dynamic V2 `stockInfo.price`("May be `null` outside trading hours")뿐이다. Web3 API RWA 가격의 `referencePrice`는 토큰가 ÷ 배수로 파생된 값이다(00:55 항목, Q-06).
-- 문서: llms-full.txt(해당 필드 설명 없음); `docs/vendor/binance-skills-hub/skills/binance-web3/binance-tokenized-securities-info/SKILL.md` "Reason Codes", "Corporate Actions", "API 5: RWA Dynamic V2".
-- 잃은 시간: [HUMAN]
-- 우회:
-  - 엔진은 스킬 표의 코드를 쓴다.
-  - 장 판단은 우리 NYSE 달력으로 한다(`packages/core/src/session.ts`).
-  - 가격 괴리는 독립 주가가 있을 때만 잰다(`packages/core/src/decide.ts`, SPEC §5.5 v2).
-- 요청:
-  - Web3 API RWA 문서에 `statusInfo` 값 목록과 발행사별 차이(bStocks는 marketStatus null, 장외에도 TRADING)를 실어 주세요.
-  - 표기(`pause`와 `paused`)를 하나로 통일해 주세요.
-  - 독립 기초자산 가격(`stockInfo.price` 상당)을 Web3 API에서도 제공해 주세요.
-- 증거: `fixtures/rwa/getRwaTokenList-20260924-1.json`(statusInfo 분포 위와 같음); 위 스킬 파일.
+## 2026-09-24 05:21 UTC — [rwa][docs] The statusInfo value lists and an independent stock price are not in the Web3 API docs, only in a Skills Hub skill; actual `paused` ≠ documented `pause`
+- Goal: pin the M1-02 decision engine's ASSET (trading halt, corporate action) and PRICE (gap) rules to values from the official docs.
+- Expected: the Web3 API RWA docs (llms-full.txt) have the value lists for `marketStatus`, `reasonCode` and `reasonMsg` in the RWA list's `statusInfo`, and an underlying stock price field separate from the reference price.
+- Actual:
+  - Searching llms-full.txt for `reasonCode`, `statusInfo`, `MARKET_PAUSED` and `nextOpenTime` returns 0 hits.
+  - The value lists exist only in the "Reason Codes" and "Corporate Actions" tables of the Skills Hub `binance-tokenized-securities-info/SKILL.md` (public bapi docs). The codes are TRADING, MARKET_CLOSED, MARKET_PAUSED, ASSET_PAUSED(cash_dividend, stock_dividend, stock_split, merger, acquisition, spinoff, maintenance, corporate action), ASSET_LIMITED(earnings), UNSUPPORTED, MARKET_MAINTENANCE.
+  - That table's `marketStatus` list has `pause`, but in the Web3 API RWA list at 2026-09-24 00:45 UTC, 97 Ondo tokens had `marketStatus:"paused"` (reasonCode `MARKET_PAUSED`, reasonMsg "Paused for session transition"). At the same time, 81 Ondo tokens were `UNSUPPORTED` and 264 were `TRADING`. The 46 bStocks were `TRADING` with `marketStatus:null`.
+  - The only US stock price separate from the reference price is `stockInfo.price` in the same skill's RWA Dynamic V2 ("May be `null` outside trading hours"). The `referencePrice` of the Web3 API RWA price is a value derived as token price ÷ multiplier (00:55 entry, Q-06).
+- Docs: llms-full.txt (no description of these fields); `docs/vendor/binance-skills-hub/skills/binance-web3/binance-tokenized-securities-info/SKILL.md` "Reason Codes", "Corporate Actions", "API 5: RWA Dynamic V2".
+- Time lost: [HUMAN]
+- Workaround:
+  - The engine uses the codes from the skill's tables.
+  - The market session is determined with our NYSE calendar (`packages/core/src/session.ts`).
+  - The price gap is measured only when an independent stock price is available (`packages/core/src/decide.ts`, SPEC §5.5 v2).
+- Ask:
+  - Please include the `statusInfo` value lists and the per-issuer differences (bStocks: marketStatus null, TRADING even in off-hours) in the Web3 API RWA docs.
+  - Please unify the spelling (`pause` and `paused`) into one.
+  - Please provide an independent underlying-asset price (equivalent to `stockInfo.price`) in the Web3 API as well.
+- Evidence: `fixtures/rwa/getRwaTokenList-20260924-1.json` (statusInfo distribution as above); the skill file above.
 
-## 2026-09-26 17:59 UTC — [web3api][docs][error] 오류 표와 실제 응답 대조: 메시지 두 건이 다르고 RWA Data에는 오류 코드 페이지가 없음
-- 목표: 에러 분류표 v1(M1-07, `packages/binance/src/taxonomy.ts`)을 모듈별 공식 오류 표와 대조. 이 세션은 API를 호출하지 않았다. 실측 픽스처만 대조했다.
-- 기대: 표의 Message 열과 실제 `msg`가 같다. 모든 모듈에 오류 코드 페이지가 있다.
-- 실제:
-  - Trading `40401`: 표(L3051)는 `Quote expired. Please request a new quote`, 실제 응답은 `quoteId=a1dbc1ee… not found or expired`다(`fixtures/trading/buildSwapTransaction-20260924-2.json`).
-  - `42900`(HTTP 429): 표(L1901·L2048·L3013)는 `Request rate limit exceeded. Please refer to the API docs and reduce request frequency`, 실제는 `Rate limit exceeded`다. `data`는 문서 형식의 `null`이 아니라 `""`다(`fixtures/trading/getAggregatedQuote-20260924-12.json`).
-  - 제품별 오류 코드 페이지는 WebSocket(L1406)·Wallet(L1837)·Transaction(L1983)·Trading(L2947)·Market(L3351)·DeFi(L4221)·B402(L5054) 7개다. RWA Data(`/api/v1/dex/market/rwa/...`)의 페이지는 없다.
-  - `40304`(컴플라이언스)는 DeFi 표(L4304)에만 있다. Trading·Transaction·Market·Wallet 표의 IP 컴플라이언스 코드는 40301–40303이다.
-  - 표와 우리 분류의 대조: 5개 페이지(Trading·Transaction·DeFi·Market·Wallet)의 코드 전부가 분류되어 있다. 우리가 모듈 전용으로 분류한 코드도 전부 해당 페이지에 있다(`taxonomy.test.ts` "code map vs the official error tables").
-- 문서: § Error Codes (Trading API) › Quote, Rate Limit Errors; § Error Codes (DeFi API) › Compliance Errors.
-- 잃은 시간: [HUMAN]
-- 우회: 분기는 `msg`가 아니라 (모듈, 코드)로 한다. 40375의 최소액만 `msg`에서 읽는다(`venueMinimumUsd`). RWA 호출의 오류는 게이트웨이 공통 코드로 분류한다. 표에 없는 코드나 봉투 아닌 응답은 첫 관측 때 `dx_events`에 남고 알림이 간다(`pnpm dx:events`).
-- 요청: 표의 Message를 실제 응답 문구와 맞추기. RWA Data 오류 코드 페이지 추가. 40304가 어느 모듈에서 오는지 명시.
-- 증거: 위 픽스처 2개; `packages/binance/src/taxonomy.test.ts`, `packages/binance/src/replay.test.ts`.
+## 2026-09-26 17:59 UTC — [web3api][docs][error] Error tables checked against actual responses: two messages differ, and RWA Data has no error code page
+- Goal: check error taxonomy v1 (M1-07, `packages/binance/src/taxonomy.ts`) against each module's official error table. This session made no API calls. Only fixtures from live measurements were compared.
+- Expected: the table's Message column matches the actual `msg`. Every module has an error code page.
+- Actual:
+  - Trading `40401`: the table (L3051) says `Quote expired. Please request a new quote`; the actual response is `quoteId=a1dbc1ee… not found or expired` (`fixtures/trading/buildSwapTransaction-20260924-2.json`).
+  - `42900` (HTTP 429): the tables (L1901, L2048, L3013) say `Request rate limit exceeded. Please refer to the API docs and reduce request frequency`; the actual message is `Rate limit exceeded`. `data` is `""`, not `null` as in the documented format (`fixtures/trading/getAggregatedQuote-20260924-12.json`).
+  - There are 7 per-product error code pages: WebSocket (L1406), Wallet (L1837), Transaction (L1983), Trading (L2947), Market (L3351), DeFi (L4221), B402 (L5054). There is no page for RWA Data (`/api/v1/dex/market/rwa/...`).
+  - `40304` (compliance) is only in the DeFi table (L4304). The IP compliance codes in the Trading, Transaction, Market and Wallet tables are 40301–40303.
+  - Comparing the tables with our classification: every code on the 5 pages (Trading, Transaction, DeFi, Market, Wallet) is classified. Every code we classified as module-specific is also on the corresponding page (`taxonomy.test.ts` "code map vs the official error tables").
+- Docs: § Error Codes (Trading API) › Quote, Rate Limit Errors; § Error Codes (DeFi API) › Compliance Errors.
+- Time lost: [HUMAN]
+- Workaround: branch on (module, code), not on `msg`. Only the 40375 minimum amount is read from `msg` (`venueMinimumUsd`). Errors from RWA calls are classified with the gateway's common codes. A code not in the tables, or a response that is not an envelope, is recorded in `dx_events` on first sighting, and an alert goes out (`pnpm dx:events`).
+- Ask: make the tables' Message match the actual response text. Add an RWA Data error code page. State which module 40304 comes from.
+- Evidence: the 2 fixtures above; `packages/binance/src/taxonomy.test.ts`, `packages/binance/src/replay.test.ts`.

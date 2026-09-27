@@ -1,5 +1,5 @@
 /**
- * POST /api/plans/:id/run {depositUsd?} — Judge Mode "지금 사기" (SPEC §8.2): queued for the
+ * POST /api/plans/:id/run {depositUsd?} — Judge Mode "Buy now" (SPEC §8.2): queued for the
  * worker, which signs; the page polls /api/jobs/:jobId. A yield plan starts with its deposit.
  * The worker checks everything again; these checks answer at once instead of after a poll.
  */

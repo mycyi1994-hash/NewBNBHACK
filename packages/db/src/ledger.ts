@@ -84,7 +84,7 @@ export async function judgeExposureUsd(db: Db, codeHash: string): Promise<string
   return rows[0]?.used ?? '0';
 }
 
-/** What `planId` has reserved or spent on `day` (the "오늘 사용" figure). */
+/** What `planId` has reserved or spent on `day` (the "used today" figure). */
 export async function planSpendOnDay(db: Db, planId: string, day: string): Promise<string> {
   const rows = await db.execute<{ used: string }>(sql`
     select coalesce(sum(amount_usd), 0)::text as used from spend_ledger

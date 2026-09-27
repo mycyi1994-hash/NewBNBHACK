@@ -1,215 +1,215 @@
-# PLAN.md — Yieldvest 마스터 기획서
+# PLAN.md — Yieldvest master plan
 
-> **한 줄:** 원금은 USDT 예치에 그대로 두고, 이자(또는 정한 적립금)로 미국 주식 토큰을 정규장에만 자동 매수하는 에이전트.
-> **영문 태그라인:** *Interest buys the stock. Principal stays.*
-> 대회: BNB Hack: Tokenized Stocks Edition · 마감 2026-10-11 12:00 UTC (KST 21:00) · 내부 제출 목표 10/09(금)
+> **In one line:** An agent that leaves the principal in a USDT deposit and automatically buys US stock tokens with the interest (or a set contribution), only during the regular session.
+> **English tagline:** *Interest buys the stock. Principal stays.*
+> Competition: BNB Hack: Tokenized Stocks Edition · deadline 2026-10-11 12:00 UTC (KST 21:00) · internal submission target 10/09 (Fri)
 
-## 0. 이 문서를 쓴 사람들
+## 0. Who wrote this document
 
-세 명의 수석 기획자 페르소나가 각자 영역을 소유하고, §11에서 서로 반론했다.
+Three senior-planner personas each own an area, and they argued against one another in §11.
 
-| 페르소나 | 경력 | 소유 영역 | 소유 문서 |
+| Persona | Background | Owned areas | Owned documents |
 | --- | --- | --- | --- |
-| **강민서** — Product & UX 수석 | 12년, 소비자 핀테크 앱(간편투자·예적금 상품) | 사용자 정의, 흐름, 화면, 문구, 위험 고지, 데모 | PLAN §3·§5, UX_COPY, DEMO |
-| **이도현** — 시스템·거래 인프라 수석 | 15년, 거래소 체결·지갑 백엔드·리스크 엔진 | 아키텍처, 모듈 통합, 에이전트 루프, 가디언, 에러 분류, 운영 | SPEC, CLAUDE.md 공학 규칙 |
-| **박지우** — 해커톤 전략·DevRel 수석 | 10년, 다수 해커톤 심사·주최 | 채점 정합성, DX 증거 체계, 일정·컷라인, 제출, 리스크 레지스터 | JUDGING, DX_PROTOCOL, TASKS, DECISIONS |
+| **Minseo Kang** — Lead, Product & UX | 12 years, consumer fintech apps (easy investing, deposit and savings products) | User definition, flows, screens, copy, risk disclosure, demo | PLAN §3·§5, UX_COPY, DEMO |
+| **Dohyun Lee** — Lead, systems and trading infrastructure | 15 years, exchange execution, wallet backends, risk engines | Architecture, module integration, agent loop, guardian, error taxonomy, operations | SPEC, CLAUDE.md engineering rules |
+| **Jiwoo Park** — Lead, hackathon strategy and DevRel | 10 years, judged and organized many hackathons | Alignment with the scoring, DX evidence system, schedule and cut lines, submission, risk register | JUDGING, DX_PROTOCOL, TASKS, DECISIONS |
 
-읽는 순서: JUDGING → PLAN → SPEC → TASKS → DECISIONS → DX_PROTOCOL → UX_COPY → DEMO.
+Reading order: JUDGING → PLAN → SPEC → TASKS → DECISIONS → DX_PROTOCOL → UX_COPY → DEMO.
 
-## 1. 목표와 조준점
+## 1. Goals and aim
 
-- **목표:** 본상 3~5위 + 특별상 1개. 상금보다 중요한 건 "Winner spotlight"와 Kickstart 자격이다.
-- **심사 방식:** 심사위원 각자가 모든 프로젝트를 혼자 본 뒤 점수를 합산한다. 따라서 (1) 15분 안에 이해되고, (2) 10명 중 누가 봐도 같은 점수가 나오는 **객관적 증거**(실거래·수치·에러 처리)에 점수를 몰아넣는다.
-- **점수 전략:** 기술 30 + DX 25 = 55%는 실행 규율로 확보한다. 창의성 25는 "아이디어 목록에 없는 모듈 조합"으로 안전하게 높인다. UX 20은 비크립토 언어와 3분 완주로 가져간다.
-- **심사위원의 KPI:** BNB Chain과 Binance Web3 Wallet 팀이다. 그들의 지표는 "Binance 지갑 사용자가 토큰화 주식을 거래하게 만드는 것"과 "자기들 API에 대한 솔직한 피드백"이다. 우리 제품은 그들의 두 제품군(Earn/DeFi ↔ 토큰화 주식)을 잇는다. 심사위원이 "이건 우리 지갑에 넣어야겠다"고 느끼는 것이 최종 목표다.
+- **Goal:** places 3~5 in the main prizes + 1 special prize. More important than the prize money are the "Winner spotlight" and Kickstart eligibility.
+- **How judging works:** each judge works through every project alone, and then the scores are pooled. So we concentrate our points on **objective evidence** (live trades, numbers, error handling) that (1) can be understood within 15 minutes and (2) gets the same score whichever of the 10 judges looks at it.
+- **Scoring strategy:** Technical 30 + DX 25 = 55% is secured through execution discipline. Creativity 25 is raised safely with "a module combination that is not on the ideas list". UX 20 is won with non-crypto language and the 3-minute run-through.
+- **The judges' KPIs:** they are the BNB Chain and Binance Web3 Wallet teams. Their metrics are "getting Binance wallet users to trade tokenized stocks" and "honest feedback on their own APIs". Our product connects two of their product lines (Earn/DeFi ↔ tokenized stocks). The end goal is for a judge to feel "we should put this in our wallet".
 
-## 2. 왜 이것인가 — 기준 대비
+## 2. Why this — against the criteria
 
-| 기준 | 이 제품이 점수를 내는 방식 |
+| Criterion | How this product scores |
 | --- | --- |
-| 기술 30% | 한 사이클에 모듈 7개가 필연적으로 들어간다: DeFi(예치·이자·상환) → Wallet(잔액) → RWA Data(장 상태·기업행동·참조가) → Market(가격) → Trading(견적·스왑) → Transaction(시뮬레이션·브로드캐스트) → Agentic Wallet(사용자 실행). 억지로 모듈 수를 늘린 티가 나지 않는다. |
-| 창의성 25% | 공식 "Ideas to Build" 목록에 없다. 공개된 경쟁작 7곳 중 아무도 하지 않는다. "대출 프로토콜 이자가 주식이 된다"는 조합은 조직위가 말한 "안 될 것 같은데 되는 조합"이다. 여기에 토큰화 주식 고유 문제(정규장 창구, 기업행동, 토큰≠주식 배수)를 제품 안에서 다룬다. |
-| DX 25% | DeFi 콜데이터, 상환 지연, 소액 RFQ 최소주문, 정규장 대 주말 가격, 발행사별 차이를 **매주 실제로 겪는다.** 1일차부터 모든 API 호출을 계측한다. |
-| UX 20% | "이자로 주식 모으기"는 설명이 필요 없다. 첫 화면은 3분 안에 첫 주식을 사는 경험이고, 보유량은 토큰이 아니라 주식 수로 보인다. Binance 앱 QR로 시작하고 시드 문구가 없다. |
-| AW 특별상 | 사용자 실행은 오직 Agentic Wallet(`baw`)으로, 우리 Wallet Skill을 통해. 서버는 결정만 내리고 서명은 사용자 쪽에서 한다. "credible"은 한도·미리보기·영수증·정지로 증명한다. |
-| Studio 특별상 | 하우스 에이전트를 Agent Studio에 배포(ERC-8004 신원 + 런타임), b402로 리포트를 팔고 공식 Stock Analyze Agent에서 리포트를 산다. |
+| Technical 30% | One cycle necessarily uses 7 modules: DeFi (deposit, interest, redeem) → Wallet (balance) → RWA Data (market status, corporate actions, reference price) → Market (price) → Trading (quote, swap) → Transaction (simulation, broadcast) → Agentic Wallet (user execution). It does not look as if the module count was padded. |
+| Creativity 25% | It is not on the official "Ideas to Build" list. None of the 7 public competing entries does it. The combination "lending-protocol interest becomes stock" is what the organizers called "a combination that looks like it won't work, but does". On top of that, the product handles problems unique to tokenized stocks (the regular-session window, corporate actions, the token≠share multiplier). |
+| DX 25% | DeFi calldata, redeem delays, RFQ minimum orders on small sizes, regular-session vs weekend prices, and per-issuer differences are things **we actually hit every week.** Every API call is instrumented from day 1. |
+| UX 20% | "Collecting stocks with interest" needs no explanation. The first screen is the experience of buying your first stock within 3 minutes, and holdings show as a number of shares, not tokens. You start from a Binance app QR code, and there is no seed phrase. |
+| AW special prize | User execution goes only through Agentic Wallet (`baw`), via our Wallet Skill. The server only makes decisions; signing happens on the user's side. "credible" is proven with limits, previews, receipts and stop. |
+| Studio special prize | Deploy the house agent to Agent Studio (ERC-8004 identity + runtime), sell reports via b402, and buy reports from the official Stock Analyze Agent. |
 
-**버린 대안과 이유**
-- 예약주문(지정가·손절) 엔진 — Agentic Wallet에 `limit-order`가 이미 있다. 복제는 감점.
-- 가격 비교·라우팅·게이트 — 공개 경쟁작만 6팀. 창의성 0.
-- 순수 DCA — 공식 목록에 있음. 적립은 우리 제품의 선택 기능으로만.
-- 카피트레이딩 — Skills Hub에 공식 스킬이 이미 있고 규제 민감.
-- 담보대출 — Venus의 주식토큰 대출 한도 0 기록, 비크립토 사용자에게 어렵다.
+**Alternatives dropped, and why**
+- Conditional-order (limit, stop-loss) engine — Agentic Wallet already has `limit-order`. Duplicating it is a deduction.
+- Price comparison, routing, gates — 6 teams among the public competing entries alone. Creativity 0.
+- Pure DCA — on the official list. Contributions only as an optional feature of our product.
+- Copy trading — Skills Hub already has an official skill, and it is regulation-sensitive.
+- Collateralized borrowing — Venus has a recorded borrow limit of 0 for stock tokens, and it is hard for non-crypto users.
 
-## 3. 사용자 (강민서)
+## 3. Users (Minseo Kang)
 
-| 페르소나 | 상황 | 우리가 주는 것 | 안 주는 것 |
+| Persona | Situation | What we give | What we don't give |
 | --- | --- | --- | --- |
-| **P1 저축형 투자자** (30대, 미국 주식을 앱으로 소액 산 경험, 크립토 무지) | USDT를 갖게 됐지만 놀리고 있다. 주식은 사고 싶은데 타이밍이 두렵다. | "원금은 그대로, 이자만 주식" 플랜. 주식 수로 보이는 보유량. 매수마다 이유 한 줄. | 수익률 예측, 종목 추천, 레버리지 |
-| **P2 심사위원** (BNB/W3W 팀, 시간 15분) | 모든 프로젝트를 혼자 본다. 직접 완주해 보고 싶다. | Judge Mode: 코드 입력 → 3분 완주. 하우스 에이전트의 2주치 실기록. | 지갑 설치 요구, 설명이 필요한 화면 |
-| **P3 AI 비서 사용자** (Claude Code / OpenClaw + Agentic Wallet 보유) | 자기 비서에게 "이자로 주식 사줘"라고 말하고 싶다. | Wallet Skill 한 줄 설치. 서버가 결정, 비서가 `baw`로 실행. | 우리 서버에 지갑 세션 맡기기 |
+| **P1 Saver investor** (in their 30s, has bought small amounts of US stocks in an app, knows nothing about crypto) | Has come to hold USDT but leaves it idle. Wants to buy stocks but is afraid of the timing. | A "principal stays put, only the interest becomes stock" plan. Holdings shown as a number of shares. A one-line reason for every buy. | Return forecasts, stock recommendations, leverage |
+| **P2 Judge** (BNB/W3W team, 15 minutes) | Reviews every project alone. Wants to run through it personally. | Judge Mode: enter a code → 3-minute run-through. 2 weeks of the house agent's real record. | Requiring a wallet install, screens that need explaining |
+| **P3 AI assistant user** (has Claude Code / OpenClaw + Agentic Wallet) | Wants to tell their own assistant "buy me stocks with the interest". | One-line Wallet Skill install. The server decides; the assistant executes with `baw`. | Handing a wallet session to our server |
 
-## 4. 제품 범위
+## 4. Product scope
 
-### 4.1 운영 모드
-| 모드 | 누가 | 지갑 | 자율성 | 목적 |
+### 4.1 Operating modes
+| Mode | Who | Wallet | Autonomy | Purpose |
 | --- | --- | --- | --- | --- |
-| **A. 구경하기 (Watch)** | 누구나, 지갑 없음 | 하우스 지갑 | 완전 자동(5분 틱) | 실기록 증명, 첫 화면 |
-| **B. Judge Mode** | 심사 코드 보유자 | 하우스 지갑(한도 내) | 즉시 1사이클 + 7일 자동 | 3분 완주 |
-| **C. 내 AI 비서로 (Wallet Skill)** | Agentic Wallet 사용자 | 사용자 지갑 (`baw`) | 비서가 켜져 있을 때 | AW 특별상, 실제 사용자 |
-| D. 웹 지갑 연결 | — | — | — | **Stretch(기본 컷)**. 판단은 10/4 |
+| **A. Look around (Watch)** | Anyone, no wallet | House wallet | Fully automatic (5-min tick) | Proof from the real record, first screen |
+| **B. Judge Mode** | Judge code holders | House wallet (within limits) | 1 immediate cycle + 7 days automatic | 3-minute run-through |
+| **C. With my AI assistant (Wallet Skill)** | Agentic Wallet users | User's wallet (`baw`) | While the assistant is running | AW special prize, real users |
+| D. Web wallet connection | — | — | — | **Stretch (cut by default)**. Decision on 10/4 |
 
-### 4.2 플랜 모드
-- **안전 모드 (기본값):** 예치 없음. 사용자가 정한 적립금(예: 주 $5)으로만 매수. DeFi 리스크 0.
-- **이자 모드 (선택):** 원금을 Venus 코어 풀 USDT에 예치. 매수 예산 = 원금 초과분(이자) [+ 선택 적립금]. 위험 고지를 읽고 켠다.
-- 두 모드 모두: 정규장 창구 매수(기본) / 24시간 매수(옵션, 더 낮은 한도), 1회·일일 한도, 즉시 정지·전액 상환.
+### 4.2 Plan modes
+- **Safe mode (default):** No deposit. Buys only with a contribution the user sets (e.g. $5 a week). DeFi risk 0.
+- **Yield mode (optional):** Principal is deposited into Venus core pool USDT. Buy budget = the amount above principal (interest) [+ optional contribution]. Turned on after reading the risk disclosure.
+- Both modes: buying in the regular-session window (default) / 24-hour buying (option, lower limit), per-buy and daily limits, immediate stop and full redeem.
 
-### 4.3 기능 티어
-**Must (없으면 입상 불가)**
-1. 하우스 에이전트 2개 플랜(안전·이자)이 9/30부터 메인넷에서 연속 가동, 영수증 축적
-2. 결정 엔진: 창구(정규장), 예산(이자/적립), 최소주문 누적, 한도, 종목 상태(기업행동), 가격 괴리
-3. 실행: 정확 승인 → Transaction API 시뮬레이션 → 브로드캐스트 → 영수증 → 사유 한 줄
-4. 이자 모드: DeFi API 콜데이터로 예치·상환, 온체인 교환비율로 이자 계산
-5. Judge Mode 3분 완주 + 정지·전액 상환
-6. Wallet Skill v1 + 결정 API(`/next`) — 사용자 비서가 baw로 실행
-7. 가디언 v1 (일시중지·TVL·이용률·디페그·가격 괴리)
-8. 주식 수 표시(multiplier), KR/EN, 모바일, 용어 치환, 위험 고지, LIVE/STALE/UNAVAILABLE
-9. 계측: api_calls, 테이프(장외 포함), /dx 페이지, `/api/judge/smoke`
-10. README 심사위원 경로, 영상 ≤4분, DX 리포트(사람 작성)
+### 4.3 Feature tiers
+**Must (no prize without these)**
+1. The house agent's 2 plans (safe, yield) run continuously on mainnet from 9/30, accumulating receipts
+2. Decision engine: window (regular session), budget (interest/contribution), accumulating up to the minimum order, limits, stock status (corporate actions), price gap
+3. Execution: exact approval → Transaction API simulation → broadcast → receipt → one-line reason
+4. Yield mode: deposit and redeem with DeFi API calldata, interest computed from the on-chain exchange rate
+5. Judge Mode 3-minute run-through + stop and full redeem
+6. Wallet Skill v1 + decision API (`/next`) — the user's assistant executes with baw
+7. Guardian v1 (pause, TVL, utilization, depeg, price gap)
+8. Share-count display (multiplier), KR/EN, mobile, term substitution, risk disclosure, LIVE/STALE/UNAVAILABLE
+9. Instrumentation: api_calls, tape (including off-hours), /dx page, `/api/judge/smoke`
+10. README judge path, video ≤4 min, DX report (written by humans)
 
-**Should (되면 순위가 바뀜)**
-- 섹터 타깃(Magnificent 7·AI Chips·ETF·Buffett) + 후보 대체
-- Agent Studio 신원 + 런타임/MCP 등록
-- b402 유료 리포트 엔드포인트 + 공식 Stock Analyze Agent x402 호출("AI 추천" 옵션)
-- 텔레그램 알림(운영 + 사용자 선택)
+**Should (changes the ranking if done)**
+- Sector targets (Magnificent 7, AI Chips, ETF, Buffett) + candidate substitution
+- Agent Studio identity + runtime/MCP registration
+- b402 paid report endpoint + x402 calls to the official Stock Analyze Agent ("AI recommendation" option)
+- Telegram alerts (ops + user opt-in)
 
 **Stretch**
-- 모드 D(웹 지갑 연결), BNB 스테이킹 이자원, 발행사 간 최적 체결
+- Mode D (web wallet connection), BNB staking as an interest source, best execution across issuers
 
-**Cut (하지 않음)**
-- 지정가·손절 엔진, 가격 비교 대시보드, 자연어 전략 파서(우리 서버에 LLM 없음), 수익률 리더보드, 무기한 선물, 테스트넷
+**Cut (not doing)**
+- Limit and stop-loss engine, price comparison dashboard, natural-language strategy parser (no LLM on our server), returns leaderboard, perpetual futures, testnet
 
-## 5. 핵심 흐름 (강민서)
+## 5. Core flows (Minseo Kang)
 
-### 5.1 심사위원의 3분 (모드 B)
-1. 홈에서 **[심사위원 코드 입력]** → 코드 확인.
-2. **종목 고르기:** NVDA / TSLA / AAPL / MSFT / QQQ 중 하나 또는 섹터. 발행사는 자동(기본 bStocks, 없으면 Ondo). 회사 프로필과 장 상태 배지("지금 정규장 · 20:00 UTC 마감").
-3. **금액과 모드:** 안전 모드 $5 1회 (기본). 이자 모드는 토글 → 위험 고지 → $20 예치 + 이자로 매수.
-4. **미리보기:** Transaction API 시뮬레이션 결과를 사람 말로: "USDT 5.00을 내고 NVDA 약 0.021주(NVDAB 0.0198개)를 받아요. 네트워크 수수료 약 $0.02. 참조가 대비 +0.3%." 실패면 이유.
-5. **실행:** 진행 상태 → 영수증(BscScan 링크, 주식 수, 사유 한 줄).
-6. **정지:** [플랜 멈추기] → 이자 모드면 전액 상환 영수증까지.
-7. 플랜은 7일간 자동 사이클을 돌고(캡 내), 심사위원은 나중에 다시 와서 기록을 본다.
+### 5.1 The judge's 3 minutes (mode B)
+1. On the home screen, **[Enter judge code]** → the code is checked.
+2. **Pick a stock:** one of NVDA / TSLA / AAPL / MSFT / QQQ, or a sector. The issuer is chosen automatically (bStocks by default, Ondo if not available). Company profile and a market-status badge ("Regular session now · closes 20:00 UTC").
+3. **Amount and mode:** safe mode, $5 once (default). Yield mode is a toggle → risk disclosure → $20 deposit + buy with the interest.
+4. **Preview:** the Transaction API simulation result in plain words: "You pay USDT 5.00 and receive about 0.021 shares of NVDA (0.0198 NVDAB). Network fee about $0.02. +0.3% vs reference." If it fails, the reason.
+5. **Run:** progress status → receipt (BscScan link, number of shares, one-line reason).
+6. **Stop:** [Stop this plan] → in yield mode, all the way to the full-redeem receipt.
+7. The plan runs automatic cycles for 7 days (within the cap), and the judge comes back later to see the record.
 
-### 5.2 저축형 투자자의 플랜 (모드 C)
-1. Claude Code에 `npx skills add mycyi1994-hash/NewBNBHACK/skills/yieldvest` (정확한 경로는 M2-09에서 확정).
-2. "Yieldvest 시작해줘. USDT 500 맡기고 이자로 NVDA 사줘."
-3. 스킬이 우리 API로 플랜을 만들고(`POST /api/plans`), 위험 고지를 사용자에게 읽히고, `baw defi deposit`으로 예치(사용자 확인).
-4. 이후 비서가 켜질 때마다 `GET /api/plans/:id/next` → 결정("지금 $2.10 이자로 NVDAB 매수, 견적·주소·사유") → `baw market-order swap` → 결과를 `POST /report`.
-5. 세션 만료가 가까우면 스킬이 먼저 알린다(`wallet settings`의 `sessionExpireTime`).
+### 5.2 The saver investor's plan (mode C)
+1. In Claude Code: `npx skills add mycyi1994-hash/NewBNBHACK/skills/yieldvest` (the exact path is settled in M2-09).
+2. "Start Yieldvest. Put in USDT 500 and buy NVDA with the interest."
+3. The skill creates the plan through our API (`POST /api/plans`), has the user read the risk disclosure, and deposits with `baw defi deposit` (the user confirms).
+4. After that, every time the assistant starts: `GET /api/plans/:id/next` → decision ("buy NVDAB now with $2.10 of interest; quote, address, reason") → `baw market-order swap` → the result goes to `POST /report`.
+5. When the session is close to expiring, the skill warns first (`sessionExpireTime` from `wallet settings`).
 
-### 5.3 에이전트 사이클 (이도현, 상세는 SPEC §5)
+### 5.3 Agent cycle (Dohyun Lee, details in SPEC §5)
 DUE → WINDOW → BUDGET → ASSET → PRICE → (REDEEM) → QUOTE → SIMULATE → EXECUTE → CONFIRM → RECORD.
-결과는 넷 중 하나: **BOUGHT / DEFERRED(사유) / SKIPPED(사유) / FAILED(코드)**. 모든 결과에 사유 한 줄과 다음 시도 시각.
+The outcome is one of four: **BOUGHT / DEFERRED(reason) / SKIPPED(reason) / FAILED(code)**. Every outcome carries a one-line reason and the next attempt time.
 
-## 6. 아키텍처 개요 (이도현)
+## 6. Architecture overview (Dohyun Lee)
 
 ```
-[Binance Web3 API] ← packages/binance (서명·레이트리밋·계측)
+[Binance Web3 API] ← packages/binance (signing, rate limit, instrumentation)
       │ RWA · Market · Trading · Transaction · Wallet · DeFi · b402
       ▼
-packages/core (순수 규칙) ── decideCycle(), guardian(), amounts
+packages/core (pure rules) ── decideCycle(), guardian(), amounts
       ▲                 ▲
-apps/agent (5분 틱, 테이프, 가디언, 알림)     apps/web (Watch · Judge Mode · /dx · Skill API)
-      │                                            │
-   하우스 지갑 (viem 서명 → Transaction API 브로드캐스트)   Postgres (packages/db)
-                                                   │
-                                     skills/yieldvest ── 사용자 비서 ── baw (사용자 지갑)
-[BSC 메인넷] Venus vUSDT · 주식 토큰(BEP-20/BEP-677) · PancakeSwap/RFQ 유동성
-[Agent Studio] 하우스 에이전트 신원(ERC-8004) · 런타임/MCP (Should)
+apps/agent (5-min tick, tape, guardian, alerts)              apps/web (Watch · Judge Mode · /dx · Skill API)
+      │                                                        │
+   house wallet (viem signing → Transaction API broadcast)   Postgres (packages/db)
+                                                               │
+                                                       skills/yieldvest ── user's assistant ── baw (user's wallet)
+[BSC mainnet] Venus vUSDT · stock tokens (BEP-20/BEP-677) · PancakeSwap/RFQ liquidity
+[Agent Studio] house agent identity (ERC-8004) · runtime/MCP (Should)
 ```
 
-### 6.1 모듈 커버리지 (README에 그대로 실을 표)
-| 모듈 | 사용처 | 필수도 |
+### 6.1 Module coverage (table to go into the README as is)
+| Module | Used for | Requirement |
 | --- | --- | --- |
-| RWA Data API | 발행사별 토큰 목록·주소·배수, 섹터 필터, 온체인가 vs 참조가, 장 상태·다음 개장, 종목 상태(기업행동 코드), 회사 프로필 | Must |
-| Market API | 가격 배치 조회, USDT 가격(디페그 감시), 플랜 화면 캔들 | Must |
-| Trading API | 견적(가격영향·경로·벤더), 승인·스왑 콜데이터, MEV 보호 | Must |
-| Transaction API | 모든 쓰기 전 시뮬레이션, 브로드캐스트, 상태 조회 | Must |
-| Wallet API | 하우스·샌드박스 잔액·보유·이력 | Must |
-| DeFi API | Venus 정보·보안점수·APY·TVL, 포지션, 예치·상환 콜데이터 | Must(이자 모드) |
-| b402 Payments | 유료 플랜 리포트(에이전트→에이전트), 공식 Stock Analyze Agent 호출 | Should |
-| Agentic Wallet / Wallet Skills | 사용자 실행 레이어 | Must(가중치 큼) |
-| BNB Agent Studio | 하우스 에이전트 신원·런타임·MCP | Should |
-| BSC / PancakeSwap | 소액 체결 경로(Trading API 경유) | 자동 |
+| RWA Data API | Token list, addresses and multipliers per issuer, sector filter, on-chain price vs reference price, market status and next open, stock status (corporate action codes), company profile | Must |
+| Market API | Batch price lookup, USDT price (depeg watch), candles on the plan screen | Must |
+| Trading API | Quotes (price impact, route, vendor), approval and swap calldata, MEV protection | Must |
+| Transaction API | Simulation before every write, broadcast, status lookup | Must |
+| Wallet API | House and sandbox balances, holdings, history | Must |
+| DeFi API | Venus info, security score, APY, TVL, positions, deposit and redeem calldata | Must (yield mode) |
+| b402 Payments | Paid plan reports (agent→agent), calls to the official Stock Analyze Agent | Should |
+| Agentic Wallet / Wallet Skills | User execution layer | Must (heavily weighted) |
+| BNB Agent Studio | House agent identity, runtime, MCP | Should |
+| BSC / PancakeSwap | Small-order fill route (via the Trading API) | Automatic |
 
-## 7. 위험 원칙과 가디언 (이도현·강민서)
+## 7. Risk principles and the guardian (Dohyun Lee, Minseo Kang)
 
-원칙: **위험을 없애지 못하면 보이게 한다.** "원금 보장" 류 문구 금지(UX_COPY §6). 안전 모드 기본값. 이자 모드는 허용 목록 하나(Venus 코어 풀 USDT)와 원금 상한($1,000 기본).
+Principle: **if a risk cannot be removed, make it visible.** No "principal protected"-style copy (UX_COPY §6). Safe mode is the default. Yield mode has an allowlist of one (Venus core pool USDT) and a principal ceiling ($1,000 by default).
 
-| 규칙 | 데이터 | 임계 | 액션 |
+| Rule | Data | Threshold | Action |
 | --- | --- | --- | --- |
-| 프로토콜 일시중지 | Venus Comptroller 가드 플래그 / DeFi API 상태 | true | 전액 상환 → 플랜 일시정지 → 알림 |
-| TVL 급감 | DeFi API 프로토콜 TVL | 24h −30% | 전액 상환 → 일시정지 |
-| 이용률 | vUSDT cash/borrows (온체인) | > 95% | 신규 예치 중단, 경고 표시 |
-| USDT 디페그 | Market API USDT 가격 | < 0.99, 30분 지속 | 매수 중단 + 알림 (전환은 사용자 선택) |
-| 가격 괴리 | RWA 온체인가 vs 참조가 | 정규장 > 2% | 매수 보류, 사유 표시 |
-| 체결 가격영향 | Trading 견적 priceImpact | > 1% | 금액 축소, 그래도 초과면 보류 |
-| 일일·1회 한도 | 내부 | 초과 | 보류 |
-| 종목 상태 | RWA 종목 상태 코드 | PAUSED/LIMITED | 건너뜀, 섹터면 후보 대체 |
-| AW 세션 만료 | `wallet settings` | < 2h | 사용자 알림 (모드 C) |
+| Protocol paused | Venus Comptroller guard flags / DeFi API status | true | Full redeem → pause the plan → alert |
+| Sharp TVL drop | DeFi API protocol TVL | 24h −30% | Full redeem → pause |
+| Utilization | vUSDT cash/borrows (on-chain) | > 95% | Stop new deposits, show a warning |
+| USDT depeg | Market API USDT price | < 0.99, sustained for 30 min | Stop buying + alert (switching is the user's choice) |
+| Price gap | RWA on-chain price vs reference price | Regular session > 2% | Hold the buy, show the reason |
+| Fill price impact | Trading quote priceImpact | > 1% | Reduce the amount; hold if still over |
+| Daily and per-buy limits | Internal | Exceeded | Hold |
+| Stock status | RWA stock status code | PAUSED/LIMITED | Skip; for a sector, substitute a candidate |
+| AW session expiry | `wallet settings` | < 2h | Alert the user (mode C) |
 
-## 8. 일정·마일스톤·컷라인 (박지우)
+## 8. Schedule, milestones, cut lines (Jiwoo Park)
 
-오늘 2026-09-23(수). 잔여 18일. 캡처할 주말: 9/26~27, 10/3~4 (테이프는 **9/25 저녁 KST 전** 가동). 추석 연휴가 M0와 겹친다 — 인프라 세팅은 오늘 밤.
+Today is 2026-09-23 (Wed). 18 days left. Weekends to capture: 9/26~27, 10/3~4 (the tape starts **before the evening of 9/25 KST**). The Chuseok holiday overlaps M0 — infrastructure setup happens tonight.
 
-| 단계 | 기간 | 산출물 | 완료 기준 |
+| Phase | Period | Deliverables | Done when |
 | --- | --- | --- | --- |
-| **M0 접근·스파이크** | 9/23~9/25 | 등록, API 키, 도달성 결정, 클라이언트 v0, 인벤토리, 소액 견적, Venus 스파이크, baw·bag 스파이크, 테이프 가동, DX 로그 시작 | `pnpm reach` 녹색, 테이프 누적 중, DECISIONS 채워짐 |
-| **M1 세로 관통** | 9/26~9/30 | 도메인·DB, 결정 엔진, 하우스 실행 어댑터, 안전·이자 모드 실거래, 스케줄러, 에러 분류 v1 | 메인넷 영수증: 안전 1건 이상, 이자 모드 예치·상환·매수 각 1건, 하우스 플랜 2개 연속 가동 |
-| **M2 제품화** | 10/1~10/4 | Watch, Judge Mode, 정지·상환, 위험 고지, i18n, 가디언, 기업행동, Skill API, Wallet Skill v1, Agent Studio, /dx, smoke | 심사위원 3분 완주 리허설 통과, 스킬로 실제 매수 1건 |
-| **M3 완성도** | 10/5~10/7 | b402/x402, 모바일 QA, README 경로, 영상 촬영, 보안·장애 리허설 | 자가채점 전 항목 ≥ 8 |
-| **M4 제출** | 10/8~10/9 | DX 리포트(사람), 영상 편집, 폼 제출, 프리즈 | 제출 완료, 운영 모드 진입 |
-| 버퍼 | 10/10~10/11 | 핫픽스만 | |
-| 심사 | 10/12~10/23 | 매일 smoke, 로그 | 다운타임 0 |
+| **M0 Access and spikes** | 9/23~9/25 | Registration, API key, reachability decision, client v0, inventory, small-size quotes, Venus spike, baw and bag spikes, tape running, DX log started | `pnpm reach` green, tape accumulating, DECISIONS filled in |
+| **M1 Vertical slice** | 9/26~9/30 | Domain and DB, decision engine, house execution adapter, live trades in safe and yield modes, scheduler, error taxonomy v1 | Mainnet receipts: at least 1 in safe mode, 1 each for yield-mode deposit, redeem and buy; 2 house plans running continuously |
+| **M2 Productization** | 10/1~10/4 | Watch, Judge Mode, stop and redeem, risk disclosure, i18n, guardian, corporate actions, Skill API, Wallet Skill v1, Agent Studio, /dx, smoke | Judge 3-minute run-through rehearsal passes, 1 real buy through the skill |
+| **M3 Polish** | 10/5~10/7 | b402/x402, mobile QA, README path, video shoot, security and incident rehearsal | Self-assessment ≥ 8 on every item |
+| **M4 Submission** | 10/8~10/9 | DX report (humans), video edit, form submission, freeze | Submitted, operations mode entered |
+| Buffer | 10/10~10/11 | Hotfixes only | |
+| Judging | 10/12~10/23 | Daily smoke, logs | Downtime 0 |
 
-**컷라인 (10/4 저녁 판단, 뒤에 있을수록 먼저 자른다):** 모드 D → BNB 스테이킹 → 발행사 간 최적 체결 → 텔레그램 사용자 알림 → x402 공식 에이전트 호출 → b402 유료 엔드포인트 → 섹터 타깃 → Agent Studio 런타임(신원 등록은 유지).
+**Cut line (decision on the evening of 10/4; the later an item appears, the sooner it is cut):** mode D → BNB staking → best execution across issuers → Telegram user alerts → x402 calls to the official agent → b402 paid endpoint → sector targets → Agent Studio runtime (identity registration stays).
 
-**절대 컷 금지:** 하우스 에이전트 라이브 루프와 영수증, Judge Mode, 안전·이자 두 모드, 에러 처리와 3상태 표시, KR/EN 문구(9/27 D-26: 사람 결정으로 화면은 영어만), 계측·테이프·/dx, README 경로, 영상, 사람이 쓴 DX 리포트.
+**Never cut:** the house agent's live loop and receipts, Judge Mode, both modes (safe and yield), error handling and the 3-state display, KR/EN copy (9/27 D-26: by human decision the screens are English only), instrumentation, tape and /dx, the README path, the video, the human-written DX report.
 
-## 9. 제출물 매핑
-JUDGING §6 체크리스트를 따른다. README 첫 화면 구성: 한 문장 → 라이브 링크 → 영상 → Judge Mode 안내 → 하우스 영수증 표 → 모듈 매트릭스 → DX 리포트 링크 → 실행 방법 → 위험 고지.
+## 9. Submission mapping
+Follows the JUDGING §6 checklist. README first-screen layout: one sentence → live link → video → Judge Mode guide → house receipts table → module matrix → DX report link → how to run → risk disclosure.
 
-## 10. 리스크 레지스터 (박지우)
+## 10. Risk register (Jiwoo Park)
 
-| # | 리스크 | 징후 | 대응 | 담당 |
+| # | Risk | Signal | Response | Owner |
 | --- | --- | --- | --- | --- |
-| R1 | 한국 회선에서 Web3 API 지역 차단(40304) | M0-04 reach 실패 | 서버 리전 프랑크푸르트 고정, 개발은 서버 경유 | 이도현 |
-| R2 | 한국 거주자 bStocks 거래 제한 | 텔레그램 답변 / 견적 거부 | 기본 발행사를 Ondo로 전환, 문구 수정 | 박지우 |
-| R3 | 소액 주문 최소금액에 걸림 | $1~$5 견적 거부 | MIN_BUY_USD 상향, 누적 매수, AMM 경로 확인 | 이도현 |
-| R4 | 이자가 작아 체결 드묾 | 하우스 이자 모드 주 1회 미만 | 하우스 원금 상향, 적립 병행, 정직한 수치 표시 | 강민서 |
-| R5 | AW 세션 48h 상한으로 모드 C 무인 불가 | `wallet settings` | 스킬이 사전 알림, 하우스는 자체 지갑, DX 리포트 재설계 제안 1순위 | 이도현 |
-| R6 | Agent Studio 런타임이 우리 워커를 못 돌림 | bag 스파이크 | 신원 등록만, 런타임은 자체 | 이도현 |
-| R7 | DeFi 리스크 질문에 답 못 함 | 심사 질문 | 안전 모드 기본, 가디언, 고지 화면 | 강민서 |
-| R8 | 심사 중 다운 | smoke 실패 | 업타임 모니터, 알림, 런북, 10/9 이후 배포 금지 | 박지우 |
-| R9 | DX 리포트를 마지막에 씀 | 10/4 초안 없음 | 일요일 초안 의무(9/27, 10/4) | 박지우 |
-| R10 | 범위 팽창 | 컷라인 밖 작업 | CLAUDE.md 규칙 11, 주간 채점 | 박지우 |
+| R1 | Web3 API region block (40304) on a Korean network connection | M0-04 reach fails | Pin the server region to Frankfurt; develop through the server | Dohyun Lee |
+| R2 | bStocks trading restricted for Korean residents | Telegram answer / quote refused | Switch the default issuer to Ondo, revise the copy | Jiwoo Park |
+| R3 | Small orders hit the minimum amount | $1~$5 quotes refused | Raise MIN_BUY_USD, accumulate buys, check the AMM route | Dohyun Lee |
+| R4 | Interest is small, so fills are rare | House yield mode fills less than once a week | Raise house principal, add contributions alongside, show honest numbers | Minseo Kang |
+| R5 | The 48h AW session ceiling makes unattended mode C impossible | `wallet settings` | Skill warns in advance, the house uses its own wallet, the #1 redesign suggestion in the DX report | Dohyun Lee |
+| R6 | Agent Studio runtime can't run our worker | bag spike | Identity registration only; our own runtime | Dohyun Lee |
+| R7 | We can't answer DeFi risk questions | Judging questions | Safe mode by default, guardian, disclosure screen | Minseo Kang |
+| R8 | Down during judging | smoke fails | Uptime monitor, alerts, runbook, no deploys after 10/9 | Jiwoo Park |
+| R9 | DX report written at the last minute | No draft by 10/4 | Mandatory Sunday drafts (9/27, 10/4) | Jiwoo Park |
+| R10 | Scope creep | Work outside the cut line | CLAUDE.md rule 11, weekly scoring | Jiwoo Park |
 
-## 11. 3인 검토 회의록 (반론과 결정)
+## 11. 3-person review minutes (objections and decisions)
 
-| # | 제기 | 반론 내용 | 결정 |
+| # | Raised by | Objection | Decision |
 | --- | --- | --- | --- |
-| 1 | 강민서 | "이자 모드를 첫 화면에 두면 비크립토 사용자는 '예치'에서 이탈한다." | 첫 화면은 3분 안에 첫 주식 사기(안전 모드). 이자 모드는 두 번째 화면의 토글. 창의성은 하우스 기록과 README에서 증명. |
-| 2 | 이도현 | "웹 서버가 사용자 Agentic Wallet 세션을 보관하는 순간 우리는 커스터디언이고, 공식 스킬의 자격증명 정책에도 어긋난다." | 모드 C는 사용자 기기의 비서가 baw로 실행. 서버는 결정 API만. 서버는 어떤 사용자 키·세션도 저장하지 않는다(SPEC §14). |
-| 3 | 박지우 | "DX 리포트를 마지막 주에 쓰면 25%가 날아간다. 그리고 AI가 쓰면 0점." | 1일차부터 api_calls 계측 + dx/LOG.md 의무. 일요일마다 사람이 초안. 에이전트는 표와 수치만 생성. |
-| 4 | 이도현 | "이자만으로 소액 상환·매수를 반복하면 가스와 최소주문에 걸린다." | 예산 < MIN_BUY_USD면 누적(SKIPPED: below_min). 기본 주기는 주 1회. 적립 병행 옵션. M0-06에서 최소금액 실측. |
-| 5 | 강민서 | "'이자로 주식'은 $1,000에 월 $4다. 장난감으로 보일 수 있다." | 숫자를 정직하게 보여주고 부풀리지 않는다. 가치는 '원금을 건드리지 않는 습관'이다. 하우스 원금은 크게, 적립 병행으로 체결 빈도 확보. |
-| 6 | 박지우 | "Agent Studio 런타임 제약을 모른 채 계획하면 M2에서 터진다." | M0-10 스파이크로 go/no-go. no-go면 신원 등록만 Should로 유지. |
-| 7 | 이도현 | "Transaction API 브로드캐스트가 불안정하면?" | 브로드캐스트는 Transaction API 우선, RPC 폴백. 어느 경로든 계측·표시. 시뮬레이션은 항상 Transaction API. |
-| 8 | 강민서 | "위험 고지가 길면 안 읽는다." | 한 화면 5줄 + '자세히'. 문구는 UX_COPY §5 고정. "원금 보장"류 금지어 목록. |
-| 9 | 박지우 | "일본 리전 서버는 제한 지역 위반 소지." | 서버 리전 프랑크푸르트(예비: 서울 Vercel icn1이 도달되면 웹만). 암스테르담·런던·도쿄·싱가포르 금지. |
-| 10 | 이도현 | "LLM으로 자연어 플랜을 파싱하면 판단 경로에 모델이 들어간다." | 우리 서버에는 LLM 없음. 자연어는 사용자의 비서(모드 C)가 담당하고 우리 API는 구조화 입력만 받는다. |
-| 11 | 강민서 | "주식 토큰 주소를 코드에 박으면 발행사 변경 시 깨지고 심사위원이 하드코딩으로 본다." | 인스트루먼트 레지스트리는 RWA Data API에서 생성하고 온체인 `symbol/decimals`로 검증. 코드에 주소 상수 금지(스테이블·Venus만 예외, 검증 후). |
-| 12 | 박지우 | "심사위원이 주말에 볼 수도 있다. 그때 '장 마감이라 대기'만 보이면 심심하다." | 주말에는 하우스 기록·테이프 차트(장외 괴리)·Judge Mode 안전 모드의 24시간 옵션(낮은 한도, 고지 후)을 보여준다. |
+| 1 | Minseo Kang | "If yield mode is on the first screen, non-crypto users drop off at 'deposit'." | The first screen is buying a first stock within 3 minutes (safe mode). Yield mode is a toggle on the second screen. Creativity is proven in the house record and the README. |
+| 2 | Dohyun Lee | "The moment the web server holds a user's Agentic Wallet session, we are a custodian, and it also goes against the official skill's credential policy." | In mode C, the assistant on the user's device executes with baw. The server offers only the decision API. The server stores no user key or session of any kind (SPEC §14). |
+| 3 | Jiwoo Park | "If we write the DX report in the last week, the 25% is gone. And if AI writes it, 0 points." | api_calls instrumentation + mandatory dx/LOG.md from day 1. A human drafts every Sunday. The agent generates only tables and numbers. |
+| 4 | Dohyun Lee | "Repeating small redeems and buys on interest alone runs into gas and minimum orders." | If budget < MIN_BUY_USD, accumulate (SKIPPED: below_min). The default cadence is once a week. Option to add contributions alongside. Measure the minimum amount live in M0-06. |
+| 5 | Minseo Kang | "'Stocks with interest' is $4 a month on $1,000. It may look like a toy." | Show the numbers honestly and do not inflate them. The value is 'a habit that never touches the principal'. Keep the house principal large, and add contributions alongside to keep fills frequent. |
+| 6 | Jiwoo Park | "If we plan without knowing the Agent Studio runtime's constraints, it blows up in M2." | go/no-go through the M0-10 spike. If no-go, keep only identity registration, as a Should. |
+| 7 | Dohyun Lee | "What if Transaction API broadcast is unstable?" | Broadcast through the Transaction API first, RPC as the fallback. Either path is instrumented and shown. Simulation always goes through the Transaction API. |
+| 8 | Minseo Kang | "If the risk disclosure is long, nobody reads it." | 5 lines on one screen + 'Details'. The copy is fixed in UX_COPY §5. A banned-words list for "principal protected" and the like. |
+| 9 | Jiwoo Park | "A server in a Japan region could violate the restricted-regions rule." | Server region Frankfurt (backup: Seoul Vercel icn1, web only, if it is reachable). Amsterdam, London, Tokyo and Singapore are banned. |
+| 10 | Dohyun Lee | "If we parse natural-language plans with an LLM, a model enters the decision path." | No LLM on our server. Natural language is handled by the user's assistant (mode C), and our API accepts only structured input. |
+| 11 | Minseo Kang | "If we bake stock token addresses into the code, it breaks when an issuer changes, and judges will see it as hardcoding." | The instrument registry is generated from the RWA Data API and verified with the on-chain `symbol/decimals`. No address constants in code (only stables and Venus are exceptions, after verification). |
+| 12 | Jiwoo Park | "Judges may look on a weekend. If all they see then is 'market closed, waiting', it's dull." | On weekends, show the house record, the tape chart (off-hours gap), and the 24-hour option of Judge Mode safe mode (lower limit, after the disclosure). |
 
-## 12. 오픈 질문
-→ `docs/DECISIONS.md` §2. M0에서 전부 닫는다.
+## 12. Open questions
+→ `docs/DECISIONS.md` §2. All of them are closed in M0.

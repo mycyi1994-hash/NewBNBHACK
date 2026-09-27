@@ -96,7 +96,7 @@ export async function processJob(
     case 'run': {
       const plan = await getPlan(deps.db, job.planId);
       if (!plan) throw new PublicError(`plan ${job.planId} not found`);
-      // A yield plan starts with its principal (Judge Mode "이자로 사기").
+      // A yield plan starts with its principal (Judge Mode "Buy with interest").
       if (plan.mode === 'yield' && usdText(plan.principalUsd) === '0') {
         const depositUsd = (job.payload as { depositUsd?: unknown }).depositUsd;
         if (typeof depositUsd !== 'string')

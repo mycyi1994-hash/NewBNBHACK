@@ -1,13 +1,13 @@
 /**
  * pnpm copy:gen — writes apps/web/lib/i18n/copy.ts from docs/UX_COPY.md.
- * pnpm lint:copy — fails when copy.ts is out of date with the document, when a KR/EN pair names
- * different placeholders, or when a banned word (UX_COPY §6) appears in the copy, the web source
- * or the Wallet Skill (TASKS M2-04: 금지어 0건).
+ * pnpm lint:copy — fails when copy.ts is out of date with the document, when a banned word
+ * (UX_COPY §6) appears in the copy, the web source or the Wallet Skill (TASKS M2-04: zero banned
+ * words), or when Korean appears in the web source or the Wallet Skill (English only, D-26/D-27).
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { format } from 'prettier';
-import { parseUxCopy, placeholders, type UxCopy } from '../lib/i18n/ux-copy';
+import { parseUxCopy, type UxCopy } from '../lib/i18n/ux-copy';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const DOC = path.join(ROOT, 'docs', 'UX_COPY.md');
@@ -25,15 +25,12 @@ export async function render(copy: UxCopy): Promise<string> {
  * Keys from §7 are agent drafts until a person confirms them in the document.
  */
 export const COPY = {
-  ko: {
-${body(copy.ko)}
-  },
   en: {
 ${body(copy.en)}
   },
 } as const;
 
-export type CopyKey = keyof typeof COPY.ko;
+export type CopyKey = keyof typeof COPY.en;
 `;
   return format(source, {
     parser: 'typescript',
@@ -52,21 +49,17 @@ function files(dir: string): string[] {
   });
 }
 
+const HANGUL = /\p{Script=Hangul}/u;
+
 export function lintCopy(copy: UxCopy): string[] {
   const problems: string[] = [];
-  for (const key of Object.keys(copy.ko)) {
-    const ko = placeholders(copy.ko[key] ?? '').join();
-    const en = placeholders(copy.en[key] ?? '').join();
-    if (ko !== en) problems.push(`${key}: KR names {${ko}} but EN names {${en}}`);
-  }
   const words = copy.banned.map((w) => w.toLowerCase());
   const check = (where: string, text: string) => {
     const lower = text.toLowerCase();
     for (const word of words) if (lower.includes(word)) problems.push(`${where}: banned "${word}"`);
+    if (HANGUL.test(text)) problems.push(`${where}: not English (D-26)`);
   };
-  for (const lang of ['ko', 'en'] as const) {
-    for (const [key, value] of Object.entries(copy[lang])) check(`copy ${lang} ${key}`, value);
-  }
+  for (const [key, value] of Object.entries(copy.en)) check(`copy ${key}`, value);
   for (const file of SCANNED.flatMap((dir) => files(path.join(ROOT, dir)))) {
     if (file === OUT) continue;
     readFileSync(file, 'utf8')
@@ -82,7 +75,7 @@ if (command === 'gen' || command === 'lint') {
   const generated = await render(copy);
   if (command === 'gen') {
     writeFileSync(OUT, generated);
-    console.log(`copy:gen — ${Object.keys(copy.ko).length} keys → ${path.relative(ROOT, OUT)}`);
+    console.log(`copy:gen — ${Object.keys(copy.en).length} keys → ${path.relative(ROOT, OUT)}`);
   } else {
     const problems = lintCopy(copy);
     const current = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
@@ -90,7 +83,7 @@ if (command === 'gen' || command === 'lint') {
       problems.unshift(`${path.relative(ROOT, OUT)} is out of date: run pnpm copy:gen`);
     for (const problem of problems) console.log(`lint:copy — ${problem}`);
     console.log(
-      `lint:copy — ${Object.keys(copy.ko).length} keys, ${copy.banned.length} banned words, ${problems.length} problems`,
+      `lint:copy — ${Object.keys(copy.en).length} keys, ${copy.banned.length} banned words, ${problems.length} problems`,
     );
     if (problems.length > 0) process.exitCode = 1;
   }

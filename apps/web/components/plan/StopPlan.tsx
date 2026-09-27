@@ -1,6 +1,6 @@
 'use client';
 /**
- * "플랜 멈추기" for the plan's owner (M2-03): asks first, queues the stop for the worker (which
+ * "Stop this plan" for the plan's owner (M2-03): asks first, queues the stop for the worker (which
  * redeems a yield plan's position), polls the job and refreshes the page with the result.
  */
 import { useRouter } from 'next/navigation';

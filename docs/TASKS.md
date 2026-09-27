@@ -1,393 +1,393 @@
-# TASKS.md — 티켓 백로그
+# TASKS.md — Ticket backlog
 
-작성: 박지우. 실행자: Opus 5.5 (엔지니어). 사람 담당 항목은 **[HUMAN]**.
-규칙: 위에서 아래로. 한 번에 하나. 완료 시 체크박스 + 증거(명령 출력, tx 해시, 픽스처 경로, 스크린샷 경로). 기준 열은 JUDGING §3의 어느 행에 점수를 내는지.
+Author: Jiwoo Park. Implementer: Opus 5.5 (engineer). Items owned by a human are marked **[HUMAN]**.
+Rules: top to bottom. One at a time. When done: checkbox + evidence (command output, tx hash, fixture path, screenshot path). The criterion column says which row of JUDGING §3 the ticket scores in.
 
-상태 표기: `[ ]` 대기 · `[~]` 진행 · `[x]` 완료 · `[-]` 컷
+Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 
 ---
 
-## M0 접근·스파이크 (9/23 ~ 9/25) — 목표: 불확실성 제거, 계측 시작
+## M0 Access and spikes (9/23 ~ 9/25) — Goal: remove uncertainty, start instrumentation
 
-### M0-00 [HUMAN] 등록·계정·자금
-- [ ] 참가 등록 폼 제출(무료 API·레이트리밋 상향)
-- [ ] 빌더 텔레그램 가입 후 질문 3개 게시: (a) 한국 거주자의 bStocks 거래 가능 여부 (b) `limit-order`·`market-order swap`의 RWA 토큰 지원 (c) 소액(≤$5) 주문 최소금액과 RFQ/AMM 경로
-- [ ] Web3 API 키 신청(개발자 포털). **키를 연 시각을 기록**(온보딩 측정 시작점)
-- [ ] Binance 앱에서 Agentic Wallet 생성, 소액 USDT·BNB 입금
-- [ ] 계정: Vercel, Neon(프랑크푸르트), Fly 또는 Render, 업타임 모니터, 텔레그램 봇
-- [ ] 하우스 지갑 예산 ≤ $300 (USDT $250 + BNB 가스 $10 상당) 준비
+### M0-00 [HUMAN] Registration, accounts, funds
+- [ ] Submit the participant registration form (free API, higher rate limit)
+- [ ] Join the builder Telegram and post 3 questions: (a) whether residents of Korea can trade bStocks (b) RWA token support in `limit-order` and `market-order swap` (c) the minimum order amount for small (≤$5) orders and the RFQ/AMM route
+- [ ] Apply for a Web3 API key (developer portal). **Record the time the key was opened** (the start point of the onboarding measurement)
+- [ ] Create an Agentic Wallet in the Binance app, deposit a small amount of USDT and BNB
+- [ ] Accounts: Vercel, Neon (Frankfurt), Fly or Render, uptime monitor, Telegram bot
+- [ ] Prepare a house wallet budget ≤ $300 (USDT $250 + $10 worth of BNB for gas)
 
-### M0-01 레포 부트스트랩 · 기준: 기술
+### M0-01 Repo bootstrap · Criterion: Technical
 - [x] pnpm workspace, TS strict, eslint/prettier, vitest, `packages/{core,binance,chain,db,config}`, `apps/{web,agent}`, `skills/yieldvest`, `scripts/`, `fixtures/`, `dx/`
-  - 증거: `pnpm-workspace.yaml`(apps/*, packages/*, scripts), `tsconfig.base.json`(strict + noUncheckedIndexedAccess), `eslint.config.mjs`(type-aware), `.prettierrc.json`, `vitest.config.ts`(패키지별 project). Node 22, TS 5.9.3, ESLint 10.11, Vitest 5.0.1, Next.js 16.3.6(App Router, Tailwind 4) — `pnpm --filter @yieldvest/web build` 성공(`○ /` static).
-- [x] GitHub Actions: typecheck·lint·test
-  - 증거: `.github/workflows/ci.yml` — `pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm lint` → `pnpm test`, api_calls 통합 테스트용 일회용 Postgres 16 서비스. 시크릿 없음.
-- [x] `.env.example` 반영, `packages/config` zod 검증, 캡 상수
-  - 증거: `packages/config/src/index.ts`(18개 변수 전부 zod, 캡 동결·상호 검증, live 모드 필수값, 비밀값 미노출). 테스트 `validates exactly the variables declared in .env.example`, `no source file outside packages/config mentions a cap variable`(캡은 config에서만 읽음) 통과. ESLint `no-restricted-properties`가 config 밖 `process.env` 금지.
-- 수용: 클린 클론에서 `pnpm i && pnpm typecheck && pnpm lint && pnpm test` 녹색 — **확인**(2026-09-23 18:27 UTC, `git clone` 새 사본, `--frozen-lockfile`): install `Done in 2.1s using pnpm v10.33.0` · typecheck `scripts typecheck: Done` · lint `All matched files use Prettier code style!` · test `Tests 82 passed | 1 skipped (83)`(DB 없을 때), 테스트 DB를 주면 `Tests 83 passed (83)`. **CI 녹색**: GitHub Actions `ci` run #2 (https://github.com/mycyi1994-hash/NewBNBHACK/actions/runs/35902818616, 커밋 `03cc5d7`, 2026-09-23 18:30 UTC) — install·typecheck·lint·test 모두 success, `Test Files 9 passed (9)` · `Tests 83 passed (83)`(Postgres 서비스로 `@yieldvest/db` 포함). run #1은 새 푸시로 취소됨(concurrency).
+  - Evidence: `pnpm-workspace.yaml` (apps/*, packages/*, scripts), `tsconfig.base.json` (strict + noUncheckedIndexedAccess), `eslint.config.mjs` (type-aware), `.prettierrc.json`, `vitest.config.ts` (a project per package). Node 22, TS 5.9.3, ESLint 10.11, Vitest 5.0.1, Next.js 16.3.6 (App Router, Tailwind 4) — `pnpm --filter @yieldvest/web build` succeeded (`○ /` static).
+- [x] GitHub Actions: typecheck, lint, test
+  - Evidence: `.github/workflows/ci.yml` — `pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm lint` → `pnpm test`, with a throwaway Postgres 16 service for the api_calls integration tests. No secrets.
+- [x] `.env.example` applied, `packages/config` zod validation, cap constants
+  - Evidence: `packages/config/src/index.ts` (all 18 variables in zod, caps frozen and cross-validated, required values in live mode, secrets never exposed). Tests `validates exactly the variables declared in .env.example` and `no source file outside packages/config mentions a cap variable` (caps are read only from config) pass. ESLint `no-restricted-properties` bans `process.env` outside config.
+- Acceptance: `pnpm i && pnpm typecheck && pnpm lint && pnpm test` green on a clean clone — **confirmed** (2026-09-23 18:27 UTC, fresh `git clone` copy, `--frozen-lockfile`): install `Done in 2.1s using pnpm v10.33.0` · typecheck `scripts typecheck: Done` · lint `All matched files use Prettier code style!` · test `Tests 82 passed | 1 skipped (83)` (without a DB), and with a test DB `Tests 83 passed (83)`. **CI green**: GitHub Actions `ci` run #2 (https://github.com/mycyi1994-hash/NewBNBHACK/actions/runs/35902818616, commit `03cc5d7`, 2026-09-23 18:30 UTC) — install, typecheck, lint and test all success, `Test Files 9 passed (9)` · `Tests 83 passed (83)` (including `@yieldvest/db` through the Postgres service). run #1 was canceled by a new push (concurrency).
 
-### M0-02 문서 수집 · 기준: DX
-- [x] `scripts/fetch-docs.sh` 실행 → `docs/vendor/llms.txt`, `llms-full.txt`(gitignore), Skills Hub 얕은 클론
-  - 증거: `bash scripts/fetch-docs.sh` 성공 — `143 llms.txt`, `8416 llms-full.txt`, skills-hub `9960c67`. 문서 호스트가 curl에 HTTP 202 WAF 챌린지(빈 본문)를 줘서 스크립트가 검증 후 헤드리스 Chromium으로 폴백(`scripts/fetch-docs-browser.mjs`, dx/LOG.md 17:44).
-- [x] `@binance-web3/wallet` devDependency 설치, 서명·경로 소스 위치를 `docs/vendor/ENDPOINTS.md`에 정리(커밋)
-  - 증거: `packages/binance/package.json` devDependency `@binance-web3/wallet` 12.3.0(서명은 `@binance-web3/common` 1.1.0 `Web3RequestSigner.signWeb3`). ENDPOINTS.md의 표는 `pnpm endpoints`(`scripts/gen-endpoints.ts`)가 llms-full.txt API Reference와 커넥터를 operationId로 조인해 생성: `65 doc operations, 65 connector operations, 4 anomalies`, 메서드·경로 불일치 0.
-- [x] SPEC §3.1의 ⚠️VERIFY 항목을 문서 기준으로 1차 확인 → DECISIONS 기록
-  - 증거: `docs/DECISIONS.md` §2.1 V-01~V-12(base URL, 서명 문자열, 헤더명, 엔벨로프, 레이트리밋, 견적 유효시간 30초 등), Q-01/03/04/05/06/10/11/13/14 결과 칸, 새 질문 Q-15(RFQ는 브로드캐스트가 아님)·Q-16(DeFi APPROVE 무제한). 문서로 못 닫은 항목은 "미확인: 이유"(V-09 가격 배치 body, Q-10 상향치, Q-13 ABI).
-- 수용: ENDPOINTS.md에 모듈별 경로·필수 파라미터·응답 필드 표 — **확인**: General Data, Address Portfolio, RWA Data, Trading API, Transaction API, Wallet API, Defi Data, Defi Transaction, B402 Payments 표 + §1 Authentication, 각 행에 llms-full.txt 섹션 제목·줄 번호 출처.
+### M0-02 Docs collection · Criterion: DX
+- [x] Run `scripts/fetch-docs.sh` → `docs/vendor/llms.txt`, `llms-full.txt` (gitignore), Skills Hub shallow clone
+  - Evidence: `bash scripts/fetch-docs.sh` succeeded — `143 llms.txt`, `8416 llms-full.txt`, skills-hub `9960c67`. The docs host answers curl with an HTTP 202 WAF challenge (empty body), so the script validates the response and falls back to headless Chromium (`scripts/fetch-docs-browser.mjs`, dx/LOG.md 17:44).
+- [x] Install the `@binance-web3/wallet` devDependency, write up where the signing and path source lives in `docs/vendor/ENDPOINTS.md` (committed)
+  - Evidence: `packages/binance/package.json` devDependency `@binance-web3/wallet` 12.3.0 (signing is `@binance-web3/common` 1.1.0 `Web3RequestSigner.signWeb3`). The tables in ENDPOINTS.md are generated by `pnpm endpoints` (`scripts/gen-endpoints.ts`), which joins the llms-full.txt API Reference with the connector by operationId: `65 doc operations, 65 connector operations, 4 anomalies`, 0 method or path mismatches.
+- [x] First-pass check of the ⚠️VERIFY items in SPEC §3.1 against the docs → recorded in DECISIONS
+  - Evidence: `docs/DECISIONS.md` §2.1 V-01~V-12 (base URL, signing string, header names, envelope, rate limits, quote validity of 30 seconds, etc.), the result cells of Q-01/03/04/05/06/10/11/13/14, new questions Q-15 (RFQ is not a broadcast) and Q-16 (DeFi APPROVE unlimited). Items the docs could not close are "Unconfirmed: reason" (V-09 price batch body, Q-10 raised limit, Q-13 ABI).
+- Acceptance: a table of paths, required parameters and response fields per module in ENDPOINTS.md — **confirmed**: General Data, Address Portfolio, RWA Data, Trading API, Transaction API, Wallet API, Defi Data, Defi Transaction, B402 Payments tables + §1 Authentication, each row sourced to an llms-full.txt section title and line number.
 
-### M0-03 Web3 API 클라이언트 v0 · 기준: 기술·DX
-- [x] 서명, 엔벨로프, 엔드포인트별 토큰버킷, 429 처리, `api_calls` 기록, 픽스처 저장 (오프라인 부분, G0)
-  - 증거: `packages/binance/src/` — `sign.ts`(RFC 3986 인코딩 + 전송 경로 왕복 검사), `envelope.ts`(OCResult·B402, HTTP 200 오류, WAF/HTML 본문), `rate-limit.ts`(엔드포인트 5/s, 전역 20/s, DeFi 그룹 5/s, 429 일시정지), `client.ts`(`request(module, endpoint, opts)` 단일 진입점, 429는 `Retry-After` 후 1회 재시도, 시계 오차 감지), `telemetry.ts`(`onApiCall` 훅, 마스킹), `fixtures.ts`(`fixtures/<module>/<endpoint>-<yyyymmdd>-<n>.json`, 키·지갑 주소 가림). `packages/db` `api_calls` 테이블·마이그레이션. `pnpm test` 중 `@yieldvest/binance` 64개 통과.
-  - 로컬 Postgres 실증(샌드박스, 커밋 안 함): `pnpm db:migrate` 2회(멱등) → `pnpm reach`가 `api_calls: 1 rows recorded` → `pnpm dx:metrics --out <scratch>` `1 api_calls rows summarized`.
-- [x] `pnpm reach` 오프라인 부분(G0): 스크립트, 미서명 도달, 키가 없으면 UNAVAILABLE
-  - 증거: `scripts/reach.ts`. 출력 `unsigned  GET  /api/v1/dex/market/supported/chain  HTTP 401 code 40101 641 ms "API Key is required" — reached the gateway (expected: signature required)`(2026-09-23 18:16 UTC, 미국 소재 샌드박스, REGION_TAG unset) 다음 줄 `UNAVAILABLE: no API key (BINANCE_WEB3_API_KEY / BINANCE_WEB3_API_SECRET not set) — skipped signed probes: rwa/getRwaTokenList, market/getTokenPrice`, exit 3.
-- [x] `pnpm reach`: 서명 호출(RWA 토큰 목록, Market 가격 배치) → 지연·코드 출력
-  - 증거: 2026-09-24 00:17:25 UTC 한국 개발 PC(REGION_TAG=kr-dev) — `signed GET /api/v1/dex/market/rwa/tokens HTTP 200 code 0 186 ms — 488 RWA tokens on BSC (ondo 442, bstock 46)`, `signed POST /api/v1/dex/market/price HTTP 200 code 0 58 ms — 3 prices (SOXSon, CRWDon, PANWon)`. 가격 배치 body 형식은 DECISIONS V-09.
-- [x] 서명 벡터 테스트(커넥터와 동일 서명 생성)
-  - 증거: `packages/binance/src/signature-vectors.test.ts` 통과 — `X-OC-SIGN matches the official connector > GET RWA token list with query (getRwaTokenList)`, `> GET aggregated quote with RFQ wallet (getAggregatedQuote)`, `> GET with characters that need encoding (searchRwaToken)`, `> POST JSON body (buildDeFiDepositTransaction)`, `> POST B402 envelope body (getB402SupportedConfigurationsV2)`, `> documents a connector anomaly: GET /order/{orderId} also signs a JSON body`, `pre-hash string from the docs > matches the GET example in llms-full.txt § Authentication › 3.1 (L223)`. 커넥터의 실제 요청 경로(axios 어댑터로 캡처)와 바이트 단위 일치, 고정 벡터 5개는 `openssl dgst -sha256 -hmac`으로도 재현.
-- 수용: 첫 성공 호출의 UTC 시각·지연·시행착오가 `dx/LOG.md`에 기록(서술은 [HUMAN]) — **확인**: 첫 서명 호출 성공 2026-09-24 00:17:25 UTC, RWA 목록 186 ms·가격 배치 58 ms, 서명·시각 오류 없음(dx/LOG.md 2026-09-24 00:17 항목). 포털·키 발급 시각과 소감은 [HUMAN].
-  - api_calls 실기록(한국 개발 PC, DB 127.0.0.1:5433): 00:28:12 UTC 첫 3행, 00:37:01 재실행 `api_calls: 3 rows recorded` → `pnpm db:count` `SELECT count(*) FROM api_calls; → 6`(00:37:35 UTC). 그 전 실패는 로컬 DB `28P01`(다른 PostgreSQL이 5432 점유) — dx/LOG.md 00:28 항목.
+### M0-03 Web3 API client v0 · Criteria: Technical, DX
+- [x] Signing, envelope, per-endpoint token bucket, 429 handling, `api_calls` recording, fixture saving (offline part, G0)
+  - Evidence: `packages/binance/src/` — `sign.ts` (RFC 3986 encoding + round-trip check of the sent path), `envelope.ts` (OCResult and B402, HTTP 200 errors, WAF/HTML bodies), `rate-limit.ts` (5/s per endpoint, 20/s global, 5/s for the DeFi group, pause on 429), `client.ts` (single entry point `request(module, endpoint, opts)`, 429 retried once after `Retry-After`, clock skew detection), `telemetry.ts` (`onApiCall` hook, masking), `fixtures.ts` (`fixtures/<module>/<endpoint>-<yyyymmdd>-<n>.json`, keys and wallet addresses redacted). `packages/db` `api_calls` table and migration. In `pnpm test`, 64 `@yieldvest/binance` tests pass.
+  - Local Postgres proof (sandbox, not committed): `pnpm db:migrate` run 2 times (idempotent) → `pnpm reach` gives `api_calls: 1 rows recorded` → `pnpm dx:metrics --out <scratch>` `1 api_calls rows summarized`.
+- [x] `pnpm reach` offline part (G0): script, unsigned reachability, UNAVAILABLE when there is no key
+  - Evidence: `scripts/reach.ts`. Output `unsigned  GET  /api/v1/dex/market/supported/chain  HTTP 401 code 40101 641 ms "API Key is required" — reached the gateway (expected: signature required)` (2026-09-23 18:16 UTC, US-based sandbox, REGION_TAG unset), next line `UNAVAILABLE: no API key (BINANCE_WEB3_API_KEY / BINANCE_WEB3_API_SECRET not set) — skipped signed probes: rwa/getRwaTokenList, market/getTokenPrice`, exit 3.
+- [x] `pnpm reach`: signed calls (RWA token list, Market price batch) → print latency and code
+  - Evidence: 2026-09-24 00:17:25 UTC, Korean dev PC (REGION_TAG=kr-dev) — `signed GET /api/v1/dex/market/rwa/tokens HTTP 200 code 0 186 ms — 488 RWA tokens on BSC (ondo 442, bstock 46)`, `signed POST /api/v1/dex/market/price HTTP 200 code 0 58 ms — 3 prices (SOXSon, CRWDon, PANWon)`. The price batch body format is in DECISIONS V-09.
+- [x] Signature vector tests (produce the same signature as the connector)
+  - Evidence: `packages/binance/src/signature-vectors.test.ts` passes — `X-OC-SIGN matches the official connector > GET RWA token list with query (getRwaTokenList)`, `> GET aggregated quote with RFQ wallet (getAggregatedQuote)`, `> GET with characters that need encoding (searchRwaToken)`, `> POST JSON body (buildDeFiDepositTransaction)`, `> POST B402 envelope body (getB402SupportedConfigurationsV2)`, `> documents a connector anomaly: GET /order/{orderId} also signs a JSON body`, `pre-hash string from the docs > matches the GET example in llms-full.txt § Authentication › 3.1 (L223)`. Matches the connector's real request path (captured with an axios adapter) byte for byte; the 5 fixed vectors also reproduce with `openssl dgst -sha256 -hmac`.
+- Acceptance: the UTC time, latency and trial and error of the first successful call recorded in `dx/LOG.md` (narrative is [HUMAN]) — **confirmed**: first signed call succeeded 2026-09-24 00:17:25 UTC, RWA list 186 ms, price batch 58 ms, no signing or clock errors (dx/LOG.md 2026-09-24 00:17 entry). Portal and key issuance times and the impression are [HUMAN].
+  - Real api_calls records (Korean dev PC, DB 127.0.0.1:5433): first 3 rows at 00:28:12 UTC, rerun at 00:37:01 `api_calls: 3 rows recorded` → `pnpm db:count` `SELECT count(*) FROM api_calls; → 6` (00:37:35 UTC). The failure before that was local DB `28P01` (another PostgreSQL held 5432) — dx/LOG.md 00:28 entry.
 
-### M0-04 리전 도달성 결정 · 기준: 기술
-- [ ] `pnpm reach`를 (a) 한국 개발기 (b) 프랑크푸르트 러너 (c) Vercel icn1 함수에서 실행, 결과·코드(40304 여부) 기록
-  - (a) 한국 개발기: 2026-09-24 00:17 UTC 도달 OK(서명 200, 지역 코드 없음) — DECISIONS Q-01.
-  - (b) 프랑크푸르트 러너(Fly `fra`): 2026-09-24 02:31:42 UTC 도달 OK(미서명 401/40101 356 ms, 서명 200/0 350·253 ms, 지역 코드 없음), 병행 중 한국 PC 02:33:02 UTC도 40303 없음 — DECISIONS Q-01, D-06. (c) Vercel icn1은 웹 배포(M2) 때.
-- 수용: DECISIONS D-REGION 확정(웹 리전, 워커 리전, 개발 방식)
+### M0-04 Region reachability decision · Criterion: Technical
+- [ ] Run `pnpm reach` on (a) the Korean dev machine (b) the Frankfurt runner (c) a Vercel icn1 function, record results and codes (whether 40304 appears)
+  - (a) Korean dev machine: 2026-09-24 00:17 UTC reachability OK (signed 200, no region code) — DECISIONS Q-01.
+  - (b) Frankfurt runner (Fly `fra`): 2026-09-24 02:31:42 UTC reachability OK (unsigned 401/40101 356 ms, signed 200/0 350 and 253 ms, no region code), and the Korean PC running in parallel at 02:33:02 UTC had no 40303 either — DECISIONS Q-01, D-06. (c) Vercel icn1 at web deploy time (M2).
+- Acceptance: DECISIONS D-REGION settled (web region, worker region, development approach)
 
-### M0-05 인스트루먼트 인벤토리 · 기준: 기술·창의
-- [x] RWA Data API로 BSC(56) 토큰·플랫폼 목록 수집(폴백: 공개 bapi type 1/2/3)
-  - 증거: RWA Data API 직접 성공(폴백 불필요) — `GET /api/v1/dex/market/rwa/tokens?binanceChainId=56` 488종(ondo 442, bstock 46, BSC에 xStocks 없음). 픽스처 `fixtures/rwa/getRwaTokenList-20260924-1.json`.
-- [x] 후보 티커 NVDA, TSLA, AAPL, MSFT, QQQ 존재 발행사 확인; 온체인 `symbol/decimals` 검증; bStocks `uiMultiplier` 읽기
-  - 증거: `pnpm registry`(2026-09-24 00:45:40 UTC) — 매트릭스 NVDA·TSLA·MSFT·QQQ = bStocks+Ondo, AAPL = Ondo만. 9종 모두 `OK  … symbol … = API …; decimals 18 = API 18`, bStocks 4종 `uiMultiplier … = API tokenToShareRatio …`. 함수명은 바이트코드에서 확인(DECISIONS Q-13, dx/LOG.md 00:41).
-- [x] `instruments` 테이블 + 생성 스크립트 `pnpm registry`(코드 상수 금지)
-  - 증거: `packages/db/drizzle/0001_instruments_tape.sql`, `scripts/registry.ts` + `apps/agent/src/registry.ts`. 출력 `instruments: 9 verified rows upserted, 9 rows in table`; `pnpm db:count` → `SELECT count(*) FROM instruments; → 9`. 코드의 주소 상수는 BSC USDT(주식 아님, 기동 시 `assertUsdt`로 검증)뿐.
-- 수용: 5티커 × 발행사 매트릭스가 DECISIONS에, 픽스처 저장 — **확인**: DECISIONS §2.2, 픽스처 위.
+### M0-05 Instrument inventory · Criteria: Technical, Creativity
+- [x] Collect the BSC (56) token and platform list via the RWA Data API (fallback: public bapi type 1/2/3)
+  - Evidence: RWA Data API succeeded directly (no fallback needed) — `GET /api/v1/dex/market/rwa/tokens?binanceChainId=56` 488 tokens (ondo 442, bstock 46, no xStocks on BSC). Fixture `fixtures/rwa/getRwaTokenList-20260924-1.json`.
+- [x] Confirm which issuers exist for candidate tickers NVDA, TSLA, AAPL, MSFT, QQQ; verify on-chain `symbol/decimals`; read bStocks `uiMultiplier`
+  - Evidence: `pnpm registry` (2026-09-24 00:45:40 UTC) — matrix NVDA, TSLA, MSFT, QQQ = bStocks+Ondo, AAPL = Ondo only. All 9 tokens `OK  … symbol … = API …; decimals 18 = API 18`, the 4 bStocks tokens `uiMultiplier … = API tokenToShareRatio …`. Function names confirmed from bytecode (DECISIONS Q-13, dx/LOG.md 00:41).
+- [x] `instruments` table + generator script `pnpm registry` (no constants in code)
+  - Evidence: `packages/db/drizzle/0001_instruments_tape.sql`, `scripts/registry.ts` + `apps/agent/src/registry.ts`. Output `instruments: 9 verified rows upserted, 9 rows in table`; `pnpm db:count` → `SELECT count(*) FROM instruments; → 9`. The only address constant in code is BSC USDT (not a stock, verified at startup with `assertUsdt`).
+- Acceptance: the 5 tickers × issuers matrix in DECISIONS, fixtures saved — **confirmed**: DECISIONS §2.2, fixtures above.
 
-### M0-06 소액 견적 스파이크 · 기준: 기술·DX
-- [~] 정규장(22:30~05:00 KST)과 장외 각각, NVDAB·NVDAon(+QQQ 계열)에 $1/$5/$50 견적: expectedOut, priceImpact, route/vendor, 오류코드
-  - 장외(US overnight, 2026-09-24 00:46 UTC) 완료: `pnpm spike:quotes` 표가 dx/LOG.md 00:46 항목. NVDAB·QQQB $1/$5/$50 전부 LiquidMesh/SWAP, 영향 ≈0%; NVDAon·QQQon $1·$5 → `40375 "Minimum order amount is 5 USD."`, $50 OK(LiquidMesh/SWAP, "Rfq Halfmoon"). 픽스처 `fixtures/trading/getAggregatedQuote-20260924-*.json`. **정규장 재측정 남음**(DECISIONS Q-03) — 테이프가 $5/$50/$500을 10분마다 기록하므로 13:30 UTC 이후 행으로도 확인 가능.
-- [~] 최소 체결 가능 금액과 기본 발행사 결정
-  - 제안만(확정은 사람): D-09 `MIN_BUY_USD` $2 유지, Ondo는 > $5; D-10 기본 발행사 bStocks, Ondo 폴백. Q-02 미확인.
-- 수용: DECISIONS D-MIN-BUY, D-ISSUER 확정; 결과 표가 `dx/LOG.md`에 — 표 **확인**, 확정은 정규장 재측정·사람 결정 대기.
+### M0-06 Small-amount quote spike · Criteria: Technical, DX
+- [~] In the regular session (22:30~05:00 KST) and off-hours each, $1/$5/$50 quotes for NVDAB and NVDAon (+ the QQQ family): expectedOut, priceImpact, route/vendor, error code
+  - Off-hours (US overnight, 2026-09-24 00:46 UTC) done: the `pnpm spike:quotes` table is in the dx/LOG.md 00:46 entry. NVDAB and QQQB $1/$5/$50 all LiquidMesh/SWAP, impact ≈0%; NVDAon and QQQon $1 and $5 → `40375 "Minimum order amount is 5 USD."`, $50 OK (LiquidMesh/SWAP, "Rfq Halfmoon"). Fixtures `fixtures/trading/getAggregatedQuote-20260924-*.json`. **Regular-session remeasurement remains** (DECISIONS Q-03) — the tape records $5/$50/$500 every 10 minutes, so rows after 13:30 UTC can confirm it too.
+- [~] Decide the minimum fillable amount and the default issuer
+  - Proposal only (a human settles it): D-09 keep `MIN_BUY_USD` at $2, Ondo > $5; D-10 default issuer bStocks, Ondo fallback. Q-02 unconfirmed.
+- Acceptance: DECISIONS D-MIN-BUY and D-ISSUER settled; results table in `dx/LOG.md` — table **confirmed**, settling waits for the regular-session remeasurement and a human decision.
 
-### M0-07 Venus 스파이크 · 기준: 기술·창의
-- [x] DeFi API: Venus 프로토콜 정보(보안점수·TVL·APY), USDT 투자 항목, 포지션 조회
-  - 증거: `pnpm spike:venus`(2026-09-24 00:49 UTC) — securityScore 93.1, 프로토콜 TVL 1,353,914,642, USDT Earn `apyBps 316`, 투자 TVL 185,541,887.44, 하우스 포지션 `totalValue 0`. 픽스처 `fixtures/defi-data/{getProtocolDetail,listDeFiInvestments,getInvestmentDetail,getDeFiPositions}-20260924-*.json`.
-- [x] 온체인: vUSDT `exchangeRateStored`, `balanceOfUnderlying`, Comptroller 가드 플래그, 이용률 계산
-  - 증거: `packages/chain` `readVTokenState`(한 블록에 고정해 읽음) — vToken `0xfD58…0255`(DEPOSIT 항목 `to`; Data API `poolAddress`는 null) `symbol()`=vUSDT, `underlying()`=USDT, exchangeRateStored 265115854764046092440821898, 이용률 72.78%, actionPaused MINT/REDEEM false. `balanceOfUnderlying`은 view가 아니라서 `balanceOf × exchangeRateStored`(`underlyingFromVTokens`)로 계산. 테스트 `packages/chain/src/index.test.ts`(기록된 블록 123664140 값 재생).
-- [~] DeFi API 예치·상환 콜데이터 형태 확인 → Transaction API 시뮬레이션(하우스 지갑, 브로드캐스트 없음)
-  - 형태 확인·시뮬레이션 실행 완료: deposit = APPROVE(무제한) + DEPOSIT(`mint`), redeem = REDEEM(`redeem`), `redeemDelayDays []`. 시뮬레이션: APPROVE `SUCCESS`, DEPOSIT `FAILED "BEP20: transfer amount exceeds balance"`, REDEEM `FAILED "math error"` — 하우스 지갑 미충전(USDT 0·BNB 0, M0-11). 픽스처 `fixtures/defi-transaction/*-20260924-*.json`, `fixtures/transaction/simulateTransactions-20260924-{1,2,3}.json`. DECISIONS Q-05·Q-16.
-- [x] `packages/core/amounts.ts`: 이자 계산 함수 + 테스트
-  - 증거: `toUnits/fromUnits`, `underlyingFromVTokens`, `vTokensForUnderlying`, `utilizationBps`, `interestUnits`, `supplyApyFromRatePerBlock` — `packages/core/src/amounts.test.ts` 통과(`pnpm test`).
-- 수용: 시뮬레이션 성공 픽스처, 이자 계산 테스트 녹색 — 이자 테스트 **녹색**; 성공 픽스처는 APPROVE만(예치·상환 성공 시뮬레이션은 M0-11 충전 후 `pnpm spike:venus` 재실행).
+### M0-07 Venus spike · Criteria: Technical, Creativity
+- [x] DeFi API: Venus protocol info (security score, TVL, APY), USDT investment item, position lookup
+  - Evidence: `pnpm spike:venus` (2026-09-24 00:49 UTC) — securityScore 93.1, protocol TVL 1,353,914,642, USDT Earn `apyBps 316`, investment TVL 185,541,887.44, house position `totalValue 0`. Fixtures `fixtures/defi-data/{getProtocolDetail,listDeFiInvestments,getInvestmentDetail,getDeFiPositions}-20260924-*.json`.
+- [x] On-chain: vUSDT `exchangeRateStored`, `balanceOfUnderlying`, Comptroller guard flags, utilization calculation
+  - Evidence: `packages/chain` `readVTokenState` (reads pinned to one block) — vToken `0xfD58…0255` (the DEPOSIT item's `to`; the Data API `poolAddress` is null) `symbol()`=vUSDT, `underlying()`=USDT, exchangeRateStored 265115854764046092440821898, utilization 72.78%, actionPaused MINT/REDEEM false. `balanceOfUnderlying` is not a view, so it is computed as `balanceOf × exchangeRateStored` (`underlyingFromVTokens`). Test `packages/chain/src/index.test.ts` (replays values recorded at block 123664140).
+- [~] Check the shape of the DeFi API deposit and redeem calldata → Transaction API simulation (house wallet, no broadcast)
+  - Shape check and simulation run done: deposit = APPROVE (unlimited) + DEPOSIT (`mint`), redeem = REDEEM (`redeem`), `redeemDelayDays []`. Simulation: APPROVE `SUCCESS`, DEPOSIT `FAILED "BEP20: transfer amount exceeds balance"`, REDEEM `FAILED "math error"` — house wallet not funded (USDT 0, BNB 0, M0-11). Fixtures `fixtures/defi-transaction/*-20260924-*.json`, `fixtures/transaction/simulateTransactions-20260924-{1,2,3}.json`. DECISIONS Q-05, Q-16.
+- [x] `packages/core/amounts.ts`: interest calculation functions + tests
+  - Evidence: `toUnits/fromUnits`, `underlyingFromVTokens`, `vTokensForUnderlying`, `utilizationBps`, `interestUnits`, `supplyApyFromRatePerBlock` — `packages/core/src/amounts.test.ts` passes (`pnpm test`).
+- Acceptance: a successful simulation fixture, interest calculation tests green — interest tests **green**; the success fixture is APPROVE only (successful deposit and redeem simulations: rerun `pnpm spike:venus` after the M0-11 funding).
 
-### M0-08 테이프 가동 · 기준: DX
-- [x] `apps/agent` 잡: 10분마다 인스트루먼트별 온체인가·참조가·장 상태 + 견적 3규모 → `tape_samples`
-  - 증거(로컬, 한국 개발 PC): `apps/agent/src/tape.ts`·`main.ts` — 인스트루먼트 9종 × $5/$50/$500, RWA price(tokenPrice·referencePrice·갱신 시각), RWA list statusInfo, 우리 시계 `session` 태그, 견적 expectedOut·priceImpact·vendor·executionMode·route·오류코드·지연. 10분 경계 정렬. 에이전트 실행 00:46:14Z 첫 실행 → 00:50, 01:00, …, 01:50:00Z(64분, 8회, 로그 `tape: … 27 rows …, 5 quote errors, session overnight`). count: `SELECT count(*) FROM tape_samples; → 54`(00:46:26Z) → `81`(00:59:37Z) → `243`(01:50:31Z). 기록된 오류는 전부 Ondo $5의 `40375`(45행). `pnpm tape:once` 동작(00:45:51Z, `tape_samples: 27 rows inserted`). 이 64분 동안 견적에서 429가 44건 나왔고(재시도로 전부 복구) 클라이언트 제한을 슬라이딩 창으로 고친 뒤(dx/LOG.md 01:52) 01:54:58Z `pnpm tape:once` 429 0건; 에이전트는 01:55:49Z 새 코드로 재시작.
-- [x] 프랑크푸르트 러너에 배포, **9/25 20:00 KST 이전 가동**
-  - 증거: Fly.io 앱 `yieldvest-agent`, 머신 `d8de470f023428` `fra` `started`(2026-09-24 02:30:28 UTC, `fly status`), `shared-cpu-1x:512MB`, `fly machine status -d` → `"restart": {"policy": "always"}`, `fly machine list` 1대. 설정 `fly.toml`(primary_region fra, [[restart]] always), 이미지 `Dockerfile` + `.dockerignore`(`.env*` 제외; 빌드 중 `.env*` 발견 시 실패, 로컬 이미지에서 `env-files-found: 0`). 시크릿 6개는 `fly secrets import`(stdin)로만. DB Neon(마이그레이션 0000–0002). 첫 실행 `tape: slot 2026-09-24T02:30:00.000Z … 27/27 rows written`; 호스트 `pnpm reach` 성공, api_calls `region=fra` 33행(DECISIONS Q-01). 재시작 안전: `apps/agent/src/main.ts` `tapeTick`이 `tapeSlot()`(10분 슬롯)으로 `tapeSlotRecorded` 선확인, `packages/db/src/index.ts` `insertTapeSamples`가 `ON CONFLICT DO NOTHING`(유니크 `tape_samples_slot_uq` = slot_at·instrument_id·size_usd, `drizzle/0002_tape_slot.sql`). `fly machine restart`(02:32:08 UTC) 뒤 로그 `tape: slot 2026-09-24T02:30:00.000Z already recorded — skipped`. 테스트 `packages/db/src/tape.test.ts`(Postgres, 재실행 시 0행 기록). 배포 후 증가: Neon `SELECT count(*) FROM tape_samples;` → **27**(02:31:55 UTC) → **108**(03:02:26 UTC), 슬롯 02:30·02:40·02:50·03:00 각 27행, (slot_at, instrument_id, size_usd) 중복 0, fra api_calls 121건 중 429 0.
+### M0-08 Tape running · Criterion: DX
+- [x] `apps/agent` job: every 10 minutes, per instrument, on-chain price, reference price and market state + quotes at 3 sizes → `tape_samples`
+  - Evidence (local, Korean dev PC): `apps/agent/src/tape.ts`, `main.ts` — 9 instruments × $5/$50/$500, RWA price (tokenPrice, referencePrice, update time), RWA list statusInfo, a `session` tag from our own clock, quote expectedOut, priceImpact, vendor, executionMode, route, error code, latency. Aligned to 10-minute boundaries. Agent run: first run 00:46:14Z → 00:50, 01:00, …, 01:50:00Z (64 minutes, 8 runs, log `tape: … 27 rows …, 5 quote errors, session overnight`). count: `SELECT count(*) FROM tape_samples; → 54` (00:46:26Z) → `81` (00:59:37Z) → `243` (01:50:31Z). Every recorded error is `40375` on Ondo $5 (45 rows). `pnpm tape:once` works (00:45:51Z, `tape_samples: 27 rows inserted`). During these 64 minutes, quotes got 44 429 responses (all recovered by retries); after the client limit was changed to a sliding window (dx/LOG.md 01:52), `pnpm tape:once` at 01:54:58Z had 0 429s; the agent restarted on the new code at 01:55:49Z.
+- [x] Deploy to the Frankfurt runner, **running before 9/25 20:00 KST**
+  - Evidence: Fly.io app `yieldvest-agent`, machine `d8de470f023428` `fra` `started` (2026-09-24 02:30:28 UTC, `fly status`), `shared-cpu-1x:512MB`, `fly machine status -d` → `"restart": {"policy": "always"}`, `fly machine list` shows 1 machine. Config `fly.toml` (primary_region fra, [[restart]] always), image `Dockerfile` + `.dockerignore` (excludes `.env*`; the build fails if it finds `.env*`, `env-files-found: 0` in the local image). The 6 secrets go in only through `fly secrets import` (stdin). DB Neon (migrations 0000–0002). First run `tape: slot 2026-09-24T02:30:00.000Z … 27/27 rows written`; `pnpm reach` on the host succeeded, api_calls `region=fra` 33 rows (DECISIONS Q-01). Restart safety: `apps/agent/src/main.ts` `tapeTick` checks `tapeSlotRecorded` first with `tapeSlot()` (10-minute slot), `packages/db/src/index.ts` `insertTapeSamples` uses `ON CONFLICT DO NOTHING` (unique `tape_samples_slot_uq` = slot_at, instrument_id, size_usd, `drizzle/0002_tape_slot.sql`). After `fly machine restart` (02:32:08 UTC) the log shows `tape: slot 2026-09-24T02:30:00.000Z already recorded — skipped`. Test `packages/db/src/tape.test.ts` (Postgres, a rerun writes 0 rows). Growth after deploy: Neon `SELECT count(*) FROM tape_samples;` → **27** (02:31:55 UTC) → **108** (03:02:26 UTC), slots 02:30, 02:40, 02:50, 03:00 with 27 rows each, 0 duplicates on (slot_at, instrument_id, size_usd), 0 429s out of 121 fra api_calls.
 - [x] `GET /api/tape/latest`
-  - 증거: `apps/web/app/api/tape/latest/route.ts` — 최신 실행 행 + `state` LIVE(20분 이내)/STALE/UNAVAILABLE(사유). 로컬 `next dev --webpack`에서 `LIVE 2026-09-24T02:20:00.007Z … rows 27`. 워크스페이스 TS 패키지의 `.js` import 때문에 webpack `extensionAlias`와 `--webpack` 사용(Turbopack은 `./schema.js`를 못 찾음). 웹 배포(Vercel)는 M2.
-- 수용: 24시간 후 행 수 ≥ 예상치의 90%, 주말 태그 정상
+  - Evidence: `apps/web/app/api/tape/latest/route.ts` — the latest run's rows + `state` LIVE (within 20 minutes)/STALE/UNAVAILABLE (reason). Locally in `next dev --webpack`: `LIVE 2026-09-24T02:20:00.007Z … rows 27`. Because the workspace TS packages import `.js`, webpack `extensionAlias` and `--webpack` are used (Turbopack cannot find `./schema.js`). Web deploy (Vercel) is M2.
+- Acceptance: after 24 hours, row count ≥ 90% of expected, weekend tag correct
 
-### M0-09 baw 스파이크 [HUMAN+에이전트] · 기준: AW 특별상·DX
-- [ ] 팀 개발기: `npm i -g @binance/agentic-wallet@1.10.0`, `auth signin/verify`, `wallet settings`(세션 상한·한도 기록), `market-order quote` NVDAB, `limit-order buy` RWA 시도(지원 여부 기록), `defi investment-list`/`position`/`deposit` preview(Venus USDT)
-- 수용: 지원 매트릭스와 소요 시간이 DECISIONS·dx/LOG.md에
+### M0-09 baw spike [HUMAN+agent] · Criteria: AW special prize, DX
+- [ ] Team dev machine: `npm i -g @binance/agentic-wallet@1.10.0`, `auth signin/verify`, `wallet settings` (record the session maximum and limits), `market-order quote` NVDAB, try `limit-order buy` on RWA (record whether it is supported), `defi investment-list`/`position`/`deposit` preview (Venus USDT)
+- Acceptance: support matrix and time taken in DECISIONS and dx/LOG.md
 
-### M0-10 Agent Studio 스파이크 · 기준: Studio 특별상
-- [ ] `bag` 설치, 에이전트 생성 흐름, 지갑 제공 방식, 런타임 제약(임의 워커 가능?), MCP 등록, ERC-8004 등록 비용
-- 수용: DECISIONS D-STUDIO go/no-go
+### M0-10 Agent Studio spike · Criterion: Studio special prize
+- [ ] Install `bag`, agent creation flow, how the wallet is provided, runtime constraints (arbitrary worker possible?), MCP registration, ERC-8004 registration cost
+- Acceptance: DECISIONS D-STUDIO go/no-go
 
-### M0-11 하우스 지갑 준비 [HUMAN] · 기준: 기술
-- [ ] 오프라인 키 생성, 러너 env 등록, 충전, 주소를 DECISIONS에(공개), 캡 확인
-- 수용: `pnpm reach`가 Wallet API로 하우스 잔고 표시
+### M0-11 House wallet setup [HUMAN] · Criterion: Technical
+- [ ] Generate the key offline, register it in the runner env, fund it, put the address in DECISIONS (public), check the caps
+- Acceptance: `pnpm reach` shows the house balance via the Wallet API
 
-### M0-12 DX 규약 시작 · 기준: DX
-- [x] `dx/LOG.md` 첫 항목들(등록·키 발급·첫 호출), `pnpm dx:metrics` 스켈레톤
-  - 증거: `dx/LOG.md`에 에이전트 항목 19건(2026-09-23 17:44–18:20 UTC): 문서 호스트 WAF 챌린지, 가격 배치 body 부재, 커넥터↔문서 불일치 4건, 오류 HTTP 상태 모순, 레이트리밋 헤더 표, B402 엔벨로프 예외, DeFi 예제·무제한 승인·코드 충돌·단위, 첫 미서명 호출 등. 등록·키 발급 시각은 [HUMAN] 항목(M0-00, GOALS G1 선행 조건)으로 사람이 기록.
-  - `pnpm dx:metrics`(`scripts/dx-metrics.ts` + `renderMetricsMarkdown`): api_calls → `dx/metrics.md`(엔드포인트·리전별 호출 수, 오류율, nearest-rank p50/p95, 오류 코드). DATABASE_URL이 없으면 `UNAVAILABLE: no DATABASE_URL — dx/metrics.md not regenerated`(exit 3).
-- 수용: DX_PROTOCOL 형식 준수 — **확인**: 각 항목이 §3.1 형식(목표·기대·실제·문서·잃은 시간·우회·요청·증거, UTC, 태그). 서술(소감)은 사람 몫으로 비워 둠.
-
----
-
-## M1 세로 관통 (9/26 ~ 9/30) — 목표: 메인넷 영수증
-
-### M1-01 도메인·DB · 기준: 기술
-- [x] SPEC §4 타입, Drizzle 스키마 11개 테이블, 마이그레이션, 시드(하우스 플랜 2개)
-  - 타입 완료(2026-09-24, 클라우드 세션): `packages/core/src/types.ts` — SPEC §4 v2(금액은 소수 문자열, 계산은 18자리 bigint, `FAILED.fundsMoved` none/gas_only, `BOUGHT.interestUsd`).
-  - 스키마 완료(2026-09-26, 클라우드 세션): `packages/db/src/schema.ts` 13개 테이블(SPEC §4의 11개 + v2 `tx_outbox`·`jobs`), 마이그레이션 `packages/db/drizzle/0004_m1_core.sql`. 금액은 numeric(38,18) 문자열. FK 10개(연쇄 삭제 없음 — 영수증은 플랜과 함께 지워지지 않음), CHECK 17개(상태·종류 값, 금액 ≥ 0, 일 한도 ≥ 1회 한도, **원금 0인 yield 플랜은 active 불가** — D-16).
-  - 헬퍼: `plans.ts`(플랜 락 `lock_until` 조건부 UPDATE, 사이클 멱등 `(plan_id, due_at)`, 영수증 tx 해시 1회), `ledger.ts`(캡 예약: advisory lock + 한 트랜잭션에서 전 캡 검사 후 삽입, 전역 일일·플랜 일일·심사 코드 총액), `queue.ts`(jobs `FOR UPDATE SKIP LOCKED`, tx_outbox 발신자별 nonce 유일), `auth.ts`(심사 코드·스킬 토큰은 SHA-256만 저장), `mappers.ts`(행 → core 타입, 모르는 값은 예외).
-  - 시드: `pnpm db:seed` — H-SAFE(NVDA safe $5 daily regular_session, 1회·일 $5), H-YIELD(QQQ yield weekly regular_session, 1회·일 $5), 발행사 `['bstocks','ondo']`, 둘 다 `paused(awaiting_funding)`, 원금은 예치 영수증에서 기록(D-16). 기존 플랜은 덮어쓰지 않음. `JUDGE_CODES` 해시 동기화. 실행 출력(스크래치 DB): `house plans: created [H-SAFE, H-YIELD], kept [] (new plans paused: awaiting_funding, first due 2026-09-28T13:32:00.000Z)` → 재실행 `created [], kept [H-SAFE, H-YIELD]`.
-  - 되돌리기: drizzle-kit은 up만 만들므로 `packages/db/drizzle-down/<tag>.sql` 5개를 손으로 쓰고 `rollbackMigration`(최신 1개만, 역 SQL + 기록 삭제를 한 트랜잭션)과 `pnpm db:rollback <tag> --yes`(없으면 거부)를 추가.
-- 수용: 마이그레이션 왕복, 타입 테스트 — **확인**(2026-09-26 17:44 UTC, 새 DB): `src/migrations.test.ts` 전용 임시 DB에서 up → down 5개(최신부터) → up, 열·제약·인덱스 스냅샷이 동일. 행 → 도메인 타입 테스트 `src/mappers.test.ts`. DB 테스트 39개(캡 동시 예약 10건 중 정확히 2건만 통과 — advisory lock을 지우면 3회 모두 실패하는 것을 확인, 락 5명 동시 획득 시 1명, 잡 동시 청구 시 중복 없음, nonce 중복 거부, CHECK 위반 거부). 전체 `pnpm test` 25파일 222개 통과, `pnpm typecheck`·`pnpm lint` 통과, core 커버리지 100%.
-
-### M1-02 결정 엔진 `decideCycle` · 기준: 기술·창의
-- [x] 순수 함수: WINDOW/BUDGET/ASSET/PRICE/QUOTE 판단, 결과 `CycleOutcome` + whyKey
-  - 증거: `packages/core/src/decide.ts` `decideCycle(input)` → `not_due` | `done`(DEFERRED/SKIPPED/FAILED + whyKey) | `quote` | `execute`, 부수효과 없음. 규칙은 SPEC §5 v2: 우리 NYSE 달력(`nextRegularOpen`), 공식 스킬의 reason code, 기업행동은 발행사 전환 없이 SKIPPED, 독립 주가가 있을 때만 괴리, Ondo 최소 5.01, 25초 지난 견적 재요청, RFQ 미실행, 가격영향 절반 재견적 2회, 이자 매수는 원금을 상환하지 않음. `boughtOutcome()`이 영수증 수령량으로 BOUGHT와 사유를 만든다.
-- [x] 경계 테스트: 창구 경계 시각, 최소주문, 캡, 기업행동 코드, 발행사 폴백, 가격 괴리, 가격영향 축소 재견적
-  - 증거: `packages/core/src/decide.test.ts` 57개(DUE 4 · GUARDIAN 1 · WINDOW 4 · BUDGET 9 · ASSET 11 · PRICE 4 · QUOTE 12 · BOUGHT 4 · 경계 6) — 모든 whyKey와 파라미터를 UX_COPY §4 표와 대조(`packages/core/test/ux-copy.ts`). 달력 테스트(주말·휴장일·DST).
-- 수용: 테스트 ≥ 30, 커버리지 100%(core) — **확인**(2026-09-24 05:21 UTC): `pnpm coverage:core` → `Statements 100% (243/243)`, `Branches 100% (212/212)`, `Functions 100% (34/34)`, `Lines 100% (211/211)`(임계 100% 강제). 전체 `pnpm test` 18파일 183개 통과(DB 포함).
-
-### M1-03 HouseWalletExecutor · 기준: 기술
-- [x] 정확 승인 → Transaction API 시뮬레이션 → viem 서명 → Transaction API 브로드캐스트(RPC 폴백) → 영수증 폴링 → 실수령량 파싱
-  - 코드(2026-09-26, 클라우드 세션):
-    - `packages/binance/src/endpoints.ts`: 문서 필드명의 타입 래퍼. 견적·승인·스왑·시뮬레이션·가스·브로드캐스트·상세·DeFi 빌드. 멱등 호출만 재시도한다.
-    - `packages/chain/src/tx.ts`: approve·mint·redeem 디코드, 영수증 Transfer 합산, 가스 상한 있는 서명용 tx.
-    - `apps/agent/src/executor/send.ts`: nonce → 서명 → outbox SIGNED → 브로드캐스트(Transaction API, 컴플라이언스 외 실패는 RPC) → PENDING → 영수증(3분) → CONFIRMED/FAILED. `reconcileOutbox`가 부팅·사이클 전에 하우스 행만 정리한다(받은 적 없는 바이트는 그대로 재전송).
-    - `apps/agent/src/executor/trade.ts`: 정확 승인 검증·허용량 확인·시뮬레이션 후 전송. 스왑은 발신자·value·경로·시뮬레이션·견적 나이를 검증한다.
-    - `apps/agent/src/cycle.ts` `runCycle`: decideCycle 단계마다 I/O. 캡 예약, 영수증, 홀딩(배수 변경 시 guardian_events), 원장 정산, 다음 due, FAILED 알림. 안전 규칙: DECISIONS D-17.
-  - 증거: `apps/agent/src/cycle.test.ts` 6개. 실제 Postgres, 가짜 API·체인, 공개 테스트 키로 수행했다.
-    - simulate: 승인 시뮬 SUCCESS, 스왑 시뮬 allowance FAILED, 서명 0.
-    - live: 호출 순서 quote → approve-transaction → simulate → broadcast → swap → simulate → broadcast. 허용량 = 정확히 $5, nonce 연속, receipts approve·swap, holdings, outbox CONFIRMED×2, 다음 due 9/29 09:32 ET.
-    - 무제한 승인은 서명 0으로 FAILED 처리하고 알림을 보냈다.
-    - 토요일: 견적 없이 DEFERRED, 월 09:32로 넘어갔다.
-    - 40431: RPC 폴백.
-    - 영수증 미도착: awaiting_tx → 다른 플랜 `outbox_busy` → 채굴 후 정리하고 매수.
-- [x] `pnpm cycle:once --plan H-SAFE --live` (확인 프롬프트)
-  - `scripts/cycle-once.ts`: simulate 패스를 먼저 돌려 금액·주소·시뮬 결과를 출력한다. `--live`는 `EXECUTION_MODE=live`, 하우스 키, 대화형 터미널에서 `y` 입력이 모두 있어야 한다(`scripts/confirm.ts`, TTY가 아니면 거부). `executorDeps(rt, 'live')`도 설정이 live가 아니면 서명자를 주지 않는다.
-  - 남음: [PC] simulate 실행 출력 인용(GOALS G3-3). [HUMAN] 메인넷 실행(G4).
-- 수용: **메인넷 NVDAB(또는 결정된 발행사) $5 매수 1건**, `receipts` 저장, BscScan 링크, 사유 한 줄. [HUMAN] 지출 승인 기록
-
-### M1-04 안전 모드 완주 · 기준: 기술
-- [~] 스케줄러 없이 CLI로 사이클 전체(DUE→RECORD), 홀딩 갱신(주식 수)
-  - 코드·테스트 완료(9/26): `pnpm cycle:once`가 `runCycle`로 DUE→RECORD 전체를 수행한다. 수동 실행은 일정을 바꾸지 않는다. 홀딩 shares = tokens × 배수(`sharesFromTokens`)이고, `cycle.test.ts` live 시나리오로 검증했다. 남음: [PC] 실데이터 simulate 실행 1회 인용.
-- 수용: 사이클 레코드 + 홀딩 shares 계산 검증
-
-### M1-05 이자 모드 완주 · 기준: 기술·창의
-- [~] 예치(DeFi API 콜데이터→시뮬→브로드캐스트), 이자 조회(온체인·DeFi API 교차), 상환, 매수
-  - 코드(9/26): `apps/agent/src/executor/venus.ts`.
-    - `discoverVenusUsdt`: DeFi Data로 투자를 찾고, 예치 빌드로 vToken을 찾고, 온체인 `underlying()`이 USDT인지 확인한다.
-    - `depositPrincipal`: DEPOSIT이 `mint(정확한 금액)`인지, 대상이 vUSDT인지 확인한다. APPROVE 항목은 쓰지 않고 정확 승인을 쓴다.
-    - `redeemFromVenus`: 플랜 보유 vToken 이하이고 요청액 가치 이하일 때만 상환한다. 지연일이 있으면 거부한다.
-    - 플랜별 `plans.vtoken_units`(마이그레이션 0006). `runCycle`은 이자 → 상환 → 매수 순이고 `harvested_unspent_usd`를 갱신한다.
-    - `pnpm yield:deposit --plan <id> --usd <n> [--live]`: 원금 캡을 확인하고 `y`를 받는다. 원금·vToken은 확정 영수증에서 1회만 기록한다. 늦은 영수증은 `--record <tx>`로 기록한다.
-    - `pnpm yield:redeem --plan <id> [--live] | --record <tx>`(9/27, 사람 yes D-21, `apps/agent/src/operator.ts`): 플랜의 Venus 포지션 전체를 하우스로 되찾는다.
-      - 미리보기는 빌드·콜데이터 검사·시뮬레이션만 하고 아무것도 바꾸지 않는다.
-      - live는 `y`, outbox 정리, 플랜 락, 시뮬 통과 뒤에만 서명하고 플랜을 paused(operator_redeem)로 둔다. 스킬 플랜은 거부한다.
-      - `--record`는 우리 outbox가 그 플랜의 redeem으로 서명한 tx만 받는다.
-  - 증거: `venus.test.ts` 7개(1 USDT 실측 콜데이터 사용).
-    - 시뮬된 승인은 정확 금액이었다(API 항목은 2^256−1).
-    - 잘못된 금액·시장은 거부했다. 원금을 건드리는 상환과 지연 상환도 거부했다.
-    - live 예치 → 상환에서 로그로 vToken 발행과 USDT 수령을 파싱했다.
-  - 증거(9/27): `apps/agent/src/operator.test.ts` 4개.
-    - 미리보기는 서명·변경이 없다. 없음·스킬·safe·포지션 없음은 거부한다.
-    - live 상환은 receipts redeem을 남기고, 원금 0, 이자는 harvested에 둔다. 멈춘 플랜은 stopped로 남는다.
-    - 시뮬 실패면 서명 0에 알림을 보낸다. 락이 잡혀 있으면 거부한다.
-    - 미채굴 tx는 다른 플랜을 `outbox_busy`로 막고, 채굴 뒤 `--record`는 한 번만 적용된다.
-    - 가디언 redeem_all·정지 잡의 live 상환 분기는 전에 테스트가 없었다. 이제 같은 기록 경로(`applyPositionRedeem`)로 검증된다.
-  - 남음: [HUMAN] $1 실거래 시험(`docs/LIVE_TEST.md`: 예치·매수·상환), 원금 결정(REPLAN R1), 이자 매수 swap 영수증(G4).
-- 수용: **메인넷 영수증 3종(deposit, redeem, swap)**, 이자 표시. 이자 부족 시 적립 병행으로 체결하되 영수증에 구분 표기
-
-### M1-06 스케줄러·창구·멱등 · 기준: 기술
-- [~] 5분 틱, 락, 멱등키, `nextDueAt`(개장+2분), DEFERRED(market_closed) 기록과 retryAt
-  - 코드(9/26): `apps/agent/src/scheduler.ts` `schedulerTick`(5분). 순서는 outbox 정리(live) → 대기 사이클 마무리(`awaiting.ts`) → 가디언 → 웹 jobs(preview는 항상 simulate) → due 플랜을 하나씩(서명자 하나).
-    - 락: `plans.lock_until` 조건부 UPDATE.
-    - 멱등: 예약 사이클은 (plan, due_at). 수동 실행은 요청마다 새 사이클.
-    - 다음 due: `packages/core/src/schedule.ts` `nextDue`(core 100%).
-    - 워커 `main.ts`가 테이프와 함께 돌린다. live는 설정·활성 플랜일 때만 서명한다.
-  - 증거: `scheduler.test.ts`. 시간을 옮겨 가며 확인했다.
-    - 토요일 11:00 ET 틱: DEFERRED(market_closed, retryAt 월 13:32Z).
-    - 일요일: 실행 없음.
-    - 월 09:33 ET 틱: 자동 BOUGHT, 다음 due 화 09:32.
-  - 남음: [PC] 배포 워커 로그로 실주말→월요일 확인(G5).
-- 수용: 주말 실행 시 DEFERRED 레코드 생성, 월요일 개장 후 자동 매수(로그로 증명)
-
-### M1-07 에러 분류 v1 · 기준: 기술·DX
-- [~] SPEC §11 매핑, 재시도·백오프, 429, 알림(FAILED만), 미지 코드 최초 관측 시 dx 이벤트
-  - 분류(2026-09-26, 클라우드 세션): `packages/binance/src/taxonomy.ts` `classifyError()` — (모듈, 코드) → 행동(`retry`·`requote`·`next_issuer`·`market_closed`·`reduce_size`·`rpc_fallback`·`defer`·`fail`)·운영 알림 여부·문구 키·문서화 여부. 코드는 모듈별 공식 오류 표에서만 가져왔다(40470처럼 모듈마다 뜻이 다른 코드 포함). 표에 없는 코드는 `documented:false` → 사이클은 안전하게 FAILED, 운영 알림.
-  - 재시도·429: `RequestOptions.retries`(기본 0, 멱등 호출만) — 일시 오류(네트워크·타임아웃·5xx·50000/50001·40432·40465·40482·40483)에 0.5 s·1 s·2 s… 백오프. 429는 기존대로 Retry-After 후 1회. `BinanceApiError.classify()`.
-  - 엔진 연결: `QuoteObservation.errorAction`(`next_issuer`·`market_closed`) — 에이전트가 분류 결과를 넘기면 40421·40365·40366도 다음 발행사로 넘어간다(core 100% 유지).
-  - 알림: `apps/agent/src/alerts.ts` — 텔레그램(설정 시) 또는 로그, 같은 키 1시간 1회, 토큰은 로그·본문에서 가림. `cycleAlert()`는 FAILED에만 알림. `pnpm alert:test`로 1회 발송 확인(여기선 토큰이 없어 `channel log, result logged`).
-  - dx 이벤트: `dx_events` 표(마이그레이션 0005, (종류, 모듈, 엔드포인트, 코드)당 1행) + `watchDxFindings`(api_calls 싱크 래퍼)가 문서에 없는 코드·봉투 아닌 응답의 첫 관측만 알림. `pnpm dx:events [--mark-logged]`가 dx/LOG.md 형식(사실만)으로 출력.
-- 수용: 코드별 단위 테스트, 알림 1회 실동작
-  - 코드별 테스트 **확인**: `taxonomy.test.ts`(SPEC §11 표 33행 + 무코드 실패 + 공식 표 5개와 양방향 대조), `replay.test.ts`(실측 픽스처 재생: 40401, 42900/429 재시도·포기, 40375 최소액, 40484, code 0 안의 simulate FAILED·SUCCESS), `client.test.ts` 재시도·백오프, `alerts.test.ts`, `dx-watch.test.ts`, `dx.test.ts`. 전체 `pnpm test` 31파일 300개 통과.
-  - 남음: [HUMAN/PC] 텔레그램 토큰이 있는 호스트에서 `pnpm alert:test` 1회(`result sent`) 인용.
-
-### M1-08 홀딩·배수 · 기준: 창의·UX
-- [x] 영수증마다 multiplier 스냅샷, 변경 감지 이벤트, shares 재계산
-  - 계산 완료: `packages/core/src/holdings.ts` — `sharesFromTokens`(정확, 내림), `revalueHolding`(배수 변경 감지), `upcomingMultiplierChange`(bStocks `newUIMultiplier`·`effectiveAt` 예정 안내).
-  - 연결(9/26): 매수 영수증마다 `addToHolding`이 배수를 스냅샷하고 전체 토큰 × 현재 배수로 shares를 다시 계산한다. 배수가 바뀌었으면 `guardian_events`(`multiplier_changed`, warn, from/to)를 남긴다. 증거: `cycle.test.ts` "a buy on top of a holding written at another multiplier…".
-- 수용: 배수 변경 시뮬레이션 테스트 — `holdings.test.ts`(분할로 배수 1→10이면 2주 → 20주, balanceOf 불변)
-
-### M1-09 하우스 플랜 가동 · 기준: 기술
-- [~] H-SAFE(일 $5, 정규장), H-YIELD(원금 확정액, 주 1회) 9/30부터 연속 가동
-  - 코드 준비(9/26): `pnpm db:seed`(둘 다 paused), `pnpm yield:deposit`(원금), `pnpm plan:status --activate`(live면 `y`, 원금 없는 yield는 DB가 거부 → 안내 문구). 워커가 활성 플랜을 5분 틱으로 돌린다.
-  - 코드(9/27): `pnpm plan:set`은 하우스 플랜 금액·주기를 캡 안에서 바꾼다.
-    - 검사는 core `changePlanSettings`(테스트 7개, core 100%): 최소 매수 ≤ 1회 ≤ 하우스 1회 캡, 1회 ≤ 일 ≤ 일일 캡, safe 적립액 ≥ 최소 매수.
-    - 심사위원·스킬 플랜은 거부한다. 켜진 플랜은 `y`를 받는다.
-    - $1 시험에서 H-SAFE를 $1/$1/$1로 둘 때 쓴다.
-  - 남음: [HUMAN] 하우스 지갑 충전·$1 시험(`docs/LIVE_TEST.md`)·원금 결정(REPLAN R1–R4). 그 뒤 활성화와 연속 가동(G5).
-- 수용: 10/4까지 사이클 레코드 ≥ 4일치, FAILED 0 또는 원인 기록
+### M0-12 Start the DX protocol · Criterion: DX
+- [x] First `dx/LOG.md` entries (registration, key issuance, first call), `pnpm dx:metrics` skeleton
+  - Evidence: 19 agent entries in `dx/LOG.md` (2026-09-23 17:44–18:20 UTC): docs host WAF challenge, missing price batch body, 4 connector↔docs mismatches, contradictory HTTP status on errors, rate limit header table, B402 envelope exception, DeFi examples, unlimited approval, code collisions and units, first unsigned call, and more. Registration and key issuance times are a [HUMAN] item (M0-00, GOALS G1 precondition), recorded by a human.
+  - `pnpm dx:metrics` (`scripts/dx-metrics.ts` + `renderMetricsMarkdown`): api_calls → `dx/metrics.md` (call counts per endpoint and region, error rate, nearest-rank p50/p95, error codes). Without DATABASE_URL: `UNAVAILABLE: no DATABASE_URL — dx/metrics.md not regenerated` (exit 3).
+- Acceptance: follows the DX_PROTOCOL format — **confirmed**: every entry is in the §3.1 format (Goal, Expected, Actual, Docs, Time lost, Workaround, Ask, Evidence, UTC, tags). The narrative (Impression) is left empty for a human.
 
 ---
 
-## M2 제품화 (10/1 ~ 10/4) — 목표: 심사위원 3분 완주
+## M1 Vertical slice (9/26 ~ 9/30) — Goal: a mainnet receipt
 
-### M2-01 Watch 홈 · 기준: UX·기술
-- [x] 하우스 카드 2개, 영수증 피드(사유+링크), 장 상태 배지, LIVE/STALE/UNAVAILABLE, CTA 2개
-  - 코드(9/26): `apps/web/app/page.tsx` — 히어로(제목·부제·CTA 2개) + 이자 카운터(하우스 이자 플랜의 vToken을 체인에서 읽은 값, 15초마다 다시 읽음 — 외삽 없음, `components/home/InterestCounter.tsx`), 하우스 카드 2개(원금·이자·모은 주식·다음 매수·오늘 한도·영수증 수·마지막 사유), 영수증 피드(사유 한 줄 + BscScan), 장외 괴리 인사이트(테이프 7일), 종목 카드(발행사·Ondo 최소 $5.01), 믿을 수 있는 이유(캡은 설정값에서, 지킴이 상태는 표본에서). 헤더: 장 상태 배지(우리 NYSE 달력), 테이프 데이터 상태, KO/EN. 모든 블록이 LIVE / n분 전 / 불러올 수 없음(이유)을 단다(`components/ui.tsx` `StateBadge`, 읽기 실패는 `lib/server/settle.ts`가 이유 라벨로 바꾸고 원인은 서버 로그에만).
-- 수용: 모바일 375px에서 가로 스크롤 없음, 첫 화면 3초 이해 리허설(강민서 체크리스트)
-  - [x] 375px 가로 스크롤 없음: `pnpm ui:check`(Playwright Chromium, `scripts/ui-check.ts`) — 로컬 `next start` + 스크래치 DB, 7개 페이지 × KO/EN × 375/1440px 28회 전부 `scrollWidth 375 / 375`(1440도 동일), 페이지 오류 0, `ui:check — 0 problems`.
-  - [ ] [HUMAN] 3초 이해 리허설.
+### M1-01 Domain and DB · Criterion: Technical
+- [x] SPEC §4 types, Drizzle schema with 11 tables, migrations, seed (2 house plans)
+  - Types done (2026-09-24, cloud session): `packages/core/src/types.ts` — SPEC §4 v2 (amounts are decimal strings, math is 18-decimal bigint, `FAILED.fundsMoved` none/gas_only, `BOUGHT.interestUsd`).
+  - Schema done (2026-09-26, cloud session): `packages/db/src/schema.ts` 13 tables (the 11 from SPEC §4 + v2 `tx_outbox` and `jobs`), migration `packages/db/drizzle/0004_m1_core.sql`. Amounts are numeric(38,18) strings. 10 FKs (no cascading deletes — receipts are not deleted along with the plan), 17 CHECKs (status and kind values, amount ≥ 0, daily limit ≥ per-buy limit, **a yield plan with 0 principal cannot be active** — D-16).
+  - Helpers: `plans.ts` (plan lock via a conditional UPDATE on `lock_until`, cycle idempotency `(plan_id, due_at)`, each receipt tx hash only once), `ledger.ts` (cap reservation: advisory lock + check every cap and insert in one transaction; global daily, plan daily, judge code total), `queue.ts` (jobs `FOR UPDATE SKIP LOCKED`, tx_outbox nonce unique per sender), `auth.ts` (judge codes and skill tokens stored as SHA-256 only), `mappers.ts` (row → core type, unknown values throw).
+  - Seed: `pnpm db:seed` — H-SAFE (NVDA safe $5 daily regular_session, $5 per buy and per day), H-YIELD (QQQ yield weekly regular_session, $5 per buy and per day), issuers `['bstocks','ondo']`, both `paused(awaiting_funding)`, principal recorded from the deposit receipt (D-16). Existing plans are not overwritten. `JUDGE_CODES` hashes synced. Run output (scratch DB): `house plans: created [H-SAFE, H-YIELD], kept [] (new plans paused: awaiting_funding, first due 2026-09-28T13:32:00.000Z)` → rerun `created [], kept [H-SAFE, H-YIELD]`.
+  - Rollback: drizzle-kit only generates up migrations, so 5 `packages/db/drizzle-down/<tag>.sql` files were written by hand, and `rollbackMigration` (the latest one only, reverse SQL + deleting its record in one transaction) and `pnpm db:rollback <tag> --yes` (refuses without it) were added.
+- Acceptance: migration round trip, type tests — **confirmed** (2026-09-26 17:44 UTC, fresh DB): `src/migrations.test.ts` on its own temporary DB runs up → 5 downs (latest first) → up, and the column, constraint and index snapshots are identical. Row → domain type tests in `src/mappers.test.ts`. 39 DB tests (of 10 concurrent cap reservations exactly 2 pass — confirmed that all 3 runs fail when the advisory lock is removed; with 5 acquiring the lock at once, 1 gets it; no duplicates when jobs are claimed concurrently; duplicate nonce rejected; CHECK violations rejected). Full `pnpm test` 25 files, 222 tests pass, `pnpm typecheck` and `pnpm lint` pass, core coverage 100%.
 
-### M2-02 Judge Mode · 기준: UX·기술
-- [x] 코드 → 종목/섹터 → 모드·금액 → 미리보기(사람 말+원본 토글) → 실행 진행 → 영수증 → [멈추기]
-  - 코드(9/26): `apps/web/app/judge/page.tsx` + `components/judge/JudgeFlow.tsx` — ① 코드(`POST /api/judge/session`) ② 종목(레지스트리, 체험 한도로 못 사는 Ondo 전용 종목은 비활성+사유) ③ 적립/이자 모드(이자 모드는 위험 고지 모달, "이해했어요" 체크 전엔 버튼 비활성)·금액·사는 시간(장 마감이면 다음 개장 시각/장외 한도 절반 안내) ④ 미리보기 = 워커의 시뮬레이션 잡 결과(사람 말 + '자세히'에 발행사·조각 수·최소 수령) ⑤ 실행 잡 ⑥ 영수증(BOUGHT/예약됨 DEFERRED/SKIPPED/FAILED/시뮬레이션 모드/확인 대기 각각의 문구) + [플랜 멈추기]. 섹터 고르기는 그리지 않았다(M2-07 섹터 결정 대기, "곧 출시" 금지).
-  - 워커가 웹 잡을 5분 틱에서만 집어 3분 완주가 불가능했던 문제: 틱 사이 3초마다 잡만 처리(`apps/agent/src/scheduler.ts` `processJobs`, `main.ts` `JOB_POLL_MS`, 틱과 같은 잠금 — 서명자 하나·nonce 한 줄). 테스트 "picks up web jobs between ticks without running due plans".
-  - 로컬 브라우저 흐름(스텁 워커, 스크래치 DB): 틀린 코드 → "코드가 맞지 않아요" → 코드 → NVDA → 확인 → 미리 돌려보기 → (토요일이라) "미국 장이 닫혀 있어요. 9월 28일 (월) 22:32에 다시 시도해요." → 지금 사기 → 예약됨 + 플랜 기록 링크 + 멈추기, 6.1초. 스텁 워커는 이 상황에서 decideCycle이 내는 결과(market_closed, 다음 개장 +2분)만 흉내 냈다 — 실제 체결 증거가 아니다.
-- [~] 코드별 캡, 7일 자동 stop, 리셋
-  - 캡: 코드당 총액 = 샌드박스 캡(`judgeTotalUsd`, 원장), 남은 한도 표시. 7일: 플랜 `expiresAt` → `runCycle`이 stopped(expired). 리셋(코드 사용량 초기화)은 만들지 않았다 — 운영 절차가 정해지면 → [HUMAN] 결정.
-- 수용: 리허설 3분 이내 완주 3회 연속, 실패 경로(장 마감·캡 초과) 문구 확인
-  - [x] 실패 경로 문구: 장 마감(예약됨), 코드 오류, 한도 소진(`judge.code.error.exhausted`, `code_exhausted` 409 — `apps/web/test/judge.test.ts`), 미리보기 실패(`judge.preview.failed`).
-  - [ ] [HUMAN] 배포 + 워커 가동 상태에서 3분 완주 3회(돈 결정 R1–R4 이후).
+### M1-02 Decision engine `decideCycle` · Criteria: Technical, Creativity
+- [x] Pure function: WINDOW/BUDGET/ASSET/PRICE/QUOTE checks, result `CycleOutcome` + whyKey
+  - Evidence: `packages/core/src/decide.ts` `decideCycle(input)` → `not_due` | `done` (DEFERRED/SKIPPED/FAILED + whyKey) | `quote` | `execute`, no side effects. The rules are SPEC §5 v2: our own NYSE calendar (`nextRegularOpen`), the official skill's reason codes, corporate actions are SKIPPED without switching issuer, gap only when an independent stock price exists, Ondo minimum 5.01, quotes older than 25 seconds are requested again, RFQ not executed, 2 half-size re-quotes on price impact, buys with interest never redeem principal. `boughtOutcome()` builds BOUGHT and its reason from the amount received in the receipt.
+- [x] Boundary tests: window boundary times, minimum order, caps, corporate action codes, issuer fallback, price gap, reduced-size re-quote on price impact
+  - Evidence: `packages/core/src/decide.test.ts` 57 tests (DUE 4 · GUARDIAN 1 · WINDOW 4 · BUDGET 9 · ASSET 11 · PRICE 4 · QUOTE 12 · BOUGHT 4 · boundary 6) — every whyKey and parameter checked against the UX_COPY §4 table (`packages/core/test/ux-copy.ts`). Calendar tests (weekend, holiday, DST).
+- Acceptance: tests ≥ 30, coverage 100% (core) — **confirmed** (2026-09-24 05:21 UTC): `pnpm coverage:core` → `Statements 100% (243/243)`, `Branches 100% (212/212)`, `Functions 100% (34/34)`, `Lines 100% (211/211)` (100% threshold enforced). Full `pnpm test` 18 files, 183 tests pass (including DB).
 
-### M2-03 플랜 상세·정지·전액 상환 · 기준: UX·기술
-- [x] 코드(9/26): `apps/web/app/plans/[id]/page.tsx` — 이름·상태·주체, 원금·이자(체인에서 읽음; 스킬 플랜은 지갑 포지션)·모은 주식(평균 매수가)·다음 매수, 한도 막대(`plan.limits`), 지킴이(열린 판정 또는 "이상 없음 · 마지막 점검", 이용률·USDT·규모·가격영향 기준), 기록 타임라인(결과 필터 칩, 시뮬레이션 기록 표시, 사이클별 영수증 링크), 사이클 없는 예치·상환 영수증, 보유 주식(배수), 소유 심사위원에게만 [플랜 멈추기](`components/plan/StopPlan.tsx`: 확인 → stop 잡 → 폴링 → 새로고침; 이자 플랜은 원금 전부 꺼냄 안내). 없는 플랜은 404.
-- 수용: 이자 모드 정지 시 상환 영수증 표시
-  - [~] 화면: 상환 영수증(`kind=redeem`)은 "이자 통장에서 꺼냈어요" + BscScan으로 표시된다. 실제 상환 영수증은 live 실행이 필요 → [HUMAN] 돈 결정 이후.
+### M1-03 HouseWalletExecutor · Criterion: Technical
+- [x] Exact approval → Transaction API simulation → viem signing → Transaction API broadcast (RPC fallback) → receipt polling → parse the actual amount received
+  - Code (2026-09-26, cloud session):
+    - `packages/binance/src/endpoints.ts`: typed wrappers using the docs' field names. Quote, approve, swap, simulation, gas, broadcast, detail, DeFi build. Only idempotent calls are retried.
+    - `packages/chain/src/tx.ts`: decoding of approve, mint and redeem, summing receipt Transfers, txs for signing with a gas ceiling.
+    - `apps/agent/src/executor/send.ts`: nonce → sign → outbox SIGNED → broadcast (Transaction API; failures other than compliance go to RPC) → PENDING → receipt (3 minutes) → CONFIRMED/FAILED. `reconcileOutbox` cleans up house rows only, at boot and before a cycle (bytes that were never received are resent as they are).
+    - `apps/agent/src/executor/trade.ts`: sends after verifying the exact approval, checking the allowance and simulating. For swaps it verifies the sender, value, route, simulation and quote age.
+    - `apps/agent/src/cycle.ts` `runCycle`: I/O at each decideCycle step. Cap reservation, receipts, holdings (guardian_events when the multiplier changes), ledger settlement, next due, FAILED alerts. Safety rules: DECISIONS D-17.
+  - Evidence: `apps/agent/src/cycle.test.ts`, 6 tests. Run against a real Postgres, a fake API and chain, and a public test key.
+    - simulate: approval simulation SUCCESS, swap simulation allowance FAILED, 0 signatures.
+    - live: call order quote → approve-transaction → simulate → broadcast → swap → simulate → broadcast. Allowance = exactly $5, consecutive nonces, receipts approve and swap, holdings, outbox CONFIRMED×2, next due 9/29 09:32 ET.
+    - An unlimited approval was marked FAILED with 0 signatures and an alert was sent.
+    - Saturday: DEFERRED without a quote, moved to Mon 09:32.
+    - 40431: RPC fallback.
+    - Receipt not arriving: awaiting_tx → other plans `outbox_busy` → after mining, cleaned up and bought.
+- [x] `pnpm cycle:once --plan H-SAFE --live` (confirmation prompt)
+  - `scripts/cycle-once.ts`: runs a simulate pass first and prints the amount, addresses and simulation result. `--live` needs all of `EXECUTION_MODE=live`, the house key and `y` typed in an interactive terminal (`scripts/confirm.ts`, refuses when not a TTY). `executorDeps(rt, 'live')` also hands out no signer unless the config is live.
+  - Remaining: [PC] quote the simulate run output (GOALS G3-3). [HUMAN] mainnet run (G4).
+- Acceptance: **1 mainnet $5 buy of NVDAB (or the decided issuer)**, stored in `receipts`, BscScan link, one-line reason. [HUMAN] record the spending approval
 
-### M2-04 위험 고지·안전 기본값·용어 치환 · 기준: UX
-- [x] UX_COPY §5 전문, 금지어 린트 스크립트(`pnpm lint:copy`)
-  - `/risk`와 이자 모드 모달이 §5 전문을 쓴다(`components/RiskText.tsx`). {apy}·{score}는 워커가 기록한 값만(APY는 DeFi 목록 `apyBps`를 6시간마다, 보안 점수는 프로토콜 상세 `securityScore`를 가디언 틱마다 — `main.ts`, `guardian.ts`); 값이 없으면 그 문장을 빼고 "불러올 수 없어요"를 단다.
-  - 안전 기본값: 체험은 적립만·정규장이 기본, 이자 모드는 고지 동의 후에만.
-  - `pnpm lint:copy`(`apps/web/scripts/copy.ts lint`, `pnpm lint`에 포함): UX_COPY와 생성 파일 일치, KR/EN 자리표시자 일치, §6 금지어를 문구·웹 소스·`skills/`에서 검사.
-- 수용: 금지어 0건
+### M1-04 Safe mode end to end · Criterion: Technical
+- [~] The whole cycle via CLI without the scheduler (DUE→RECORD), holdings update (share count)
+  - Code and tests done (9/26): `pnpm cycle:once` runs the whole DUE→RECORD through `runCycle`. A manual run does not change the schedule. Holding shares = tokens × multiplier (`sharesFromTokens`), verified with the `cycle.test.ts` live scenario. Remaining: [PC] quote 1 simulate run on real data.
+- Acceptance: cycle record + holding shares calculation verified
+
+### M1-05 Yield mode end to end · Criteria: Technical, Creativity
+- [~] Deposit (DeFi API calldata→simulation→broadcast), interest lookup (on-chain cross-checked with the DeFi API), redeem, buy
+  - Code (9/26): `apps/agent/src/executor/venus.ts`.
+    - `discoverVenusUsdt`: finds the investment through DeFi Data, finds the vToken through a deposit build, and checks on-chain that `underlying()` is USDT.
+    - `depositPrincipal`: checks that DEPOSIT is `mint(exact amount)` and that the target is vUSDT. It does not use the APPROVE item; it uses an exact approval.
+    - `redeemFromVenus`: redeems only when the amount is at most the plan's vTokens and worth at most the requested amount. Refuses if there are delay days.
+    - Per-plan `plans.vtoken_units` (migration 0006). `runCycle` goes interest → redeem → buy and updates `harvested_unspent_usd`.
+    - `pnpm yield:deposit --plan <id> --usd <n> [--live]`: checks the principal cap and asks for `y`. Principal and vTokens are recorded only once, from the confirmed receipt. A late receipt is recorded with `--record <tx>`.
+    - `pnpm yield:redeem --plan <id> [--live] | --record <tx>` (9/27, human yes D-21, `apps/agent/src/operator.ts`): takes the plan's whole Venus position back to the house wallet.
+      - The preview only builds, checks calldata and simulates; it changes nothing.
+      - live signs only after `y`, outbox cleanup, the plan lock and a passing simulation, and leaves the plan paused(operator_redeem). Skill plans are refused.
+      - `--record` accepts only a tx that our outbox signed as that plan's redeem.
+  - Evidence: `venus.test.ts`, 7 tests (using measured calldata for 1 USDT).
+    - The simulated approval was for the exact amount (the API item is 2^256−1).
+    - A wrong amount or market was refused. A redeem that touches principal and a delayed redeem were refused too.
+    - In a live deposit → redeem, vToken minting and the USDT received were parsed from the logs.
+  - Evidence (9/27): `apps/agent/src/operator.test.ts`, 4 tests.
+    - The preview neither signs nor changes anything. A missing plan, a skill plan, a safe plan and a plan with no position are refused.
+    - A live redeem leaves a receipts redeem row, sets principal to 0 and puts the interest in harvested. A stopped plan stays stopped.
+    - A failed simulation means 0 signatures and an alert. Refuses while the lock is held.
+    - An unmined tx blocks other plans with `outbox_busy`, and after mining `--record` applies only once.
+    - The live redeem branches of the guardian redeem_all and of the stop job had no tests before. They are now verified through the same recording path (`applyPositionRedeem`).
+  - Remaining: [HUMAN] $1 live trade test (`docs/LIVE_TEST.md`: deposit, buy, redeem), principal decision (REPLAN R1), swap receipt for a buy with interest (G4).
+- Acceptance: **3 kinds of mainnet receipts (deposit, redeem, swap)**, interest shown. When interest falls short, fill with a contribution alongside it, marked separately on the receipt
+
+### M1-06 Scheduler, window, idempotency · Criterion: Technical
+- [~] 5-minute tick, lock, idempotency key, `nextDueAt` (open + 2 minutes), DEFERRED(market_closed) record and retryAt
+  - Code (9/26): `apps/agent/src/scheduler.ts` `schedulerTick` (5 minutes). The order is outbox cleanup (live) → finish waiting cycles (`awaiting.ts`) → guardian → web jobs (preview is always simulate) → due plans one at a time (one signer).
+    - Lock: conditional UPDATE on `plans.lock_until`.
+    - Idempotency: scheduled cycles are keyed on (plan, due_at). A manual run is a new cycle per request.
+    - Next due: `packages/core/src/schedule.ts` `nextDue` (core 100%).
+    - The worker `main.ts` runs it alongside the tape. live signs only with a live config and an active plan.
+  - Evidence: `scheduler.test.ts`. Checked by shifting the clock.
+    - Saturday 11:00 ET tick: DEFERRED(market_closed, retryAt Mon 13:32Z).
+    - Sunday: no run.
+    - Mon 09:33 ET tick: automatic BOUGHT, next due Tue 09:32.
+  - Remaining: [PC] confirm a real weekend→Monday from the deployed worker's logs (G5).
+- Acceptance: a weekend run creates a DEFERRED record, automatic buy after the Monday open (proven by logs)
+
+### M1-07 Error taxonomy v1 · Criteria: Technical, DX
+- [~] SPEC §11 mapping, retry and backoff, 429, alerts (FAILED only), a dx event on the first sighting of an unknown code
+  - Taxonomy (2026-09-26, cloud session): `packages/binance/src/taxonomy.ts` `classifyError()` — (module, code) → action (`retry`, `requote`, `next_issuer`, `market_closed`, `reduce_size`, `rpc_fallback`, `defer`, `fail`), whether to send an ops alert, copy key, whether it is documented. Codes are taken only from each module's official error table (including codes that mean different things in different modules, like 40470). A code not in the tables is `documented:false` → the cycle safely ends FAILED, ops alert.
+  - Retry and 429: `RequestOptions.retries` (default 0, idempotent calls only) — backoff of 0.5 s, 1 s, 2 s… on transient errors (network, timeout, 5xx, 50000/50001, 40432, 40465, 40482, 40483). 429 as before: 1 retry after Retry-After. `BinanceApiError.classify()`.
+  - Engine hookup: `QuoteObservation.errorAction` (`next_issuer`, `market_closed`) — when the agent passes the classification in, 40421, 40365 and 40366 also move on to the next issuer (core stays at 100%).
+  - Alerts: `apps/agent/src/alerts.ts` — Telegram (when configured) or log, the same key at most once per hour, the token masked in logs and bodies. `cycleAlert()` alerts on FAILED only. Checked 1 send with `pnpm alert:test` (no token here, so `channel log, result logged`).
+  - dx events: `dx_events` table (migration 0005, 1 row per (kind, module, endpoint, code)) + `watchDxFindings` (a wrapper around the api_calls sink) alerts only on the first sighting of an undocumented code or a non-envelope response. `pnpm dx:events [--mark-logged]` prints in the dx/LOG.md format (facts only).
+- Acceptance: unit tests per code, 1 alert actually delivered
+  - Per-code tests **confirmed**: `taxonomy.test.ts` (33 rows of the SPEC §11 table + failure without a code + two-way check against the 5 official tables), `replay.test.ts` (replays measured fixtures: 40401, 42900/429 retry and give-up, 40375 minimum amount, 40484, simulate FAILED and SUCCESS inside code 0), `client.test.ts` retry and backoff, `alerts.test.ts`, `dx-watch.test.ts`, `dx.test.ts`. Full `pnpm test` 31 files, 300 tests pass.
+  - Remaining: [HUMAN/PC] quote 1 `pnpm alert:test` run (`result sent`) from a host that has a Telegram token.
+
+### M1-08 Holdings and multiplier · Criteria: Creativity, UX
+- [x] Multiplier snapshot on every receipt, change-detection event, shares recalculation
+  - Calculation done: `packages/core/src/holdings.ts` — `sharesFromTokens` (exact, rounded down), `revalueHolding` (detects multiplier changes), `upcomingMultiplierChange` (notice of an upcoming bStocks `newUIMultiplier` and `effectiveAt`).
+  - Hookup (9/26): on every buy receipt, `addToHolding` snapshots the multiplier and recalculates shares as total tokens × current multiplier. If the multiplier changed, it writes `guardian_events` (`multiplier_changed`, warn, from/to). Evidence: `cycle.test.ts` "a buy on top of a holding written at another multiplier…".
+- Acceptance: multiplier change simulation test — `holdings.test.ts` (a split that takes the multiplier 1→10 turns 2 shares → 20 shares, balanceOf unchanged)
+
+### M1-09 House plans running · Criterion: Technical
+- [~] H-SAFE ($5 daily, regular session), H-YIELD (settled principal amount, weekly) running continuously from 9/30
+  - Code ready (9/26): `pnpm db:seed` (both paused), `pnpm yield:deposit` (principal), `pnpm plan:status --activate` (`y` when live; the DB refuses a yield plan without principal → guidance message). The worker runs active plans on the 5-minute tick.
+  - Code (9/27): `pnpm plan:set` changes a house plan's amount and cadence within the caps.
+    - The checks are in core `changePlanSettings` (7 tests, core 100%): minimum buy ≤ per-buy ≤ house per-tx cap, per-buy ≤ daily ≤ daily cap, safe contribution ≥ minimum buy.
+    - Judge and skill plans are refused. An active plan asks for `y`.
+    - Used to set H-SAFE to $1/$1/$1 for the $1 test.
+  - Remaining: [HUMAN] house wallet funding, the $1 test (`docs/LIVE_TEST.md`), principal decision (REPLAN R1–R4). Then activation and continuous running (G5).
+- Acceptance: ≥ 4 days of cycle records by 10/4, 0 FAILED or the cause recorded
+
+---
+
+## M2 Productization (10/1 ~ 10/4) — Goal: a judge completes the flow in 3 minutes
+
+### M2-01 Watch home · Criteria: UX, Technical
+- [x] 2 house cards, receipt feed (reason + link), market state badge, LIVE/STALE/UNAVAILABLE, 2 CTAs
+  - Code (9/26): `apps/web/app/page.tsx` — hero (title, subtitle, 2 CTAs) + interest counter (the house yield plan's vToken read from the chain, reread every 15 seconds — no extrapolation, `components/home/InterestCounter.tsx`), 2 house cards (principal, interest, shares collected, next buy, today's limit, receipt count, last reason), receipt feed (one-line reason + BscScan), off-hours gap insight (7 days of tape), stock cards (issuer, Ondo minimum $5.01), "Why you can check us" (caps from config values, guardian status from samples). Header: market state badge (our NYSE calendar), tape data state, KO/EN. Every block carries LIVE / n min old / Unavailable (reason) (`components/ui.tsx` `StateBadge`; read failures are turned into a reason label by `lib/server/settle.ts`, and the cause goes only to the server log).
+- Acceptance: no horizontal scroll on mobile at 375px, 3-second first-screen comprehension rehearsal (Minseo Kang's checklist)
+  - [x] No horizontal scroll at 375px: `pnpm ui:check` (Playwright Chromium, `scripts/ui-check.ts`) — local `next start` + scratch DB, 7 pages × KO/EN × 375/1440px, all 28 runs `scrollWidth 375 / 375` (the same at 1440), 0 page errors, `ui:check — 0 problems`.
+  - [ ] [HUMAN] 3-second comprehension rehearsal.
+
+### M2-02 Judge Mode · Criteria: UX, Technical
+- [x] Code → stock/sector → mode and amount → preview (plain words + raw toggle) → run progress → receipt → [Stop]
+  - Code (9/26): `apps/web/app/judge/page.tsx` + `components/judge/JudgeFlow.tsx` — ① code (`POST /api/judge/session`) ② stock (registry; Ondo-only stocks the trial limit can't buy are disabled + reason) ③ contribution/yield mode (yield mode opens the risk disclosure modal, and the button stays disabled until "I understand" is checked), amount, when to buy (if the market is closed, it explains the next open time / half the limit off-hours) ④ preview = the result of the worker's simulation job (plain words + issuer, piece count and minimum received under "Details") ⑤ run job ⑥ receipt (separate copy for each of BOUGHT/Scheduled DEFERRED/SKIPPED/FAILED/simulation mode/awaiting confirmation) + [Stop this plan]. Sector picking was not drawn (waiting on the M2-07 sector decision; "coming soon" is banned).
+  - Issue where the worker picked up web jobs only on the 5-minute tick, making a 3-minute run impossible: between ticks, jobs alone are processed every 3 seconds (`apps/agent/src/scheduler.ts` `processJobs`, `main.ts` `JOB_POLL_MS`, the same lock as the tick — one signer, one nonce sequence). Test "picks up web jobs between ticks without running due plans".
+  - Local browser flow (stub worker, scratch DB): wrong code → "That code doesn't match" → code → NVDA → Continue → Dry-run it → (it was Saturday) "US market is closed. Retrying at Sep 28 (Mon) 22:32." → Buy now → Scheduled + plan history link + Stop, 6.1 seconds. The stub worker only imitated the result decideCycle gives in this situation (market_closed, next open +2 minutes) — this is not evidence of a real fill.
+- [~] Per-code cap, automatic stop after 7 days, reset
+  - Cap: total per code = sandbox cap (`judgeTotalUsd`, ledger), remaining limit shown. 7 days: plan `expiresAt` → `runCycle` sets stopped(expired). Reset (clearing a code's usage) was not built — once an ops procedure is set → [HUMAN] decision.
+- Acceptance: 3 rehearsal runs in a row completed within 3 minutes, failure path copy (market closed, over the cap) checked
+  - [x] Failure path copy: market closed (Scheduled), code error, limit used up (`judge.code.error.exhausted`, `code_exhausted` 409 — `apps/web/test/judge.test.ts`), preview failed (`judge.preview.failed`).
+  - [ ] [HUMAN] 3 runs within 3 minutes with the web deployed + the worker running (after the money decisions R1–R4).
+
+### M2-03 Plan detail, stop, full redeem · Criteria: UX, Technical
+- [x] Code (9/26): `apps/web/app/plans/[id]/page.tsx` — name, status and owner; principal and interest (read from the chain; for skill plans, the wallet position), shares collected (average price), next buy; limits bar (`plan.limits`); guardian (open verdict or "All clear · last check", utilization, USDT, size and price impact thresholds); history timeline (outcome filter chips, simulation records marked, receipt links per cycle); deposit and redeem receipts without a cycle; shares held (multiplier); [Stop this plan] only for the judge who owns it (`components/plan/StopPlan.tsx`: confirm → stop job → polling → refresh; yield plans explain that all principal is taken out). A plan that doesn't exist is 404.
+- Acceptance: a redeem receipt shown when a yield-mode plan is stopped
+  - [~] Screen: a redeem receipt (`kind=redeem`) shows as "Taken out of the interest account" + BscScan. A real redeem receipt needs a live run → [HUMAN] after the money decision.
+
+### M2-04 Risk disclosure, safe defaults, term substitution · Criterion: UX
+- [x] UX_COPY §5 in full, banned-word lint script (`pnpm lint:copy`)
+  - `/risk` and the yield-mode modal use §5 in full (`components/RiskText.tsx`). {apy} and {score} come only from values the worker recorded (APY from the DeFi list `apyBps` every 6 hours, the security score from the protocol detail `securityScore` every guardian tick — `main.ts`, `guardian.ts`); without a value, that sentence is left out and "Unavailable" is shown.
+  - Safe defaults: the trial defaults to contribution only and regular hours; yield mode only after agreeing to the disclosure.
+  - `pnpm lint:copy` (`apps/web/scripts/copy.ts lint`, part of `pnpm lint`): UX_COPY matches the generated file, KR/EN placeholders match, §6 banned words checked in the copy, the web source and `skills/`.
+- Acceptance: 0 banned words
   - [x] `lint:copy — 252 keys, 11 banned words, 0 problems`.
 
-### M2-05 KR/EN i18n · 기준: UX
-> 9/27 사람 결정 D-26: 화면은 영어만. 아래 언어 토글·브라우저 언어 판별은 없앴고, 문구 파일·키 체계·시간대 처리는 그대로다.
-- 수용: 모든 문자열이 키 기반, 언어 토글
-  - [x] `pnpm copy:gen`이 docs/UX_COPY.md(§3·§4·§5·§7)에서 `apps/web/lib/i18n/copy.ts`를 만든다(252키, KR/EN). 화면은 `t(key)`만 쓴다(키는 타입으로 검사). 값이 빠진 자리표시자가 있는 문장은 통째로 뺀다(미국 주가 없는 `why.bought.*`의 괴리 문장, 추정하지 않는 수수료).
-  - [x] 언어: 쿠키(KO/EN 토글) → 없으면 브라우저 언어(한국어면 ko, 아니면 en). 시간: 브라우저 시간대를 쿠키로(`components/LocaleSync.tsx`), 없으면 ko=서울·en=UTC.
-  - §7은 에이전트 초안(DESIGN_BRIEF [신규 문구] KR + 영어)이다 → [HUMAN] 강민서 검토·확정.
-  - 증거: `apps/web/test/i18n.test.ts`(생성 파일 일치, 자리표시자 일치, 문장 빼기, 포맷), ui:check KO/EN 28회.
+### M2-05 KR/EN i18n · Criterion: UX
+> 9/27 human decision D-26: the screen is English only. The language toggle and browser language detection below were removed; the copy file, key scheme and time zone handling stay as they are.
+- Acceptance: every string is key-based, language toggle
+  - [x] `pnpm copy:gen` builds `apps/web/lib/i18n/copy.ts` from docs/UX_COPY.md (§3, §4, §5, §7) (252 keys, KR/EN). The screen uses only `t(key)` (keys are type-checked). A sentence with a placeholder whose value is missing is dropped whole (the gap sentence of `why.bought.*` when there is no US stock price, fees that are not estimated).
+  - [x] Language: cookie (KO/EN toggle) → otherwise the browser language (ko if Korean, else en). Time: the browser time zone saved in a cookie (`components/LocaleSync.tsx`), otherwise ko=Seoul, en=UTC.
+  - §7 is an agent draft (DESIGN_BRIEF [new copy] KR + English) → [HUMAN] Minseo Kang reviews and finalizes.
+  - Evidence: `apps/web/test/i18n.test.ts` (generated file matches, placeholders match, sentence dropping, formatting), ui:check KO/EN 28 runs.
 
-### M2-06 가디언 · 기준: 기술·창의·UX
-- [~] PLAN §7 규칙, 이벤트 표시, 전액 상환 액션(시뮬 성공 시만)
-  - 규칙(9/26): `packages/core/src/guardian.ts` `evaluateGuardian`(순수, core 100%).
-    - 프로토콜 일시중지: MINT → redeem_all, REDEEM → pause_buys.
+### M2-06 Guardian · Criteria: Technical, Creativity, UX
+- [~] PLAN §7 rules, event display, full redeem action (only when the simulation succeeds)
+  - Rules (9/26): `packages/core/src/guardian.ts` `evaluateGuardian` (pure, core 100%).
+    - Protocol pause: MINT → redeem_all, REDEEM → pause_buys.
     - TVL 24h −30% → redeem_all.
-    - 이용률 > 95% → stop_deposits.
-    - USDT < 0.99 30분 → pause_buys.
-    - 괴리·가격영향·한도·종목 상태는 decideCycle 단계에 있다.
-  - 실행: `apps/agent/src/guardian.ts` `guardianTick`.
-    - 입력을 `guardian_samples`에 남긴다(마이그레이션 0007: 온체인 플래그·이용률, DeFi TVL, Market USDT 가격).
-    - 발동 1회 기록·알림. 입력이 읽힌 규칙만 해제한다.
-    - redeem_all은 yield 플랜을 멈추고, live에서만 시뮬 SUCCESS 후 상환한다(실패하면 알림 후 사람 판단).
-    - `runCycle`은 열린 판정으로 SKIPPED(guardian). `yield:deposit`은 stop_deposits면 거부한다.
-  - 증거:
-    - `guardian.test.ts`(core, 경계값).
-    - `packages/db/src/guardian.test.ts`(24h 전 표본, 페그 이탈 시점).
-    - `scheduler.test.ts`: USDT 0.985 35분 → 열림·알림·매수 SKIPPED·서명 0 → 회복 시 해제. TVL −33% → yield 플랜 paused(`guardian:tvl_drop`).
-  - [x] 웹 표시(9/26): 플랜 상세 지킴이 패널(열린 판정·감시 항목·마지막 점검), 홈 "믿을 수 있는 이유"의 지킴이 상태.
-- 수용: 규칙별 테스트, 수동 트리거로 UI 표시 확인
+    - Utilization > 95% → stop_deposits.
+    - USDT < 0.99 for 30 minutes → pause_buys.
+    - Gap, price impact, limits and stock status are in the decideCycle steps.
+  - Execution: `apps/agent/src/guardian.ts` `guardianTick`.
+    - Records its inputs in `guardian_samples` (migration 0007: on-chain flags and utilization, DeFi TVL, Market USDT price).
+    - A trigger is recorded and alerted once. Only rules whose inputs were read are cleared.
+    - redeem_all stops yield plans and redeems only in live, after a simulation SUCCESS (if that fails, an alert and then a human decides).
+    - `runCycle` gives SKIPPED(guardian) on an open verdict. `yield:deposit` refuses under stop_deposits.
+  - Evidence:
+    - `guardian.test.ts` (core, boundary values).
+    - `packages/db/src/guardian.test.ts` (the sample from 24h before, the moment the peg broke).
+    - `scheduler.test.ts`: USDT 0.985 for 35 minutes → opened, alert, buy SKIPPED, 0 signatures → cleared on recovery. TVL −33% → yield plan paused(`guardian:tvl_drop`).
+  - [x] Web display (9/26): guardian panel on plan detail (open verdict, what it watches, last check), guardian status in the home "Why you can check us".
+- Acceptance: tests per rule, UI display checked with a manual trigger
 
-### M2-07 기업행동·섹터 후보 · 기준: 창의·기술
-- 수용: PAUSED/LIMITED 픽스처로 SKIPPED 사유 표시, 섹터 후보 대체 테스트
-  - [x] 기업행동 부분.
-    - decideCycle: ASSET_PAUSED·ASSET_LIMITED를 발행사를 바꾸지 않고 SKIPPED(corporate_action)로 처리한다. earnings·배당·분할 키가 있고, 나머지는 detail에 남긴다. 증거: `decide.test.ts`.
-    - 실측 목록 재생: `apps/agent/src/market.test.ts`. `fixtures/rwa/getRwaTokenList-20260924-1.json`에는 기업행동이 없어서 대신 두 가지를 확인했다.
-      - 장외에 TRADING인 bStocks도 정규장 플랜은 목 09:32 ET로 DEFERRED.
-      - 실제 Ondo `MARKET_PAUSED "Paused for session transition"`은 API nextOpenTime + 2분으로 DEFERRED.
-  - [ ] 섹터 후보 대체: 구현하지 않았다. REPLAN R10이 "섹터 타깃 지금 컷"을 제안했고, DESIGN_BRIEF도 분야 선택을 그리지 않는다. 컷라인은 사람 합의가 필요하다 → [HUMAN] 결정 대기.
+### M2-07 Corporate actions and sector candidates · Criteria: Creativity, Technical
+- Acceptance: SKIPPED reason shown with PAUSED/LIMITED fixtures, sector candidate substitution test
+  - [x] Corporate action part.
+    - decideCycle: handles ASSET_PAUSED and ASSET_LIMITED as SKIPPED(corporate_action) without switching issuer. There are keys for earnings, dividend and split; the rest goes into detail. Evidence: `decide.test.ts`.
+    - Replaying the measured list: `apps/agent/src/market.test.ts`. `fixtures/rwa/getRwaTokenList-20260924-1.json` has no corporate actions, so two other things were checked instead.
+      - Even for bStocks that are TRADING off-hours, a regular-session plan is DEFERRED to Thu 09:32 ET.
+      - A real Ondo `MARKET_PAUSED "Paused for session transition"` is DEFERRED to the API nextOpenTime + 2 minutes.
+  - [ ] Sector candidate substitution: not implemented. REPLAN R10 proposed "cut sector targets now", and DESIGN_BRIEF does not draw sector picking either. A cut line needs human agreement → waiting on a [HUMAN] decision.
 
-### M2-08 Skill API · 기준: AW 특별상·기술
-- [x] `/api/plans`, `/preview`, `/next`, `/report`, `/stop`, 토큰 발급·검증, 레이트리밋
-  - 코드(9/26): `apps/web/app/api/**/route.ts` 18개 + `apps/web/lib/server/*`. 웹은 서명하지 않고 Binance Web3 API도 부르지 않는다(워커가 쓴 DB·공개 BSC RPC만 읽고, 실행은 `jobs`로 워커에 넘긴다; Q-01 단일 키·리전).
-    - 심사위원: `POST /api/judge/session`(코드 SHA-256 대조, HMAC 서명 쿠키 `yieldvest_judge` HttpOnly·SameSite=Lax·7일, 코드 원문 저장 없음) → `POST /api/plans`(샌드박스 캡 이내, 등록 티커만, 코드당 총액·시간당 5개) → `/run`·`/preview`·`/stop`(202 + `/api/jobs/:id` 폴링, 플랜당 10분 10건).
-    - 스킬(mode C): `POST /api/plans {owner:"skill"}` → 토큰 `yv_…` 1회 표시(해시만 저장). `GET /next` = decideCycle(테이프 추정가·지갑의 Venus 포지션·가디언·플랜 한도) → `baw` argv(quote의 `acceptMinToCoinAmount` = 추정치 −1%, swap의 `confirm`·`report`), 사유 키, `expiresAt` +5분; calldata·서명 없음. `POST /report` = 체인 확인(채굴·성공·플랜 지갑 발신·Transfer 로그)만 기록, 한도 초과는 기록 후 `report_over_limit`로 정지, 예치 보고로 yield 플랜 활성화.
-    - 레이트리밋: 코드 시도 IP당 분 10회, 스킬 플랜 IP당 시간 5개, `/next` 플랜당 분 30회, `/report` 분 20회(인스턴스 메모리) + 지속 한도(플랜 수·잡 수·지출 원장)는 Postgres.
-  - 이 과정에서 고친 것: 지출 원장의 하우스 일 한도(`global_day`)가 스킬 플랜(사용자 지갑) 지출까지 더하던 버그 → 하우스·심사위원 플랜만 합산(`packages/db/src/ledger.ts`, 테스트 "keeps skill plans … out of the house wallet's daily cap"은 수정 전 실패 `expected '3' to be '5'` → 수정 후 통과). 캡 값 변경 없음.
-  - 증거: `apps/web/test/{judge,skill,read,openapi}.test.ts` 22개(웹 전용 DB `<test db>_web`, 가짜 체인). 전체 `pnpm test` 45파일 371개 통과, core 100%. `next build --webpack` 성공(API 19개 경로). 로컬 `next start`(스크래치 DB) 실측: 잘못된 코드 401 → 코드 200 + 쿠키 → $6 `over_cap` → $5 플랜 `paused(awaiting_run)` → `/run` 202 → 잡 `queued`; 스킬 플랜 201 + 토큰 → `/next` 토큰 없음 401, 테이프 없음 `wait data_unavailable` → 미채굴 해시 `/report` 202 `pending`(공개 RPC 조회).
-- 수용: OpenAPI 문서, `/next` 응답에 baw 명령 파라미터·사유·만료 시각
-  - [x] `GET /api/openapi`(OpenAPI 3.1, 요청 본문은 라우트가 검증에 쓰는 zod 스키마에서 생성 — `lib/server/schemas.ts`). `openapi.test.ts`가 라우트 파일·메서드와 문서를 1:1 대조.
-  - [x] `/next`: `steps[].run`(baw argv), `why`(UX_COPY 키)·`reason`, `expiresAt` — `skill.test.ts`.
+### M2-08 Skill API · Criteria: AW special prize, Technical
+- [x] `/api/plans`, `/preview`, `/next`, `/report`, `/stop`, token issuance and verification, rate limits
+  - Code (9/26): 18 `apps/web/app/api/**/route.ts` files + `apps/web/lib/server/*`. The web does not sign and does not call the Binance Web3 API (it reads only the DB the worker wrote and public BSC RPC, and hands execution to the worker through `jobs`; Q-01 single key and region).
+    - Judge: `POST /api/judge/session` (code checked against SHA-256, HMAC-signed cookie `yieldvest_judge` HttpOnly, SameSite=Lax, 7 days, the code's plaintext never stored) → `POST /api/plans` (within the sandbox cap, registered tickers only, total per code, 5 per hour) → `/run`, `/preview`, `/stop` (202 + polling `/api/jobs/:id`, 10 per 10 minutes per plan).
+    - Skill (mode C): `POST /api/plans {owner:"skill"}` → token `yv_…` shown once (only the hash is stored). `GET /next` = decideCycle (tape estimated price, the wallet's Venus position, guardian, plan limits) → `baw` argv (quote's `acceptMinToCoinAmount` = estimate −1%, swap's `confirm` and `report`), reason key, `expiresAt` +5 minutes; no calldata and no signature. `POST /report` = records only what the chain confirms (mined, success, sent from the plan wallet, Transfer logs); an over-limit report is recorded and then the plan is halted with `report_over_limit`; a deposit report activates a yield plan.
+    - Rate limits: code attempts 10 per minute per IP, skill plans 5 per hour per IP, `/next` 30 per minute per plan, `/report` 20 per minute (in instance memory) + durable limits (plan count, job count, spending ledger) in Postgres.
+  - Fixed along the way: a bug where the spending ledger's house daily limit (`global_day`) also added skill plan (user wallet) spending → only house and judge plans are summed (`packages/db/src/ledger.ts`; the test "keeps skill plans … out of the house wallet's daily cap" failed before the fix with `expected '3' to be '5'` → passes after the fix). No cap values changed.
+  - Evidence: `apps/web/test/{judge,skill,read,openapi}.test.ts`, 22 tests (web-only DB `<test db>_web`, fake chain). Full `pnpm test` 45 files, 371 tests pass, core 100%. `next build --webpack` succeeded (19 API paths). Measured on local `next start` (scratch DB): wrong code 401 → code 200 + cookie → $6 `over_cap` → $5 plan `paused(awaiting_run)` → `/run` 202 → job `queued`; skill plan 201 + token → `/next` without a token 401, no tape `wait data_unavailable` → unmined hash `/report` 202 `pending` (public RPC lookup).
+- Acceptance: OpenAPI document; baw command parameters, reason and expiry time in the `/next` response
+  - [x] `GET /api/openapi` (OpenAPI 3.1, request bodies generated from the zod schemas the routes validate with — `lib/server/schemas.ts`). `openapi.test.ts` checks route files and methods against the document 1:1.
+  - [x] `/next`: `steps[].run` (baw argv), `why` (UX_COPY key), `reason`, `expiresAt` — `skill.test.ts`.
 
-### M2-09 Wallet Skill v1 · 기준: AW 특별상·DX
-- [x] `skills/yieldvest/SKILL.md` + references(plan.md, run.md, safety.md), 설치 경로 확정
-  - (9/26) Skills Hub `binance-agentic-wallet` 형식(frontmatter name/description/metadata, `requires` baw·curl·jq, 선행 스킬). 라우팅: 플랜 만들기(`POST /api/plans`, 토큰은 `~/.config/yieldvest/config.json` 600에만 — 대화에 출력 금지), 이자 모드 예치(`defi preview DEPOSIT` → 확인 → `defi deposit` → `/report`), 실행(`/next` 단계: redeem → quote(`acceptMinToCoinAmount`·심볼 확인) → swap(`market-order list`로 FINISHED/FAILED까지) → `/report`), 상태·정지. 안전: 위험 고지 동의, 매 상태 변경 전 미리보기·확인, **토큰 주소를 공식 RWA 목록(스킬 허브가 문서화한 공개 엔드포인트 `…/rwa/stock/detail/list/ai?type=3|1`)과 대조**, 세션 만료 2시간 전 알림, orderId≠체결, 오류 원문 전달.
-  - `/next`가 내는 argv를 벤더 문서와 대조: `market-order quote|swap`(`--fromTokenQty --fromToken --toToken --binanceChainId --slippage --json`), `market-order list --orderId`, `defi preview --action REDEEM`·`defi redeem --investmentId --tokenAddress --amount` — `docs/vendor/binance-skills-hub/.../binance-agentic-wallet/references/{market-order,defi}.md`와 일치.
-  - 설치 경로(Claude Code 개인 스킬): `git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK yieldvest-src && mkdir -p ~/.claude/skills && cp -r yieldvest-src/skills/yieldvest ~/.claude/skills/` + `YIELDVEST_URL`. `/skill` 화면과 README에 같은 줄. 설정 저장 jq 명령은 로컬에서 실행 확인(jq 1.7).
-- [ ] [HUMAN+에이전트] Claude Code에서 실제 실행: 안전 모드 $5 매수 1건, 이자 모드 예치 1건 → `docs/skill-demo.md`(마스킹)
-- 수용: 클린 머신 설치→첫 실행 ≤ 10분, 소감·막힘이 dx/LOG.md에
+### M2-09 Wallet Skill v1 · Criteria: AW special prize, DX
+- [x] `skills/yieldvest/SKILL.md` + references (plan.md, run.md, safety.md), install path settled
+  - (9/26) Skills Hub `binance-agentic-wallet` format (frontmatter name/description/metadata, `requires` baw, curl, jq, prerequisite skill). Routing: create a plan (`POST /api/plans`, the token only in `~/.config/yieldvest/config.json` (mode 600) — never printed in the conversation), yield-mode deposit (`defi preview DEPOSIT` → confirm → `defi deposit` → `/report`), run (`/next` steps: redeem → quote (`acceptMinToCoinAmount` and symbol check) → swap (with `market-order list` until FINISHED/FAILED) → `/report`), status and stop. Safety: agreement to the risk disclosure, preview and confirmation before every state change, **check the token address against the official RWA list (the public endpoint the Skills Hub documents, `…/rwa/stock/detail/list/ai?type=3|1`)**, alert 2 hours before the session expires, orderId≠fill, pass error messages on verbatim.
+  - The argv that `/next` produces checked against the vendor docs: `market-order quote|swap` (`--fromTokenQty --fromToken --toToken --binanceChainId --slippage --json`), `market-order list --orderId`, `defi preview --action REDEEM`, `defi redeem --investmentId --tokenAddress --amount` — matches `docs/vendor/binance-skills-hub/.../binance-agentic-wallet/references/{market-order,defi}.md`.
+  - Install path (Claude Code personal skill): `git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK yieldvest-src && mkdir -p ~/.claude/skills && cp -r yieldvest-src/skills/yieldvest ~/.claude/skills/` + `YIELDVEST_URL`. The same line on the `/skill` screen and in the README. The jq command that saves the config was run locally to confirm it (jq 1.7).
+- [ ] [HUMAN+agent] Real run in Claude Code: 1 safe-mode $5 buy, 1 yield-mode deposit → `docs/skill-demo.md` (masked)
+- Acceptance: install on a clean machine → first run ≤ 10 minutes, impressions and blockers in dx/LOG.md
 
-### M2-10 Agent Studio · 기준: Studio 특별상
-- [ ] 하우스 에이전트 신원 등록(ERC-8004), 가능하면 런타임/MCP, 사이트에 신원 링크
-- 수용: 등록 tx·에이전트 ID가 README에
+### M2-10 Agent Studio · Criterion: Studio special prize
+- [ ] Register the house agent identity (ERC-8004), runtime/MCP if possible, identity link on the site
+- Acceptance: registration tx and agent ID in the README
 
-### M2-11 /dx 페이지 · 기준: DX
-- [x] p50/p95·오류코드·리전, 테이프 차트 3종(정규장 vs 장외 괴리, 규모별 가격영향, 발행사 비교), 발견 목록
-  - 코드(9/26): `apps/web/app/dx/page.tsx` + `lib/server/dx.ts`(`GET /api/dx/metrics`·`/api/dx/tape`와 같은 로더) — 요약 4개(호출·오류율·전체 p95 — 그룹 평균이 아니라 전체 호출의 백분위, `summarizeCalls().total`·테이프 견적 수), 엔드포인트 표(코드 칩), 지역 표, 시간대별 괴리 막대(미국 주가가 있던 표본만, n 표시), 발행사·크기별 가격영향 막대, 발행사 비교 표, 발견 목록(dx_events).
-- 수용: 실데이터 렌더, 캡션에 측정 방법
-  - [x] 캡션: 블록마다 `측정 방법: …`.
-  - [~] 렌더는 로컬(스크래치 DB의 합성 행 — 배치 확인용)로만 확인. 실데이터 렌더는 배포 후 → [HUMAN] 배포된 /dx 확인.
+### M2-11 /dx page · Criterion: DX
+- [x] p50/p95, error codes, regions, 3 tape charts (regular session vs off-hours gap, price impact by size, issuer comparison), findings list
+  - Code (9/26): `apps/web/app/dx/page.tsx` + `lib/server/dx.ts` (the same loader as `GET /api/dx/metrics` and `/api/dx/tape`) — 4 summaries (calls, error rate, overall p95 — a percentile over all calls, not a group average, `summarizeCalls().total`, tape quote count), endpoint table (code chips), region table, gap bars by session (only samples that had a US stock price, n shown), price impact bars by issuer and size, issuer comparison table, findings list (dx_events).
+- Acceptance: renders real data, measurement method in the caption
+  - [x] Caption: `Method: …` on every block.
+  - [~] Rendering checked only locally (synthetic rows in a scratch DB — for checking the layout). Real-data rendering after deploy → [HUMAN] check the deployed /dx.
 
-### M2-12 health·smoke·모니터·알림 · 기준: 기술
-- 수용: `/api/judge/smoke` 전 항목 녹색, 모니터가 실패를 텔레그램으로 1회 전달(테스트)
-  - [x] 코드(9/26): `GET /api/health`, `GET /api/judge/smoke`(DB·워커 마지막 틱 15분·Web3 API는 워커의 `api_calls` 마지막 성공 30분·BSC RPC 블록·하우스 잔고·마지막 영수증·테이프; red면 503). `pnpm smoke [--url] [--strict] [--alert]`(`scripts/smoke.ts`), 모니터 `.github/workflows/monitor.yml`(30분마다 `pnpm smoke --alert`, 저장소 변수 `YIELDVEST_APP_URL` 없으면 꺼짐, 기본 브랜치에서만 cron 동작).
-  - 증거: `read.test.ts`(틱 없음 → red 503, 전부 기록 → green, RPC 다운 → red). 로컬 실측 `pnpm smoke --url http://127.0.0.1:3100 --alert` → `database green, worker red(no tick recorded), web3api red, rpc green(block 124196543), house degraded, receipts degraded, tape red` → `status: red`, exit 1, 알림 채널 log(텔레그램 미설정).
-  - [ ] [HUMAN] 배포된 웹 + 워커에서 전 항목 녹색, `YIELDVEST_APP_URL`·`TELEGRAM_BOT_TOKEN`·`TELEGRAM_OPS_CHAT_ID` 설정 후 모니터 텔레그램 1회 수신 확인.
+### M2-12 health, smoke, monitor, alerts · Criterion: Technical
+- Acceptance: `/api/judge/smoke` all items green, the monitor delivers a failure to Telegram once (test)
+  - [x] Code (9/26): `GET /api/health`, `GET /api/judge/smoke` (DB, worker last tick within 15 minutes, Web3 API = the worker's last successful `api_calls` within 30 minutes, BSC RPC block, house balance, last receipt, tape; 503 when red). `pnpm smoke [--url] [--strict] [--alert]` (`scripts/smoke.ts`), monitor `.github/workflows/monitor.yml` (`pnpm smoke --alert` every 30 minutes, off when the repository variable `YIELDVEST_APP_URL` is missing, cron runs only on the default branch).
+  - Evidence: `read.test.ts` (no tick → red 503, everything recorded → green, RPC down → red). Measured locally: `pnpm smoke --url http://127.0.0.1:3100 --alert` → `database green, worker red(no tick recorded), web3api red, rpc green(block 124196543), house degraded, receipts degraded, tape red` → `status: red`, exit 1, alert channel log (Telegram not configured).
+  - [ ] [HUMAN] All items green on the deployed web + worker; after setting `YIELDVEST_APP_URL`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_OPS_CHAT_ID`, confirm that 1 monitor Telegram message is received.
 
-### M2-13 승인된 디자인을 실제 웹에 (frontend-preview → apps/web, D-25) · 기준: UX·기술
-- [x] (9/27) 사용자가 승인한 `frontend-preview/` 디자인을 `apps/web`에 옮김 — 탭 4개(한눈에 `/` · 이자 `/earn` · 투자 `/invest` · 내역 `/activity`)와 영수증 상세 `/activity/[id]`, 플랜·비서·위험·데이터 페이지까지 같은 디자인. `/judge`는 `/invest`로 리다이렉트(제출 링크 유지).
-  - 디자인: 미리보기 CSS를 그대로 옮김(`apps/web/app/styles/preview.css`·`motion.css`, 원본과 대조 가능) + 실제 앱에 필요한 것만 `app.css`. 로컬 Inter Variable, Yieldvest 마크, BNB Chain 로고, 모션(일시정지 버튼·시스템 움직임 줄이기·화면 밖/숨은 탭에서 멈춤). Tailwind 제거.
-  - 데이터: 예시 상태는 옮기지 않음(규칙 4). Overview 흐름도 = 하우스 이자 플랜의 쌓인 이자(이자로 산 금액 + 지금 쓸 수 있는 이자, decideCycle과 같은 식), Earn 차트 = 읽은 값 두 개만, Activity·영수증 = 새 읽기 전용 조회 `apps/web/lib/server/activity.ts`(하우스 플랜은 모든 사이클, 다른 플랜은 체인에 기록된 것만, 실행 기록은 step 로그). 못 읽으면 "불러올 수 없어요(이유)".
-  - 체험(Invest): Judge Mode의 API·잡·캡·위험 고지 동의·미리보기 후 실행을 그대로 쓰고 화면만 바꿈(`components/invest/InvestFlow.tsx`). 새 지출 경로·캡 변경 없음.
-  - 문구: UX_COPY §7.6(영어는 미리보기 원문), `copy:gen` 414키. 화면은 영어만(D-26): 언어 토글·언어 쿠키 제거, `<html lang="en">`.
-- 수용: 375px 가로 스크롤 없음, 영어만(D-26), CSP 위반 0, 기존 게이트 통과
-  - [x] `pnpm ui:check`(프로덕션 `next start`, 로컬 DB): 9페이지 × KO/EN × 375/1440px = 36회 전부 HTTP 200·`scrollWidth` = 화면 폭, 페이지 오류·콘솔 오류(CSP 포함) 0 → `ui:check — 0 problems`.
-  - [x] `pnpm typecheck`, `pnpm lint`(`lint:copy — 414 keys, 11 banned words, 0 problems`), `pnpm test` 58파일 584 통과 · 10 건너뜀(새 테스트 `apps/web/test/activity.test.ts` 7개, `i18n.test.ts` 포맷 2개), `pnpm --filter @yieldvest/web build`.
-  - [x] 브라우저 확인(Playwright, 로컬 DB에 손으로 넣은 예시 행 — 커밋하지 않음, 실적 아님): 코드 오류 → 코드 → 미리 돌려보기 → 지금 사기 → 영수증 → 플랜 기록·멈추기, 데스크톱 EN·휴대폰 KO. 워커 잡 결과는 손으로 기록했다(실제 체결 증거 아님).
-  - [ ] [HUMAN] 배포 후 첫 화면 3초 이해 리허설(M2-01과 함께).
-
----
-
-## M3 완성도 (10/5 ~ 10/7)
-
-### M3-01 b402 + x402 · 기준: Studio 특별상·창의 (컷 후보 6·7순위)
-- [ ] 유료 플랜 리포트 엔드포인트(b402), "AI 추천" 옵션에서 공식 Stock Analyze Agent x402 호출(하우스 지갑, 건당 캡)
-- 수용: 402 → 결제 → 200 흐름 픽스처, 지출 원장 기록
-
-### M3-02 모바일·접근성·성능 QA · 기준: UX
-### M3-03 README 심사위원 경로 · 기준: 전체
-- [~] 한 문장, 링크, 영상, Judge Mode, 영수증 표(자동 생성 스크립트), 모듈 매트릭스, DX 링크, 실행법, 위험 고지, 라이선스
-  - (9/26) `README.md`: EN 한 줄, 60초 요약, 3분 체험 경로, 영수증 표 자리 + `pnpm receipts:table`(DB → 마크다운, `scripts/receipts-table.ts`), 모듈 매트릭스(PLAN §6.1에 코드 기준 상태 열 — 미사용·미구현도 그대로), 스킬 설치, 구조, 안전 장치, 위험, 실행법, 문서 지도.
-  - [ ] [HUMAN] 라이브 링크·영상·DX 리포트 링크·라이선스 확정, 영수증 표 붙이기(돈 결정 이후).
-### M3-04 영상 촬영 · 기준: 전체 — DEMO.md
-### M3-05 보안 점검 · 기준: 기술 — 시크릿 스캔, 캡 검증, CSP, `pnpm audit`
-- [x] (9/26) `docs/SECURITY.md`. 시크릿 스캔(전체 git 이력: 공개 테스트 키·가짜 벡터·가짜 예시 URL뿐, 추적 env 파일은 `.env.example`만), 캡 검증(설정 한 곳·원장 잠금·정확 승인·시뮬레이션 필수), CSP(`apps/web/proxy.ts`, 요청마다 nonce, 인라인 스크립트 금지; 홈 스크립트 7개 전부 nonce, ui:check CSP 위반 0) + HSTS·nosniff·DENY·Referrer·Permissions(`next.config.ts`), `pnpm audit --prod` 취약점 0(전체는 drizzle-kit 개발 경로 esbuild moderate 1 — 개발 서버 문제, 미사용 → [HUMAN] 수용 확인).
-  - 점검 중 고친 자금 안전 버그: 스킬 플랜 정지·가디언 상환이 하우스 지갑에서 상환될 수 있던 경로 차단(D-19, 테스트는 수정 전 실패 확인), 스킬 플랜 run/preview 잡 거부.
-  - 공개 응답에서 원문 오류 제거(DB 호스트·RPC URL 누출 방지): 화면·API·smoke는 라벨만, 원문은 서버 로그.
-- [x] (9/27) 전수 감사(보안·돈 흐름·코드 꼬임) — 영역별 읽기 전용 감사 6개(코어·DB·돈 흐름·웹·인프라·스크립트/문서) → 발견 약 90건(HIGH 9) 전부 처리, 규칙 변화는 DECISIONS D-23, 남은 위험은 `docs/SECURITY.md` "남은 위험".
-  - 커밋: `eea173d`(결정 엔진·가디언·달력·Venus 탐색 — 실제 응답으로는 탐색이 항상 실패했음), `8d52c80`(돈 기록을 영수증과 한 트랜잭션으로, 중단 사이클 복구, 모든 모드 정산, 추측 FAILED 금지), `c2a546b`(스킬 `/report`·`/next`, 플랜 생성 한도 잠금, 비활성 코드, 공개 오류 라벨), `01a3f1f`(binance·chain·config I1–I13), `fb4bf4d`(scripts·docs·CI S7–S20), `82a095a`(병합 후속, 부팅 RPC 체인 확인), `0a60aa2`(알림 URL 마스킹).
-  - 새 테스트: `apps/agent/src/settlement.test.ts`(상환 뒤 예외 → 한 번만 기록, 죽은 사이클 복구, 늦은 입금 반영·코드 한도, 락·정산 전 상환 거부, 수동 실행 일정 유지, 지연 노드 → 사람 알림), `executor/send.test.ts`, `executor/chain-port.test.ts`, `packages/db/src/record.test.ts`(동시 입금·재신고·CHECK·compare-and-set), `apps/web/test/audit.test.ts`(하우스 tx·생성 전 tx·해시 표기·주기·이자 1회·포지션 상한·동시 생성 한도·비활성 코드·보류 플랜·정지·415/413). 검토 보류를 덮어쓰던 첫 실행 활성화는 수정 전 실패 확인.
-  - [ ] [HUMAN] Q-17 스킬 지갑 소유 증명(EIP-712 `baw sign-message`, Developer Mode 필요) 여부 결정.
-  - [ ] [HUMAN] 배포 전 Fly·Vercel 캡 값이 새 형식 검증을 통과하는지 확인(RUNBOOK §4).
-### M3-06 장애 리허설 · 기준: 기술 — API 다운·RPC 다운·워커 재시작·DB 복구, UI 3상태 확인, RUNBOOK 작성
-- [x] RUNBOOK: `docs/RUNBOOK.md`(구성, 매일 점검, 멈추기, 장애별 절차 — API·RPC·워커·아웃박스·DB·가디언, 캡 변경은 사람 yes 먼저, 충전, 배포, 명령 모음).
-- [x] 리허설(로컬, 9/26):
-  - DB 다운: 닫힌 포트 DB로 `next start` → 7개 화면 200 + "불러올 수 없어요 (database unavailable)", API는 처음엔 500 → **고침**: `guard()`로 503 `{"state":"UNAVAILABLE","reason":"database unavailable"}`, smoke는 red 503 `database unreachable`(테스트 `read.test.ts`, 응답에 호스트 없음 확인).
-  - RPC 다운: smoke `rpc` red 503(`read.test.ts`).
-  - 워커 재시작: 이전 워커가 `running`으로 남긴 잡을 부팅 때 실패로 닫음(**새로 추가** — 전에는 영원히 running, `requeueStaleJobs`는 호출되지 않았음; `queue.test.ts`).
-  - UI 3상태: LIVE/STALE/UNAVAILABLE — `read.test.ts`(테이프 없음 → 25분 전 → 1분 전), 빈 DB 화면 캡처.
-  - [ ] [HUMAN] 배포 환경에서 API 다운(키 교체)·Fly 재시작·Neon 복구 리허설 1회.
-- [x] 실거래 전 점검 `pnpm live:check`(9/27): config·플랜·outbox·하우스 잔고(RPC)·Venus 상태·가디언·레지스트리·워커·테이프·api_calls → GO / NO-GO.
-  - 읽기 전용이다. Web3 API를 부르지 않고 서명하지 않는다.
-  - 규칙은 `scripts/live-check-rules.ts`에 있다(테스트 8개, 분기 100%).
-  - 절차와 멈춤 조건은 `docs/LIVE_TEST.md`에 있다.
-  - 로컬 확인: 스크래치 DB에서 NO-GO(config·house·registry). 공개 BSC RPC 잔고 읽기가 동작했다.
-### M3-07 [-] 모드 D 웹 지갑 연결 (기본 컷)
-### M3-08 [-] BNB 스테이킹 이자원 (기본 컷)
+### M2-13 The approved design in the real web app (frontend-preview → apps/web, D-25) · Criteria: UX, Technical
+- [x] (9/27) Moved the user-approved `frontend-preview/` design into `apps/web` — 4 tabs (Overview `/` · Earn `/earn` · Invest `/invest` · Activity `/activity`) and the receipt detail `/activity/[id]`, with the same design carried through to the plan, assistant, risk and data pages. `/judge` redirects to `/invest` (the submitted link keeps working).
+  - Design: the preview CSS was moved over as is (`apps/web/app/styles/preview.css`, `motion.css`, can be compared with the original) + only what the real app needs in `app.css`. Local Inter Variable, Yieldvest mark, BNB Chain logo, motion (pause button, system reduced motion, stops off-screen/in hidden tabs). Tailwind removed.
+  - Data: the example state was not carried over (rule 4). Overview flow diagram = the house yield plan's accrued interest (amount bought with interest + interest available now, the same formula as decideCycle), Earn chart = only the two values read, Activity and receipts = a new read-only query `apps/web/lib/server/activity.ts` (all cycles for house plans, for other plans only what is recorded on-chain, the execution trace from step logs). If it cannot be read: "Unavailable (reason)".
+  - Trial (Invest): reuses Judge Mode's API, jobs, caps, risk disclosure agreement and run-after-preview as they are, and only changes the screens (`components/invest/InvestFlow.tsx`). No new spending path, no cap change.
+  - Copy: UX_COPY §7.6 (the English is the preview's original text), `copy:gen` 414 keys. The screen is English only (D-26): language toggle and language cookie removed, `<html lang="en">`.
+- Acceptance: no horizontal scroll at 375px, English only (D-26), 0 CSP violations, existing gates pass
+  - [x] `pnpm ui:check` (production `next start`, local DB): 9 pages × KO/EN × 375/1440px = 36 runs, all HTTP 200 and `scrollWidth` = viewport width, 0 page errors and console errors (including CSP) → `ui:check — 0 problems`.
+  - [x] `pnpm typecheck`, `pnpm lint` (`lint:copy — 414 keys, 11 banned words, 0 problems`), `pnpm test` 58 files, 584 passed · 10 skipped (new tests: 7 in `apps/web/test/activity.test.ts`, 2 formatting tests in `i18n.test.ts`), `pnpm --filter @yieldvest/web build`.
+  - [x] Browser check (Playwright, example rows put into the local DB by hand — not committed, not real results): code error → code → Dry-run it → Buy now → receipt → plan history and Stop, desktop EN and phone KO. The worker job results were recorded by hand (not evidence of a real fill).
+  - [ ] [HUMAN] 3-second first-screen comprehension rehearsal after deploy (together with M2-01).
 
 ---
 
-## M4 제출 (10/8 ~ 10/9)
+## M3 Polish (10/5 ~ 10/7)
 
-### M4-01 [HUMAN] DX 리포트 작성 — DX_PROTOCOL §5 구조, `dx/metrics.md`·`dx/LOG.md`·테이프 인용, 공식 폼 제출
-### M4-02 [HUMAN] 영상 편집 ≤ 4분, 업로드(비공개 링크 아님)
-### M4-03 제출 — 레포 public, 라이선스(MIT 권장), 릴리스 태그 v1.0, 제출 폼, 등록 확인
-### M4-04 프리즈·운영 모드 — RUNBOOK 일일 점검표(10/12~10/23), 배포 금지
+### M3-01 b402 + x402 · Criteria: Studio special prize, Creativity (cut candidates #6 and #7)
+- [ ] Paid plan report endpoint (b402), official Stock Analyze Agent x402 call from an "AI recommendation" option (house wallet, per-call cap)
+- Acceptance: fixture of the 402 → payment → 200 flow, recorded in the spending ledger
+
+### M3-02 Mobile, accessibility, performance QA · Criterion: UX
+### M3-03 README judge path · Criterion: All
+- [~] One sentence, links, video, Judge Mode, receipts table (auto-generation script), module matrix, DX link, how to run, risk disclosure, license
+  - (9/26) `README.md`: one EN line, 60-second summary, 3-minute trial path, a slot for the receipts table + `pnpm receipts:table` (DB → Markdown, `scripts/receipts-table.ts`), module matrix (PLAN §6.1 with a status column based on the code — unused and unimplemented shown as they are), skill install, structure, safeguards, risks, how to run, docs map.
+  - [ ] [HUMAN] Settle the live link, video, DX report link and license; paste in the receipts table (after the money decision).
+### M3-04 Video recording · Criterion: All — DEMO.md
+### M3-05 Security review · Criterion: Technical — secret scan, cap verification, CSP, `pnpm audit`
+- [x] (9/26) `docs/SECURITY.md`. Secret scan (full git history: only public test keys, fake vectors and fake example URLs; the only tracked env file is `.env.example`), cap verification (one config location, ledger lock, exact approval, simulation required), CSP (`apps/web/proxy.ts`, a nonce per request, no inline scripts; all 7 home page scripts carry the nonce, 0 CSP violations in ui:check) + HSTS, nosniff, DENY, Referrer, Permissions (`next.config.ts`), `pnpm audit --prod` 0 vulnerabilities (the full audit: 1 moderate in esbuild on the drizzle-kit dev path — a dev server issue, not used → [HUMAN] confirm acceptance).
+  - Fund-safety bugs fixed during the review: blocked the path where a skill plan stop or a guardian redeem could redeem from the house wallet (D-19, the test was confirmed to fail before the fix), skill plan run/preview jobs refused.
+  - Raw errors removed from public responses (prevents leaking the DB host and RPC URL): the screen, API and smoke show labels only; the raw text goes to the server log.
+- [x] (9/27) Full audit (security, money flow, tangled code) — 6 read-only audits by area (core, DB, money flow, web, infra, scripts/docs) → about 90 findings (9 HIGH), all handled; rule changes in DECISIONS D-23, remaining risks in `docs/SECURITY.md` "Remaining risks".
+  - Commits: `eea173d` (decision engine, guardian, calendar, Venus discovery — with real responses the discovery had always failed), `8d52c80` (money records in one transaction with the receipt, recovery of interrupted cycles, settlement in every mode, no guessed FAILED), `c2a546b` (skill `/report` and `/next`, lock on plan-creation limits, disabled codes, public error labels), `01a3f1f` (binance, chain, config I1–I13), `fb4bf4d` (scripts, docs, CI S7–S20), `82a095a` (post-merge follow-up, RPC chain check at boot), `0a60aa2` (alert URL masking).
+  - New tests: `apps/agent/src/settlement.test.ts` (exception after a redeem → recorded only once, dead cycle recovery, late deposit applied and the code limit, redeem refused before lock and settlement, manual run keeps the schedule, lagging node → human alert), `executor/send.test.ts`, `executor/chain-port.test.ts`, `packages/db/src/record.test.ts` (concurrent deposits, re-reporting, CHECK, compare-and-set), `apps/web/test/audit.test.ts` (house tx, tx from before creation, hash notation, cadence, interest only once, position ceiling, concurrent creation limit, disabled code, plan on hold, stop, 415/413). For the first-run activation that overwrote a review hold, the test was confirmed to fail before the fix.
+  - [ ] [HUMAN] Decide whether to use Q-17 skill wallet ownership proof (EIP-712 `baw sign-message`, needs Developer Mode).
+  - [ ] [HUMAN] Before deploy, check that the Fly and Vercel cap values pass the new format validation (RUNBOOK §4).
+### M3-06 Incident rehearsal · Criterion: Technical — API down, RPC down, worker restart, DB recovery, check the 3 UI states, write the RUNBOOK
+- [x] RUNBOOK: `docs/RUNBOOK.md` (setup, daily checks, stopping, per-incident procedures — API, RPC, worker, outbox, DB, guardian; cap changes need a human yes first; top-ups; deploys; command reference).
+- [x] Rehearsal (local, 9/26):
+  - DB down: `next start` with the DB on a closed port → 7 screens 200 + "Unavailable (database unavailable)", the API gave 500 at first → **fixed**: `guard()` returns 503 `{"state":"UNAVAILABLE","reason":"database unavailable"}`, smoke is red 503 `database unreachable` (test `read.test.ts`, confirmed there is no host in the response).
+  - RPC down: smoke `rpc` red 503 (`read.test.ts`).
+  - Worker restart: jobs a previous worker left as `running` are closed as failed at boot (**newly added** — before, they stayed running forever, and `requeueStaleJobs` was never called; `queue.test.ts`).
+  - 3 UI states: LIVE/STALE/UNAVAILABLE — `read.test.ts` (no tape → 25 minutes ago → 1 minute ago), screen capture with an empty DB.
+  - [ ] [HUMAN] 1 rehearsal in the deployed environment: API down (key rotation), Fly restart, Neon recovery.
+- [x] Pre-live-trade check `pnpm live:check` (9/27): config, plans, outbox, house balance (RPC), Venus state, guardian, registry, worker, tape, api_calls → GO / NO-GO.
+  - It is read-only. It does not call the Web3 API and does not sign.
+  - The rules are in `scripts/live-check-rules.ts` (8 tests, 100% branches).
+  - The procedure and stop conditions are in `docs/LIVE_TEST.md`.
+  - Local check: NO-GO on a scratch DB (config, house, registry). Reading balances over public BSC RPC worked.
+### M3-07 [-] Mode D web wallet connection (cut by default)
+### M3-08 [-] BNB staking as an interest source (cut by default)
 
 ---
 
-## 주간 자가채점 (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+에이전트]
+## M4 Submission (10/8 ~ 10/9)
+
+### M4-01 [HUMAN] Write the DX report — DX_PROTOCOL §5 structure, quote `dx/metrics.md`, `dx/LOG.md` and the tape, submit the official form
+### M4-02 [HUMAN] Edit the video to ≤ 4 minutes, upload (not a private link)
+### M4-03 Submission — repo public, license (MIT recommended), release tag v1.0, submission form, confirm registration
+### M4-04 Freeze and operations mode — RUNBOOK daily checklist (10/12~10/23), no deploys
+
+---
+
+## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]

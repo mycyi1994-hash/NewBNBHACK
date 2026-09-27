@@ -1,18 +1,17 @@
 /**
  * Copy lookup for server and client components. A sentence whose placeholder has no value is left
- * out rather than shown half-filled: `why.bought.*` without a US price drops "기준 주가 대비
- * {gap}%." (DESIGN_BRIEF §5.1), and the preview line drops the fee we do not estimate.
+ * out rather than shown half-filled: `why.bought.*` without a US price drops "{gap}% vs
+ * reference." (DESIGN_BRIEF §5.1), and the preview line drops the fee we do not estimate. The UI
+ * is English only (DECISIONS D-26); `Lang` stays the one seam a second language would need.
  */
 import { COPY, type CopyKey } from './copy';
 
-export type Lang = 'ko' | 'en';
+export type Lang = 'en';
 export type Params = Readonly<Record<string, string | number | null | undefined>>;
 export type { CopyKey };
 
-export const LANGS: readonly Lang[] = ['ko', 'en'];
-
 export function isCopyKey(key: string): key is CopyKey {
-  return Object.hasOwn(COPY.ko, key);
+  return Object.hasOwn(COPY.en, key);
 }
 
 const PLACEHOLDER = /\{([a-zA-Z]+)\}/g;

@@ -1,7 +1,7 @@
 /**
  * POST /api/judge/session {code} (SPEC §8.2): checks a judge code (by its SHA-256 only) and sets
- * the signed session cookie. The answer says what the code may still spend (UX: "코드 하나로
- * 최대 $5까지", "이 코드는 한도를 다 썼어요").
+ * the signed session cookie. The answer says what the code may still spend (UX: "One code
+ * covers up to $5", "This code has used its limit").
  */
 import { findJudgeCode } from '@yieldvest/db';
 import { context } from '../../../../lib/server/context';
