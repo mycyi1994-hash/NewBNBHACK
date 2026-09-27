@@ -259,6 +259,22 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
     expect(tick.cycles.filter((c) => c.planId === id)).toEqual([]);
   });
 
+  it('shows a failed job only a refusal written for its caller, never an internal message', async () => {
+    await calm();
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    const w = await createWorld(db, '2026-09-28T14:00:00.000Z');
+    w.chain.allowance = () =>
+      Promise.reject(new Error('request to https://bsc.example/v1/SECRET-KEY failed'));
+    await enqueueJob(db, { id: `job-internal-${id}`, kind: 'run', planId: id });
+    const done = await processJobs(w.deps('live'), w.deps('simulate'));
+    expect(await getJob(db, `job-internal-${id}`)).toMatchObject({
+      status: 'failed',
+      error: 'the worker could not finish this job',
+    });
+    // The full message is for the worker's log (and its private tick record).
+    expect(done.errors.join('\n')).toContain('SECRET-KEY');
+  });
+
   it('runs preview, run and stop jobs from the web; preview never signs', async () => {
     await calm();
     const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });

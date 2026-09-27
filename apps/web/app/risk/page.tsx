@@ -30,7 +30,11 @@ export default async function RiskPage() {
         <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted">
           {apy && score && updated ? (
             <>
-              <Pill tone="ok">{t('home.status.live')}</Pill>
+              {venus?.ok && venus.value.fresh ? (
+                <Pill tone="ok">{t('home.status.live')}</Pill>
+              ) : (
+                <StateBadge t={t} data={{ state: 'STALE', at: updated }} now={now} />
+              )}
               <span>{t('common.updated', { time: timeText(updated, lang, tz) })}</span>
             </>
           ) : (

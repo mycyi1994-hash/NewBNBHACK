@@ -9,7 +9,8 @@ import { z } from 'zod';
 export const usdAmount = z
   .string()
   .trim()
-  .regex(/^\d+(\.\d{1,2})?$/, 'a dollar amount like 5 or 2.50')
+  // Nine digits before the point: far above any cap, far below numeric(38,18).
+  .regex(/^\d{1,9}(\.\d{1,2})?$/, 'a dollar amount like 5 or 2.50')
   .describe('US dollars as a decimal string with at most two decimals, e.g. "5" or "2.50"');
 
 const ticker = z

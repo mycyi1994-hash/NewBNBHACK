@@ -194,12 +194,34 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
     expect(green.status).toBe(200);
     expect(green.body.status).toBe('green');
     expect(green.body.checks).toMatchObject({
-      worker: { state: 'green', detail: { mode: 'simulate', errors: [] } },
+      worker: { state: 'green', detail: { mode: 'simulate', errorCount: 0, errorSources: [] } },
       web3api: { state: 'green', detail: { endpoint: `${marker}/smoke`, latencyMs: 180 } },
       rpc: { state: 'green', detail: { block: '62000000' } },
       house: { state: 'green', detail: { usdt: '12.5', bnb: '0.005' } },
       receipts: { state: 'green', detail: { last: { txHash: hash, kind: 'swap' } } },
       tape: { state: 'green', detail: { state: 'LIVE' } },
+    });
+
+    // A tick with errors is degraded; the messages (hosts, keys) stay in the worker's log.
+    await writeWorkerStatus(db, 'tick', {
+      at: new Date().toISOString(),
+      mode: 'simulate',
+      errors: [
+        'settle: connect ECONNREFUSED 10.1.2.3:5432',
+        'cycle H-SAFE: https://rpc.example/key',
+      ],
+    });
+    const degraded = await call<Smoke>(smoke, { path: '/api/judge/smoke' });
+    expect(degraded.body.checks.worker).toMatchObject({
+      state: 'degraded',
+      detail: { errorCount: 2, errorSources: ['settle', 'cycle'] },
+    });
+    expect(degraded.text).not.toContain('10.1.2.3');
+    expect(degraded.text).not.toContain('rpc.example');
+    await writeWorkerStatus(db, 'tick', {
+      at: new Date().toISOString(),
+      mode: 'simulate',
+      errors: [],
     });
 
     chain.rpcDown = true;

@@ -393,7 +393,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
       from: wallet,
       logs: [
         transferLog(USDT, wallet, VTOKEN, 100n * E18),
-        transferLog(VTOKEN, VTOKEN, wallet, 4_700_000_000n),
+        transferLog(VTOKEN, VTOKEN, wallet, 100_000_000_000n),
       ],
     });
     expect(await report(id, token, { kind: 'deposit', txHash: deposit })).toMatchObject({
@@ -403,19 +403,20 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
     expect(await getPlan(db, id)).toMatchObject({
       status: 'active',
       pausedReason: null,
-      vtokenUnits: '4700000000',
+      vtokenUnits: '100000000000',
     });
 
     // After every earlier tape run in this file: the latest run is the one the decision reads.
     at('2026-10-05T14:10:00.000Z');
     await writeTape(db, instrument, '2026-10-05T14:05:00.000Z');
-    chain.venusPositionUsdValue = '100.1'; // $0.10 of interest: under the $0.25 minimum
+    // The plan's own 1e11 vTokens: $100.10 at this rate, $0.10 of interest (under the minimum).
+    chain.rate = 1_001_000_000_000_000_000_000_000_000n;
     expect((await next(id, token)).body).toMatchObject({
       decision: 'skip',
       why: { key: 'why.skipped.below_min' },
     });
 
-    chain.venusPositionUsdValue = '103';
+    chain.rate = 1_030_000_000_000_000_000_000_000_000n; // $103: $3 of interest
     const buy = await next(id, token);
     expect(buy.body).toMatchObject({ decision: 'buy', spendUsd: '3', interestUsd: '3' });
     expect(buy.body.steps.map((s) => s.id)).toEqual(['redeem', 'quote', 'swap']);

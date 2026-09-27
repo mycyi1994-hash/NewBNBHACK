@@ -84,6 +84,10 @@ export function nextFor(ctx: NextContext): NextAnswer {
   const decidedAt = ctx.now.toISOString();
   const data = { tape: ctx.tape.state, sampledAt: ctx.tape.sampledAt };
   const base = { planId: ctx.plan.id, decidedAt, data };
+  // The plan's cadence: after a buy, the next one waits for its slot (the report moves it on).
+  if (Date.parse(ctx.plan.nextDueAt) > ctx.now.getTime()) {
+    return { ...base, decision: 'wait', reason: 'not_due', retryAt: ctx.plan.nextDueAt };
+  }
   if (ctx.tape.state !== 'LIVE') {
     // Old or missing numbers: never guess; try again when the worker has fresh data.
     return {
@@ -128,6 +132,15 @@ export function nextFor(ctx: NextContext): NextAnswer {
       throw new Error(`decideCycle chose ${decision.instrumentId}, which is not in the tape`);
     const { instrument } = market;
     const tokens = BigInt(decision.quote.toTokenAmount ?? '0');
+    if (tokens <= 0n) {
+      // No estimate means no floor for the wallet's own quote: never buy without one.
+      return {
+        ...base,
+        decision: 'wait',
+        reason: 'data_unavailable',
+        retryAt: new Date(ctx.now.getTime() + NEXT_TTL_MS).toISOString(),
+      };
+    }
     // The wallet's own quote may not come in more than the price-impact limit under the estimate.
     const minTokens = (tokens * BigInt(Math.round((100 - MAX_PRICE_IMPACT_PCT) * 100))) / 10_000n;
     const common = [

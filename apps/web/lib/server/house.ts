@@ -38,20 +38,29 @@ export interface VenusInfo {
   apyAt: string | null;
   securityScore: string | null;
   scoreAt: string | null;
+  /** Both read within FRESH_MS: shown as current. Otherwise STALE (with the time) or hidden. */
+  fresh: boolean;
 }
 
-export async function venusInfo(db: Db): Promise<VenusInfo> {
+/** The worker reads the rate every six hours: two missed reads make it stale. */
+const FRESH_MS = 12 * 60 * 60_000;
+
+export async function venusInfo(db: Db, now = new Date()): Promise<VenusInfo> {
   const [status, samples] = await Promise.all([
     readWorkerStatus(db, 'venus'),
     latestGuardianSamples(db),
   ]);
   const value = status?.value as { apyDisplay?: unknown; verifiedAt?: unknown } | undefined;
   const display = typeof value?.apyDisplay === 'string' ? value.apyDisplay.trim() : '';
+  const apyAt = typeof value?.verifiedAt === 'string' ? value.verifiedAt : null;
+  const scoreAt = samples.venus_security_score?.ts ?? null;
+  const recent = (at: string | null) => at !== null && now.getTime() - Date.parse(at) <= FRESH_MS;
   return {
     apy: /^\d[\d,]*(\.\d+)?%$/.test(display) ? display.slice(0, -1) : null,
-    apyAt: typeof value?.verifiedAt === 'string' ? value.verifiedAt : null,
+    apyAt,
     securityScore: samples.venus_security_score?.value ?? null,
-    scoreAt: samples.venus_security_score?.ts ?? null,
+    scoreAt,
+    fresh: recent(apyAt) && recent(scoreAt),
   };
 }
 

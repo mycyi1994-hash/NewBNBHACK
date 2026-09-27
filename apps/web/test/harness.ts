@@ -134,28 +134,36 @@ export interface FakeWebChain extends WebChain {
   /** Mined transactions by lowercase hash; anything else is not mined (yet). */
   txs: Map<string, MinedTx>;
   block: bigint;
-  /** What venusPositionUsd reports for any wallet. */
-  venusPositionUsdValue: string;
+  /** What vTokenBalance reports for any wallet (default: more than any plan holds). */
+  walletVTokens: bigint;
   /** vToken → underlying rate (18 decimals of USD per vToken unit, scaled by 1e18). */
   rate: bigint;
   rpcDown: boolean;
-  mine(hash: Hex, tx: Omit<MinedTx, 'blockNumber'> & { blockNumber?: bigint }): void;
+  /** Mined now (the clock the routes read) unless a block time is given. */
+  mine(
+    hash: Hex,
+    tx: Omit<MinedTx, 'blockNumber' | 'timestamp'> & { blockNumber?: bigint; timestamp?: bigint },
+  ): void;
 }
 
 export function fakeWebChain(): FakeWebChain {
   const chain: FakeWebChain = {
     txs: new Map(),
     block: 62_000_000n,
-    venusPositionUsdValue: '0',
+    walletVTokens: 10n ** 30n,
     rate: 212_000_000_000_000_000_000_000_000n, // 0.0212 USDT per vToken unit (8 decimals)
     rpcDown: false,
     mine(hash, tx) {
-      chain.txs.set(hash.toLowerCase(), { blockNumber: chain.block, ...tx });
+      chain.txs.set(hash.toLowerCase(), {
+        blockNumber: chain.block,
+        timestamp: BigInt(Math.floor(Date.now() / 1000)),
+        ...tx,
+      });
     },
     blockNumber: () =>
       chain.rpcDown ? Promise.reject(new Error('fetch failed')) : Promise.resolve(chain.block),
     mined: (hash) => Promise.resolve(chain.txs.get(hash.toLowerCase())),
-    venusPositionUsd: () => Promise.resolve(chain.venusPositionUsdValue),
+    vTokenBalance: () => Promise.resolve(chain.walletVTokens),
     vTokensUsd: (_vToken, vTokens) => Promise.resolve(fromUnits((vTokens * chain.rate) / E18, 18)),
   };
   return chain;

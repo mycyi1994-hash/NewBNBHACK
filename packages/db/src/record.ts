@@ -10,11 +10,11 @@
  * shares from all tokens at the current multiplier; a change since the last write is logged.
  */
 import { fromUnits, sameMultiplier, sharesFromTokens, toUnits, type Instrument } from '@ijaro/core';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './index.js';
 import { usdText } from './mappers.js';
 import { insertReceipt, type PlanPatch, type PlanRow } from './plans.js';
-import { guardianEvents, holdings, plans, receipts, spendLedger } from './schema.js';
+import { cycles, guardianEvents, holdings, plans, receipts, spendLedger } from './schema.js';
 
 export interface ReceiptFacts {
   kind: 'approve' | 'swap' | 'deposit' | 'redeem';
@@ -261,5 +261,132 @@ export async function applySwap(
         harvestedUnspentUsd: decimal(atLeastZero(harvested - used)),
       });
     }
+  });
+}
+
+/** Below this much principal (one cent) a reported redeem has taken the whole position. */
+const DUST_PRINCIPAL = 10n ** 16n;
+
+/**
+ * A redeem a skill wallet reported (its own Venus position): what came back is interest first —
+ * the position's value above the principal, at the rate this redeem got — and principal after.
+ * Principal that comes back is the user's (it sits in their wallet) and leaves the plan's record;
+ * a redeem that leaves no principal is a full exit and pauses a running plan.
+ */
+export async function applyReportedRedeem(
+  db: Db,
+  planId: string,
+  facts: ReceiptFacts,
+  redeemed: { usdtReceived: bigint; vTokensBurned: bigint },
+): Promise<boolean> {
+  return withReceipt(db, planId, null, facts, async (tx, row) => {
+    const planVTokens = BigInt(row.vtokenUnits);
+    const principal = units(row.principalUsd);
+    const received = redeemed.usdtReceived;
+    // What the plan's position was worth before, priced at this redeem's own rate.
+    const before =
+      redeemed.vTokensBurned > 0n
+        ? (planVTokens * received) / redeemed.vTokensBurned
+        : principal + received;
+    const interest = atLeastZero(before - principal);
+    const toHarvested = received < interest ? received : interest;
+    const principalLeft = atLeastZero(principal - (received - toHarvested));
+    const vTokensLeft = atLeastZero(planVTokens - redeemed.vTokensBurned);
+    const exit = principalLeft < DUST_PRINCIPAL || vTokensLeft <= 1n;
+    await updatePlanTx(tx, planId, {
+      principalUsd: exit ? '0' : decimal(principalLeft),
+      vtokenUnits: vTokensLeft.toString(),
+      harvestedUnspentUsd: decimal(units(row.harvestedUnspentUsd) + toHarvested),
+      ...(exit && row.mode === 'yield' && row.status === 'active'
+        ? { status: 'paused', pausedReason: 'redeemed' }
+        : {}),
+    });
+  });
+}
+
+/**
+ * A swap a skill wallet reported, written at once or not at all: the receipt (claimed first, so a
+ * replay or a concurrent report changes nothing), its cycle, the spend on the plan's ledger, the
+ * tokens on its holding, the interest it used out of harvested, and `planPatch` (the next due
+ * time). Returns undefined when the receipt was already recorded, else the cycle and what the plan
+ * has spent on `day` including this swap.
+ */
+export async function recordSkillSwap(
+  db: Db,
+  args: {
+    planId: string;
+    facts: ReceiptFacts;
+    instrument: Instrument;
+    receivedTokens: bigint;
+    spentUsd: string;
+    day: string;
+    cycle: {
+      dueAt: string;
+      outcome: unknown;
+      whyKey: string;
+      whyParams: unknown;
+      finishedAt: string;
+    };
+    planPatch: PlanPatch;
+  },
+): Promise<{ cycleId: number; daySpentUsd: string } | undefined> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select().from(plans).where(eq(plans.id, args.planId)).for('update');
+    if (!row) throw new Error(`plan ${args.planId} not found`);
+    if (!(await insertReceiptTx(tx, args.planId, null, args.facts))) return undefined;
+    // One cycle per report; a second swap reported in the same millisecond moves one on.
+    let cycleId: number | undefined;
+    for (let bump = 0; cycleId === undefined && bump < 10; bump++) {
+      const [created] = await tx
+        .insert(cycles)
+        .values({
+          planId: args.planId,
+          dueAt: new Date(Date.parse(args.cycle.dueAt) + bump).toISOString(),
+          executionMode: 'live',
+          state: 'done',
+          outcomeKind: 'BOUGHT',
+          outcome: args.cycle.outcome,
+          whyKey: args.cycle.whyKey,
+          whyParams: args.cycle.whyParams,
+          instrumentId: args.instrument.id,
+          spendUsd: args.spentUsd,
+          finishedAt: args.cycle.finishedAt,
+        })
+        .onConflictDoNothing({ target: [cycles.planId, cycles.dueAt] })
+        .returning({ id: cycles.id });
+      cycleId = created?.id;
+    }
+    if (cycleId === undefined) throw new Error(`no cycle slot for ${args.planId}`);
+    await tx
+      .update(receipts)
+      .set({ cycleId })
+      .where(eq(receipts.txHash, args.facts.txHash.toLowerCase()));
+    await tx.insert(spendLedger).values({
+      planId: args.planId,
+      cycleId,
+      ownerKind: row.ownerKind,
+      day: args.day,
+      amountUsd: args.spentUsd,
+      status: 'spent',
+    });
+    await addToHoldingTx(tx, args.planId, args.instrument, args.receivedTokens, args.spentUsd);
+    // A yield plan pays with its redeemed interest first.
+    const harvested = units(row.harvestedUnspentUsd);
+    const used = row.mode === 'yield' ? units(args.spentUsd) : 0n;
+    await updatePlanTx(tx, args.planId, {
+      ...args.planPatch,
+      ...(used > 0n ? { harvestedUnspentUsd: decimal(atLeastZero(harvested - used)) } : {}),
+    });
+    const [spent] = await tx
+      .select({ total: sql<string>`coalesce(sum(${spendLedger.amountUsd}), 0)::text` })
+      .from(spendLedger)
+      .where(
+        and(
+          eq(spendLedger.planId, args.planId),
+          eq(spendLedger.day, args.day),
+          inArray(spendLedger.status, ['reserved', 'spent']),
+        ),
+      );
+    return { cycleId, daySpentUsd: usdText(spent?.total ?? '0') };
   });
 }

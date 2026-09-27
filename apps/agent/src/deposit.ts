@@ -18,13 +18,14 @@ import {
 } from '@ijaro/db';
 import type { CycleDeps } from './cycle.js';
 import { depositPrincipal } from './executor/venus.js';
+import { PublicError } from './public-error.js';
 
 export async function startYieldPlan(
   deps: CycleDeps,
   row: PlanRow,
   depositUsd: string,
 ): Promise<Record<string, unknown>> {
-  if (!deps.venus) throw new Error('the Venus market is unavailable');
+  if (!deps.venus) throw new PublicError('the Venus market is unavailable');
   const plan = planFromRow(row);
   const amount = toUnits(depositUsd, 18);
   const cap = String(
@@ -33,12 +34,12 @@ export async function startYieldPlan(
       : deps.config.caps.maxPrincipalUsd,
   );
   if (amount <= 0n || amount > toUnits(cap, 18)) {
-    throw new Error(`deposit ${depositUsd} is outside (0, ${cap}]`);
+    throw new PublicError(`deposit ${depositUsd} is outside (0, ${cap}]`);
   }
   const held = (await openGuardianActions(deps.db, plan.id)).find((a) =>
     ['stop_deposits', 'redeem_all', 'pause_buys'].includes(a.action),
   );
-  if (held) throw new Error(`the guardian holds new deposits: ${held.rule}`);
+  if (held) throw new PublicError(`the guardian holds new deposits: ${held.rule}`);
   // One deposit at a time: a deposit still settling would otherwise be sent a second time (its
   // principal is recorded only from its receipt). For a judge, across all the code's plans, and
   // the code's principal plus its spend stays within the sandbox cap in total.
@@ -48,13 +49,13 @@ export async function startYieldPlan(
       : [row];
   for (const sibling of siblings) {
     if ((await unfinishedTransactions(deps.db, sibling.id)).length > 0) {
-      throw new Error('an earlier transaction of this plan is still settling');
+      throw new PublicError('an earlier transaction of this plan is still settling');
     }
   }
   if (plan.owner.kind === 'judge' && row.ownerRef !== null) {
     const used = toUnits(usdText(await judgeExposureUsd(deps.db, row.ownerRef)), 18);
     if (used + amount > toUnits(cap, 18)) {
-      throw new Error(
+      throw new PublicError(
         `this code has ${fromUnits(used >= toUnits(cap, 18) ? 0n : toUnits(cap, 18) - used, 18)} USD left`,
       );
     }
@@ -71,7 +72,9 @@ export async function startYieldPlan(
     case 'pending':
       return { status: 'awaiting_tx', txHash: result.txHash };
     case 'failed':
-      throw new Error(`${result.code}: ${result.message}`);
+      // The code is for the caller; the message (API and RPC text) is for the log.
+      deps.log(`deposit: ${plan.id} failed — ${result.code}: ${result.message}`);
+      throw new PublicError(`the deposit did not go through (${result.code})`);
     case 'deposited': {
       for (const sent of result.sent) {
         const deposit = sent.kind === 'deposit';

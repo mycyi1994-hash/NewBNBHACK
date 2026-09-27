@@ -60,8 +60,8 @@ export default async function JudgePage() {
       venues={venues}
       session={budget?.ok ? { remainingUsd: budget.value.remainingUsd } : null}
       risk={{
-        apy: venus.ok ? venus.value.apy : null,
-        score: venus.ok ? venus.value.securityScore : null,
+        apy: venus.ok && venus.value.fresh ? venus.value.apy : null,
+        score: venus.ok && venus.value.fresh ? venus.value.securityScore : null,
       }}
     />
   );

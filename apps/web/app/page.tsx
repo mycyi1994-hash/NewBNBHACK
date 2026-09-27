@@ -198,7 +198,7 @@ async function GuardianLine({ t }: { t: T }) {
 }
 
 function VenusLine({ t, venus }: { t: T; venus: Settled<VenusInfo> | typeof unavailable }) {
-  if (!venus.ok) return null;
+  if (!venus.ok || !venus.value.fresh) return null;
   const apy = venus.value.apy;
   const score = venus.value.securityScore;
   if (!apy || !score) return null;

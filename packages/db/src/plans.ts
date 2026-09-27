@@ -3,8 +3,9 @@
  * conditional UPDATE on `lock_until`, so two workers can never run the same plan at once.
  */
 import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { newSkillToken } from './auth.js';
 import type { Db } from './index.js';
-import { cycles, guardianEvents, holdings, plans, receipts } from './schema.js';
+import { cycles, guardianEvents, holdings, plans, receipts, skillTokens } from './schema.js';
 
 export type PlanRow = typeof plans.$inferSelect;
 export type PlanInsert = typeof plans.$inferInsert;
@@ -18,6 +19,69 @@ export async function insertPlan(db: Db, row: PlanInsert): Promise<PlanRow> {
   const [created] = await db.insert(plans).values(row).returning();
   if (!created) throw new Error(`plan ${row.id} was not inserted`);
   return created;
+}
+
+/**
+ * A judge plan, unless the code already made `maxPerHour` in the last hour. The count and the
+ * insert run under one lock per code, so concurrent requests never pass the limit together.
+ */
+export async function insertJudgePlan(
+  db: Db,
+  row: PlanInsert & { ownerRef: string },
+  maxPerHour: number,
+): Promise<PlanRow | undefined> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`judge-plans:${row.ownerRef}`}))`);
+    const [recent] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(plans)
+      .where(
+        and(
+          eq(plans.ownerKind, 'judge'),
+          eq(plans.ownerRef, row.ownerRef),
+          sql`${plans.createdAt} > now() - interval '1 hour'`,
+        ),
+      );
+    if ((recent?.n ?? 0) >= maxPerHour) return undefined;
+    const [created] = await tx.insert(plans).values(row).returning();
+    return created;
+  });
+}
+
+/**
+ * A skill plan and its bearer token (shown once, only its hash stored), unless the wallet already
+ * has `maxOpen` plans that are not stopped — counted and written under one lock per wallet.
+ */
+export async function insertSkillPlan(
+  db: Db,
+  row: Omit<PlanInsert, 'ownerKind' | 'ownerRef'> & { walletAddress: string },
+  maxOpen: number,
+): Promise<{ plan: PlanRow; tokenId: string; token: string } | undefined> {
+  const wallet = row.walletAddress;
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`skill-plans:${wallet.toLowerCase()}`}))`,
+    );
+    const [open] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(plans)
+      .where(
+        and(
+          eq(plans.ownerKind, 'skill'),
+          sql`lower(${plans.walletAddress}) = lower(${wallet})`,
+          sql`${plans.status} <> 'stopped'`,
+        ),
+      );
+    if ((open?.n ?? 0) >= maxOpen) return undefined;
+    const { id: tokenId, token, tokenHash } = newSkillToken();
+    await tx.insert(skillTokens).values({ id: tokenId, tokenHash, walletAddress: wallet });
+    const [plan] = await tx
+      .insert(plans)
+      .values({ ...row, ownerKind: 'skill', ownerRef: tokenId })
+      .returning();
+    if (!plan) throw new Error(`plan ${row.id} was not inserted`);
+    return { plan, tokenId, token };
+  });
 }
 
 /** Inserts the plan unless one with the same id exists (seeds never overwrite live state). */

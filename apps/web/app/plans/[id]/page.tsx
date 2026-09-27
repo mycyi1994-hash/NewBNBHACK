@@ -37,7 +37,7 @@ import {
 import { bpsPct, money, sharesText, timeText } from '../../../lib/format';
 import { locale } from '../../../lib/i18n/server';
 import type { T } from '../../../lib/i18n/translate';
-import { webChain } from '../../../lib/server/chain';
+import { planPositionUsd, webChain } from '../../../lib/server/chain';
 import { context } from '../../../lib/server/context';
 import { planView } from '../../../lib/server/plan-view';
 import { SESSION_COOKIE, verifySession } from '../../../lib/server/session';
@@ -48,21 +48,14 @@ export const dynamic = 'force-dynamic';
 type Interest =
   { state: 'LIVE'; usd: string; asOf: string } | { state: 'UNAVAILABLE'; reason: string };
 
-/** Interest so far: the plan's vTokens (house, judge) or its wallet's position (skill) minus principal. */
+/** Interest so far: the plan's own Venus position (planPositionUsd) minus its principal. */
 async function interestOf(row: PlanRow): Promise<Interest> {
   const { config, db } = context();
   if (!db) return { state: 'UNAVAILABLE', reason: 'no database' };
   const venus = (await readWorkerStatus(db, 'venus'))?.value as { vToken?: string } | undefined;
   if (!venus?.vToken) return { state: 'UNAVAILABLE', reason: 'Venus market not verified yet' };
-  const chain = webChain(config);
-  const vTokens = BigInt(row.vtokenUnits);
-  const position =
-    row.ownerKind === 'skill' && row.walletAddress
-      ? await chain.venusPositionUsd(venus.vToken, row.walletAddress)
-      : vTokens > 0n
-        ? await chain.vTokensUsd(venus.vToken, vTokens)
-        : null;
-  if (position === null) return { state: 'UNAVAILABLE', reason: 'no principal deposited yet' };
+  const position = await planPositionUsd(webChain(config), venus.vToken, row);
+  if (position === undefined) return { state: 'UNAVAILABLE', reason: 'no principal deposited yet' };
   const earned = toUnits(position, 18) - toUnits(usdText(row.principalUsd), 18);
   return {
     state: 'LIVE',
@@ -116,7 +109,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
   const shares = v.holdings.reduce((sum, h) => sum + Number(h.shares), 0);
   const cost = v.holdings.reduce((sum, h) => sum + Number(h.costUsd), 0);
   const paused = pausedText(t, v.plan.pausedReason);
-  const used = Number(v.limits.perDayUsd) - Number(v.limits.remainingTodayUsd);
+  const used = Number(v.limits.usedTodayUsd);
 
   return (
     <div className="flex flex-col gap-6">
@@ -195,14 +188,14 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
           {t('plan.limits', {
             perBuy: money(v.limits.perBuyUsd),
             daily: money(v.limits.perDayUsd),
-            used: money(Math.max(0, used).toFixed(18)),
+            used: money(v.limits.usedTodayUsd),
           })}
         </p>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-canvas" aria-hidden="true">
           <div
             className="h-full rounded-full bg-brand"
             style={{
-              width: `${Math.min(100, (Math.max(0, used) / Number(v.limits.perDayUsd)) * 100).toFixed(1)}%`,
+              width: `${Math.min(100, (used / Number(v.limits.perDayUsd)) * 100).toFixed(1)}%`,
             }}
           />
         </div>

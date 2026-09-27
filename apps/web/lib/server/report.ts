@@ -1,13 +1,16 @@
 /**
  * POST /api/plans/:id/report for skill plans (SPEC §8.2, §9): the user's wallet says what it did;
- * we believe the chain, not the report. A transaction is recorded only when it is mined, succeeded
- * and was sent from the plan's wallet. A swap must have delivered the plan's stock to that wallet;
- * spending more than the plan allows is still recorded (it happened) but pauses the plan.
+ * we believe the chain, not the report. A transaction is recorded only when it is mined, succeeded,
+ * was sent from the plan's wallet after the plan was made, and is not one the house wallet sent.
+ * A swap must have delivered the plan's stock to that wallet; spending more than the plan allows
+ * is still recorded (it happened) but pauses the plan. Each report is written in one transaction
+ * with its receipt (packages/db record.ts), so a replayed or concurrent report changes nothing.
  */
 import { BSC_USDT, transferredFrom, transferredTo, type BscClient } from '@ijaro/chain';
 import {
   boughtOutcome,
   fromUnits,
+  nextDue,
   toUnits,
   usSession,
   type Instrument,
@@ -15,16 +18,13 @@ import {
   type Why,
 } from '@ijaro/core';
 import {
-  addToHolding,
   applyDeposit,
-  openCycle,
+  applyReportedRedeem,
+  isoTime,
+  outboxByHash,
   receiptByHash,
-  recordReceiptFacts,
-  reserveSpend,
-  settleSpend,
-  updateCycle,
-  updatePlan,
-  usdText,
+  recordSkillSwap,
+  updatePlanIf,
   utcDay,
   type Db,
   type PlanRow,
@@ -38,6 +38,8 @@ export interface MinedTx {
   status: 'success' | 'reverted';
   from: string;
   blockNumber: bigint;
+  /** The block's time, unix seconds. */
+  timestamp: bigint;
   logs: readonly Log[];
 }
 
@@ -54,10 +56,12 @@ export function viemReader(bsc: BscClient): ChainReader {
           bsc.getTransactionReceipt({ hash }),
           bsc.getTransaction({ hash }),
         ]);
+        const block = await bsc.getBlock({ blockNumber: receipt.blockNumber });
         return {
           status: receipt.status,
           from: tx.from,
           blockNumber: receipt.blockNumber,
+          timestamp: block.timestamp,
           logs: receipt.logs,
         };
       } catch (error) {
@@ -94,23 +98,40 @@ export async function recordReport(args: {
   plan: Plan;
   instruments: readonly Instrument[];
   vToken?: string | undefined;
+  /** The house wallet (worker status): never a skill plan's wallet. */
+  houseAddress?: string | undefined;
   body: ReportBody;
   now: Date;
 }): Promise<ReportResult> {
-  const { db, row, plan, body, now } = args;
+  const { db, row, plan, now } = args;
+  // Hashes are compared as text: one spelling (receipts store lowercase).
+  const txHash = args.body.txHash.toLowerCase() as Hex;
+  const body = { ...args.body, txHash };
   const wallet = row.walletAddress;
   if (!wallet) return { status: 'rejected', reason: 'the plan has no wallet' };
-  if (await receiptByHash(db, body.txHash))
-    return { status: 'already_recorded', txHash: body.txHash };
-  const tx = await args.reader.mined(body.txHash);
+  if (args.houseAddress && isAddressEqual(getAddress(wallet), getAddress(args.houseAddress))) {
+    return { status: 'rejected', reason: 'the plan wallet is the house wallet' };
+  }
+  if (await receiptByHash(db, txHash)) return { status: 'already_recorded', txHash };
+  // What the house wallet signed is the worker's to record, never a report's.
+  if (await outboxByHash(db, txHash)) {
+    return { status: 'rejected', reason: 'the transaction was sent by the house wallet' };
+  }
+  const tx = await args.reader.mined(txHash);
   if (!tx) return { status: 'pending' };
   if (tx.status !== 'success') return { status: 'rejected', reason: 'the transaction reverted' };
   if (!isAddressEqual(getAddress(tx.from), getAddress(wallet))) {
     return { status: 'rejected', reason: 'the transaction was not sent by the plan wallet' };
   }
+  // Only what the wallet did for this plan: nothing from before the plan existed.
+  const createdSeconds = BigInt(Math.floor(Date.parse(isoTime(row.createdAt)) / 1000));
+  if (tx.timestamp < createdSeconds) {
+    return { status: 'rejected', reason: 'the transaction is older than the plan' };
+  }
+  const minedAt = new Date(Number(tx.timestamp) * 1000);
   const facts = (amounts: Record<string, string>) => ({
     kind: body.kind,
-    txHash: body.txHash,
+    txHash,
     broadcastVia: 'user_wallet',
     blockNumber: tx.blockNumber,
     status: 'success' as const,
@@ -127,40 +148,30 @@ export async function recordReport(args: {
         db,
         plan.id,
         facts({ vTokens: vTokens.toString(), usdt: usdt.toString() }),
-        {
-          vTokens,
-          usdtSpent: usdt,
-        },
+        { vTokens, usdtSpent: usdt },
       );
-      if (!fresh) return { status: 'already_recorded', txHash: body.txHash };
-      // A skill yield plan waits for its deposit; with the principal on record it starts running.
-      if (row.status === 'paused' && row.pausedReason === AWAITING_DEPOSIT) {
-        await updatePlan(db, plan.id, {
-          status: 'active',
-          pausedReason: null,
-          nextDueAt: now.toISOString(),
-        });
-      }
-      return { status: 'recorded', kind: body.kind, txHash: body.txHash };
+      if (!fresh) return { status: 'already_recorded', txHash };
+      // A skill yield plan waits for its deposit; with the principal on record it starts running
+      // (unless it was stopped meanwhile).
+      await updatePlanIf(
+        db,
+        plan.id,
+        { status: 'paused', pausedReason: AWAITING_DEPOSIT },
+        { status: 'active', pausedReason: null, nextDueAt: now.toISOString() },
+      );
+      return { status: 'recorded', kind: body.kind, txHash };
     }
     const received = transferredTo(tx.logs, BSC_USDT, wallet);
     const burned = transferredFrom(tx.logs, args.vToken, wallet);
     if (received === 0n) return { status: 'rejected', reason: 'no USDT reached the wallet' };
-    const fresh = await recordReceiptFacts(
+    const fresh = await applyReportedRedeem(
       db,
       plan.id,
-      null,
       facts({ usdtReceived: received.toString(), vTokensBurned: burned.toString() }),
+      { usdtReceived: received, vTokensBurned: burned },
     );
-    if (!fresh) return { status: 'already_recorded', txHash: body.txHash };
-    await updatePlan(db, plan.id, {
-      harvestedUnspentUsd: fromUnits(toUnits(usdText(row.harvestedUnspentUsd), 18) + received, 18),
-      vtokenUnits: (BigInt(row.vtokenUnits) > burned
-        ? BigInt(row.vtokenUnits) - burned
-        : 0n
-      ).toString(),
-    });
-    return { status: 'recorded', kind: body.kind, txHash: body.txHash };
+    if (!fresh) return { status: 'already_recorded', txHash };
+    return { status: 'recorded', kind: body.kind, txHash };
   }
 
   // swap
@@ -179,45 +190,6 @@ export async function recordReport(args: {
   if (spent === 0n) return { status: 'rejected', reason: 'no USDT left the wallet' };
   const spentUsd = fromUnits(spent, 18);
 
-  const { cycle } = await openCycle(db, {
-    planId: plan.id,
-    dueAt: now.toISOString(),
-    executionMode: 'live',
-  });
-  const fresh = await recordReceiptFacts(
-    db,
-    plan.id,
-    cycle.id,
-    facts({
-      instrumentId: bought.instrument.id,
-      spentUsdtUnits: spent.toString(),
-      receivedTokens: bought.received.toString(),
-    }),
-  );
-  if (!fresh) {
-    await updateCycle(db, cycle.id, {
-      state: 'done',
-      outcome: { kind: 'DUPLICATE_REPORT' },
-      finishedAt: now.toISOString(),
-    });
-    return { status: 'already_recorded', txHash: body.txHash };
-  }
-  await addToHolding(db, plan.id, bought.instrument, bought.received, spentUsd);
-
-  // The plan's own limits bound what its wallet may spend; going past them pauses the plan.
-  const perBuy = toUnits(plan.limits.maxPerBuyUsd, 18);
-  const reservation = await reserveSpend(db, {
-    planId: plan.id,
-    ownerKind: 'skill',
-    ownerRef: row.ownerRef,
-    day: utcDay(now),
-    caps: { globalDailyUsd: plan.limits.maxDailyUsd, planDailyUsd: plan.limits.maxDailyUsd },
-    cycleId: cycle.id,
-    amountUsd: spentUsd,
-  });
-  if (reservation.ok) await settleSpend(db, cycle.id, 'spent', spentUsd);
-  const overLimit = spent > perBuy + perBuy / 100n || !reservation.ok;
-
   const result = boughtOutcome(
     {
       kind: 'execute',
@@ -226,33 +198,58 @@ export async function recordReport(args: {
       quote: {
         instrumentId: bought.instrument.id,
         spendUsd: spentUsd,
-        receivedAt: now.toISOString(),
+        receivedAt: minedAt.toISOString(),
       },
       redeemUsd: '0',
       interestUsd: null,
-      offHours: usSession(now) !== 'regular',
+      offHours: usSession(minedAt) !== 'regular',
       refGapPct: null,
     },
     bought.instrument,
     bought.received.toString(),
   );
-  await updateCycle(db, cycle.id, {
-    state: 'done',
-    outcomeKind: 'BOUGHT',
-    outcome: result.outcome,
-    whyKey: result.why.key,
-    whyParams: result.why.params,
-    instrumentId: bought.instrument.id,
-    spendUsd: spentUsd,
-    finishedAt: now.toISOString(),
+  // The next buy waits for the plan's cadence, counted from this one.
+  const next = nextDue(plan.cadence, minedAt);
+  const written = await recordSkillSwap(db, {
+    planId: plan.id,
+    facts: facts({
+      instrumentId: bought.instrument.id,
+      spentUsdtUnits: spent.toString(),
+      receivedTokens: bought.received.toString(),
+    }),
+    instrument: bought.instrument,
+    receivedTokens: bought.received,
+    spentUsd,
+    day: utcDay(minedAt),
+    cycle: {
+      dueAt: now.toISOString(),
+      outcome: result.outcome,
+      whyKey: result.why.key,
+      whyParams: result.why.params,
+      finishedAt: now.toISOString(),
+    },
+    planPatch: next.kind === 'due' ? { nextDueAt: next.nextDueAt } : {},
   });
+  if (!written) return { status: 'already_recorded', txHash };
+
+  // The plan's own limits bound what its wallet may spend (1 % for rounding); going past them
+  // pauses the plan.
+  const perBuy = toUnits(plan.limits.maxPerBuyUsd, 18);
+  const perDay = toUnits(plan.limits.maxDailyUsd, 18);
+  const overLimit =
+    spent > perBuy + perBuy / 100n || toUnits(written.daySpentUsd, 18) > perDay + perDay / 100n;
   if (overLimit) {
-    await updatePlan(db, plan.id, { status: 'paused', pausedReason: 'report_over_limit' });
+    await updatePlanIf(
+      db,
+      plan.id,
+      { status: 'active', pausedReason: null },
+      { status: 'paused', pausedReason: 'report_over_limit' },
+    );
   }
   return {
     status: 'recorded',
     kind: 'swap',
-    txHash: body.txHash,
+    txHash,
     outcome: result.outcome,
     why: result.why,
     ...(overLimit ? { paused: 'report_over_limit' } : {}),

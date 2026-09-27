@@ -128,7 +128,7 @@ const schemas: Record<string, Schema> = {
           decision: { enum: ['wait', 'skip', 'failed'] },
           why: ref('Why'),
           reason: str(
-            'Machine reason when there is no copy key: data_stale, data_unavailable, venus_unavailable, plan_paused, plan_stopped, …',
+            'Machine reason when there is no copy key: not_due (the cadence: ask again at retryAt), data_stale, data_unavailable, venus_unavailable, chain_unavailable, no_principal, plan_paused, plan_stopped, …',
           ),
           pausedReason: nullable(str()),
           retryAt: str('Ask again at or after this time'),
@@ -187,7 +187,7 @@ const schemas: Record<string, Schema> = {
   ReportResult: {
     type: 'object',
     description:
-      'The chain decides: recorded only when mined, successful, sent by the plan wallet and moving the expected tokens. Spending past the plan limits is recorded and pauses the plan.',
+      'The chain decides: recorded only when mined, successful, sent by the plan wallet after the plan was made (never a house-wallet transaction) and moving the expected tokens. A swap moves the plan to its next due time; spending past the plan limits is recorded and pauses the plan. A redeem counts as interest up to the position’s value above its principal, the rest as principal coming home.',
     required: ['status'],
     properties: {
       status: { enum: ['pending', 'rejected', 'recorded', 'already_recorded'] },
@@ -315,10 +315,11 @@ export function openApiDocument(serverUrl: string) {
               'Created',
             ),
             400: problem(
-              'bad_request, unknown_ticker, over_cap, below_min, venue_minimum, bad_limits',
+              'bad_request, unknown_ticker, over_cap, below_min, venue_minimum, bad_limits, house_wallet',
             ),
             401: problem('no_session'),
-            409: problem('code_exhausted'),
+            409: problem('code_exhausted: the code’s spend and deposits together reach its cap'),
+            415: problem('json_only'),
             429: problem('too_many_plans or rate_limited'),
             503: unavailable,
           },
@@ -360,20 +361,23 @@ export function openApiDocument(serverUrl: string) {
             400: problem('bad_json, bad_request, deposit_required, over_cap'),
             401: problem('unauthorized'),
             404: problem('not_found'),
+            409: problem('plan_held (paused or stopped), code_exhausted'),
+            415: problem('json_only'),
             429: problem('too_many_jobs'),
           },
         },
       },
       '/api/plans/{id}/stop': {
         post: {
-          summary: 'Queue a stop (yield plans redeem their position)',
+          summary: 'Queue a stop (house and judge yield plans redeem their position)',
+          description:
+            'Never refused for the job budget: a stop already waiting is answered instead. A skill plan’s position is in its own wallet and stays there.',
           security: either,
           parameters: [idParam],
           responses: {
-            202: json(ref('Queued'), 'Queued'),
+            202: json(ref('Queued'), 'Queued (or the stop already waiting)'),
             401: problem('unauthorized'),
             404: problem('not_found'),
-            429: problem('too_many_jobs'),
           },
         },
       },
@@ -386,7 +390,7 @@ export function openApiDocument(serverUrl: string) {
             200: json(ref('NextAnswer'), 'A decision, valid for five minutes'),
             401: problem('unauthorized'),
             404: problem('not_found'),
-            429: problem('rate_limited: 30 a minute per plan'),
+            429: problem('rate_limited: 30 a minute per plan and token, 120 per address'),
             503: unavailable,
           },
         },
@@ -403,8 +407,9 @@ export function openApiDocument(serverUrl: string) {
             400: problem('bad_json, bad_request'),
             401: problem('unauthorized'),
             404: problem('not_found'),
+            415: problem('json_only'),
             422: json(ref('ReportResult'), 'rejected, with the reason'),
-            429: problem('rate_limited: 20 a minute per plan'),
+            429: problem('rate_limited: 20 a minute per plan and token, 60 per address'),
           },
         },
       },

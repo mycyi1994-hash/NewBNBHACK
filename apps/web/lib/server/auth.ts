@@ -1,7 +1,15 @@
 /** Who is calling: a judge (session cookie) or a skill (bearer token), and whose plan it is. */
-import { findSkillToken, getPlan, type Db, type PlanRow, type SkillTokenRow } from '@ijaro/db';
+import {
+  findSkillToken,
+  getPlan,
+  judgeCodeActive,
+  type Db,
+  type PlanRow,
+  type SkillTokenRow,
+} from '@ijaro/db';
 import type { Config } from '@ijaro/config';
 import { problem } from './http';
+import { ensureJudgeCodes } from './judge';
 import { cookieValue, SESSION_COOKIE, verifySession } from './session';
 
 export type Caller = { kind: 'judge'; codeHash: string } | { kind: 'skill'; token: SkillTokenRow };
@@ -21,12 +29,28 @@ export async function skillOf(request: Request, db: Db): Promise<Caller | undefi
   return token ? { kind: 'skill', token } : undefined;
 }
 
+/**
+ * A judge whose code is still enabled: removing a code from JUDGE_CODES ends its sessions at once,
+ * not when the cookie expires (RUNBOOK §2).
+ */
+export async function activeJudgeOf(
+  request: Request,
+  config: Config,
+  db: Db,
+  nowMs = Date.now(),
+): Promise<Caller | undefined> {
+  const judge = judgeOf(request, config, nowMs);
+  if (judge?.kind !== 'judge') return undefined;
+  await ensureJudgeCodes(db, config);
+  return (await judgeCodeActive(db, judge.codeHash)) ? judge : undefined;
+}
+
 export async function callerOf(
   request: Request,
   config: Config,
   db: Db,
 ): Promise<Caller | undefined> {
-  return judgeOf(request, config) ?? (await skillOf(request, db));
+  return (await activeJudgeOf(request, config, db)) ?? (await skillOf(request, db));
 }
 
 /** The plan when the caller owns it; a response otherwise. */

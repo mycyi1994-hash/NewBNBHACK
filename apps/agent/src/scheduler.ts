@@ -27,6 +27,7 @@ import { runCycle, type CycleDeps, type CycleReport } from './cycle.js';
 import { startYieldPlan } from './deposit.js';
 import type { Reconciliation } from './executor/send.js';
 import { guardianTick, redeemPlanPosition, type GuardianReport } from './guardian.js';
+import { PublicError, publicMessage } from './public-error.js';
 import { settleOutbox } from './settlement.js';
 
 /** A judge plan whose code was removed from JUDGE_CODES stops acting (RUNBOOK §2). */
@@ -74,9 +75,9 @@ export async function processJob(
     const row = await getPlan(deps.db, job.planId);
     // The worker signs only for the house wallet's plans; a skill plan is signed by its own wallet.
     if (row?.ownerKind === 'skill')
-      throw new Error('skill plans run in their own wallet (GET /next)');
+      throw new PublicError('skill plans run in their own wallet (GET /next)');
     if (row && (await codeDisabled(deps, row)))
-      throw new Error('this judge code is no longer active');
+      throw new PublicError('this judge code is no longer active');
     // A plan held by a person or the guardian (review, ops hold, a redeem) never buys on a web
     // request; only a judge plan's first run starts it.
     if (
@@ -84,7 +85,7 @@ export async function processJob(
       row &&
       (row.status === 'stopped' || (row.status === 'paused' && row.pausedReason !== 'awaiting_run'))
     ) {
-      throw new Error(
+      throw new PublicError(
         `the plan is ${row.status}${row.pausedReason ? ` (${row.pausedReason})` : ''}`,
       );
     }
@@ -94,12 +95,12 @@ export async function processJob(
       return plain(await runCycle(simulate, job.planId, { manual: true }));
     case 'run': {
       const plan = await getPlan(deps.db, job.planId);
-      if (!plan) throw new Error(`plan ${job.planId} not found`);
+      if (!plan) throw new PublicError(`plan ${job.planId} not found`);
       // A yield plan starts with its principal (Judge Mode "이자로 사기").
       if (plan.mode === 'yield' && usdText(plan.principalUsd) === '0') {
         const depositUsd = (job.payload as { depositUsd?: unknown }).depositUsd;
         if (typeof depositUsd !== 'string')
-          throw new Error('a yield plan starts with payload.depositUsd');
+          throw new PublicError('a yield plan starts with payload.depositUsd');
         return startYieldPlan(deps, plan, depositUsd);
       }
       const report = await runCycle(deps, job.planId, { manual: true });
@@ -129,7 +130,7 @@ export async function processJob(
     }
     case 'stop': {
       const plan = await getPlan(deps.db, job.planId);
-      if (!plan) throw new Error(`plan ${job.planId} not found`);
+      if (!plan) throw new PublicError(`plan ${job.planId} not found`);
       const redeemed = await redeemPlanPosition(deps, plan, {
         status: 'stopped',
         reason: 'stopped_by_owner',
@@ -137,7 +138,7 @@ export async function processJob(
       return { status: 'stopped', redeemed };
     }
     default:
-      throw new Error(`unknown job kind ${job.kind}`);
+      throw new PublicError(`unknown job kind ${job.kind}`);
   }
 }
 
@@ -157,7 +158,8 @@ export async function processJobs(
       });
       done.jobs.push({ id: job.id, kind: job.kind, status: 'done' });
     } catch (error) {
-      await finishJob(deps.db, job.id, { status: 'failed', error: message(error) });
+      // The caller sees a refusal written for them, or a label; the full message goes to the log.
+      await finishJob(deps.db, job.id, { status: 'failed', error: publicMessage(error) });
       done.jobs.push({ id: job.id, kind: job.kind, status: 'failed' });
       done.errors.push(`job ${job.id}: ${message(error)}`);
     }
@@ -216,6 +218,8 @@ export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promi
       deps.chain.nativeBalance(deps.house),
     ]);
     await writeWorkerStatus(deps.db, 'house', {
+      // Private to the database: the web refuses it as a skill plan's wallet.
+      address: deps.house,
       usdtUnits: usdt.toString(),
       bnbWei: bnb.toString(),
       at: deps.now().toISOString(),

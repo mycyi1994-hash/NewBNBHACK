@@ -7,6 +7,7 @@ import { skillOf, ownedPlan } from '../../../../../lib/server/auth';
 import { webChain } from '../../../../../lib/server/chain';
 import { context } from '../../../../../lib/server/context';
 import {
+  clientIp,
   guard,
   json,
   rateLimited,
@@ -26,14 +27,19 @@ async function handlePOST(
   const { config, db } = context();
   if (!db) return unavailable('no DATABASE_URL');
   const { id } = await params;
-  if (rateLimited(`report:${id}`, 20, 60_000)) return tooMany();
-  const row = await ownedPlan(db, await skillOf(request, db), id);
+  // Who asks first, then how often: a stranger's requests never use up the owner's allowance.
+  if (rateLimited(`report-ip:${clientIp(request)}`, 60, 60_000)) return tooMany();
+  const caller = await skillOf(request, db);
+  const row = await ownedPlan(db, caller, id);
   if (row instanceof Response) return row;
+  if (rateLimited(`report:${caller?.kind === 'skill' ? caller.token.id : ''}:${id}`, 20, 60_000))
+    return tooMany();
   const body = await readBody(request, ReportRequest);
   if (body instanceof Response) return body;
   const plan = planFromRow(row);
   const ticker = plan.target.type === 'ticker' ? plan.target.ticker : '';
   const venus = (await readWorkerStatus(db, 'venus'))?.value as { vToken?: string } | undefined;
+  const house = (await readWorkerStatus(db, 'house'))?.value as { address?: unknown } | undefined;
   const result = await recordReport({
     db,
     reader: webChain(config),
@@ -43,6 +49,7 @@ async function handlePOST(
       .filter((i) => i.ticker === ticker)
       .map(instrumentFromRow),
     vToken: venus?.vToken,
+    houseAddress: typeof house?.address === 'string' ? house.address : undefined,
     body: { kind: body.kind, txHash: body.txHash as `0x${string}`, orderId: body.orderId },
     now: new Date(),
   });

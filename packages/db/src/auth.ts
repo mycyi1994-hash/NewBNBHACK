@@ -53,13 +53,18 @@ export async function findJudgeCode(db: Db, code: string): Promise<JudgeCodeRow 
 }
 
 /** Issues a bearer token for a skill plan. The plain token is returned once and never stored. */
+/** A fresh skill bearer token: the token is shown once, only its hash is ever stored. */
+export function newSkillToken(): { id: string; token: string; tokenHash: string } {
+  const token = `ijr_${randomBytes(32).toString('base64url')}`;
+  return { id: `sk_${randomBytes(8).toString('hex')}`, token, tokenHash: sha256Hex(token) };
+}
+
 export async function createSkillToken(
   db: Db,
   walletAddress: string,
 ): Promise<{ id: string; token: string }> {
-  const token = `ijr_${randomBytes(32).toString('base64url')}`;
-  const id = `sk_${randomBytes(8).toString('hex')}`;
-  await db.insert(skillTokens).values({ id, tokenHash: sha256Hex(token), walletAddress });
+  const { id, token, tokenHash } = newSkillToken();
+  await db.insert(skillTokens).values({ id, tokenHash, walletAddress });
   return { id, token };
 }
 

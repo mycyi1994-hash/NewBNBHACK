@@ -87,14 +87,32 @@ export async function GET(): Promise<Response> {
 async function databaseChecks(db: Db, now: Date, checks: Record<string, Check>): Promise<void> {
   const tick = await readWorkerStatus(db, 'tick');
   const tickAge = tick ? now.getTime() - Date.parse(isoTime(tick.updatedAt)) : null;
+  // The worker's errors are for its log: messages can carry hosts and keys. Only where each one
+  // came from (settle, guardian, cycle, job, house balance) is public, and any error is degraded.
+  const errors = Array.isArray(tick?.value.errors) ? (tick.value.errors as unknown[]) : [];
+  const errorSources = [
+    ...new Set(
+      errors.map((e) =>
+        typeof e === 'string'
+          ? (/^(settle|guardian|cycle|job|house balance)\b/.exec(e)?.[1] ?? 'other')
+          : 'other',
+      ),
+    ),
+  ];
   checks.worker = !tick
     ? { state: 'red', detail: { reason: 'no tick recorded' } }
     : {
-        state: tickAge !== null && tickAge <= TICK_FRESH_MS ? 'green' : 'red',
+        state:
+          tickAge === null || tickAge > TICK_FRESH_MS
+            ? 'red'
+            : errors.length > 0
+              ? 'degraded'
+              : 'green',
         detail: {
           lastTick: isoTime(tick.updatedAt),
           mode: tick.value.mode,
-          errors: tick.value.errors,
+          errorCount: errors.length,
+          errorSources,
         },
       };
 

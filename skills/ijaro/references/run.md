@@ -7,10 +7,12 @@ curl -sS -H "$AUTH" "$IJARO_URL/api/plans/$PLAN/next"
 ## Answers
 
 - `decision: "wait"` — nothing to do now. Tell the user the reason (`why` is a sentence key with
-  params, e.g. `why.deferred.market_closed` with `open`; `reason` is `data_stale`,
-  `data_unavailable` or `venus_unavailable`) and when to ask again (`retryAt`).
+  params, e.g. `why.deferred.market_closed` with `open`; `reason` is `not_due` (the plan's
+  cadence: the last buy was recent), `data_stale`, `data_unavailable`, `venus_unavailable` or
+  `chain_unavailable`) and when to ask again (`retryAt`).
 - `decision: "skip"` — this cycle is skipped (`why`: below the minimum, daily limit reached,
-  guardian holding, corporate action…; or `reason: plan_paused` / `plan_stopped`). Nothing to run.
+  guardian holding, corporate action…; or `reason: plan_paused` / `plan_stopped` /
+  `no_principal`). Nothing to run.
 - `decision: "failed"` — relay the reason; do not improvise a trade.
 - `decision: "buy"` — run `steps` in order, before `expiresAt` (five minutes). Show the user
   `spendUsd`, the stock (`instrument.symbol`, full `instrument.address`) and `estimate.shares`
@@ -50,9 +52,12 @@ curl -sS -X POST -H "$AUTH" -H 'content-type: application/json' \
   plan is paused. Tell the user; do not continue until they decide.
 - `202 pending` — not mined yet; report again in ~15 s.
 - `422 rejected` — the chain does not show what was reported (reverted, another sender, no tokens
-  received). Relay the reason verbatim.
+  received, older than the plan, a transaction of Ijaro's own house wallet). Relay the reason
+  verbatim.
 
 ## Scheduling
 
 The skill runs when the user asks. To keep a schedule, the user can ask their assistant to check
 `/next` at the plan's cadence during the US regular session; each run still asks before signing.
+A recorded swap moves the plan to its next due time, so asking again sooner answers `wait`
+(`not_due`) with that time in `retryAt`.

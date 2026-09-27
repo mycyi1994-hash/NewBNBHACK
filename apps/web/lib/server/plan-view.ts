@@ -11,6 +11,7 @@ import {
   listHoldings,
   listReceipts,
   planFromRow,
+  planSpendOnDay,
   remainingSpend,
   usdText,
   utcDay,
@@ -32,6 +33,9 @@ export async function planView(db: Db, config: Config, row: PlanRow, now: Date) 
   ]);
   const judge = plan.owner.kind === 'judge';
   const planDaily = plan.limits.maxDailyUsd;
+  // What this plan used today, from its own ledger rows — not the limit minus what is left, which
+  // mixes in the house-wide and judge caps.
+  const usedToday = await planSpendOnDay(db, row.id, utcDay(now));
   const remainingToday = await remainingSpend(db, {
     planId: row.id,
     ownerKind: row.ownerKind,
@@ -65,6 +69,7 @@ export async function planView(db: Db, config: Config, row: PlanRow, now: Date) 
     limits: {
       perBuyUsd: plan.limits.maxPerBuyUsd,
       perDayUsd: planDaily,
+      usedTodayUsd: usdText(usedToday),
       remainingTodayUsd: usdText(remainingToday),
       houseDailyCapUsd: String(config.caps.dailySpendCapUsd),
     },

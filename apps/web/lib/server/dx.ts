@@ -11,7 +11,32 @@ export const CALLS_METHOD =
 export const TAPE_METHOD =
   'every 10 minutes the worker quotes $5/$50/$500 USDT → each registered token (never executed) and records the RWA status, token price and the independent US price (RWA Dynamic V2 stockInfo.price); gap = (token price ÷ multiplier) ÷ US price − 1, only where a US price existed';
 
-export async function dxMetrics(db: Db, days: number, now = new Date()) {
+/**
+ * These numbers are public and read up to 30 days of rows: each window is computed at most once a
+ * minute per server instance, however often it is asked for.
+ */
+const CACHE_MS = 60_000;
+const cache = new Map<string, { at: number; value: Promise<unknown> }>();
+
+function cached<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const nowMs = Date.now();
+  const hit = cache.get(key);
+  if (hit && nowMs - hit.at < CACHE_MS) return hit.value as Promise<T>;
+  const value = work();
+  cache.set(key, { at: nowMs, value });
+  value.catch(() => cache.delete(key));
+  return value;
+}
+
+export function dxMetrics(db: Db, days: number, now = new Date()) {
+  return cached(`metrics:${days}`, () => computeMetrics(db, days, now));
+}
+
+export function dxTape(db: Db, days: number, now = new Date()) {
+  return cached(`tape:${days}`, () => computeTape(db, days, now));
+}
+
+async function computeMetrics(db: Db, days: number, now: Date) {
   const since = new Date(now.getTime() - days * 86_400_000);
   const [calls, events] = await Promise.all([listApiCalls(db, since), listDxEvents(db)]);
   return {
@@ -32,7 +57,7 @@ export async function dxMetrics(db: Db, days: number, now = new Date()) {
   };
 }
 
-export async function dxTape(db: Db, days: number, now = new Date()) {
+async function computeTape(db: Db, days: number, now: Date) {
   const since = new Date(now.getTime() - days * 86_400_000);
   return {
     generatedAt: now.toISOString(),
