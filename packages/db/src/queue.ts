@@ -116,6 +116,11 @@ export async function markOutbox(
     .where(eq(txOutbox.txHash, txHash));
 }
 
+export async function outboxByHash(db: Db, txHash: string): Promise<OutboxRow | undefined> {
+  const [row] = await db.select().from(txOutbox).where(eq(txOutbox.txHash, txHash)).limit(1);
+  return row;
+}
+
 /** SIGNED or PENDING transactions: reconciled at boot before any new cycle opens. */
 export async function unsettledOutbox(db: Db): Promise<OutboxRow[]> {
   return db

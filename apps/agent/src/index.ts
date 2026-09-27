@@ -9,6 +9,7 @@ export * from './executor/trade.js';
 export * from './executor/venus.js';
 export * from './guardian.js';
 export * from './market.js';
+export * from './operator.js';
 export * from './registry.js';
 export * from './runtime.js';
 export * from './scheduler.js';

@@ -13,7 +13,6 @@ import { BSC_USDT } from '@ijaro/chain';
 import {
   evaluateGuardian,
   fromUnits,
-  toUnits,
   underlyingFromVTokens,
   USDT_PEG_FLOOR,
   type GuardianAction,
@@ -21,21 +20,20 @@ import {
   type GuardianRule,
 } from '@ijaro/core';
 import {
+  applyPositionRedeem,
   belowSince,
   insertGuardianEvent,
   insertGuardianSample,
-  insertReceipt,
   isoTime,
   listGuardianEvents,
   listPlans,
   resolveGuardianEvents,
   sampleNear,
   updatePlan,
-  usdText,
   type PlanRow,
 } from '@ijaro/db';
 import type { CycleDeps } from './cycle.js';
-import { redeemFromVenus } from './executor/venus.js';
+import { redeemFromVenus, type VenusMarket } from './executor/venus.js';
 
 const DAY_MS = 86_400_000;
 /** A TVL sample counts as "24 h ago" within ±2 h. */
@@ -158,9 +156,7 @@ export async function redeemPlanPosition(
     await updatePlan(deps.db, plan.id, { status: outcome.status, pausedReason: outcome.reason });
     return 'not_live';
   }
-  // One vToken of dust stays behind so the API's rounding can never ask for more than we hold.
-  const rate = await deps.chain.exchangeRate(deps.venus.vToken);
-  const amountUsd = fromUnits(underlyingFromVTokens(vTokens - 1n, rate), 18);
+  const amountUsd = await wholePositionUsd(deps, deps.venus, vTokens);
   const result = await redeemFromVenus(deps, {
     planId: plan.id,
     cycleId: null,
@@ -181,29 +177,35 @@ export async function redeemPlanPosition(
     });
     return 'failed';
   }
-  await insertReceipt(deps.db, {
-    cycleId: null,
-    planId: plan.id,
-    kind: 'redeem',
-    txHash: result.sent.txHash,
-    explorerUrl: `https://bscscan.com/tx/${result.sent.txHash}`,
-    chainId: 56,
-    amounts: { ...result.sent.amounts, reason: outcome.reason },
-    broadcastVia: result.sent.broadcastVia,
-    simulatedAt: result.sent.simulatedAt,
-    blockNumber: result.sent.receipt.blockNumber.toString(),
-    status: 'success',
-  });
-  const principal = toUnits(usdText(plan.principalUsd), 18);
-  const interest = result.usdtReceived > principal ? result.usdtReceived - principal : 0n;
-  await updatePlan(deps.db, plan.id, {
-    status: outcome.status,
-    pausedReason: outcome.reason,
-    principalUsd: '0',
-    vtokenUnits: (vTokens - result.vTokensBurned).toString(),
-    harvestedUnspentUsd: fromUnits(toUnits(usdText(plan.harvestedUnspentUsd), 18) + interest, 18),
-  });
+  await applyPositionRedeem(
+    deps.db,
+    plan.id,
+    {
+      kind: 'redeem',
+      txHash: result.sent.txHash,
+      broadcastVia: result.sent.broadcastVia,
+      blockNumber: result.sent.receipt.blockNumber,
+      status: 'success',
+      simulatedAt: result.sent.simulatedAt,
+      amounts: { ...result.sent.amounts, reason: outcome.reason },
+    },
+    result,
+    { status: outcome.status, pausedReason: outcome.reason },
+  );
   return 'redeemed';
+}
+
+/**
+ * What redeeming a plan's whole position asks for, in USDT: all its vTokens but one, so the API's
+ * rounding can never ask for more than the plan holds.
+ */
+export async function wholePositionUsd(
+  deps: Pick<CycleDeps, 'chain'>,
+  market: VenusMarket,
+  vTokens: bigint,
+): Promise<string> {
+  const rate = await deps.chain.exchangeRate(market.vToken);
+  return fromUnits(underlyingFromVTokens(vTokens - 1n, rate), 18);
 }
 
 /** Pauses every yield plan with a Venus position and, in live mode, redeems it all. */

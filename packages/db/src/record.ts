@@ -13,6 +13,7 @@ import {
   insertReceipt,
   updatePlan,
   upsertHolding,
+  type PlanPatch,
 } from './plans.js';
 
 export interface ReceiptFacts {
@@ -98,6 +99,35 @@ export async function applyDeposit(
   await updatePlan(db, planId, {
     principalUsd: fromUnits(toUnits(usdText(row.principalUsd), 18) + minted.usdtSpent, 18),
     vtokenUnits: (BigInt(row.vtokenUnits) + minted.vTokens).toString(),
+  });
+  return true;
+}
+
+/**
+ * Records a confirmed redemption of a plan's whole Venus position (guardian redeem_all, a stop, the
+ * operator's yield:redeem): the receipt, then principal 0, vTokens less those burned, and what came
+ * back above the principal kept as harvested interest — once per transaction hash, like deposits.
+ * `patch` sets the plan's status with the same write.
+ */
+export async function applyPositionRedeem(
+  db: Db,
+  planId: string,
+  facts: ReceiptFacts,
+  redeemed: { usdtReceived: bigint; vTokensBurned: bigint },
+  patch: PlanPatch = {},
+): Promise<boolean> {
+  const fresh = await recordReceiptFacts(db, planId, null, facts);
+  if (!fresh) return false;
+  const row = await getPlan(db, planId);
+  if (!row) throw new Error(`plan ${planId} vanished`);
+  const principal = toUnits(usdText(row.principalUsd), 18);
+  const interest = redeemed.usdtReceived > principal ? redeemed.usdtReceived - principal : 0n;
+  const left = BigInt(row.vtokenUnits) - redeemed.vTokensBurned;
+  await updatePlan(db, planId, {
+    ...patch,
+    principalUsd: '0',
+    vtokenUnits: (left > 0n ? left : 0n).toString(),
+    harvestedUnspentUsd: fromUnits(toUnits(usdText(row.harvestedUnspentUsd), 18) + interest, 18),
   });
   return true;
 }

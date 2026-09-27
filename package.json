@@ -25,6 +25,7 @@
     "tape:once": "tsx scripts/tape-once.ts",
     "cycle:once": "tsx scripts/cycle-once.ts",
     "yield:deposit": "tsx scripts/yield-deposit.ts",
+    "yield:redeem": "tsx scripts/yield-redeem.ts",
     "plan:status": "tsx scripts/plan-status.ts",
     "plan:set": "tsx scripts/plan-set.ts",
     "smoke": "tsx scripts/smoke.ts",
