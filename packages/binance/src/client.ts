@@ -32,6 +32,9 @@ import {
 import { isTransient } from './taxonomy.js';
 import { maskSensitive, requestIdOf, type ApiCallRecord, type ApiCallSink } from './telemetry.js';
 
+/** Default wait for each telemetry hook (api_calls sink, fixture recorder). */
+const TELEMETRY_TIMEOUT_MS = 5_000;
+
 /** Backoff before retry `attempt` (0-based) of a transient failure: 0.5 s, 1 s, 2 s, … ≤ 8 s. */
 export function retryBackoffMs(attempt: number): number {
   return Math.min(8_000, 500 * 2 ** attempt);
@@ -48,8 +51,13 @@ export interface BinanceClientOptions {
   limiter?: RateLimiter;
   /** api_calls hook; called once per HTTP attempt. */
   onApiCall?: ApiCallSink;
-  /** Called when the hook throws; telemetry must never break a request. */
+  /**
+   * Called when a telemetry hook — the api_calls sink or the fixture recorder — throws or takes
+   * longer than `telemetryTimeoutMs`; telemetry must never break a request.
+   */
   onSinkError?: (error: unknown) => void;
+  /** How long (ms) the request waits for each telemetry hook. Default 5 s. */
+  telemetryTimeoutMs?: number;
   /** When set, every response can be saved; see `recordFixture`. */
   fixtures?: FixtureRecorder;
   /** Record every response (true) or only requests that ask for it (false, default). */
@@ -263,20 +271,28 @@ export class BinanceClient {
           : { ok: false, kind: 'http', code: null, msg: redirect, serverTime: null, body: null };
       const requestId = requestIdOf(response.headers);
 
+      // The server has answered (for a broadcast: the transaction may be on its way), so from here
+      // on a telemetry failure is reported to onSinkError and never becomes the request's error.
+      // The fixture goes first so the api_calls row can point at it; a recorder that fails or
+      // stalls costs at most telemetryTimeoutMs, and the row is written either way.
       let fixturePath: string | null = null;
-      if (this.options.fixtures && (opts.recordFixture || this.options.recordAllFixtures)) {
-        fixturePath = await this.options.fixtures({
-          module,
-          endpoint,
-          recordedAt: new Date(started),
-          redact: this.secrets,
-          request: { method: opts.method, requestPath: target.requestPath, body: bodyText },
-          response: {
-            httpStatus: response.status,
-            headers: response.headers,
-            bodyText: responseText,
-          },
-        });
+      const recorder = this.options.fixtures;
+      if (recorder && (opts.recordFixture || this.options.recordAllFixtures)) {
+        const saved = await this.telemetry('fixture recorder', () =>
+          recorder({
+            module,
+            endpoint,
+            recordedAt: new Date(started),
+            redact: this.secrets,
+            request: { method: opts.method, requestPath: target.requestPath, body: bodyText },
+            response: {
+              httpStatus: response.status,
+              headers: response.headers,
+              bodyText: responseText,
+            },
+          }),
+        );
+        fixturePath = saved ?? null;
       }
 
       await this.record({
@@ -344,11 +360,31 @@ export class BinanceClient {
   }
 
   private async record(record: Omit<ApiCallRecord, 'region'>): Promise<void> {
-    if (!this.options.onApiCall) return;
+    const sink = this.options.onApiCall;
+    if (!sink) return;
+    await this.telemetry('api_calls sink', () =>
+      sink({ ...record, region: this.options.region ?? null }),
+    );
+  }
+
+  /**
+   * Runs a telemetry hook for at most telemetryTimeoutMs (real time, like the fetch timeout).
+   * A throw, a rejection or a stall goes to onSinkError and yields undefined; a stalled hook keeps
+   * running in the background, and its late rejection is already handled by the race.
+   */
+  private async telemetry<T>(hook: string, run: () => T | Promise<T>): Promise<T | undefined> {
+    const ms = this.options.telemetryTimeoutMs ?? TELEMETRY_TIMEOUT_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`${hook} did not finish within ${ms} ms`)), ms);
+    });
     try {
-      await this.options.onApiCall({ ...record, region: this.options.region ?? null });
+      return await Promise.race([Promise.resolve().then(run), stalled]);
     } catch (error) {
-      (this.options.onSinkError ?? ((e) => console.warn('api_calls sink failed:', e)))(error);
+      (this.options.onSinkError ?? ((e) => console.warn(`${hook} failed:`, e)))(error);
+      return undefined;
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

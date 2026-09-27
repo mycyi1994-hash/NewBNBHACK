@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { BinanceClient } from './client.js';
 import { broadcastSigned } from './endpoints.js';
 import { BinanceApiError } from './errors.js';
-import { createFixtureRecorder } from './fixtures.js';
+import { createFixtureRecorder, type FixtureRecorder } from './fixtures.js';
 import { MAX_RETRY_AFTER_MS, RateLimiter, type Clock } from './rate-limit.js';
 import { preHash, signPreHash } from './sign.js';
 import type { ApiCallRecord } from './telemetry.js';
@@ -428,6 +428,48 @@ describe('BinanceClient.request', () => {
       'utf8',
     );
     expect(saved.toLowerCase()).not.toContain(bare);
+  });
+
+  it('never turns a processed request into an error when the fixture recorder fails', async () => {
+    const diskFull = new Error('ENOSPC: no space left on device');
+    const recorders: FixtureRecorder[] = [
+      () => Promise.reject(diskFull),
+      () => {
+        throw diskFull;
+      },
+    ];
+    for (const fixtures of recorders) {
+      const sinkErrors: unknown[] = [];
+      const { client, records } = harness([new Response(OK({ txHash: '0xabc', orderId: 'o-1' }))], {
+        fixtures,
+        recordAllFixtures: true,
+        onSinkError: (e) => sinkErrors.push(e),
+      });
+      // The broadcast went through; losing its fixture must not make the executor think otherwise.
+      await expect(
+        broadcastSigned(client, { address: WALLET, signedTransaction: '0x02f86b' }),
+      ).resolves.toEqual({ txHash: '0xabc', orderId: 'o-1' });
+      expect(sinkErrors).toEqual([diskFull]);
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({ httpStatus: 200, code: '0', fixturePath: null });
+    }
+  });
+
+  it('waits a bounded time for a stuck api_calls sink or fixture recorder', async () => {
+    const sinkErrors: unknown[] = [];
+    const { client } = harness([new Response(OK([]))], {
+      onApiCall: () => new Promise<void>(() => undefined),
+      fixtures: () => new Promise<string>(() => undefined),
+      recordAllFixtures: true,
+      telemetryTimeoutMs: 20,
+      onSinkError: (e) => sinkErrors.push(e),
+    });
+    const response = await client.request('market', 'getSupportedChains', SUPPORTED_CHAINS);
+    expect(response.fixturePath).toBeNull();
+    expect(sinkErrors.map((e) => (e as Error).message)).toEqual([
+      'fixture recorder did not finish within 20 ms',
+      'api_calls sink did not finish within 20 ms',
+    ]);
   });
 
   it('warns when the server clock drifts from ours', async () => {
