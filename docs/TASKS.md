@@ -161,11 +161,21 @@
     - `redeemFromVenus`: 플랜 보유 vToken 이하이고 요청액 가치 이하일 때만 상환한다. 지연일이 있으면 거부한다.
     - 플랜별 `plans.vtoken_units`(마이그레이션 0006). `runCycle`은 이자 → 상환 → 매수 순이고 `harvested_unspent_usd`를 갱신한다.
     - `pnpm yield:deposit --plan <id> --usd <n> [--live]`: 원금 캡을 확인하고 `y`를 받는다. 원금·vToken은 확정 영수증에서 1회만 기록한다. 늦은 영수증은 `--record <tx>`로 기록한다.
+    - `pnpm yield:redeem --plan <id> [--live] | --record <tx>`(9/27, 사람 yes D-21, `apps/agent/src/operator.ts`): 플랜의 Venus 포지션 전체를 하우스로 되찾는다.
+      - 미리보기는 빌드·콜데이터 검사·시뮬레이션만 하고 아무것도 바꾸지 않는다.
+      - live는 `y`, outbox 정리, 플랜 락, 시뮬 통과 뒤에만 서명하고 플랜을 paused(operator_redeem)로 둔다. 스킬 플랜은 거부한다.
+      - `--record`는 우리 outbox가 그 플랜의 redeem으로 서명한 tx만 받는다.
   - 증거: `venus.test.ts` 7개(1 USDT 실측 콜데이터 사용).
     - 시뮬된 승인은 정확 금액이었다(API 항목은 2^256−1).
     - 잘못된 금액·시장은 거부했다. 원금을 건드리는 상환과 지연 상환도 거부했다.
     - live 예치 → 상환에서 로그로 vToken 발행과 USDT 수령을 파싱했다.
-  - 남음: [HUMAN] 원금 결정(REPLAN R1), 메인넷 영수증 3종(G4).
+  - 증거(9/27): `apps/agent/src/operator.test.ts` 4개.
+    - 미리보기는 서명·변경이 없다. 없음·스킬·safe·포지션 없음은 거부한다.
+    - live 상환은 receipts redeem을 남기고, 원금 0, 이자는 harvested에 둔다. 멈춘 플랜은 stopped로 남는다.
+    - 시뮬 실패면 서명 0에 알림을 보낸다. 락이 잡혀 있으면 거부한다.
+    - 미채굴 tx는 다른 플랜을 `outbox_busy`로 막고, 채굴 뒤 `--record`는 한 번만 적용된다.
+    - 가디언 redeem_all·정지 잡의 live 상환 분기는 전에 테스트가 없었다. 이제 같은 기록 경로(`applyPositionRedeem`)로 검증된다.
+  - 남음: [HUMAN] $1 실거래 시험(`docs/LIVE_TEST.md`: 예치·매수·상환), 원금 결정(REPLAN R1), 이자 매수 swap 영수증(G4).
 - 수용: **메인넷 영수증 3종(deposit, redeem, swap)**, 이자 표시. 이자 부족 시 적립 병행으로 체결하되 영수증에 구분 표기
 
 ### M1-06 스케줄러·창구·멱등 · 기준: 기술
@@ -202,7 +212,11 @@
 ### M1-09 하우스 플랜 가동 · 기준: 기술
 - [~] H-SAFE(일 $5, 정규장), H-YIELD(원금 확정액, 주 1회) 9/30부터 연속 가동
   - 코드 준비(9/26): `pnpm db:seed`(둘 다 paused), `pnpm yield:deposit`(원금), `pnpm plan:status --activate`(live면 `y`, 원금 없는 yield는 DB가 거부 → 안내 문구). 워커가 활성 플랜을 5분 틱으로 돌린다.
-  - 남음: [HUMAN] 하우스 지갑 충전·원금 결정(REPLAN R1–R4). 그 뒤 활성화와 연속 가동(G5).
+  - 코드(9/27): `pnpm plan:set`은 하우스 플랜 금액·주기를 캡 안에서 바꾼다.
+    - 검사는 core `changePlanSettings`(테스트 7개, core 100%): 최소 매수 ≤ 1회 ≤ 하우스 1회 캡, 1회 ≤ 일 ≤ 일일 캡, safe 적립액 ≥ 최소 매수.
+    - 심사위원·스킬 플랜은 거부한다. 켜진 플랜은 `y`를 받는다.
+    - $1 시험에서 H-SAFE를 $1/$1/$1로 둘 때 쓴다.
+  - 남음: [HUMAN] 하우스 지갑 충전·$1 시험(`docs/LIVE_TEST.md`)·원금 결정(REPLAN R1–R4). 그 뒤 활성화와 연속 가동(G5).
 - 수용: 10/4까지 사이클 레코드 ≥ 4일치, FAILED 0 또는 원인 기록
 
 ---
@@ -339,6 +353,11 @@
   - 워커 재시작: 이전 워커가 `running`으로 남긴 잡을 부팅 때 실패로 닫음(**새로 추가** — 전에는 영원히 running, `requeueStaleJobs`는 호출되지 않았음; `queue.test.ts`).
   - UI 3상태: LIVE/STALE/UNAVAILABLE — `read.test.ts`(테이프 없음 → 25분 전 → 1분 전), 빈 DB 화면 캡처.
   - [ ] [HUMAN] 배포 환경에서 API 다운(키 교체)·Fly 재시작·Neon 복구 리허설 1회.
+- [x] 실거래 전 점검 `pnpm live:check`(9/27): config·플랜·outbox·하우스 잔고(RPC)·Venus 상태·가디언·레지스트리·워커·테이프·api_calls → GO / NO-GO.
+  - 읽기 전용이다. Web3 API를 부르지 않고 서명하지 않는다.
+  - 규칙은 `scripts/live-check-rules.ts`에 있다(테스트 8개, 분기 100%).
+  - 절차와 멈춤 조건은 `docs/LIVE_TEST.md`에 있다.
+  - 로컬 확인: 스크래치 DB에서 NO-GO(config·house·registry). 공개 BSC RPC 잔고 읽기가 동작했다.
 ### M3-07 [-] 모드 D 웹 지갑 연결 (기본 컷)
 ### M3-08 [-] BNB 스테이킹 이자원 (기본 컷)
 

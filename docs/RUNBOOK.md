@@ -71,6 +71,8 @@
 - 주소는 지갑을 만든 운영자가 알고 있다(로그·화면·알림에서는 마스킹된다). smoke `house`는 잔고만 보여준다. 키는 Fly 시크릿에만 있다.
 - 잔고 상한 $300(SPEC §14). BNB는 수수료용 소량.
 - 이자 플랜 원금: `pnpm yield:deposit --plan H-YIELD --usd <금액>`(시뮬레이션 먼저, live는 `y` 입력 필요, `MAX_PRINCIPAL_USD` 이하).
+- 원금 되찾기: `pnpm yield:redeem --plan H-YIELD`(미리보기) → `EXECUTION_MODE=live pnpm yield:redeem --plan H-YIELD --live`(`y`). 포지션 전체를 하우스로 되찾고 플랜을 멈춘다(`operator_redeem`). 스킬 플랜은 거부한다(D-19·D-21).
+- live 명령은 워커 머신 안에서 실행한다(`fly ssh console -a ijaro-agent`, `cd /app`). 워커는 simulate로 두고 명령 한 줄에만 `EXECUTION_MODE=live`를 붙인다. 순서와 멈춤 조건: `docs/LIVE_TEST.md`.
 
 ## 6. 배포
 
@@ -86,8 +88,11 @@
 | `pnpm smoke [--url] [--strict] [--alert]` | 심사 의존 항목 한 번에 확인 |
 | `pnpm ui:check [--url] [--out dir]` | 화면 7개 × KO/EN × 375/1440px, 가로 스크롤·페이지 오류·CSP 위반 |
 | `pnpm plan:status [--plan id --activate/--pause]` | 플랜 목록·켜기·끄기 |
+| `pnpm plan:set --plan <id> [--contribution] [--per-buy] [--daily] [--cadence] [--window]` | 하우스 플랜 금액·주기를 캡 안에서 바꾼다(켜진 플랜은 `y`) |
+| `pnpm live:check [--usd 1]` | 실거래 전 점검(읽기 전용, Web3 API 호출 없음) → GO / NO-GO |
 | `pnpm cycle:once --plan <id> [--live]` | 사이클 1회(시뮬레이션 먼저, live는 `y`) |
 | `pnpm yield:deposit --plan <id> --usd <n>` | 이자 플랜 원금 예치 |
+| `pnpm yield:redeem --plan <id> [--live] \| --record <tx>` | 이자 플랜 포지션 전체 상환(미리보기 먼저, live는 `y`) |
 | `pnpm dx:metrics` · `pnpm dx:events` | DX 수치·새 발견 |
 | `pnpm receipts:table` | README 영수증 표 |
 | `pnpm db:migrate` · `pnpm db:seed` · `pnpm db:rollback <tag> --yes` | DB |
