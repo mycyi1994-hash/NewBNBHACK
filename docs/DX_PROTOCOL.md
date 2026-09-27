@@ -1,68 +1,68 @@
-# DX_PROTOCOL.md — 개발자 경험 증거 체계 (점수의 25%)
+# DX_PROTOCOL.md — Developer experience evidence system (25% of the score)
 
-작성: 박지우. 적용 대상: 사람 전원 + 코딩 에이전트.
+Author: Jiwoo Park. Applies to: all humans + the coding agent.
 
-## 1. 왜
-공식 규정: "Perfunctory or AI-generated reports are not accepted." 심사위원은 자기 API의 결함을 **위치와 수치로** 알고 싶어 한다. 기억으로는 못 쓴다. 겪는 순간 기록해야 한다.
+## 1. Why
+Official rule: "Perfunctory or AI-generated reports are not accepted." The judges want to know the flaws in their own API **with locations and numbers**. This cannot be written from memory. It has to be recorded the moment it happens.
 
-## 2. 무엇을 기록하나
-| 범주 | 기록 항목 | 출처 |
+## 2. What to record
+| Category | What to record | Source |
 | --- | --- | --- |
-| 온보딩 | 포털 로그인 시각, 키 발급 시각, 첫 미서명 호출 성공 시각, 첫 서명 호출 성공 시각, 그 사이 막힌 지점 | 사람 + `pnpm reach` |
-| 문서 오류 | 페이지 URL, 섹션 제목, 문서가 말한 것, 실제, 증거(요청 ID·픽스처) | 사람 + 에이전트 |
-| API 함정 | 이해 안 되는 에러 메시지 원문, 코드, 재현 절차, 엣지케이스, 지연 | `api_calls` + 에이전트 |
-| AI 스택 | `baw` 설치·로그인 소요, 명령별 성공·실패, 세션 만료 경험, Skill 작성 경험, `bag` 경험, 빠진 기능 | 사람 |
-| 토큰화 주식 특성 | 규모별 가격영향, 장외 견적 거부율, 온체인가-참조가 괴리(시간대별), 발행사별 차이 | 테이프 |
-| 재설계 제안 | "내가 이 플랫폼 엔지니어라면" 1순위 변경 | 사람 |
-| 요청 기능 | 우선순위 매긴 목록, 각 항목이 우리 제품에서 왜 필요했는지 | 사람 |
+| Onboarding | Portal login time, key issuance time, time of the first successful unsigned call, time of the first successful signed call, where we got stuck in between | Humans + `pnpm reach` |
+| Documentation errors | Page URL, section title, what the docs said, the actual behavior, evidence (request ID, fixture) | Humans + agent |
+| API pitfalls | Verbatim text of error messages that make no sense, code, repro steps, edge cases, latency | `api_calls` + agent |
+| AI stack | Time to install and log in to `baw`, success and failure per command, session expiry experience, experience writing the Skill, `bag` experience, missing features | Humans |
+| Tokenized-stock specifics | Price impact by size, off-hours quote rejection rate, on-chain vs reference price gap (by time of day), differences by issuer | Tape |
+| Redesign suggestions | "If I were an engineer on this platform": the #1 change | Humans |
+| Requested capabilities | Prioritized list, and why each item was needed in our product | Humans |
 
-## 3. 어디에, 어떤 형식으로
+## 3. Where, and in what format
 
-### 3.1 `dx/LOG.md` (시간순, 추가만)
+### 3.1 `dx/LOG.md` (chronological, append-only)
 ```
-## 2026-09-24 13:05 UTC — [web3api][auth] 첫 서명 호출
-- 목표:
-- 기대:
-- 실제: (HTTP/코드/msg/지연 ms, request id)
-- 문서: URL + 섹션
-- 잃은 시간:
-- 우회:
-- 요청:
-- 증거: fixtures/... 또는 스크린샷 경로
+## 2026-09-24 13:05 UTC — [web3api][auth] First signed call
+- Goal:
+- Expected:
+- Actual: (HTTP/code/msg/latency ms, request id)
+- Docs: URL + section
+- Time lost:
+- Workaround:
+- Ask:
+- Evidence: fixtures/... or screenshot path
 ```
-태그: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b402][auth|docs|error|latency|edge|missing]`.
-에이전트는 사실만 쓴다(기대·실제·증거). 사람은 같은 항목 아래 `- 소감:` 줄을 덧붙인다.
+Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b402][auth|docs|error|latency|edge|missing]`.
+The agent writes facts only (Expected, Actual, Evidence). Humans add a `- Impression:` line under the same entry.
 
-### 3.2 `dx/metrics.md` (생성물, 매주 일요일 `pnpm dx:metrics`)
-엔드포인트별 호출 수, p50/p95, 오류코드 분포, 리전별 비교, 주간 추이.
+### 3.2 `dx/metrics.md` (generated, every Sunday with `pnpm dx:metrics`)
+Call count per endpoint, p50/p95, error code distribution, comparison by region, weekly trend.
 
-### 3.3 `dx/findings/<slug>.md` (재현 가능한 발견 1건 = 1파일)
-제목, 영향, 재현 절차, 기대/실제, 증거, 제안.
+### 3.3 `dx/findings/<slug>.md` (1 reproducible finding = 1 file)
+Title, impact, repro steps, expected/actual, evidence, suggestion.
 
-### 3.4 테이프 요약 (`/dx` 페이지 + `dx/tape-summary.md`)
-정규장 vs 프리/포스트 vs 주말: 견적 성공률, 평균 가격영향($5/$50/$500), 괴리 분포, 발행사별.
+### 3.4 Tape summary (`/dx` page + `dx/tape-summary.md`)
+Regular session vs pre-market/after-hours vs weekend: quote success rate, average price impact ($5/$50/$500), gap distribution, by issuer.
 
-### 3.5 `dx/REPORT_DRAFT.md` — **사람만 쓴다.** 에이전트는 이 파일을 편집하지 않는다.
+### 3.5 `dx/REPORT_DRAFT.md` — **Only humans write this.** The agent does not edit this file.
 
-## 4. 주간 루틴
-- 매일: 겪은 순간 10분 내 LOG 기록.
-- 일요일(9/27, 10/4): 사람이 REPORT_DRAFT 섹션별 초안 갱신, 자가채점.
-- 10/8: 최종본. 10/9 폼 제출.
+## 4. Weekly routine
+- Daily: record it in LOG within 10 min of it happening.
+- Sunday (9/27, 10/4): humans update the REPORT_DRAFT draft section by section and do a self-assessment.
+- 10/8: final version. 10/9 form submission.
 
-## 5. 리포트 구조 (공식 7항목 그대로)
-1. **Onboarding** — 시각표(포털 → 키 → 첫 호출), 막힌 지점, 절반으로 줄일 방법
-2. **Documentation issues** — 표: 페이지 | 섹션 | 문서 | 실제 | 증거
-3. **API pitfalls** — 에러 메시지 원문과 우리가 이해한 뜻, 엣지케이스, 지연 수치(p50/p95)
-4. **AI stack feedback** — Agentic Wallet CLI, Wallet Skills(작성자 관점 포함), Agent Studio: 됐던 것·안 됐던 것·빠진 것
-5. **Tokenized-stock specifics** — 테이프 수치: 유동성 깊이, 슬리피지, 장외 행동, 괴리, 발행사 차이
-6. **Redesign suggestions** — 상위 3개, 각각 근거 로그 링크
-7. **Requested capabilities** — 우선순위 목록, 각 항목의 우리 제품 내 필요 이유
+## 5. Report structure (the 7 official items, verbatim)
+1. **Onboarding** — timeline (portal → key → first call), where we got stuck, how to cut it in half
+2. **Documentation issues** — table: Page | Section | Docs | Actual | Evidence
+3. **API pitfalls** — verbatim error messages and what we understood them to mean, edge cases, latency numbers (p50/p95)
+4. **AI stack feedback** — Agentic Wallet CLI, Wallet Skills (including an author's perspective), Agent Studio: what worked, what did not, what is missing
+5. **Tokenized-stock specifics** — tape numbers: liquidity depth, slippage, off-hours behavior, gap, issuer differences
+6. **Redesign suggestions** — top 3, each with a link to its supporting log entry
+7. **Requested capabilities** — prioritized list, with why each item was needed in our product
 
-## 6. 금지
-- 칭찬으로 채우기, 일반론, 수치 없는 주장
-- 에이전트가 서술문 생성
-- 로그 없이 기억으로 쓰기
-- 남의 발견을 우리 것처럼 쓰기(참고했으면 출처)
+## 6. Prohibited
+- Padding with praise, generalities, claims without numbers
+- The agent generating narrative prose
+- Writing from memory without a log
+- Presenting someone else's finding as ours (cite the source if you drew on it)
 
-## 7. 좋은 항목의 예
-> 2026-09-24 14:12 UTC — [web3api][auth] 서명 실패 40102가 3회. 문서 `authentication` 페이지 "Signature" 섹션은 path만 서명하라고 읽히는데, 실제로는 `/build` 접두사와 쿼리스트링을 포함해야 통과(요청 id …). 잃은 시간 40분. 제안: 문서에 서명 대상 문자열 예시를 그대로 싣고, 40102 응답에 서버가 계산한 canonical string의 해시를 함께 내려줄 것.
+## 7. Example of a good entry
+> 2026-09-24 14:12 UTC — [web3api][auth] Signature failure 40102, 3 times. The docs' `authentication` page, "Signature" section, reads as if only the path is signed, but in practice it passes only when the `/build` prefix and the query string are included (request id …). Time lost 40 min. Suggestion: put a verbatim example of the string to sign in the docs, and include the hash of the canonical string the server computed in the 40102 response.

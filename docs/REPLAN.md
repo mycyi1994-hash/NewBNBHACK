@@ -1,222 +1,222 @@
-# REPLAN.md — 재계획 v2 (2026-09-24)
+# REPLAN.md — Re-plan v2 (2026-09-24)
 
-상태: **초안 · 사람 승인 대기.** 사용자 요청으로 클라우드 세션 Claude가 작성했다. 근거는 2026-09-24 5인 심사위원 검토(기술·창의·DX·UX·특별상)와 G1 실측이다.
+Status: **Draft · awaiting human approval.** Written by the cloud-session Claude at the user's request. It is based on the 2026-09-24 review by 5 judges (technical, creativity, DX, UX, special prizes) and the G1 measurements.
 
-**진행 (9/24 오후, 사용자: "개발 쪽으로만").**
-- 돈·캡 결정(R1~R4, R9)은 **보류**다. 코드는 현재 캡 값을 config에서 읽는다. 나중에 결정하면 설정값만 바꾸면 된다.
-- 개발 항목 가운데 §5 설계 보강은 SPEC v2에 반영했다. G3 조건 2·3의 문구도 고쳤다.
-- M1-02 `decideCycle`(순수 함수)은 구현을 마쳤다. 테스트 57개, `packages/core` 분기 커버리지 100%다.
-- RFQ 미실행(R6)과 가격 괴리를 독립 주가로만 판단하는 것(R8)은 결정 전 기본값으로 코드에 넣었다.
-§2의 결정 R1~R12가 승인되면 PLAN·SPEC·TASKS·GOALS·DECISIONS에 반영한다. UX_COPY는 문구 초안을 올리고 사람이 확정한다. 이 파일은 기록으로 남긴다.
+**Progress (9/24 pm, user: "development side only").**
+- The money and cap decisions (R1~R4, R9) are **on hold**. The code reads the current cap values from config. Once they are decided later, only the settings need to change.
+- Among the development items, the §5 design hardening has been applied to SPEC v2. The wording of G3 conditions 2 and 3 has also been fixed.
+- M1-02 `decideCycle` (a pure function) is implemented. 57 tests, 100% branch coverage in `packages/core`.
+- Not executing RFQ (R6) and judging the price gap only against an independent stock price (R8) are in the code as pre-decision defaults.
+Once decisions R1~R12 in §2 are approved, they are applied to PLAN, SPEC, TASKS, GOALS and DECISIONS. For UX_COPY, draft copy is proposed and a human finalizes it. This file stays as a record.
 
-## 0. 왜 다시 짜나
+## 0. Why re-plan
 
-| 기준 (비중) | 지금 제출하면 | 기존 계획대로 끝내면 | 새 계획 목표(10/8) |
+| Criterion (weight) | If submitted now | If the old plan is finished as is | New plan target (10/8) |
 | --- | :-: | :-: | :-: |
-| 기술 (30%) | 3 | 8 | 8.5 |
-| 창의성 (25%) | 4 | 6 | 7.5 |
-| DX 리포트 (25%) | 5 | 8 | 8.5 |
-| 제품·UX (20%) | 1 | 6 | 7.5 |
-| **가중 합계** | **3.4** | **7.1** | **약 8.0** |
-| AW 특별상 | 1 | 5 | 7 |
-| Studio 특별상 | 0 | 3 | 컷(신원 등록만 선택) |
+| Technical (30%) | 3 | 8 | 8.5 |
+| Creativity (25%) | 4 | 6 | 7.5 |
+| DX report (25%) | 5 | 8 | 8.5 |
+| Product and UX (20%) | 1 | 6 | 7.5 |
+| **Weighted total** | **3.4** | **7.1** | **about 8.0** |
+| AW special prize | 1 | 5 | 7 |
+| Studio special prize | 0 | 3 | Cut (identity registration only, optional) |
 
-기존 계획대로 해도 7.1점이다. 원인은 넷이다.
-1. **핵심 장면이 안 나온다.** 하우스 이자 플랜의 원금은 $200~500이고 연 3.16%다. 9/30부터 10/23까지 이자는 $0.40~1.00이다. 최소 매수가 $2라서 이자만으로는 한 번도 사지 못한다. Judge Mode의 $20 예치는 일주일에 약 1센트를 번다.
-2. **미국 정규장은 일주일의 19%다**(KST 22:30~05:00). 낮에 들어온 아시아 심사위원은 "장 마감"만 본다. Binance는 bStock 정기 구매를 이미 24시간 제공한다.
-3. **Agentic Wallet을 아직 한 번도 안 썼다.** 일정의 맨 뒤(M2)에 있다. 문서에 따르면 bStock은 "허용된 지역의 자격 있는 사용자만" 살 수 있다(llms-full.txt L7212). 한국에서 되는지(Q-02)는 모른다.
-4. **실거래 설계에 구멍이 있다.**
-   - 웹과 워커가 같은 하우스 지갑으로 서명한다. nonce가 충돌하거나 중복 매수가 날 수 있다.
-   - PENDING 상태가 없다.
-   - 견적 60초 가정은 틀렸다(실측 30초).
-   - G3 조건 3은 모순이다. 시뮬레이션은 1건씩이라, 승인이 체인에 올라가기 전에는 스왑 시뮬레이션이 성공할 수 없다.
+Even following the old plan, the score is 7.1. There are four causes.
+1. **The key scene never happens.** The house yield plan's principal is $200~500 at 3.16% a year. Interest from 9/30 to 10/23 comes to $0.40~1.00. The minimum buy is $2, so interest alone never buys even once. The Judge Mode $20 deposit earns about 1 cent a week.
+2. **The US regular session is 19% of the week** (KST 22:30~05:00). An Asian judge who visits during the day sees only "market closed". Binance already offers recurring bStock purchases 24 hours a day.
+3. **We have not used Agentic Wallet even once yet.** It sits at the very end of the schedule (M2). According to the docs (llms-full.txt L7212), only eligible users in permitted regions can buy bStock. Whether it works from Korea (Q-02) is unknown.
+4. **The live-trade design has holes.**
+   - The web and the worker sign with the same house wallet. Nonces can collide, or a buy can be duplicated.
+   - There is no PENDING state.
+   - The 60-second quote assumption is wrong (measured: 30 seconds).
+   - G3 condition 3 is contradictory. Simulation takes 1 tx at a time, so a swap simulation cannot succeed before the approval is on chain.
 
-경쟁작도 확인했다. 모두 BNB Hack 출품작이고, 이자·저축 기능이 있는 곳은 없다.
-- OneTicker: 5분 테이프, 안전 게이트, $25 한도, Wallet Skill
-- Roost: "서버가 결정, 지갑이 실행"
-- Closing Bell Agent: 장 시간 차단, 배수 보정, 서명 전 시뮬레이션
+We also checked competing entries. All are BNB Hack entries, and none has an interest or savings feature.
+- OneTicker: 5-minute tape, safety gate, $25 limit, Wallet Skill
+- Roost: "the server decides, the wallet executes"
+- Closing Bell Agent: market-hours blocking, multiplier correction, simulation before signing
 
-우리 차별점은 "원금은 예치, 이자로 매수" 하나다. 그래서 원인 1이 치명적이다.
+Our one differentiator is "principal deposited, buy with the interest". That is why cause 1 is fatal.
 
-**바꾸지 않는 것.**
-- 제품 정의
-- 결정은 코드로 한다(LLM 없음)
-- 캡·정확 승인·브로드캐스트 전 시뮬레이션
-- 사람이 쓰는 DX 리포트
-- PLAN §8 절대 컷 금지 목록
+**What does not change.**
+- The product definition
+- Decisions are made in code (no LLM)
+- Caps, exact approvals, simulation before broadcast
+- A DX report written by humans
+- The PLAN §8 never-cut list
 
-## 1. 전략 변경 넷
+## 1. Four strategy changes
 
-**S1. 이자가 주식을 사는 장면을 10/1부터 실제로 만든다.**
-- 하우스 H-YIELD 원금은 $1,000, bStocks 최소 매수는 $0.25로 한다. 약 3일마다 이자만으로 매수한다. 10/23까지 7~9건이 예상된다.
-- 영수증에 "이자로만 삼" 라벨을 단다.
-- Watch 홈에 실시간 이자 카운터를 둔다. BSC 블록은 0.45초라 숫자가 계속 오른다.
-- "다음 매수까지 $0.07 남음" 같은 진행 상태를 보여준다.
+**S1. Make the scene where interest buys stock actually happen, from 10/1.**
+- Set the house H-YIELD principal to $1,000 and the bStocks minimum buy to $0.25. It buys with interest alone about every 3 days. 7~9 buys are expected by 10/23.
+- Put a "Bought with interest only" label on the receipt.
+- Put a live interest counter on the Watch home. BSC blocks come every 0.45 seconds, so the number keeps rising.
+- Show progress such as "$0.07 to the next buy".
 
-**S2. 심사위원은 몇 시에 와도 영수증으로 끝난다.**
-- 정규장이면 $5를 산다.
-- 장외면 한도 절반($2.50)으로 사고, 테이프로 잰 장외 프리미엄을 먼저 고지한다. D-08의 옵션을 Judge Mode 기본 경로로 올린 것이다.
-- 종목은 bStocks가 있는 NVDA·TSLA·MSFT·QQQ다. AAPL은 Ondo만 있고 최소 주문이 $5를 넘어서, $5 한도로는 살 수 없어 뺀다.
-- 하우스 플랜은 계속 정규장에만 산다. 제품 원칙이고, 근거는 테이프 데이터다.
+**S2. A judge ends with a receipt, whatever time they arrive.**
+- During the regular session, it buys $5.
+- Off-hours, it buys at half the limit ($2.50) and first discloses the off-hours premium measured from the tape. This promotes the D-08 option to the default Judge Mode path.
+- The tickers are NVDA, TSLA, MSFT and QQQ, which have bStocks. AAPL is only on Ondo and its minimum order is above $5, so it cannot be bought within the $5 limit and is dropped.
+- House plans keep buying only during the regular session. That is a product principle, backed by the tape data.
 
-**S3. Agentic Wallet을 맨 뒤에서 맨 앞으로.**
-- 오늘 밤(9/24) M0-09 시험을 한다: 소액 실매수, 세션·한도 기록.
-- 10/1~10/9에는 팀 Agentic Wallet으로 미국 장이 열릴 때마다 우리 스킬을 실제로 돌린다. 한 번에 10분이고 사람이 확인한다. 영수증과 세션 만료 실측이 쌓인다.
-- 서버는 사용자가 보고한 tx를 온체인에서 검증한다. 결정 금액·토큰·수령자가 다르면 플랜을 멈춘다. 모드 C의 한도가 문구가 아니라 코드가 된다.
-- 하우스가 Agentic Wallet 대신 서버 지갑을 쓰는 근거는 세션 만료 실측(48h, QR 재로그인)으로 답한다.
+**S3. Move Agentic Wallet from the very end to the very front.**
+- Run the M0-09 test tonight (9/24): a small live buy, recording the session and limits.
+- During 10/1~10/9, actually run our skill with the team Agentic Wallet every time the US market opens. 10 minutes each time, with a human confirming. Receipts and measured session expiries pile up.
+- The server verifies user-reported txs on chain. If the decided amount, token or recipient differs, it pauses the plan. Mode C's limits become code, not copy.
+- Why the house uses a server wallet instead of Agentic Wallet is answered with the measured session expiry (48h, QR re-login).
 
-**S4. 토큰화 주식 고유 데이터를 화면으로. 증거 없는 가드는 뺀다.**
-- 장외 프리미엄 차트: 같은 종목의 장외 견적 대 정규장 견적. 출처는 테이프다.
-- 배수 변경 예정 안내: bStocks `effectiveAt`·`newUIMultiplier`.
-- 발행사 차이 표: 최소 주문, 세션 정보, 경로.
-- "참조가 대비 괴리" 가드는 참조가가 토큰가에서 파생된 값이라(Q-06) 결정과 UI에서 뺀다. 독립 시세가 확인되면 되살린다.
+**S4. Put data unique to tokenized stocks on screen. Drop guards that lack evidence.**
+- Off-hours premium chart: off-hours quotes vs regular-session quotes for the same ticker. The source is the tape.
+- Upcoming multiplier change notice: bStocks `effectiveAt`, `newUIMultiplier`.
+- Issuer comparison table: minimum order, session info, route.
+- The "gap vs reference price" guard is removed from decisions and the UI, because the reference price is derived from the token price (Q-06). It comes back once an independent quote is confirmed.
 
-## 2. 결정 목록 (승인 필요)
+## 2. Decision list (approval needed)
 
-"yes 필요"는 CLAUDE.md 규칙 5(캡 변경·새 지출 경로)나 돈이 걸린 항목이다.
+"yes needed" marks items that fall under CLAUDE.md rule 5 (cap changes, new spending paths) or that involve money.
 
-| # | 결정 | 추천 | 비고 |
+| # | Decision | Recommendation | Notes |
 | --- | --- | --- | --- |
-| R1 | 하우스 H-YIELD 원금 | **$1,000** (대안 $500) | yes 필요(돈). $500이면 이자 매수가 약 6일에 한 번, 10/23까지 4건 안팎 |
-| R2 | 발행사별 최소 매수 | **bStocks $0.25, Ondo $5.01** (현재 공통 $2) | yes 필요(캡). bStocks는 $0.10 견적도 나옴. 실제 스왑 최소는 G4b에서 확인 |
-| R3 | 하우스 지갑 상한 | 예치 원금 ≤ $1,000(MAX_PRINCIPAL) + 운영 자금 ≤ $400 (현재 총 ≤ $300) | yes 필요(캡) |
-| R4 | 일일 한도 $50 나누기 | **하우스 $10 + 심사위원 $40**, 총액 불변 | yes 필요(지출 규칙) |
-| R5 | Judge Mode | 장외 $2.50 허용+고지 / 이자 체험은 **$5 예치 → 실시간 이자 → 상환**($20에서 축소, 판당 한도 안) / AAPL 제외 | 제품 결정 |
-| R6 | Q-15 RFQ | **쓰지 않음.** SWAP 경로만, 견적이 RFQ면 DEFERRED | 새 지출 경로를 만들지 않음 |
-| R7 | Q-16 DeFi 무제한 APPROVE | **서명하지 않고** 정확 금액 approve를 직접 인코딩(spender는 DEPOSIT `to`와 대조) | 안전 규칙 유지 |
-| R8 | Q-06 가격 괴리 가드 | **결정·UI에서 제외.** `underlying-market`이 독립 시세면 그걸로 대체 | 확인 1회 후 확정 |
-| R9 | 모드 C 실사용 | 팀 AW로 10/1~10/9 매 장마다 bStock $2~5 매수 + Venus $20 예치·상환 1회, 모두 우리 스킬로 | yes 필요(새 지출 경로) |
-| R10 | 지금 컷 | b402·x402(M3-01), Agent Studio 런타임, 섹터 타깃, 텔레그램 사용자 알림, RFQ. **ERC-8004 신원 등록만** M3 선택(2시간 이내) | 컷라인 조기 적용(사람 합의) |
-| R11 | 문구·사용자 | 태그라인 **"Interest buys the stock."**("Principal stays" 삭제), KR "이자로 주식을 모아요". 첫 매수 전 토큰 설명 1줄. 실제 사용자 = AI 비서 사용자(P3), 저축형(P1)은 구경하기·Judge Mode로 체험 | UX_COPY 초안 → 사람 확정 |
-| R12 | 작업 분담 | **클라우드 Claude**: 오프라인 코드·웹·스킬 문서·리뷰 / **PC Claude**: Binance API·메인넷·배포 / 사람: 결정·돈·앱 QR·영상·DX 문장 | 같은 브랜치, 디렉터리 소유를 나눔. 시작 전 항상 pull |
+| R1 | House H-YIELD principal | **$1,000** (alternative $500) | yes needed (money). At $500, an interest buy happens about once every 6 days, around 4 by 10/23 |
+| R2 | Minimum buy per issuer | **bStocks $0.25, Ondo $5.01** (currently $2 for both) | yes needed (cap). bStocks also returns quotes for $0.10. The real swap minimum is checked in G4b |
+| R3 | House wallet ceiling | Deposited principal ≤ $1,000 (MAX_PRINCIPAL) + operating funds ≤ $400 (currently total ≤ $300) | yes needed (cap) |
+| R4 | Splitting the $50 daily limit | **House $10 + judges $40**, total unchanged | yes needed (spending rule) |
+| R5 | Judge Mode | Allow $2.50 off-hours + disclosure / the interest trial is **$5 deposit → live interest → redeem** (down from $20, within the per-trial limit) / drop AAPL | Product decision |
+| R6 | Q-15 RFQ | **Not used.** SWAP route only; if the quote is RFQ, DEFERRED | Creates no new spending path |
+| R7 | Q-16 DeFi unlimited APPROVE | **Do not sign it**; encode an exact-amount approve ourselves (spender checked against the DEPOSIT `to`) | Keeps the safety rule |
+| R8 | Q-06 price gap guard | **Excluded from decisions and the UI.** If `underlying-market` is an independent quote, replace it with that | Final after 1 check |
+| R9 | Mode C real use | With the team AW, 10/1~10/9, a $2~5 bStock buy every session + a Venus $20 deposit and redeem once, all through our skill | yes needed (new spending path) |
+| R10 | Cut now | b402 and x402 (M3-01), Agent Studio runtime, sector targets, Telegram user alerts, RFQ. **ERC-8004 identity registration only** as an M3 option (within 2 hours) | Cut line applied early (human agreement) |
+| R11 | Copy and users | Tagline **"Interest buys the stock."** ("Principal stays" removed), KR "Collect stocks with interest". 1 line explaining the token before the first buy. Real users = AI assistant users (P3); savers (P1) try it by browsing and through Judge Mode | UX_COPY draft → human finalizes |
+| R12 | Division of work | **Cloud Claude**: offline code, web, skill docs, reviews / **PC Claude**: Binance API, mainnet, deploys / humans: decisions, money, app QR, video, DX prose | Same branch, directories split by owner. Always pull before starting |
 
-## 3. 일정
+## 3. Schedule
 
-미국 정규장은 KST 22:30~05:00(평일)이다. 원금 $1,000 기준이다.
+The US regular session is KST 22:30~05:00 (weekdays). Assumes $1,000 principal.
 
-| 날짜 (KST) | 목표 | 사람 | PC Claude | 클라우드 Claude |
+| Date (KST) | Goal | Humans | PC Claude | Cloud Claude |
 | --- | --- | --- | --- | --- |
-| 9/24 목 | 테이프 서버 가동, 결정 | R1~R12 승인 · 22:30 **M0-09 AW 시험** · 텔레그램 질문 | G2(진행 중) · M0-09 보조 | REPLAN 작성 → 승인 후 문서 v2 반영 |
-| 9/25 금 | 문서 v2 확정 | 하우스 지갑 충전(원금 + 운영 자금) · Vercel 계정 | `underlying-market` 1회 확인 · 첫 정규장 테이프 확인 | PLAN/SPEC/TASKS/GOALS v2 · **G3a** 시작 |
-| 9/26 토~9/27 일 | M1 코어 | 9/27 자가채점 + DX 1차 초안(영어) | **G3b** 라이브 검증(`cycle:once` simulate) | G3a: 스키마·decideCycle·실행기·에러 분류·홀딩 |
-| 9/27 일~9/28 월 | 첫 실거래 | 입회 | **G4a** H-YIELD 예치(장 시간 무관) · **G4b** 월 22:30 첫 안전 모드 매수(정확 승인 포함) | — |
-| 9/29 화~9/30 수 | 무인 가동 | 확인 | **G5** 스케줄러·하우스 플랜 2개 Fly 가동 | **G8** Skill API(`/next`)·Wallet Skill v1 · 웹 시작 |
-| 10/1 목 | 이자 매수 시작 | 모드 C 실사용 시작(매일 밤 10분) | 스킬 실행 보조 | 웹 |
-| 10/1~10/4 | 제품화 | 10/3~4 비크립토 5명 폰 테스트 · 10/4 자가채점·컷 판단 | 라이브 연동 검증 | **G6** 웹(Watch·Judge Mode·정지·상환·고지·KR/EN·모바일) · **G7** 가디언 축소판·기업행동·/dx·smoke |
-| 10/5~10/7 | 완성도 | 10/6~7 **영상 촬영**(이자 영수증·스킬 실행·Judge Mode) | 장애 리허설 | **G9** README·보안·런북 · (선택) ERC-8004 |
-| 10/8~10/9 | 제출 | DX 리포트 최종 · 영상 편집 · 제출 | 프리즈 | 제출 점검 |
-| 10/10~10/11 | 버퍼 | 핫픽스만(smoke 필수) | | |
-| 10/12~10/23 | 심사 | 매일 smoke 확인 | 하우스·테이프 유지 | |
+| 9/24 Thu | Tape server running, decisions | Approve R1~R12 · 22:30 **M0-09 AW test** · Telegram questions | G2 (in progress) · M0-09 support | Write REPLAN → after approval, apply docs v2 |
+| 9/25 Fri | Finalize docs v2 | Top up the house wallet (principal + operating funds) · Vercel account | Check `underlying-market` once · check the first regular-session tape | PLAN/SPEC/TASKS/GOALS v2 · start **G3a** |
+| 9/26 Sat~9/27 Sun | M1 core | 9/27 self-assessment + DX first draft (English) | **G3b** live verification (`cycle:once` simulate) | G3a: schema, decideCycle, executor, error taxonomy, holdings |
+| 9/27 Sun~9/28 Mon | First live trade | Be present | **G4a** H-YIELD deposit (regardless of market hours) · **G4b** Mon 22:30 first safe-mode buy (including the exact approval) | — |
+| 9/29 Tue~9/30 Wed | Unattended operation | Check | **G5** scheduler and 2 house plans running on Fly | **G8** Skill API (`/next`), Wallet Skill v1 · start the web |
+| 10/1 Thu | Interest buys start | Mode C real use starts (10 min every night) | Skill run support | Web |
+| 10/1~10/4 | Productization | 10/3~4 phone test with 5 non-crypto people · 10/4 self-assessment and cut decision | Live integration verification | **G6** web (Watch, Judge Mode, stop, redeem, disclosure, KR/EN, mobile) · **G7** reduced guardian, corporate actions, /dx, smoke |
+| 10/5~10/7 | Polish | 10/6~7 **video shoot** (interest receipts, skill run, Judge Mode) | Incident rehearsal | **G9** README, security, runbook · (optional) ERC-8004 |
+| 10/8~10/9 | Submission | Final DX report · video edit · submit | Freeze | Submission check |
+| 10/10~10/11 | Buffer | Hotfixes only (smoke required) | | |
+| 10/12~10/23 | Judging | Check smoke daily | Keep the house and the tape running | |
 
-## 4. 범위 v2
+## 4. Scope v2
 
-**Must** (심사위원이 보는 것)
-1. 하우스 플랜 2개를 메인넷에서 연속 가동
-   - H-SAFE: NVDA bStocks, 정규장, 하루 $5
-   - H-YIELD: 원금 $1,000 Venus 예치, 이자만으로 bStocks 매수
-2. 결정 엔진: 창구, 이자 누적, 발행사별 최소액, 일일 한도 분할, 종목 상태, 가격영향
-3. 실행: 단일 서명자 워커, 정확 승인, 시뮬레이션 결과 확인, 아웃박스·PENDING, 영수증
-4. Judge Mode: 어느 시간이든 영수증, 이자 체험, 정지·상환
-5. Watch 홈: 실시간 이자 카운터, 하우스 영수증("이자로만" 라벨), 장외 프리미엄 차트
-6. Wallet Skill v1 + `/next` + 서버 영수증 검증 + 팀 AW 실사용 기록
-7. 가디언 축소판 4개(Venus 일시정지, 이용률 95%, USDT 디페그, 가격영향 1%) + 종목 상태(statusInfo) 처리
-8. 주식 수 표시(배수)와 배수 변경 예정 안내, KR/EN, 모바일, 위험 고지, LIVE/STALE/UNAVAILABLE
-9. 계측: api_calls, 테이프, /dx(p50/p95·오류코드·장외 프리미엄), smoke
-10. README 심사 경로, 영상, 사람이 쓴 DX 리포트
+**Must** (what the judges see)
+1. Run the 2 house plans continuously on mainnet
+   - H-SAFE: NVDA bStocks, regular session, $5 a day
+   - H-YIELD: $1,000 principal deposited in Venus, buying bStocks with interest only
+2. Decision engine: window, interest accrual, per-issuer minimums, daily limit split, ticker status, price impact
+3. Execution: single-signer worker, exact approvals, simulation result check, outbox and PENDING, receipts
+4. Judge Mode: a receipt at any hour, interest trial, stop and redeem
+5. Watch home: live interest counter, house receipts ("Interest only" label), off-hours premium chart
+6. Wallet Skill v1 + `/next` + server-side receipt verification + a record of real use on the team AW
+7. Reduced guardian with 4 rules (Venus paused, utilization 95%, USDT depeg, price impact 1%) + ticker status (statusInfo) handling
+8. Share-count display (multiplier) and upcoming multiplier change notices, KR/EN, mobile, risk disclosure, LIVE/STALE/UNAVAILABLE
+9. Instrumentation: api_calls, tape, /dx (p50/p95, error codes, off-hours premium), smoke
+10. README judging path, video, human-written DX report
 
-**Should**: ERC-8004 신원(2시간 이내), 텔레그램 운영 알림, TVL 급감 가드
+**Should**: ERC-8004 identity (within 2 hours), Telegram ops alerts, TVL crash guard
 
-**Cut (지금)**: b402·x402, Agent Studio 런타임, 섹터 타깃, 텔레그램 사용자 알림, RFQ 경로, 모드 D, BNB 스테이킹, 발행사 간 최적 체결
+**Cut (now)**: b402 and x402, Agent Studio runtime, sector targets, Telegram user alerts, RFQ route, mode D, BNB staking, best execution across issuers
 
-## 5. 실거래 설계 보강 (SPEC 수정 목록)
-1. **서명자는 하나.** 하우스 키는 Fly 워커에만 둔다. 웹의 `POST /api/plans/:id/run`은 DB 작업 큐에 넣고 워커가 실행한다. Vercel에는 키가 없다.
-2. **아웃박스·nonce.** 서명한 tx를 브로드캐스트 전에 DB에 저장하고 `PENDING`으로 둔다. 워커가 기동할 때 재조정한다. `fundsMoved: boolean` 대신 `PENDING/CONFIRMED/FAILED`를 쓴다.
-3. **캡 예약.** spend_ledger 예약을 사이클과 같은 DB 트랜잭션에서 한다(TOCTOU 제거).
-4. **순서.** 정확 승인 → 영수증 확인 → 새 견적(25초 이내) → 스왑 콜데이터 → 시뮬레이션 → 서명 → 브로드캐스트. 이유는 둘이다: 시뮬레이션은 1건씩이고, quoteId 유효시간은 30초(Q-04)다.
-5. **`simulate()`는 `status !== 'SUCCESS'`면 예외를 던진다.** 응답이 code 0이어도 마찬가지다(Q-14).
-6. **픽스처 재생 테스트**: 40401, 42900, 40375, simulate FAILED(code 0 안).
-7. **장 시간 판단의 기준은 우리 시계와 휴장일표다.** bStocks statusInfo는 장외에도 TRADING이다. statusInfo는 거래 정지 신호로만 쓴다.
-8. **테이프 멱등키**: slot + instrument + size unique (G2 조건 4).
-9. **G3 조건 3 수정.** simulate 모드에서는 "승인 시뮬레이션 SUCCESS + 스왑 시뮬레이션의 allowance 실패 사유를 사람 말로 출력"까지 요구한다. 승인 → 스왑 성공은 G4에서 확인한다.
+## 5. Live-trade design hardening (SPEC change list)
+1. **One signer.** The house key lives only on the Fly worker. The web's `POST /api/plans/:id/run` puts a job in the DB job queue and the worker runs it. Vercel has no key.
+2. **Outbox and nonce.** A signed tx is saved to the DB before broadcast and left as `PENDING`. The worker reconciles at startup. Use `PENDING/CONFIRMED/FAILED` instead of `fundsMoved: boolean`.
+3. **Cap reservation.** The spend_ledger reservation happens in the same DB transaction as the cycle (removes the TOCTOU).
+4. **Order.** Exact approval → confirm its receipt → fresh quote (within 25 seconds) → swap calldata → simulation → sign → broadcast. There are two reasons: simulation takes 1 tx at a time, and a quoteId is valid for 30 seconds (Q-04).
+5. **`simulate()` throws if `status !== 'SUCCESS'`.** The same holds even when the response is code 0 (Q-14).
+6. **Fixture replay tests**: 40401, 42900, 40375, simulate FAILED (inside code 0).
+7. **Market hours are judged by our own clock and holiday table.** bStocks statusInfo says TRADING even off-hours. statusInfo is used only as a trading-halt signal.
+8. **Tape idempotency key**: slot + instrument + size unique (G2 condition 4).
+9. **G3 condition 3 fix.** In simulate mode, the requirement goes as far as "approval simulation SUCCESS + print the swap simulation's allowance failure reason in plain words". Approval → a successful swap is checked in G4.
 
-## 6. /goal 순서 v2
+## 6. /goal order v2
 
-| 순서 | 골 | 누가 | 바뀐 점 |
+| Order | Goal | Who | What changed |
 | --- | --- | --- | --- |
-| 1 | G2 테이프 Frankfurt | PC | 그대로(진행 중) |
-| 2 | M0-09 AW 시험 | 사람 + PC | /goal 아님. 오늘 밤 안내에 따라 진행 |
-| 3 | G3a M1 코어(오프라인) | 클라우드 | §5 반영. 스키마·decideCycle·실행기·에러 분류·홀딩·픽스처 재생 |
-| 4 | G3b M1 라이브 검증 | PC | `cycle:once` simulate, 승인 시뮬레이션 |
-| 5 | G4a 예치 / G4b 첫 매수 | PC + 사람 입회 | 예치는 장 시간 무관. 첫 매수는 9/28 밤 |
-| 6 | G5 스케줄러·하우스 플랜 | PC | 원금·최소액 v2 값 |
-| 7 | **G8** Skill API·Wallet Skill | 클라우드 코드 + PC 실사용 | **G6 앞으로 이동** |
-| 8 | G6 웹 | 클라우드 (+ Vercel은 사람) | Judge Mode 장외 경로, 이자 카운터, 장외 프리미엄 |
-| 9 | G7 가디언·/dx·smoke | 클라우드 + PC | 가디언 4개로 축소 |
-| 10 | G9 M3 | 클라우드 + PC | b402·x402 제거 |
+| 1 | G2 tape Frankfurt | PC | Unchanged (in progress) |
+| 2 | M0-09 AW test | Human + PC | Not a /goal. Run tonight following the instructions |
+| 3 | G3a M1 core (offline) | Cloud | Includes §5. Schema, decideCycle, executor, error taxonomy, holdings, fixture replay |
+| 4 | G3b M1 live verification | PC | `cycle:once` simulate, approval simulation |
+| 5 | G4a deposit / G4b first buy | PC + human present | The deposit does not depend on market hours. The first buy is on the night of 9/28 |
+| 6 | G5 scheduler and house plans | PC | v2 values for principal and minimums |
+| 7 | **G8** Skill API and Wallet Skill | Cloud code + PC real use | **Moved ahead of G6** |
+| 8 | G6 web | Cloud (+ human for Vercel) | Judge Mode off-hours path, interest counter, off-hours premium |
+| 9 | G7 guardian, /dx, smoke | Cloud + PC | Guardian reduced to 4 rules |
+| 10 | G9 M3 | Cloud + PC | b402 and x402 removed |
 
-GOALS.md 원문은 승인 후 새로 쓴다.
+The GOALS.md text itself is rewritten after approval.
 
-## 7. DX 리포트 계획
-- **사람**
-  - 매 항목에 `- 소감:`을 당일에 적는다.
-  - 9/27 1차 초안, 10/4 2차, 10/8 최종. **처음부터 영어로** 쓴다(번역하면 AI 문체가 섞인다).
-- **에이전트 (증거 정리)**
-  - 문서 인용을 줄 번호 대신 URL + 원문으로 바꾼다.
-  - `X-OC-TIMESTAMP`를 기록한다.
-  - `dx/metrics.md`를 매주 커밋한다(프랑크푸르트 p50/p95).
-  - 테이프 요약을 만든다.
-  - 우리 실수였던 항목에 표시한다.
-  - 약한 항목은 리포트 후보에서 뺀다.
-- **AI 스택 섹션**: M0-09 기록 + 매일 스킬 실사용 로그 + 세션 만료·재로그인 실측
-- **재설계 제안 상위 3 후보**(사람이 최종 선택)
-  1. AW 세션(48h) 때문에 무인 실행 불가
-  2. 다중 tx 시뮬레이션/state override
-  3. 레이트리밋 창 방식 명시와 리셋 헤더, 또는 DeFi 정확 금액 승인 옵션
+## 7. DX report plan
+- **Humans**
+  - Write `- Impression:` on every entry, on the same day.
+  - First draft 9/27, second 10/4, final 10/8. Write it **in English from the start** (translating mixes in an AI writing style).
+- **Agent (organizing the evidence)**
+  - Switch doc citations from line numbers to URL + original text.
+  - Record `X-OC-TIMESTAMP`.
+  - Commit `dx/metrics.md` every week (Frankfurt p50/p95).
+  - Build a tape summary.
+  - Mark the entries that were our own mistakes.
+  - Drop weak entries from the report candidates.
+- **AI stack section**: the M0-09 record + a daily log of real skill use + measured session expiry and re-login
+- **Top 3 redesign proposal candidates** (humans make the final pick)
+  1. Unattended runs are impossible because of the AW session (48h)
+  2. Multi-tx simulation/state override
+  3. Documenting the rate-limit window method plus a reset header, or a DeFi exact-amount approval option
 
-## 8. 돈 (사람 결정)
+## 8. Money (human decision)
 
-| 항목 | 금액 | 성격 |
+| Item | Amount | Nature |
 | --- | --- | --- |
-| 하우스 H-YIELD 원금 | USDT $1,000 | Venus 예치, 상환 가능(프로토콜 위험 있음) |
-| 하우스 운영 자금 | USDT 약 $350 + BNB 약 $10 | H-SAFE $5 × 18거래일 ≈ $90, 심사위원 매수·이자 체험, 가스 |
-| 팀 Agentic Wallet | USDT 약 $60 + BNB 약 $5 | M0-09 + 모드 C 실사용 + Venus $20 예치(상환) |
-| Fly.io | 월 $2~4 | |
-| 가스 | 이자 매수 1번(상환·승인·스왑) 약 0.00002 BNB | 9/24 가스 0.05 gwei 기준 |
+| House H-YIELD principal | USDT $1,000 | Venus deposit, redeemable (carries protocol risk) |
+| House operating funds | USDT about $350 + BNB about $10 | H-SAFE $5 × 18 trading days ≈ $90, judge buys and interest trials, gas |
+| Team Agentic Wallet | USDT about $60 + BNB about $5 | M0-09 + mode C real use + Venus $20 deposit (redeemed) |
+| Fly.io | $2~4 a month | |
+| Gas | About 0.00002 BNB per interest buy (redeem, approval, swap) | Based on 9/24 gas of 0.05 gwei |
 
-매수에 쓴 USDT는 주식 토큰으로 바뀌는 것이지 사라지는 돈이 아니다.
+USDT spent on buys turns into stock tokens; it is not money that disappears.
 
-## 9. 리스크 v2
+## 9. Risks v2
 
-| # | 리스크 | 확인 시점 | 대응 |
+| # | Risk | When checked | Response |
 | --- | --- | --- | --- |
-| N1 | 한국 거주자는 AW로 bStock을 못 산다(Q-02) | 오늘 밤 M0-09 | 팀 AW는 Ondo $6로. 문구 수정 |
-| N2 | 일반 지갑(EOA)은 bStock·Ondo 스왑이 막힌다 | G4b 전 소액 스왑 | Ondo로 전환(최소 $5.01). 그래도 안 되면 하우스 플랜을 팀 AW로 옮기고 매일 사람이 실행 |
-| N3 | 같은 키를 한국과 프랑크푸르트에서 동시에 써서 40303 | G2 이후 관찰 | 서버용 API 키 분리(사람, 포털) |
-| N4 | bStocks 실제 스왑 최소액이 $0.25보다 크다 | G4b | 최소액을 실측값으로 올림(원금 $1,000이면 빈도만 줄어듦) |
-| N5 | 주말에 bStocks 견적이 없음 | 9/26~27 테이프 | 주말 Judge Mode는 이자 체험 + 하우스 기록 |
-| N6 | 사람 일정 부담(야간 입회 9/24·9/28, 매일 10분 10/1~10/9, 촬영 10/6~7) | 상시 | 모드 C 실사용은 최소 5회면 충분 |
-| N7 | Neon 무료 컴퓨트 한도(10분 주기 기록) | 10/1 | 초과 시 유료 전환 또는 주기 조정 |
+| N1 | Korean residents cannot buy bStock with AW (Q-02) | M0-09 tonight | The team AW uses Ondo at $6. Fix the copy |
+| N2 | A plain wallet (EOA) is blocked from bStock/Ondo swaps | A small swap before G4b | Switch to Ondo (minimum $5.01). If that still fails, move the house plans to the team AW and have a human run them every day |
+| N3 | 40303 from using the same key in Korea and Frankfurt at the same time | Observe after G2 | A separate API key for the server (human, portal) |
+| N4 | The real bStocks swap minimum is above $0.25 | G4b | Raise the minimum to the measured value (with $1,000 principal, only the frequency drops) |
+| N5 | No bStocks quotes on weekends | 9/26~27 tape | Weekend Judge Mode = interest trial + house record |
+| N6 | Load on the humans' schedule (night attendance 9/24 and 9/28, 10 min daily 10/1~10/9, filming 10/6~7) | Ongoing | At least 5 runs is enough for mode C real use |
+| N7 | Neon free compute limit (writes every 10 min) | 10/1 | If exceeded, switch to a paid plan or change the interval |
 
-기존 R1~R10은 유지한다. R2는 N1로, R3은 N4로, R4는 S1로 대체한다.
+The existing R1~R10 stay. R2 is replaced by N1, R3 by N4, and R4 by S1.
 
-## 10. 자가채점 목표 (JUDGING §4)
+## 10. Self-assessment targets (JUDGING §4)
 
-| 날짜 | 기술 | 창의 | DX | UX | 가중 |
+| Date | Technical | Creativity | DX | UX | Weighted |
 | --- | :-: | :-: | :-: | :-: | :-: |
 | 9/27 | 4 | 5 | 6 | 2 | 4.4 |
 | 10/4 | 7 | 7 | 7 | 6 | 6.8 |
-| 10/8 | 8.5 | 7.5 | 8.5 | 7.5 | 약 8.0 |
+| 10/8 | 8.5 | 7.5 | 8.5 | 7.5 | about 8.0 |
 
-## 11. 오늘(9/24) 할 일
-1. 이 문서를 보고 R1~R12를 승인하거나 고친다(사람).
-2. G2 계속(PC).
-3. **22:30 이후 M0-09 AW 시험**(사람 + PC Claude)
-   1. Binance 앱에서 Agentic Wallet을 만들고 소액을 넣는다.
-   2. `baw`를 설치하고 로그인한다.
-   3. `wallet settings`를 확인한다.
-   4. NVDAB `market-order quote`를 받는다.
-   5. $1~5를 매수한다.
-   6. Venus `defi` preview를 본다.
-   7. 모든 출력을 `dx/LOG.md`에 남긴다.
-4. 빌더 텔레그램에 질문 3개를 올린다.
-5. 승인되면 G2 push 이후 클라우드 Claude가 문서 v2를 반영한다. CLAUDE.md의 작업 브랜치 이름도 실제 브랜치로 고칠지 함께 정한다.
+## 11. To-do today (9/24)
+1. Read this document and approve or amend R1~R12 (human).
+2. Continue G2 (PC).
+3. **M0-09 AW test after 22:30** (human + PC Claude)
+   1. Create an Agentic Wallet in the Binance app and put a small amount in.
+   2. Install `baw` and log in.
+   3. Check `wallet settings`.
+   4. Get an NVDAB `market-order quote`.
+   5. Buy $1~5.
+   6. Look at the Venus `defi` preview.
+   7. Save all output in `dx/LOG.md`.
+4. Post 3 questions in the builder Telegram.
+5. Once approved, after the G2 push, cloud Claude applies docs v2. At the same time, decide whether to change the working branch name in CLAUDE.md to the actual branch.

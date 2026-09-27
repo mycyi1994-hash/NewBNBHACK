@@ -1,38 +1,38 @@
-# DEMO.md — 4분 영상과 심사위원 15분 경로
+# DEMO.md — the 4-minute video and the judges' 15-minute path
 
-작성: 강민서. 촬영 10/6~10/7, 편집 10/8. 화면 녹화 + 내레이션(영어, 한글 자막). 실거래 장면은 정규장(22:30~05:00 KST)에 촬영.
+Author: Minseo Kang. Filming 10/6~10/7, editing 10/8. Screen recording + narration (English, with Korean subtitles). Live-trade scenes are filmed during the regular session (22:30~05:00 KST).
 
-## 1. 영상 스크립트 (≤ 4:00)
+## 1. Video script (≤ 4:00)
 
-| 시간 | 화면 | 내레이션 요지 |
+| Time | Screen | Narration gist |
 | --- | --- | --- |
-| 0:00–0:20 | 홈. 하우스 플랜 카드: 원금 $x, 쌓인 이자 $y, 모은 주식 n주 | "원금은 그대로. 이자만 주식이 됩니다. 이 플랜은 9월 말부터 Yieldvest가 스스로 돌려온 기록입니다." |
-| 0:20–1:30 | Judge Mode 완주: 코드 → NVDA → 안전 모드 $5 → 미리보기(시뮬레이션 문장) → 지금 사기 → 영수증(BscScan) | "심사위원은 코드 하나로 3분 안에 완주합니다. 실행 전 블록체인에서 미리 돌려보고, 사람 말로 보여주고, 영수증과 이유를 남깁니다." |
-| 1:30–2:20 | 이자 모드 켜기 → 위험 고지 → 예치 영수증 → 하우스 플랜의 이자 누적 그래프 → 주말 DEFERRED 기록("장이 닫혀 있어요. 월요일 22:30에 다시.") → 월요일 매수 영수증 | "이자 모드는 Venus 예치 이자로만 삽니다. 정규장에만 사기 때문에 주말엔 기다립니다. 기다린 이유도 기록합니다." |
-| 2:20–3:10 | Claude Code 화면: 스킬 설치 한 줄 → "Yieldvest 시작해줘" → 비서가 위험 고지 낭독 → `baw` 미리보기·확인 → 체결 → `/report` | "사용자의 AI 비서가 Agentic Wallet로 실행합니다. 서버는 결정만, 서명은 사용자 기기에서." |
-| 3:10–3:40 | 가디언 화면 + 기업행동 SKIPPED 기록 + 주식 수 표시(배수 반영) | "지킴이는 프로토콜 이상·디페그·가격 괴리를 감시하고, 실적발표 제한과 분할도 이해합니다." |
-| 3:40–4:00 | README 모듈 매트릭스 + /dx 페이지(p95, 장외 괴리 차트) + DX 리포트 | "모듈 7개, 모든 호출 계측, 2주치 장외 데이터. 리포트에 다 있습니다." |
+| 0:00–0:20 | Home. House plan card: principal $x, interest earned $y, n shares collected | "The principal stays put. Only the interest becomes stock. This plan is a record Yieldvest has been running on its own since late September." |
+| 0:20–1:30 | Judge Mode run-through: code → NVDA → safe mode $5 → preview (simulation sentence) → Buy now → receipt (BscScan) | "A judge gets all the way through with one code in under 3 minutes. Before executing, it dry-runs on the blockchain, shows it in plain words, and leaves a receipt and a reason." |
+| 1:30–2:20 | Turn on yield mode → risk disclosure → deposit receipt → the house plan's cumulative interest chart → weekend DEFERRED record ("US market is closed. Retrying at Monday 22:30.") → Monday buy receipt | "Yield mode buys only with the interest from the Venus deposit. Because it buys only during the regular session, it waits over the weekend. It records why it waited, too." |
+| 2:20–3:10 | Claude Code screen: one-line skill install → "Start Yieldvest" → the assistant reads out the risk disclosure → `baw` preview and confirm → fill → `/report` | "The user's AI assistant executes through the Agentic Wallet. The server only decides; signing happens on the user's device." |
+| 3:10–3:40 | Guardian screen + corporate-action SKIPPED record + share count display (multiplier applied) | "The guardian watches for protocol anomalies, depegs and price gaps, and it also understands earnings restrictions and splits." |
+| 3:40–4:00 | README module matrix + /dx page (p95, off-hours gap chart) + DX report | "7 modules, every call instrumented, 2 weeks of off-hours data. It's all in the report." |
 
-촬영 체크리스트: 브라우저 확대 125%, 다크/라이트 중 하나 고정, 주소·키 마스킹, 실패 장면은 실제 실패 기록 사용(연출 금지), 마지막 프레임에 링크 3개(라이브·레포·DX).
+Filming checklist: browser zoom 125%, lock to either dark or light, mask addresses and keys, failure scenes use real failure records (no staging), 3 links in the last frame (live, repo, DX).
 
-## 2. 심사위원 15분 경로 (README 상단 초안)
+## 2. The judges' 15-minute path (draft for the top of the README)
 
 ```
 # Yieldvest — Interest buys the stock. Principal stays.
 Live: https://…  ·  Video (3:50): https://…  ·  DX report: docs/… · Judge Mode: code in submission form
 
-**60초 요약** 원금은 USDT 이자 통장(Venus)에, 이자로만 미국 주식 토큰(bStocks/Ondo)을 정규장에 자동 매수.
-안전 모드(적립만)가 기본. 모든 매수는 Transaction API로 미리 돌려보고, 영수증과 이유 한 줄을 남깁니다.
+**60-second summary** Principal sits in a USDT interest account (Venus); only the interest automatically buys US stock tokens (bStocks/Ondo) during the regular session.
+Safe mode (contribution only) is the default. Every buy is dry-run through the Transaction API first and leaves a receipt and a one-line reason.
 
-**3분 체험** 홈 → [심사위원 코드] → 종목 → $5 → 미리보기 → 지금 사기 → 영수증 → [플랜 멈추기]
+**3-minute trial** Home → [judge code] → stock → $5 → preview → Buy now → receipt → [Stop this plan]
 
-**Yieldvest가 직접 돌린 기록** (자동 생성 표: 날짜 · 플랜 · 결과 · 금액 · 주식 수 · 영수증)
+**Record of Yieldvest's own runs** (auto-generated table: date · plan · outcome · amount · shares · receipt)
 
-**모듈 매트릭스** (PLAN §6.1 표)
+**Module matrix** (PLAN §6.1 table)
 
-**Agentic Wallet로 쓰기** `npx skills add …` → "Yieldvest 시작해줘"
+**Use it with Agentic Wallet** `npx skills add …` → "Start Yieldvest"
 
-**위험** /risk — 은행이 아닙니다. 원금 손실 가능. 안전 모드가 기본값입니다.
+**Risks** /risk — Not a bank. Principal can be lost. Safe mode is the default.
 
-**실행** pnpm i · cp .env.example .env · pnpm dev — 키 없이도 홈은 STALE 데이터 없이 UNAVAILABLE 상태로 정직하게 뜹니다.
+**Run it** pnpm i · cp .env.example .env · pnpm dev — even without keys, Home comes up honestly in the UNAVAILABLE state, with no STALE data.
 ```

@@ -1,56 +1,56 @@
-# Yieldvest: 제출까지 필요한 범위
+# Yieldvest: the scope needed to submit
 
-확인일: 2026-09-27. 현재 로컬 체크아웃의 코드·README·작업 기록과 [BNB Hack: Tokenized Stocks Edition 공식 안내](https://www.bnbchain.org/en/hackathons/tokenized-stocks)를 대조했다. 운영 서버, 지갑 잔액, 참가 등록 여부는 이번 점검에서 조회하지 않았다. 이 문서는 내부 작업 범위 평가이며 제출용 DX 리포트가 아니다.
+Checked on: 2026-09-27. The code, README and work records in the current local checkout were compared against the [official BNB Hack: Tokenized Stocks Edition brief](https://www.bnbchain.org/en/hackathons/tokenized-stocks). The production server, wallet balances and registration status were not queried in this review. This document is an internal assessment of the work scope, not the DX report for submission.
 
-## 공식 조건 요약
+## Summary of the official conditions
 
-마감은 **2026-10-11 12:00 UTC / 한국시간 21:00**, 심사는 **10/12~10/23**. 심사 중 저장소·데모·배포 링크의 접근성을 유지해야 한다.
+The deadline is **2026-10-11 12:00 UTC / 21:00 Korea time**, and judging runs **10/12~10/23**. The repository, demo and deployment links must stay accessible during judging.
 
-배점은 기술 30%, 창의성 25%, DX 리포트 25%, 제품·UX 20%다. bStocks/Ondo/xStocks 중 하나가 핵심인 현물 제품, Binance Web3 API 모듈 1개 이상, BSC 메인넷 소액 작동 데모가 기준이다. 공개 저장소, 배포 링크 또는 재현 지침, DX 리포트가 필요하다. 4분 이하 영상은 강력 권장이나 선택이다. Agentic Wallet/Wallet Skills는 선택이지만 가중 평가되며, Agent Studio도 선택이다. DX 리포트의 AI 생성 본문은 받지 않고 AI 보조 코딩은 허용한다. 출처: [공식 안내의 Rules / What to Submit / How You're Judged](https://www.bnbchain.org/en/hackathons/tokenized-stocks).
+The weights are technical 30%, creativity 25%, DX report 25%, product and UX 20%. The bar is a spot product centered on one of bStocks/Ondo/xStocks, at least 1 Binance Web3 API module, and a demo that works with small amounts on BSC mainnet. A public repository, a deployment link or reproduction instructions, and a DX report are required. A video of 4 minutes or less is strongly recommended but optional. Agentic Wallet/Wallet Skills is optional but weighted in scoring, and Agent Studio is optional as well. AI-generated body text in the DX report is not accepted; AI-assisted coding is allowed. Source: [Rules / What to Submit / How You're Judged in the official brief](https://www.bnbchain.org/en/hackathons/tokenized-stocks).
 
-따라서 API 7개, 대규모 사용자 수, 자체 토큰 발행, Agent Studio와 x402까지 모두 구현하는 것은 공식 최소 조건이 아니다. 라이선스 명시는 권장하며 아직 선택해야 한다. 기존 JUDGING.md의 필수처럼 보였던 Agentic Wallet 문구는 수정했다.
+So 7 APIs, a large user count, issuing our own token, and implementing everything up to Agent Studio and x402 are not official minimum conditions. Stating a license is recommended, and one still has to be chosen. The Agentic Wallet wording in the existing JUDGING.md that looked mandatory has been corrected.
 
-## 현재 확인된 것
+## What is confirmed now
 
-| 부분 | 증거 | 판단 |
+| Part | Evidence | Assessment |
 | --- | --- | --- |
-| 새 디자인 | frontend-preview/src/App.tsx, components.tsx, model.ts | Yieldvest 로고·4개 탭·흐름도·영수증·반응형·모션. 모든 금액과 실행은 예시이며 API 연결 없음 |
-| 기존 제품 웹 | apps/web/components/judge/JudgeFlow.tsx, app/plans/[id]/page.tsx, app/dx/page.tsx | 심사위원 체험·플랜·DX 화면과 API 코드가 존재. 새 디자인 미리보기와 별개 |
-| 실행 경로 | apps/agent/src/executor/trade.ts, venus.ts, send.ts | 승인·시뮬레이션·매수·예치/상환·영수증 처리 코드 존재. 코드 존재가 메인넷 완주를 증명하지는 않음 |
-| 사용자 AI 지갑 | apps/web/lib/server/next.ts, skills/yieldvest | 결정 API와 Wallet Skill 존재. 실제 실행 데모는 TASKS M2-09에 미완료로 기록 |
-| 실거래 증거 | README의 하우스 기록 및 TASKS M1-04/05 | README에 영수증 0개, live 검증 대기로 기록. 운영 환경의 최신 상태는 별도 확인 필요 |
-| 제출 자료 | README의 Live/Video/DX, docs/TASKS.md | 링크 미기입. dx/LOG.md는 있으나 이 체크아웃에 dx/REPORT_DRAFT.md와 LICENSE 없음 |
+| New design | frontend-preview/src/App.tsx, components.tsx, model.ts | Yieldvest logo, 4 tabs, flow diagram, receipt, responsive layout, motion. All amounts and executions are examples; no API connection |
+| Existing product web app | apps/web/components/judge/JudgeFlow.tsx, app/plans/[id]/page.tsx, app/dx/page.tsx | Judge trial, plan and DX screens and API code exist. Separate from the new design preview |
+| Execution path | apps/agent/src/executor/trade.ts, venus.ts, send.ts | Code exists for approval, simulation, buy, deposit/redeem and receipt handling. The code existing does not prove a complete mainnet run |
+| User's AI wallet | apps/web/lib/server/next.ts, skills/yieldvest | The decision API and Wallet Skill exist. The real execution demo is recorded as incomplete in TASKS M2-09 |
+| Live-trade evidence | House record in the README, and TASKS M1-04/05 | The README records 0 receipts, waiting for live verification. The latest state of production needs to be checked separately |
+| Submission materials | Live/Video/DX in the README, docs/TASKS.md | Links not filled in. dx/LOG.md exists, but this checkout has no dx/REPORT_DRAFT.md or LICENSE |
 
-> 갱신(9/27, DECISIONS D-25): 새 디자인을 `apps/web`에 통합했다. 탭 4개(Overview·Earn·Invest·Activity)와 영수증 상세가 기존 API·잡·상태 모델의 실제 값만 보여 준다 — 아래 P0-1의 화면 연결 부분. 실제 이자 매수 증거·배포·제출 자료는 그대로 남은 일이다.
+> Updated (9/27, DECISIONS D-25): the new design is integrated into `apps/web`. The 4 tabs (Overview·Earn·Invest·Activity) and the receipt detail show only real values from the existing API, jobs and state model — the screen-connection part of P0-1 below. Real interest-buy evidence, deployment and submission materials remain to be done.
 
-## 권장 완료선: 한 흐름을 끝까지 증명하기
+## Recommended finish line: prove one flow end to end
 
-아래는 Yieldvest에 맞춘 구현 권장안이다. 공식 필수 기능 목록과 구분한다.
+Below is an implementation recommendation tailored to Yieldvest. It is kept separate from the official list of required features.
 
-### P0 — 먼저 끝낼 것
+### P0 — finish first
 
-1. **새 UI를 기존 실행 가능한 웹에 연결한다.** 새 거래 엔진을 만들기보다 기존 apps/web의 API·잡·상태 모델을 재사용한다. Overview/Earn은 실제 원금·이자·시각, Invest는 실제 견적·시뮬레이션, Activity/Receipt는 서버 기록·거래 해시를 표시한다. 데이터가 없으면 수치 대신 이유를 표시한다. 예시 모드는 명확히 분리한다.
-2. **Yieldvest의 고유 기능을 입증한다.** 예치 → 발생 이자 확인 → 상환 → 주식 토큰 매수 → 영수증의 연결 기록을 남긴다. 예치 원금과 이자 출처, 지출액과 잔액이 맞는지 증명한다. 적립금으로 산 영수증을 이자 매수 증거로 쓰지 않는다. 한 종목·한 발행사로 먼저 완주해도 된다.
-3. **심사위원 체험을 연결한다.** 입력 → 종목/금액 → 수수료·최소 수령·위험 고지 → 시뮬레이션 결과 → 사용자가 확인 → 실행 상태 → 영수증. 장 마감, 견적 만료, 잔액 부족, 한도 초과, 실패, 확인 대기를 각각 설명한다. 장외에는 다음 실행 시각과 과거 실제 영수증을 제공한다. 승인된 운영 정책을 임의로 바꾸지 않는다.
-4. **외부에서 재현 가능한 주소를 만든다.** 웹+워커+DB 구성, 첫 방문부터 완주, 재시작 뒤 중복 실행 방지, 상태 점검을 배포 환경에서 확인한다. 현재 127.0.0.1:4173은 이 PC의 미리보기 주소다.
-5. **제출 패키지를 완성한다.** 저장소 공개 접근, 설명/실행법, 실제 영수증 링크, 모듈 사용 위치, 데모 영상, DX 리포트, 등록·제출 확인. 내부 목표일 10/9는 팀 계획이며 공식 마감과 다르다.
+1. **Connect the new UI to the existing runnable web app.** Rather than building a new trading engine, reuse the API, jobs and state model of the existing apps/web. Overview/Earn shows real principal, interest and times; Invest shows real quotes and simulations; Activity/Receipt shows server records and transaction hashes. When there is no data, show the reason instead of a number. Keep the example mode clearly separate.
+2. **Prove Yieldvest's distinctive feature.** Leave a linked record of deposit → checking the accrued interest → redeem → buying the stock token → receipt. Prove that the deposited principal and the source of the interest, and the amount spent and the balance, add up. Do not use a receipt for a buy made with a contribution as evidence of an interest buy. It is fine to complete the run with one stock and one issuer first.
+3. **Connect the judge trial.** Input → stock/amount → fees, minimum received, risk disclosure → simulation result → user confirms → execution status → receipt. Explain each of: market closed, quote expired, insufficient balance, limit exceeded, failure, awaiting confirmation. Off-hours, provide the next run time and past real receipts. Do not change the approved operating policy on your own.
+4. **Create an address that can be reproduced from outside.** Verify in the deployed environment: the web + worker + DB setup, a complete run from the first visit, no duplicate execution after a restart, and health checks. The current 127.0.0.1:4173 is this PC's preview address.
+5. **Complete the submission package.** Public repository access, description/how to run, real receipt links, where each module is used, demo video, DX report, registration and submission confirmation. The internal target date 10/9 is a team plan and differs from the official deadline.
 
-### P1 — 기본 흐름이 된 뒤 점수를 올릴 것
+### P1 — raise the score once the basic flow works
 
-- Wallet Skill을 실제 Agentic Wallet에서 끝까지 실행하고 설치·세션·견적·체결의 증거를 남긴다. 설치 파일 존재만으로 통합을 완료했다고 하지 않는다.
-- 기존 dx/LOG.md와 API 계측을 정리해 p50/p95, 실패 코드, 발행사별 최소 주문, 장외 행동을 근거로 제공한다. 실제 경험자는 이 근거를 확인해 DX 리포트를 직접 작성한다.
-- 모바일에서 타인에게 체험시켜 막히는 문구를 수정한다. 원금 보장처럼 읽히는 문구를 제거하고 플랜 중지, 자금 출처, 네트워크 비용을 보여준다.
+- Run the Wallet Skill end to end in a real Agentic Wallet and keep evidence of install, session, quote and fill. Do not call the integration complete just because the install files exist.
+- Organize the existing dx/LOG.md and API instrumentation to provide evidence: p50/p95, failure codes, minimum order per issuer, off-hours behavior. The people who actually had the experience check this evidence and write the DX report themselves.
+- Have someone else try it on mobile and fix the copy where they get stuck. Remove copy that reads like a principal guarantee, and show plan stop, the source of funds and the network cost.
 
-### P2 — 핵심 완주 이후의 선택 사항
+### P2 — optional once the core run is complete
 
-Agent Studio 전체 런타임, ERC-8004 등록, x402 유료 호출, 추가 주식·발행사, 섹터 바스켓, 더 많은 장식 애니메이션. 특별상 목표나 핵심 기능에 필요한 경우에만 시간을 쓴다. 기존 계획에서 실제로 제외하는 결정은 별도 작업 계획에 반영한다.
+Full Agent Studio runtime, ERC-8004 registration, x402 paid calls, more stocks and issuers, sector baskets, more decorative animation. Spend time on these only when a special-prize goal or a core feature needs them. A decision to actually drop something from the existing plan goes into a separate work plan.
 
-## 완료 판정
+## Done criteria
 
-- 심사위원이 외부 주소에서 진입해 체험을 마친다. 내부 목표: 3분 이내, 연속 3회.
-- 실제 자금 출처와 주식 토큰 수령을 체인 영수증으로 확인할 수 있다.
-- 중지·한도·재시도·확인 대기 상태가 실제 배포 환경에서 동작한다.
-- 모든 제출 링크가 다른 기기에서도 열리며 심사 기간 운영 담당이 정해져 있다.
-- DX 리포트의 주장마다 실측 또는 직접 경험 근거가 있다.
+- A judge enters from an external address and finishes the trial. Internal target: within 3 minutes, 3 times in a row.
+- The real source of funds and the receipt of stock tokens can be verified with on-chain receipts.
+- The stop, limit, retry and awaiting-confirmation states work in the real deployed environment.
+- Every submission link opens on other devices too, and someone is assigned to operations for the judging window.
+- Every claim in the DX report has a live measurement or first-hand experience behind it.
 
-현재 가장 큰 간격은 디자인의 양보다 **새 UI와 기존 백엔드의 연결, 실제 이자 매수 증거, 접근 가능한 배포와 제출 자료**다. 이번 작업은 브랜딩 변경과 범위 점검이며 실제 거래·지갑 연결·공개 배포를 실행하지 않았다.
+The biggest gap right now is not the amount of design but **connecting the new UI to the existing backend, real interest-buy evidence, and accessible deployment and submission materials**. This work was a branding change and a scope review; it did not execute real trades, wallet connections or a public deployment.
