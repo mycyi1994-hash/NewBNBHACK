@@ -95,6 +95,47 @@ describe('caps', () => {
     expect(error.message).toContain(message);
   });
 
+  // Consumers turn caps back into text for toUnits(): String(5e-7) is '5e-7', which it refuses.
+  it.each(
+    CAP_NAMES.flatMap((name) =>
+      ['1e21', '0x19', '0.0000005', '2.5e1', '+5', '25.', '.5', '1_000'].map((raw) => [name, raw]),
+    ),
+  )('rejects %s=%s (not a plain decimal)', (name, raw) => {
+    const error = errorOf(() => parseConfig({ [name]: raw }));
+    expect(error.issues).toHaveLength(1);
+    expect(error.issues[0]).toMatch(
+      new RegExp(`^${name} must be (a plain decimal such as 25 or 0\\.25|a number)`),
+    );
+    expect(error.message).not.toContain(raw);
+  });
+
+  it('bounds every cap at 1,000,000 and the minimum buy at one cent', () => {
+    for (const name of CAP_NAMES) {
+      expect(errorOf(() => parseConfig({ [name]: '1000000.5' })).issues).toEqual([
+        `${name} must be at most 1000000`,
+      ]);
+    }
+    expect(errorOf(() => parseConfig({ MIN_BUY_USD: '0.009' })).issues).toEqual([
+      'MIN_BUY_USD must be at least 0.01',
+    ]);
+    expect(parseConfig({ MIN_BUY_USD: '0.01' }).caps.minBuyUsd).toBe(0.01);
+    expect(parseConfig({ MAX_PRINCIPAL_USD: '1000000' }).caps.maxPrincipalUsd).toBe(1_000_000);
+  });
+
+  it('keeps accepted caps numeric, and their text form a plain decimal again', () => {
+    const { caps } = parseConfig({
+      HOUSE_MAX_PER_TX_USD: ' 12.345678 ',
+      MAX_PRINCIPAL_USD: '0.000001',
+      DAILY_SPEND_CAP_USD: '999999.999999',
+    });
+    expect(caps).toMatchObject({
+      houseMaxPerTxUsd: 12.345678,
+      maxPrincipalUsd: 0.000001,
+      dailySpendCapUsd: 999_999.999999,
+    });
+    for (const value of Object.values(caps)) expect(String(value)).toMatch(/^\d+(\.\d{1,6})?$/);
+  });
+
   it('rejects a minimum buy above the per-plan sandbox cap', () => {
     const error = errorOf(() => parseConfig({ MIN_BUY_USD: '6' }));
     expect(error.issues.join('\n')).toContain(
