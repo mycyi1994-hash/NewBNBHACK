@@ -231,6 +231,11 @@ export function JudgeFlow({
     const u = units(amount);
     return u > 0n && u <= units(capUsd) && (mode === 'yield' || u >= units(minBuyUsd));
   })();
+  // Off-hours an anytime plan buys half of the amount chosen here; when half is under the minimum
+  // buy it waits for the open like a regular-session plan (DECISIONS D-22).
+  const halfCents = units(amountValid ? amount : capUsd) / 2n;
+  const halfUsd = `${halfCents / 100n}.${String(halfCents % 100n).padStart(2, '0')}`;
+  const halfWaits = halfCents < units(minBuyUsd);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -431,13 +436,11 @@ export function JudgeFlow({
                       </span>
                       {closed ? (
                         <span className="block text-sm text-muted">
-                          {w === 'regular_session'
+                          {w === 'regular_session' || halfWaits
                             ? t('judge.window.regular.closed', {
                                 open: timeText(market.nextBuyWindow, lang, tz),
                               })
-                            : t('judge.window.anytime.closed', {
-                                half: money((Number(capUsd) / 2).toFixed(2)),
-                              })}
+                            : t('judge.window.anytime.closed', { half: money(halfUsd) })}
                         </span>
                       ) : null}
                     </span>
