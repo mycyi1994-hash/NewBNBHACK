@@ -1,4 +1,12 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
@@ -262,23 +270,84 @@ describe('secrets and modes', () => {
   });
 });
 
-describe('architecture: caps are read only in packages/config', () => {
-  const SOURCE = /\.(ts|tsx|mts|js|mjs|cjs)$/;
-  const SKIP = new Set(['node_modules', '.next', 'dist', 'coverage']);
-  function walk(dir: string): string[] {
-    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      if (SKIP.has(entry.name)) return [];
-      const full = path.join(dir, entry.name);
-      return entry.isDirectory() ? walk(full) : SOURCE.test(entry.name) ? [full] : [];
-    });
-  }
+/**
+ * Files under `root` that name a cap variable outside the allowed places, relative to `root`.
+ * Scanned: every text file (any extension: .cts, .jsx, .sh, .yml, nested .env files, …) under
+ * apps/, packages/, scripts/, skills/ and .github/, and every file at the root. Allowed:
+ * packages/config, the root env files (.env.example documents the caps, a local .env sets them)
+ * and Markdown prose at the root, like docs/*.md, which is not scanned.
+ */
+function capOffenders(root: string): string[] {
+  const TREES = ['apps', 'packages', 'scripts', 'skills', '.github'];
+  const SKIP = new Set(['node_modules', '.next', 'dist', 'coverage', '.turbo', '.git']);
+  const configDir = path.join(root, 'packages', 'config') + path.sep;
+  const walk = (dir: string): string[] =>
+    existsSync(dir)
+      ? readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+          if (SKIP.has(entry.name)) return [];
+          const full = path.join(dir, entry.name);
+          return entry.isDirectory() ? walk(full) : entry.isFile() ? [full] : [];
+        })
+      : [];
+  const rootFiles = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .filter((entry) => !/^\.env(\..+)?$/.test(entry.name) && !entry.name.endsWith('.md'))
+    .map((entry) => path.join(root, entry.name));
+  return [...TREES.flatMap((tree) => walk(path.join(root, tree))), ...rootFiles]
+    .filter((file) => !file.startsWith(configDir))
+    .filter((file) => {
+      const bytes = readFileSync(file);
+      if (bytes.includes(0)) return false; // binary (images, fonts)
+      const text = bytes.toString('utf8');
+      return CAP_NAMES.some((name) => text.includes(name));
+    })
+    .map((file) => path.relative(root, file).split(path.sep).join('/'))
+    .sort();
+}
 
-  it('no source file outside packages/config mentions a cap variable', () => {
-    const configDir = path.join(ROOT, 'packages', 'config') + path.sep;
-    const offenders = ['apps', 'packages', 'scripts']
-      .flatMap((dir) => walk(path.join(ROOT, dir)))
-      .filter((file) => !file.startsWith(configDir))
-      .filter((file) => CAP_NAMES.some((name) => readFileSync(file, 'utf8').includes(name)));
-    expect(offenders).toEqual([]);
+describe('architecture: caps are read only in packages/config', () => {
+  it('no file outside packages/config and the root env files names a cap variable', () => {
+    expect(capOffenders(ROOT)).toEqual([]);
+  });
+
+  it('looks at every file type, skills/, .github/ and the root, not only .ts sources', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'ijaro-arch-'));
+    try {
+      const put = (file: string, text: string | Buffer) => {
+        mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        writeFileSync(path.join(root, file), text);
+      };
+      const cap = 'DAILY_SPEND_CAP_USD';
+      // Allowed places.
+      put('packages/config/src/index.ts', `const cap = '${cap}';`);
+      put('.env.example', `${cap}=50\n`);
+      put('.env', `${cap}=10\n`);
+      put('CLAUDE.md', `total <= ${cap}\n`);
+      put('docs/SPEC.md', `${cap}\n`);
+      put('apps/web/public/logo.png', Buffer.concat([Buffer.from([0x89, 0, 1]), Buffer.from(cap)]));
+      // Everything else.
+      put('apps/agent/src/caps.cts', `process.env.${cap}`);
+      put('apps/web/components/Cap.jsx', `<p>{'${cap}'}</p>`);
+      put('apps/web/.env.production', `${cap}=500\n`);
+      put('packages/core/src/legacy.cjs', `module.exports = '${cap}';`);
+      put('scripts/cap.sh', `echo $${cap}\n`);
+      put('skills/ijaro/SKILL.md', `Read ${cap} from the environment.\n`);
+      put('.github/workflows/ci.yml', `env:\n  ${cap}: 5000\n`);
+      put('fly.toml', `[env]\n  ${cap} = "5000"\n`);
+      put('vitest.config.ts', `export const cap = '${cap}';`);
+      expect(capOffenders(root)).toEqual([
+        '.github/workflows/ci.yml',
+        'apps/agent/src/caps.cts',
+        'apps/web/.env.production',
+        'apps/web/components/Cap.jsx',
+        'fly.toml',
+        'packages/core/src/legacy.cjs',
+        'scripts/cap.sh',
+        'skills/ijaro/SKILL.md',
+        'vitest.config.ts',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
