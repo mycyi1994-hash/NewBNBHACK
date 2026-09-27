@@ -1,7 +1,7 @@
 /**
- * UI strings and formatting (M2-04/M2-05): the dictionaries come from docs/UX_COPY.md and match
- * the generated file; KR and EN name the same placeholders; missing values drop their sentence
- * instead of showing a half-filled one; numbers are never rounded up or invented.
+ * UI strings and formatting (M2-04/M2-05): the English dictionary comes from docs/UX_COPY.md and
+ * matches the generated file; the copy is English only (DECISIONS D-26, D-27); missing values drop
+ * their sentence instead of showing a half-filled one; numbers are never rounded up or invented.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -21,7 +21,7 @@ import {
 } from '../lib/format';
 import { COPY } from '../lib/i18n/copy';
 import { translate } from '../lib/i18n/translate';
-import { parseUxCopy, placeholders } from '../lib/i18n/ux-copy';
+import { parseUxCopy } from '../lib/i18n/ux-copy';
 import { lintCopy, render } from '../scripts/copy';
 
 const DOC = readFileSync(
@@ -29,7 +29,7 @@ const DOC = readFileSync(
   'utf8',
 );
 
-describe('UX_COPY → dictionaries', () => {
+describe('UX_COPY → dictionary', () => {
   const copy = parseUxCopy(DOC);
 
   it('is what copy.ts holds (pnpm copy:gen is up to date)', async () => {
@@ -39,35 +39,39 @@ describe('UX_COPY → dictionaries', () => {
       'utf8',
     );
     expect(current).toBe(generated);
-    expect(COPY.ko).toEqual(copy.ko);
     expect(COPY.en).toEqual(copy.en);
   });
 
   it('reads every section: screens, reasons, the risk text and the banned words', () => {
-    expect(copy.ko['home.title']).toBe('이자로 주식을 삽니다');
+    expect(copy.en['home.title']).toBe('Interest buys the stock.');
     expect(copy.en['judge.run.progress.swap']).toBe('Buying…');
-    expect(copy.ko['why.skipped.daily_cap']).toBe('오늘 한도(${daily})를 다 썼어요. 내일 다시요.');
+    expect(copy.en['why.skipped.daily_cap']).toBe('Daily limit (${daily}) reached. Tomorrow.');
+    expect(copy.en['risk.intro']).toMatch(/^Yieldvest is not a bank\./);
     expect(copy.en['risk.cta']).toBe('Agree and turn on');
-    expect(
-      Object.keys(copy.ko).filter((k) => k.startsWith('risk.') && /^risk\.\d$/.test(k)),
-    ).toHaveLength(5);
+    expect(Object.keys(copy.en).filter((k) => /^risk\.\d$/.test(k))).toHaveLength(5);
     expect(copy.banned).toContain('guaranteed');
-    expect(copy.banned).toContain('추천 종목');
+    expect(copy.banned).toContain('recommended stock');
   });
 
-  it('has the same keys and placeholders in Korean and English, and no banned word anywhere', () => {
-    expect(Object.keys(copy.en)).toEqual(Object.keys(copy.ko));
-    for (const key of Object.keys(copy.ko)) {
-      expect(placeholders(copy.en[key] ?? ''), key).toEqual(placeholders(copy.ko[key] ?? ''));
-    }
+  it('is English only, with no banned word in the copy, the web source or the skill', () => {
+    const hangul = /\p{Script=Hangul}/u;
+    expect(Object.keys(copy.en).filter((key) => hangul.test(copy.en[key] ?? ''))).toEqual([]);
     expect(lintCopy(copy)).toEqual([]);
   });
 
   it('fails loudly on a line it cannot read', () => {
-    const broken = DOC.replace('- `nav.home`: 홈 / Home', '- `nav.home`: 홈 Home');
-    expect(() => parseUxCopy(broken)).toThrow(/nav.home must read "KR \/ EN"/);
-    const duplicate = DOC.replace('- `nav.dx`: 기록·데이터 / Data', '- `nav.home`: 홈 / Home');
-    expect(() => parseUxCopy(duplicate)).toThrow(/duplicate key nav.home/);
+    const line = '- `nav.home`: Home';
+    const hangul = String.fromCodePoint(0xd648);
+    expect(() => parseUxCopy(DOC.replace(line, `- \`nav.home\`: ${hangul}`))).toThrow(
+      'nav.home is not English',
+    );
+    expect(() => parseUxCopy(DOC.replace(line, '- `nav.home`: '))).toThrow('nav.home has no text');
+    expect(() => parseUxCopy(DOC.replace('- `nav.dx`: Data', line))).toThrow(
+      'duplicate key nav.home',
+    );
+    expect(() =>
+      parseUxCopy(DOC.replace('Allowing… / Buying… / Confirming…', 'Allowing… / Buying…')),
+    ).toThrow('judge.run.progress.{approve|swap|confirm} needs 3 variants');
   });
 });
 
@@ -80,11 +84,11 @@ describe('translate', () => {
 
   it('leaves out a sentence whose value is missing (no US price → no gap sentence)', () => {
     const params = { ticker: 'NVDA', shares: '0.022194', usd: '5.00' };
-    expect(translate('ko', 'why.bought.regular', params)).toBe(
-      '정규장에 NVDA 0.022194주($5.00)를 샀어요.',
+    expect(translate('en', 'why.bought.regular', params)).toBe(
+      'Bought 0.022194 shares of NVDA ($5.00) during regular hours.',
     );
-    expect(translate('ko', 'why.bought.regular', { ...params, gap: '+0.30' })).toBe(
-      '정규장에 NVDA 0.022194주($5.00)를 샀어요. 기준 주가 대비 +0.30%.',
+    expect(translate('en', 'why.bought.regular', { ...params, gap: '+0.30' })).toBe(
+      'Bought 0.022194 shares of NVDA ($5.00) during regular hours. +0.30% vs reference.',
     );
     // The preview line has no fee estimate: that sentence is dropped, never guessed.
     expect(
@@ -144,10 +148,10 @@ describe('format', () => {
   it('shows engine times in the viewer’s zone and signs the gap', () => {
     const params = displayParams(
       { open: '2026-09-28T13:32:00.000Z', gap: '-0.35', ticker: 'NVDA' },
-      'ko',
+      'en',
       'Asia/Seoul',
     );
-    expect(params.open).toBe(timeText('2026-09-28T13:32:00.000Z', 'ko', 'Asia/Seoul'));
+    expect(params.open).toBe(timeText('2026-09-28T13:32:00.000Z', 'en', 'Asia/Seoul'));
     expect(params.open).toContain('22:32');
     expect(params.gap).toBe('−0.35');
     expect(params.ticker).toBe('NVDA');

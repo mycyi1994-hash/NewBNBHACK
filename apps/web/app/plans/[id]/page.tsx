@@ -1,7 +1,7 @@
 /**
  * Plan detail (M2-03) in the approved design: name, state and who runs it; principal, interest read
  * on chain, shares and the next buy; the full history with receipts (the Activity table); the
- * limits; the guardian; holdings; and, for the judge who owns it, "플랜 멈추기" (a yield plan's
+ * limits; the guardian; holdings; and, for the judge who owns it, "Stop this plan" (a yield plan's
  * position is redeemed).
  */
 import { fromUnits, toUnits } from '@yieldvest/core';

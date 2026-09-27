@@ -186,7 +186,7 @@ describe.skipIf(!webTestUrl)('Judge Mode routes', () => {
     });
     expect([anonymous.status, anonymous.body.error.code]).toEqual([401, 'unauthorized']);
 
-    // "지금 사기" posts no body at all.
+    // "Buy now" posts no body at all.
     const queued = await call<Queued>(run, {
       path: `/api/plans/${id}/run`,
       method: 'POST',

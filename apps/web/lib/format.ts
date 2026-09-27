@@ -84,11 +84,13 @@ export function bpsPct(bps: number | string | null | undefined): string | null {
   return bps === null || bps === undefined || !Number.isFinite(n) ? null : (n / 100).toFixed(2);
 }
 
+const LOCALES: Readonly<Record<Lang, string>> = { en: 'en-US' };
+
 export function timeText(iso: string | null | undefined, lang: Lang, tz: string): string | null {
   if (!iso) return null;
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return null;
-  return new Intl.DateTimeFormat(lang === 'ko' ? 'ko-KR' : 'en-US', {
+  return new Intl.DateTimeFormat(LOCALES[lang], {
     timeZone: tz,
     month: 'short',
     day: 'numeric',
@@ -133,5 +135,5 @@ export function issuerName(id: string | null | undefined): string | null {
   return issuer === 'bstocks' ? 'bStocks' : issuer === 'ondo' ? 'Ondo' : issuer || null;
 }
 
-/** A 0x… address shortened for "자세히" views. */
+/** A 0x… address shortened for "Details" views. */
 export const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;

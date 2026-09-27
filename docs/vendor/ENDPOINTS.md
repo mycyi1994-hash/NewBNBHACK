@@ -1,8 +1,9 @@
 # ENDPOINTS.md — Binance Web3 API, verified against the official docs
 
-> 이 파일은 `docs/vendor/`에서 유일하게 커밋되는 파일이다. 모든 행은 `docs/vendor/llms-full.txt`의 섹션 제목을
-> 출처로 달고 있다. 표(GENERATED 블록)는 `pnpm endpoints`가 llms-full.txt와 공식 커넥터에서 기계적으로 만든다.
-> 손으로 쓴 부분은 아래 §1–§3뿐이며, 각 줄에 출처 섹션을 적었다.
+> This is the only file under `docs/vendor/` that is committed. Every row cites a section title of
+> `docs/vendor/llms-full.txt` as its source. The tables (the GENERATED block) are built mechanically by
+> `pnpm endpoints` from llms-full.txt and the official connector. Only §1–§3 below are hand-written, and
+> each line names its source section.
 
 - Doc source: `bash scripts/fetch-docs.sh` → `docs/vendor/llms-full.txt` (fetch time, line count and sha256 are printed
   in the generated block). Line numbers (`L…`) refer to that snapshot.

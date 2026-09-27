@@ -4,7 +4,7 @@ description: |
   Use when the user wants Yieldvest to collect tokenized US stocks (bStocks / Ondo on BNB Smart
   Chain) in their own Binance Agentic Wallet — with a fixed amount per buy (safe mode) or with the
   interest of a USDT deposit in Venus (yield mode), on a daily or weekly schedule, only during the
-  US regular session, under hard per-buy and per-day limits. Triggers: "start Yieldvest", "Yieldvest 시작해줘",
+  US regular session, under hard per-buy and per-day limits. Triggers: "start Yieldvest",
   "run my Yieldvest plan", "what should Yieldvest do now", "Yieldvest status", "stop my Yieldvest plan".
 metadata:
   author: yieldvest
@@ -43,7 +43,7 @@ the user confirms, and then reported back — the server records only what the c
 
 | User intent | What to do | Reference |
 | --- | --- | --- |
-| Start / create a plan ("Yieldvest 시작해줘") | Risk disclosure → `POST /api/plans` with `owner: "skill"` → save the token | [plan.md](references/plan.md) |
+| Start / create a plan ("start Yieldvest") | Risk disclosure → `POST /api/plans` with `owner: "skill"` → save the token | [plan.md](references/plan.md) |
 | Put principal in (yield mode) | `baw defi preview --action DEPOSIT …` → confirm → `baw defi deposit …` → `POST /report` | [plan.md](references/plan.md) |
 | Run the plan / "what now?" | `GET /api/plans/{id}/next` → run its `steps` in order, confirming each | [run.md](references/run.md) |
 | Status / history | `GET /api/plans/{id}` (public view: limits, history, receipts, holdings) | [plan.md](references/plan.md) |

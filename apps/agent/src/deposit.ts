@@ -1,5 +1,5 @@
 /**
- * Starting a yield plan from a job (Judge Mode's "이자로 사기", TASKS M2-02): deposit its
+ * Starting a yield plan from a job (Judge Mode's "Buy with interest", TASKS M2-02): deposit its
  * principal into Venus, record it from the confirmed receipts, and let the plan run. The deposit
  * is bounded by the plan owner's cap (sandbox for judges) and the principal cap, and refused while
  * the guardian holds deposits.

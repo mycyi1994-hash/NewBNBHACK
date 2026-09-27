@@ -81,7 +81,7 @@ export function dataText(t: T, data: DataState, now: Date): string {
   return t('home.status.unavailable', { reason: data.reason });
 }
 
-/** LIVE / n분 전 / 불러올 수 없음 (with the reason), as UX_COPY §3.1 words them. */
+/** Live / {min} min old / Unavailable (with the reason), as UX_COPY §3.1 words them. */
 export function StateBadge({ t, data, now }: { t: T; data: DataState; now: Date }) {
   return (
     <Pill tone={dataTone(data)} title={data.state === 'STALE' ? data.at : undefined}>

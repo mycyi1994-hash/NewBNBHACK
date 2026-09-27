@@ -1,7 +1,7 @@
 /**
  * pnpm dx:events [--all] [--mark-logged] — the first sightings of undocumented error codes and
  * response shapes (dx_events, M1-07), printed in the dx/LOG.md entry format of DX_PROTOCOL §3.1.
- * Facts only: the human adds the "소감" line. --mark-logged records that they were copied.
+ * Facts only: the human adds the "Impression" line. --mark-logged records that they were copied.
  */
 import { loadConfig } from '@yieldvest/config';
 import {
@@ -27,10 +27,10 @@ function entry(event: DxEventRow): string {
       : 'undocumented response shape';
   return [
     `## ${utcMinute(event.ts)} UTC — [web3api][error] ${event.module}/${event.endpoint}: ${shape}`,
-    `- 기대: ${event.kind === 'unknown_code' ? `a code listed in the ${event.module} Error Codes table` : 'the documented {code, msg, data} envelope'}`,
-    `- 실제: HTTP ${event.httpStatus ?? '-'}, code ${event.code || '-'}, msg "${event.msg ?? ''}", request id ${event.requestId ?? '-'}, region ${event.region ?? '-'}`,
-    `- 분류: ${event.meaning} (dx_events #${event.id}, first sighting ${isoTime(event.ts)})`,
-    `- 증거: api_calls where endpoint = '${event.endpoint}' and ts = '${isoTime(event.ts)}'`,
+    `- Expected: ${event.kind === 'unknown_code' ? `a code listed in the ${event.module} Error Codes table` : 'the documented {code, msg, data} envelope'}`,
+    `- Actual: HTTP ${event.httpStatus ?? '-'}, code ${event.code || '-'}, msg "${event.msg ?? ''}", request id ${event.requestId ?? '-'}, region ${event.region ?? '-'}`,
+    `- Classification: ${event.meaning} (dx_events #${event.id}, first sighting ${isoTime(event.ts)})`,
+    `- Evidence: api_calls where endpoint = '${event.endpoint}' and ts = '${isoTime(event.ts)}'`,
   ].join('\n');
 }
 

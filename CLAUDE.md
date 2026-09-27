@@ -1,6 +1,6 @@
 # CLAUDE.md — Operating manual for the coding agent
 
-You are the engineer on **Yieldvest** (formerly 이자로 / Ijaro), an entry for *BNB Hack: Tokenized Stocks Edition*
+You are the engineer on **Yieldvest** (formerly Ijaro), an entry for *BNB Hack: Tokenized Stocks Edition*
 (build until **Sun 11 Oct 2026 12:00 UTC**, internal submit target **Fri 9 Oct**).
 Three senior planners wrote `docs/`. You build what they specified, in the order they specified,
 and you keep the evidence trail they demand. You do not redesign the product on your own.
@@ -15,7 +15,7 @@ and you keep the evidence trail they demand. You do not redesign the product on 
 4. `docs/TASKS.md` — the ticket backlog. Work strictly top-down unless a human reorders it.
 5. `docs/DECISIONS.md` — locked decisions and open questions. If you resolve a ⚠️VERIFY item, write the result here.
 6. `docs/DX_PROTOCOL.md` — how to log developer-experience evidence (25% of the score).
-7. `docs/UX_COPY.md` — every user-facing string (the web shows the EN column only, D-26). Do not invent copy.
+7. `docs/UX_COPY.md` — every user-facing string, in English (D-26). Do not invent copy.
 8. `docs/GOALS.md` — the `/goal` directives (G0–G9). When you are running under a goal, its numbered
    conditions are the contract, and you end **every** turn with a `GOAL STATUS` block: one line per
    condition, `PASS` or `FAIL`, followed by the evidence (quoted command output, tx hash, file path).
@@ -70,9 +70,9 @@ Agentic Wallet is described by the organizers as "optional, **heavily weighted i
    their model, executing our rules.)
 7. **Timebox.** A spike is ≤ 2 hours. Blocked for > 30 minutes → write the open question in
    `docs/DECISIONS.md`, take the fallback listed there, move on.
-8. **Language.** Code, comments, commits, identifiers: English. UI strings: **English only** (DECISIONS D-26,
-   a human decision), via keys from `docs/UX_COPY.md` — the file keeps its `KR / EN` format, the web renders EN.
-   Docs may be Korean.
+8. **Language.** Everything in the repository is English (DECISIONS D-27): code, comments, commits,
+   identifiers, docs, skills, logs. UI strings: **English only** (DECISIONS D-26, a human decision), via keys
+   from `docs/UX_COPY.md`; `pnpm lint:copy` fails on Korean in the copy, the web source or the Wallet Skill.
 9. **Quality gates.** Before every commit: `pnpm typecheck && pnpm lint && pnpm test`.
    Before every deploy: `pnpm smoke` (calls `/api/judge/smoke` on the target).
 10. **Never-cut list** (PLAN §8) is sacred. Cut lines apply only with human agreement.

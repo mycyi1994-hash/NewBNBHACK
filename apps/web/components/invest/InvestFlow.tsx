@@ -874,7 +874,7 @@ function doneText(
     return {
       title: t('judge.done.title'),
       // The reason line says what was bought and when; without one, the done line does (it ends
-      // in "· 영수증 보기", which is the receipt link below).
+      // in "· View receipt", which is the receipt link below).
       lead:
         why(r.why) ??
         t('judge.done.line', {

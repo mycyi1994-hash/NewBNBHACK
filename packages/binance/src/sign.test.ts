@@ -18,7 +18,8 @@ describe('query encoding', () => {
     'ETH USDT',
     'a+b=c&d',
     '100% (!*)',
-    '삼성전자',
+    'Société Générale €5',
+    '📈 NVDA',
     '~-._',
     '0x55d398326f99059fF775485246999027B3197955',
   ];

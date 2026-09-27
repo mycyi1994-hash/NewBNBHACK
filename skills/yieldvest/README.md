@@ -15,4 +15,4 @@ git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK yieldvest-src \
 export YIELDVEST_URL=<the site address from the project README>
 ```
 
-Then say "start Yieldvest" (or "Yieldvest 시작해줘"). The API contract is at `$YIELDVEST_URL/api/openapi`.
+Then say "start Yieldvest". The API contract is at `$YIELDVEST_URL/api/openapi`.
