@@ -215,10 +215,13 @@ v2 순서와 규칙:
    - DeFi API의 APPROVE 항목(무제한, Q-16)은 서명하지 않는다. 같은 spender에 정확 금액 `approve`를 직접 인코딩한다(spender는 DEPOSIT 항목 `to`와 대조).
 2. **시뮬레이션 판정:** Transaction API는 실패해도 HTTP 200·code 0으로 `data.status: "FAILED"`를 준다(Q-14). `simulate()`는 `status !== 'SUCCESS'`면 예외를 던진다.
 3. **아웃박스:** 서명한 raw tx·nonce·hash를 브로드캐스트 **전에** `tx_outbox`(`SIGNED`)에 적는다. 보낸 뒤에는 `PENDING`이다. 워커가 기동하면 `SIGNED/PENDING`을 영수증으로 재조정한 뒤에야 새 사이클을 연다. 3분 안에 확정되지 않은 tx는 FAILED가 아니라 `PENDING`으로 남긴다. 중복 매수를 막기 위해서다.
+   - v2.1(9/27, DECISIONS D-23): 정산(`settleOutbox` = 체인 대조 → 기다리던 사이클 마무리 → 사이클 밖 tx 반영)은 모드와 상관없이 매 틱과 모든 서명 직전에 돈다. 두 브로드캐스트 경로가 **확실히** 거절한 경우만 FAILED(nonce 재사용), 불분명하면 `PENDING`(`broadcast_via='unknown'`). nonce가 쓰였는데 우리 영수증이 없거나 노드가 잃은 10분 넘은 스왑은 추측하지 않고 `PENDING` + 30분 뒤 사람 알림(RUNBOOK §3.4). 스왑의 호출 대상은 승인한 라우터여야 한다.
 4. **캡 예약:** `spend_ledger` 예약과 사이클 행을 같은 DB 트랜잭션에서 쓴다. 확정 실패면 해제한다.
 
 ### 5.9 RECORD
 `holdings` 갱신(tokens, multiplier 스냅샷, shares = tokens × multiplier), `spend_ledger` 기록, `whyKey/whyParams` 저장(UX_COPY §4 키), 피드 발행, 운영 알림(FAILED만). `nextDueAt` 갱신(weekly: 다음 주 같은 창구, daily: 다음 정규장).
+
+v2.1(9/27, D-23): 온체인 효과(상환·스왑·입금)는 확정되는 순간, 플랜 행을 잠근 한 트랜잭션에서 영수증을 먼저 넣고 반영한다(영수증 해시 유일 → 정확히 한 번). 사이클이 도중에 죽어도 이미 확정된 상환은 기록돼 있고, 다음 락 보유자가 그 사이클을 체인에서 마무리하거나(서명한 게 있을 때) FAILED `INTERRUPTED`로 닫는다(없을 때). 수동 실행(cycle:once, 웹 잡)의 사이클은 `nextDueAt`을 움직이지 않는다.
 
 ### 5.10 하우스 플랜 초기값
 - Plan H-SAFE: NVDA, safe, contribution $5, daily, regular_session, maxPerBuy $5.

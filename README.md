@@ -60,7 +60,7 @@ skills/ijaro    Wallet Skill (SKILL.md + references)
 ## 안전 장치 (요약 — 자세히는 [`docs/SECURITY.md`](docs/SECURITY.md))
 
 - 하드 캡은 env 한 곳에서 읽고 코드가 강제: 1회 $25 · 하루 $50(하우스), 심사위원 코드당 $5. 지출은 원장에 잠금 아래 예약.
-- 정확 금액 승인만, 서명 전 calldata 해독·검증, **시뮬레이션 SUCCESS 없이는 서명 없음**, 3분 안에 영수증이 없으면 아웃박스 PENDING으로 새 서명 차단.
+- 정확 금액 승인만, 서명 전 calldata 해독·검증(스왑은 승인한 라우터만 호출), **시뮬레이션 SUCCESS 없이는 서명 없음**, 3분 안에 영수증이 없으면 아웃박스 PENDING으로 새 서명 차단. 체인에서 확정된 효과는 영수증과 한 트랜잭션으로 정확히 한 번 기록 — 결과가 불분명하면 추측하지 않고 사람에게 묻는다([DECISIONS D-23](docs/DECISIONS.md)).
 - 지킴이: Venus 일시정지·TVL 24시간 −30%·이용률 95%·USDT 0.99 30분 → 매수 중단/전액 상환(live에서 시뮬레이션 통과 시에만).
 - 모든 데이터 블록은 실시간 / n분 전 / 불러올 수 없음(이유) 중 하나. 없는 숫자를 만들지 않습니다.
 - CSP(요청마다 nonce), HSTS, 화면 375px 가로 스크롤 없음·KO/EN(`pnpm ui:check`).

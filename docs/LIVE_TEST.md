@@ -32,7 +32,7 @@
 
 | # | 명령 | 기대 결과 | 멈춤 |
 | --- | --- | --- | --- |
-| 0 | `pnpm live:check` | 충전 전에는 `house`만 ✗(H-SAFE가 $5면 `H-SAFE`도 ✗) | `config`·`outbox`·`guardian`·`registry`·`web3api` ✗ |
+| 0 | `pnpm live:check` | 충전 전에는 `house`만 ✗(H-SAFE가 $5면 `H-SAFE`도 ✗) | `config`·`outbox`·`guardian`·`registry`·`web3api`·`rpc chain` ✗ |
 | 1 | `pnpm plan:set --plan H-SAFE --contribution 1 --per-buy 1 --daily 1` | `changed H-SAFE (safe, paused): $5 daily … → $1 daily, per buy ≤ $1, per day ≤ $1 …` | `refused` |
 | 2 | (충전 후) `pnpm live:check` | `GO` | `NO-GO` |
 | 3 | `pnpm yield:deposit --plan H-YIELD --usd 1` | 시뮬레이션 JSON. 승인 시뮬 SUCCESS. 예치 시뮬 FAILED는 예상된 결과다(시뮬레이션에는 정확 승인이 아직 체인에 없다). | 빌드 오류, 승인 FAILED |
@@ -55,7 +55,7 @@
 - `FAILED`인데 `fundsMoved: gas_only`이거나, 사이클이 `review`에 들어갔다.
 - 응답에 지역·컴플라이언스 코드(40301~40304)가 보인다.
 - 하우스 잔고가 단계당 $1 + 가스보다 많이 줄었다.
-- 3분 넘게 채굴되지 않은 tx가 있다. 새 서명은 막힌다(`outbox`). 워커가 틱마다 정리하니 `live:check`의 `outbox`가 settled가 될 때까지 기다린 뒤 `--record`한다.
+- 3분 넘게 채굴되지 않은 tx가 있다. 새 서명은 막힌다(`outbox`). 워커가 틱마다(simulate 모드에서도) 체인과 대조하고, 채굴되면 효과(원금·vToken·보유량·원장)까지 한 번만 반영한다(DECISIONS D-23). `live:check`의 `outbox`가 settled가 되면 `plan:status`로 반영을 확인하고, 반영이 안 됐을 때만 `--record`한다. 30분이 지나도 안 풀리면 텔레그램 알림이 오고 RUNBOOK §3.4대로 사람이 판단한다.
 
 멈추면: `pnpm live:check` 출력, 명령 출력, UTC 시각, tx 해시를 `dx/LOG.md`(DX_PROTOCOL 형식)에 적고 사람이 결정한다.
 

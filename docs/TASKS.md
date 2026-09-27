@@ -345,6 +345,11 @@
 - [x] (9/26) `docs/SECURITY.md`. 시크릿 스캔(전체 git 이력: 공개 테스트 키·가짜 벡터·가짜 예시 URL뿐, 추적 env 파일은 `.env.example`만), 캡 검증(설정 한 곳·원장 잠금·정확 승인·시뮬레이션 필수), CSP(`apps/web/proxy.ts`, 요청마다 nonce, 인라인 스크립트 금지; 홈 스크립트 7개 전부 nonce, ui:check CSP 위반 0) + HSTS·nosniff·DENY·Referrer·Permissions(`next.config.ts`), `pnpm audit --prod` 취약점 0(전체는 drizzle-kit 개발 경로 esbuild moderate 1 — 개발 서버 문제, 미사용 → [HUMAN] 수용 확인).
   - 점검 중 고친 자금 안전 버그: 스킬 플랜 정지·가디언 상환이 하우스 지갑에서 상환될 수 있던 경로 차단(D-19, 테스트는 수정 전 실패 확인), 스킬 플랜 run/preview 잡 거부.
   - 공개 응답에서 원문 오류 제거(DB 호스트·RPC URL 누출 방지): 화면·API·smoke는 라벨만, 원문은 서버 로그.
+- [x] (9/27) 전수 감사(보안·돈 흐름·코드 꼬임) — 영역별 읽기 전용 감사 6개(코어·DB·돈 흐름·웹·인프라·스크립트/문서) → 발견 약 90건(HIGH 9) 전부 처리, 규칙 변화는 DECISIONS D-23, 남은 위험은 `docs/SECURITY.md` "남은 위험".
+  - 커밋: `eea173d`(결정 엔진·가디언·달력·Venus 탐색 — 실제 응답으로는 탐색이 항상 실패했음), `8d52c80`(돈 기록을 영수증과 한 트랜잭션으로, 중단 사이클 복구, 모든 모드 정산, 추측 FAILED 금지), `c2a546b`(스킬 `/report`·`/next`, 플랜 생성 한도 잠금, 비활성 코드, 공개 오류 라벨), `01a3f1f`(binance·chain·config I1–I13), `fb4bf4d`(scripts·docs·CI S7–S20), `82a095a`(병합 후속, 부팅 RPC 체인 확인), `0a60aa2`(알림 URL 마스킹).
+  - 새 테스트: `apps/agent/src/settlement.test.ts`(상환 뒤 예외 → 한 번만 기록, 죽은 사이클 복구, 늦은 입금 반영·코드 한도, 락·정산 전 상환 거부, 수동 실행 일정 유지, 지연 노드 → 사람 알림), `executor/send.test.ts`, `executor/chain-port.test.ts`, `packages/db/src/record.test.ts`(동시 입금·재신고·CHECK·compare-and-set), `apps/web/test/audit.test.ts`(하우스 tx·생성 전 tx·해시 표기·주기·이자 1회·포지션 상한·동시 생성 한도·비활성 코드·보류 플랜·정지·415/413). 검토 보류를 덮어쓰던 첫 실행 활성화는 수정 전 실패 확인.
+  - [ ] [HUMAN] Q-17 스킬 지갑 소유 증명(EIP-712 `baw sign-message`, Developer Mode 필요) 여부 결정.
+  - [ ] [HUMAN] 배포 전 Fly·Vercel 캡 값이 새 형식 검증을 통과하는지 확인(RUNBOOK §4).
 ### M3-06 장애 리허설 · 기준: 기술 — API 다운·RPC 다운·워커 재시작·DB 복구, UI 3상태 확인, RUNBOOK 작성
 - [x] RUNBOOK: `docs/RUNBOOK.md`(구성, 매일 점검, 멈추기, 장애별 절차 — API·RPC·워커·아웃박스·DB·가디언, 캡 변경은 사람 yes 먼저, 충전, 배포, 명령 모음).
 - [x] 리허설(로컬, 9/26):
