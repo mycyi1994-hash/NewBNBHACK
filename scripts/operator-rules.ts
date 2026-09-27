@@ -281,3 +281,29 @@ export function depositRefusal(args: {
   }
   return undefined;
 }
+
+/**
+ * Runs `sign` only with the house outbox settled and the plan's lock held (audit S9), in the order
+ * operatorRedeem uses: reconcile first (one signer for every plan: an earlier transaction must
+ * settle before a new one is signed), then the lock (no cycle runs the plan meanwhile), released
+ * whatever `sign` does.
+ */
+export async function whenSettledAndLocked<T>(
+  steps: {
+    reconcile: () => Promise<{ pending: string[] }>;
+    lock: () => Promise<boolean>;
+    release: () => Promise<void>;
+  },
+  sign: () => Promise<T>,
+): Promise<
+  { kind: 'outbox_busy'; pending: string[] } | { kind: 'locked' } | { kind: 'ran'; value: T }
+> {
+  const { pending } = await steps.reconcile();
+  if (pending.length > 0) return { kind: 'outbox_busy', pending };
+  if (!(await steps.lock())) return { kind: 'locked' };
+  try {
+    return { kind: 'ran', value: await sign() };
+  } finally {
+    await steps.release();
+  }
+}

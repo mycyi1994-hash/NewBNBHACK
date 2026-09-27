@@ -11,15 +11,19 @@
  * plan's total principal, and the guardian can hold new deposits. Without --live everything up to
  * the simulations is real and nothing is signed. --live needs EXECUTION_MODE=live, the house key
  * and a typed `y`, and a dry run that did not fail (a FAILED mint simulation after a simulated
- * approval is expected and does not count). The plan's principal and vTokens are written from the
- * confirmed receipt only, once per transaction hash. Exit: 0 done · 1 failed or refused · 2 usage.
+ * approval is expected and does not count). Like yield:redeem, the live deposit signs only with
+ * the outbox settled (one signer for every plan) and the plan's lock held, and checks the plan
+ * again under the lock. The plan's principal and vTokens are written from the confirmed receipt
+ * only, once per transaction hash. Exit: 0 done · 1 failed or refused · 2 usage.
  */
 import {
   createRuntime,
   depositPrincipal,
   discoverVenusUsdt,
   executorDeps,
+  LOCK_TTL_MS,
   maskHouse,
+  reconcileOutbox,
   type SentTx,
   type VenusMarket,
 } from '@ijaro/agent';
@@ -27,12 +31,14 @@ import { BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
 import { loadConfig } from '@ijaro/config';
 import { fromUnits } from '@ijaro/core';
 import {
+  acquirePlanLock,
   applyDeposit,
   getPlan,
   migrateDb,
   openGuardianActions,
   outboxByHash,
   planFromRow,
+  releasePlanLock,
   type PlanRow,
 } from '@ijaro/db';
 import type { Hex } from 'viem';
@@ -43,6 +49,7 @@ import {
   depositRecordRefusal,
   depositRefusal,
   pendingDepositHint,
+  whenSettledAndLocked,
 } from './operator-rules.js';
 
 /** A deposit (--usd, maybe --live) or a record (--record); any other mix is a usage error. */
@@ -104,6 +111,66 @@ if (!flags.ok || problem !== undefined) {
         caps: config.caps,
         guardian: amountUsd === undefined ? [] : await openGuardianActions(rt.database.db, planId),
       });
+    };
+    /** Signs the deposit after the human's `y` (audit S9, as operatorRedeem does for a redeem). */
+    const depositLive = async (market: VenusMarket, amountUsd: string) => {
+      const deps = executorDeps(rt, 'live');
+      const guarded = await whenSettledAndLocked(
+        {
+          reconcile: () => reconcileOutbox(deps, { from: deps.house }),
+          lock: async () =>
+            (await acquirePlanLock(rt.database.db, planId, deps.now(), LOCK_TTL_MS)) !== undefined,
+          release: () => releasePlanLock(rt.database.db, planId),
+        },
+        async () => {
+          // Read again under the lock: a cycle or another deposit may have changed the plan.
+          const current = await getPlan(rt.database.db, planId);
+          const refusedNow = current ? await refusalFor(current, amountUsd) : `${planId} is gone`;
+          if (refusedNow) {
+            console.log(`live: refused — ${refusedNow}; nothing signed`);
+            process.exitCode = 1;
+            return;
+          }
+          const result = await depositPrincipal(deps, { planId, market, amountUsd });
+          if (result.kind === 'deposited') {
+            for (const sent of result.sent) {
+              const deposit = sent.kind === 'deposit';
+              await applyDeposit(rt.database.db, planId, factsOf(sent), {
+                vTokens: deposit ? result.vTokensMinted : 0n,
+                usdtSpent: deposit ? result.usdtSpent : 0n,
+              });
+              console.log(`  ${sent.kind}: https://bscscan.com/tx/${sent.txHash}`);
+            }
+            console.log(
+              `deposited ${fromUnits(result.usdtSpent, 18)} USDT → ${result.vTokensMinted} vTokens`,
+            );
+          } else if (result.kind === 'pending') {
+            for (const sent of result.sent) {
+              await applyDeposit(rt.database.db, planId, factsOf(sent), {
+                vTokens: 0n,
+                usdtSpent: 0n,
+              });
+            }
+            const pending = await outboxByHash(rt.database.db, result.txHash);
+            const kind = pending?.kind;
+            console.log(
+              pendingDepositHint({ planId, usd: amountUsd, txHash: result.txHash, kind }),
+            );
+          } else {
+            console.log(maskHouse(`not deposited: ${JSON.stringify(result)}`, rt.redact));
+            process.exitCode = 1;
+          }
+        },
+      );
+      if (guarded.kind === 'outbox_busy') {
+        console.log(
+          `live: refused — earlier transactions are still pending (${guarded.pending.join(', ')}); nothing signed`,
+        );
+        process.exitCode = 1;
+      } else if (guarded.kind === 'locked') {
+        console.log(`live: refused — a cycle holds ${planId}; nothing signed, try again after it`);
+        process.exitCode = 1;
+      }
     };
     const row = await getPlan(rt.database.db, planId);
     if (!row) throw new Error(`plan ${planId} not found`);
@@ -189,38 +256,7 @@ if (!flags.ok || problem !== undefined) {
             `LIVE: deposit ${usd} USDT of ${planId}'s principal into Venus from [house] (exact approval).`,
           )
         ) {
-          const result = await depositPrincipal(executorDeps(rt, 'live'), {
-            planId,
-            market,
-            amountUsd: usd,
-          });
-          if (result.kind === 'deposited') {
-            for (const sent of result.sent) {
-              const deposit = sent.kind === 'deposit';
-              await applyDeposit(rt.database.db, planId, factsOf(sent), {
-                vTokens: deposit ? result.vTokensMinted : 0n,
-                usdtSpent: deposit ? result.usdtSpent : 0n,
-              });
-              console.log(`  ${sent.kind}: https://bscscan.com/tx/${sent.txHash}`);
-            }
-            console.log(
-              `deposited ${fromUnits(result.usdtSpent, 18)} USDT → ${result.vTokensMinted} vTokens`,
-            );
-          } else if (result.kind === 'pending') {
-            for (const sent of result.sent) {
-              await applyDeposit(rt.database.db, planId, factsOf(sent), {
-                vTokens: 0n,
-                usdtSpent: 0n,
-              });
-            }
-            const pending = await outboxByHash(rt.database.db, result.txHash);
-            console.log(
-              pendingDepositHint({ planId, usd, txHash: result.txHash, kind: pending?.kind }),
-            );
-          } else {
-            console.log(maskHouse(`not deposited: ${JSON.stringify(result)}`, rt.redact));
-            process.exitCode = 1;
-          }
+          await depositLive(market, usd);
         } else {
           console.log('live: not confirmed — nothing signed');
         }

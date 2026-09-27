@@ -11,6 +11,7 @@ import {
   liveActivationReasons,
   pendingDepositHint,
   watchAllowances,
+  whenSettledAndLocked,
 } from './operator-rules.js';
 
 const HOUSE = '0x00000000000000000000000000000000000a11ce';
@@ -330,5 +331,62 @@ describe('depositRefusal (yield:deposit, audit L4)', () => {
     );
     expect(refuse(house, undefined, hold)).toBeUndefined();
     expect(refuse(house, '1', [{ rule: 'other', action: 'alert' }])).toBeUndefined();
+  });
+});
+
+describe('whenSettledAndLocked (yield:deposit --live, audit S9)', () => {
+  function steps(pending: string[], lockFree: boolean) {
+    const calls: string[] = [];
+    return {
+      calls,
+      steps: {
+        reconcile: () => {
+          calls.push('reconcile');
+          return Promise.resolve({ pending });
+        },
+        lock: () => {
+          calls.push('lock');
+          return Promise.resolve(lockFree);
+        },
+        release: () => {
+          calls.push('release');
+          return Promise.resolve();
+        },
+      },
+    };
+  }
+
+  it('signs nothing while an earlier transaction of the house is pending', async () => {
+    const { calls, steps: s } = steps(['0xabc'], true);
+    const sign = () => Promise.reject(new Error('must not sign'));
+    expect(await whenSettledAndLocked(s, sign)).toEqual({
+      kind: 'outbox_busy',
+      pending: ['0xabc'],
+    });
+    expect(calls).toEqual(['reconcile']);
+  });
+
+  it('signs nothing while a cycle holds the plan', async () => {
+    const { calls, steps: s } = steps([], false);
+    const sign = () => Promise.reject(new Error('must not sign'));
+    expect(await whenSettledAndLocked(s, sign)).toEqual({ kind: 'locked' });
+    expect(calls).toEqual(['reconcile', 'lock']);
+  });
+
+  it('signs with the outbox settled and the lock held, and releases it after', async () => {
+    const { calls, steps: s } = steps([], true);
+    const sign = () => {
+      calls.push('sign');
+      return Promise.resolve('0xdeposit');
+    };
+    expect(await whenSettledAndLocked(s, sign)).toEqual({ kind: 'ran', value: '0xdeposit' });
+    expect(calls).toEqual(['reconcile', 'lock', 'sign', 'release']);
+  });
+
+  it('releases the lock when signing throws', async () => {
+    const { calls, steps: s } = steps([], true);
+    const sign = () => Promise.reject(new Error('rpc down'));
+    await expect(whenSettledAndLocked(s, sign)).rejects.toThrow('rpc down');
+    expect(calls).toEqual(['reconcile', 'lock', 'release']);
   });
 });
