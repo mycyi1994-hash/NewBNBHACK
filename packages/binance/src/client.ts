@@ -71,9 +71,16 @@ export interface RequestOptions {
    * Extra attempts after a transient failure (SPEC §11: network, timeout, 5xx, 50000/50001, and
    * the module codes the taxonomy marks `retry`), with `retryBackoffMs` (or the server's
    * Retry-After) between them. Only for idempotent calls; default 0. A 429 is retried once after
-   * Retry-After, independently. A Retry-After above MAX_RETRY_AFTER_MS is never waited out.
+   * Retry-After, independently (see `retryRateLimit`). A Retry-After above MAX_RETRY_AFTER_MS is
+   * never waited out.
    */
   retries?: number;
+  /**
+   * Retry once after a rate-limit answer (HTTP 429 or code 42900), after Retry-After. Default
+   * true. False sends the request at most once: the broadcast, whose outbox and api_calls
+   * reasoning assume a single POST. The limiter pauses for Retry-After either way.
+   */
+  retryRateLimit?: boolean;
 }
 
 export interface RateLimitInfo {
@@ -300,7 +307,7 @@ export class BinanceClient {
       if (isRateLimited(response.status, envelope.code)) {
         this.limiter.pause(waitMs ?? 1_000);
         // SPEC §11: on 429, honour Retry-After and retry once with a fresh timestamp/signature.
-        if (attempt === 0 && !waitsTooLong) continue;
+        if (attempt === 0 && (opts.retryRateLimit ?? true) && !waitsTooLong) continue;
         throw error;
       }
       if (error.retryable && attempt < retries && !waitsTooLong) {

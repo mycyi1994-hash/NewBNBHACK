@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BinanceClient } from './client.js';
+import { broadcastSigned } from './endpoints.js';
 import { BinanceApiError } from './errors.js';
 import { createFixtureRecorder } from './fixtures.js';
 import { MAX_RETRY_AFTER_MS, RateLimiter, type Clock } from './rate-limit.js';
@@ -217,6 +218,32 @@ describe('BinanceClient.request', () => {
       // Every other call waits for the clamped pause only.
       expect(await limiter.acquire('GET /other')).toBe(MAX_RETRY_AFTER_MS);
     }
+  });
+
+  it('sends a request at most once when asked to, even after a 429', async () => {
+    const { client, sent, limiter } = harness([rateLimited('2')]);
+    await expect(
+      client.request('market', 'getSupportedChains', {
+        ...SUPPORTED_CHAINS,
+        retryRateLimit: false,
+      }),
+    ).rejects.toMatchObject({ code: 42900, retryable: true, retryAfterMs: 2_000 });
+    expect(sent).toHaveLength(1);
+    // Everything else still pauses for the Retry-After.
+    expect(await limiter.acquire('GET /other')).toBe(2_000);
+  });
+
+  it('broadcasts signed bytes with exactly one POST, even when rate-limited', async () => {
+    const { client, sent, records } = harness([rateLimited('1')]);
+    await expect(
+      broadcastSigned(client, { address: WALLET, signedTransaction: '0x02f86b' }),
+    ).rejects.toMatchObject({ code: 42900, retryable: true });
+    expect(sent.map((s) => `${s.method} ${new URL(s.url).pathname}`)).toEqual([
+      'POST /build/api/v1/dex/pre-transaction/broadcast-transaction',
+    ]);
+    expect(records.map((r) => [r.endpoint, r.httpStatus, r.retryCount])).toEqual([
+      ['broadcastTransactions', 429, 0],
+    ]);
   });
 
   it('still retries a 429 whose Retry-After is exactly the 30 s limit', async () => {

@@ -2,8 +2,8 @@
  * Typed wrappers for the calls a cycle makes (SPEC §5.6–§5.8; flow: llms-full.txt § Integration
  * Flow (Trading API) and (DeFi API)). Field names come from the docs and from recorded responses
  * under fixtures/. Nothing here signs: signing happens in the worker, with the house key only.
- * Idempotent calls retry transient failures (SPEC §11); the broadcast never does — the executor
- * falls back to RPC with the same signed bytes instead.
+ * Idempotent calls retry transient failures (SPEC §11); the broadcast never does, not even after
+ * a 429 — the executor falls back to RPC with the same signed bytes instead.
  */
 import type { BinanceClient } from './client.js';
 import { parseSimulation, type SimulationResult } from './simulation.js';
@@ -185,7 +185,11 @@ export async function estimateGasLimit(client: BinanceClient, call: EvmCall): Pr
   return BigInt(res.data.gasLimit);
 }
 
-/** Broadcasts signed bytes once (Step 5). No retry here: the executor owns the fallback. */
+/**
+ * Broadcasts signed bytes once (Step 5): one POST, no retry — not even after a 429. Identical
+ * bytes would be harmless on chain, but the outbox and api_calls reasoning assume a single POST,
+ * and the executor owns the fallback (the same bytes by RPC).
+ */
 export async function broadcastSigned(
   client: BinanceClient,
   params: { address: string; signedTransaction: string },
@@ -202,6 +206,7 @@ export async function broadcastSigned(
         signedTransaction: params.signedTransaction,
         enableMevProtection: false,
       },
+      retryRateLimit: false,
     },
   );
   if (!res.data.txHash) throw new Error('broadcast returned no txHash');
