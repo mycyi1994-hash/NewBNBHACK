@@ -4,8 +4,8 @@
  * calls it), BSC RPC, the house balances, the last receipt and the tape. `status` is green when
  * every check passes, degraded when something is stale, red when something is down (HTTP 503).
  */
-import { fromUnits } from '@ijaro/core';
-import { apiCalls, isoTime, listReceipts, readWorkerStatus, type Db } from '@ijaro/db';
+import { fromUnits } from '@yieldvest/core';
+import { apiCalls, isoTime, listReceipts, readWorkerStatus, type Db } from '@yieldvest/db';
 import { desc, sql } from 'drizzle-orm';
 import { webChain } from '../../../../lib/server/chain';
 import { context } from '../../../../lib/server/context';

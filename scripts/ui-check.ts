@@ -32,7 +32,7 @@ try {
         locale: lang === 'ko' ? 'ko-KR' : 'en-US',
         timezoneId: lang === 'ko' ? 'Asia/Seoul' : 'America/New_York',
       });
-      await context.addCookies([{ name: 'ijaro_lang', value: lang, url: base }]);
+      await context.addCookies([{ name: 'yieldvest_lang', value: lang, url: base }]);
       const page = await context.newPage();
       page.on('pageerror', (error) =>
         problems.push(`${lang} ${width}px ${page.url()}: ${error.message}`),

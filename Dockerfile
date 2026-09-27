@@ -18,7 +18,7 @@ COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY scripts/package.json scripts/
 # The worker, the scripts (pnpm reach, db:count on the host) and the root toolchain (tsx).
-RUN pnpm install --frozen-lockfile --filter ijaro --filter "@ijaro/agent..." --filter "@ijaro/scripts..."
+RUN pnpm install --frozen-lockfile --filter yieldvest --filter "@yieldvest/agent..." --filter "@yieldvest/scripts..."
 
 COPY . .
 # Fail the build if any env file slipped into the context.
@@ -26,4 +26,4 @@ RUN if find / -xdev -name '.env*' -not -name '.env.example' -print -quit 2>/dev/
       echo 'refusing to build: .env file in image' >&2; exit 1; fi
 
 ENV NODE_ENV=production
-CMD ["pnpm", "--filter", "@ijaro/agent", "start"]
+CMD ["pnpm", "--filter", "@yieldvest/agent", "start"]

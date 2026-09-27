@@ -13,7 +13,7 @@ import {
   type Instrument,
   type InstrumentMarket,
   type QuoteObservation,
-} from '@ijaro/core';
+} from '@yieldvest/core';
 import {
   instrumentFromRow,
   isoTime,
@@ -21,7 +21,7 @@ import {
   listInstruments,
   type Db,
   type TapeSampleRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 
 /**
  * Two tape intervals (10 min each, M0-08): one missed run is still LIVE, two are STALE. Older than

@@ -1,5 +1,5 @@
 {
-  "name": "@ijaro/core",
+  "name": "@yieldvest/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. --project @ijaro/core"
+    "test": "vitest run --root ../.. --project @yieldvest/core"
   },
   "dependencies": {},
   "devDependencies": {}

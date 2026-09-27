@@ -18,8 +18,8 @@
 
 ## 인증·세션·레이트리밋
 
-- 심사위원 코드: SHA-256만 저장, 쿠키 `ijaro_judge`는 HMAC-SHA256 서명(코드 해시 + 만료), HttpOnly, SameSite=Lax, HTTPS면 Secure, 7일. `SESSION_SECRET` 32자 이상, 없으면 세션 기능이 꺼진다(503). 9/27부터 `JUDGE_CODES`에서 뺀 코드는 쿠키가 남아 있어도 즉시 거부되고(웹 `activeJudgeOf`), 워커도 그 코드의 플랜을 돌리지 않는다(`code_disabled`).
-- 스킬 토큰 `ijr_…`: 한 번만 보여주고 해시만 저장, 플랜 소유 확인(`ownedPlan`).
+- 심사위원 코드: SHA-256만 저장, 쿠키 `yieldvest_judge`는 HMAC-SHA256 서명(코드 해시 + 만료), HttpOnly, SameSite=Lax, HTTPS면 Secure, 7일. `SESSION_SECRET` 32자 이상, 없으면 세션 기능이 꺼진다(503). 9/27부터 `JUDGE_CODES`에서 뺀 코드는 쿠키가 남아 있어도 즉시 거부되고(웹 `activeJudgeOf`), 워커도 그 코드의 플랜을 돌리지 않는다(`code_disabled`).
+- 스킬 토큰 `yv_…`: 한 번만 보여주고 해시만 저장, 플랜 소유 확인(`ownedPlan`).
 - 레이트리밋: 코드 시도 IP당 분 10회, 스킬 플랜 생성 IP당 시간 5개, `/next`·`/report`는 **인증 뒤** 토큰·플랜당 분 30·20회(남이 주인의 몫을 쓰지 못함) + 인증 전 IP당 분 120·60회(인스턴스 메모리, 키가 넘치면 오래 쉰 키부터 지움). 지속 한도(코드당 시간 5플랜, 지갑당 열린 5플랜 — 세는 것과 쓰는 것을 한 advisory lock 아래서, 플랜당 10분 10잡 — 정지는 예외)는 Postgres. IP는 Vercel이 넣는 `x-real-ip`.
 - CSRF: 쓰기 요청의 쿠키는 SameSite=Lax라 다른 사이트의 POST에 붙지 않는다. 본문이 있는 요청은 `application/json`만 받는다(415) — 다른 사이트의 폼은 preflight 없이 이 형식을 보낼 수 없다. 본문은 16 KB에서 읽기를 멈춘다(413). 스킬 경로는 Bearer 헤더.
 
@@ -39,7 +39,7 @@
 
 - 64자리 16진수: 테스트용 공개 키(Hardhat/Anvil 기본 계정 #0, 널리 알려진 값)뿐.
 - `*_KEY=`/`*_SECRET=` 형태: 서명 테스트 벡터의 가짜 값(`vector-api-key`)과 웹 테스트의 세션 시크릿뿐.
-- Neon URL: 설정 테스트의 가짜 예시(`npg_AbC123@ep-cool-name-…`)뿐. `ijr_` 토큰·텔레그램 토큰·PEM 키: 없음.
+- Neon URL: 설정 테스트의 가짜 예시(`npg_AbC123@ep-cool-name-…`)뿐. `yv_` 토큰·텔레그램 토큰·PEM 키: 없음.
 - 추적 파일: `.env.example`(값 없는 틀)만. `.gitignore`: `.env*`(예외 `.env.example`), `*.pem`, `*.key`, `.studio/`, `.baw/`, 벤더 문서. 워커 Docker 빌드는 `.env*`가 있으면 실패한다.
 
 ## 의존성 감사

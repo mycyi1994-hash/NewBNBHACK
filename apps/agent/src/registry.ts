@@ -3,10 +3,15 @@
  * stock token addresses. Every candidate is checked on-chain (symbol, decimals; bStocks also
  * uiMultiplier against the API's tokenToShareRatio) before it is written to `instruments`.
  */
-import type { BinanceClient } from '@ijaro/binance';
-import { BSC_CHAIN_ID, readBstockMultiplier, readErc20Meta, type BscClient } from '@ijaro/chain';
-import { fromUnits } from '@ijaro/core';
-import { listInstruments, upsertInstruments, type Db, type InstrumentRow } from '@ijaro/db';
+import type { BinanceClient } from '@yieldvest/binance';
+import {
+  BSC_CHAIN_ID,
+  readBstockMultiplier,
+  readErc20Meta,
+  type BscClient,
+} from '@yieldvest/chain';
+import { fromUnits } from '@yieldvest/core';
+import { listInstruments, upsertInstruments, type Db, type InstrumentRow } from '@yieldvest/db';
 
 /** Candidate tickers (PLAN/TASKS M0-05). Tickers are product choices; addresses are not in code. */
 export const CANDIDATE_TICKERS = ['NVDA', 'TSLA', 'AAPL', 'MSFT', 'QQQ'] as const;

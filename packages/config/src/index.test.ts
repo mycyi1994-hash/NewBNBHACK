@@ -223,14 +223,14 @@ describe('secrets and modes', () => {
           BINANCE_WEB3_API_KEY: 'key-value',
           BINANCE_WEB3_API_SECRET: 'secret-value',
           HOUSE_WALLET_PRIVATE_KEY: key,
-          DATABASE_URL: 'postgres://ijaro:hunter2@db.example:5432/ijaro',
+          DATABASE_URL: 'postgres://yieldvest:hunter2@db.example:5432/yieldvest',
         }),
       ),
     );
     for (const leaked of ['key-value', 'secret-value', key, 'hunter2']) {
       expect(described).not.toContain(leaked);
     }
-    expect(described).toContain('postgres://db.example:5432/ijaro');
+    expect(described).toContain('postgres://db.example:5432/yieldvest');
   });
 
   it('loadConfig lets real environment variables win over the .env file', () => {
@@ -240,7 +240,7 @@ describe('secrets and modes', () => {
   });
 
   it('loadConfig never lets a blank real cap hide the cap in the .env file', () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'ijaro-config-'));
+    const dir = mkdtempSync(path.join(tmpdir(), 'yieldvest-config-'));
     try {
       const envFile = path.join(dir, '.env');
       writeFileSync(
@@ -311,7 +311,7 @@ describe('architecture: caps are read only in packages/config', () => {
   });
 
   it('looks at every file type, skills/, .github/ and the root, not only .ts sources', () => {
-    const root = mkdtempSync(path.join(tmpdir(), 'ijaro-arch-'));
+    const root = mkdtempSync(path.join(tmpdir(), 'yieldvest-arch-'));
     try {
       const put = (file: string, text: string | Buffer) => {
         mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -331,7 +331,7 @@ describe('architecture: caps are read only in packages/config', () => {
       put('apps/web/.env.production', `${cap}=500\n`);
       put('packages/core/src/legacy.cjs', `module.exports = '${cap}';`);
       put('scripts/cap.sh', `echo $${cap}\n`);
-      put('skills/ijaro/SKILL.md', `Read ${cap} from the environment.\n`);
+      put('skills/yieldvest/SKILL.md', `Read ${cap} from the environment.\n`);
       put('.github/workflows/ci.yml', `env:\n  ${cap}: 5000\n`);
       put('fly.toml', `[env]\n  ${cap} = "5000"\n`);
       put('vitest.config.ts', `export const cap = '${cap}';`);
@@ -343,7 +343,7 @@ describe('architecture: caps are read only in packages/config', () => {
         'fly.toml',
         'packages/core/src/legacy.cjs',
         'scripts/cap.sh',
-        'skills/ijaro/SKILL.md',
+        'skills/yieldvest/SKILL.md',
         'vitest.config.ts',
       ]);
     } finally {

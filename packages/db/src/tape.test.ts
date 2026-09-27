@@ -9,7 +9,7 @@ import {
   type TapeSampleInsert,
 } from './index.js';
 
-const url = process.env.IJARO_TEST_DATABASE_URL;
+const url = process.env.YIELDVEST_TEST_DATABASE_URL;
 
 describe.skipIf(!url)('tape_samples idempotency on Postgres', () => {
   it('writes a slot once; a restarted worker re-running the slot writes nothing', async () => {

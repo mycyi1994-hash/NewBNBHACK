@@ -23,7 +23,7 @@ describe('postgresUrl', () => {
 
   it('returns every other URL byte for byte', () => {
     for (const url of [
-      'postgres://postgres:ijaro@127.0.0.1:5433/ijaro',
+      'postgres://postgres:yieldvest@127.0.0.1:5433/yieldvest',
       'postgres://u:p%40ss@db.example/app?sslmode=require',
       'not a url',
     ]) {
@@ -32,7 +32,7 @@ describe('postgresUrl', () => {
   });
 });
 
-const url = process.env.IJARO_TEST_DATABASE_URL;
+const url = process.env.YIELDVEST_TEST_DATABASE_URL;
 
 describe.skipIf(!url)('createDb on Postgres', () => {
   it('connects with a URL that carries channel_binding=require', async () => {

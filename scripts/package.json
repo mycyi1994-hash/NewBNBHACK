@@ -1,19 +1,19 @@
 {
-  "name": "@ijaro/scripts",
+  "name": "@yieldvest/scripts",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root .. --project @ijaro/scripts"
+    "test": "vitest run --root .. --project @yieldvest/scripts"
   },
   "dependencies": {
-    "@ijaro/agent": "workspace:*",
-    "@ijaro/binance": "workspace:*",
-    "@ijaro/chain": "workspace:*",
-    "@ijaro/config": "workspace:*",
-    "@ijaro/core": "workspace:*",
-    "@ijaro/db": "workspace:*",
+    "@yieldvest/agent": "workspace:*",
+    "@yieldvest/binance": "workspace:*",
+    "@yieldvest/chain": "workspace:*",
+    "@yieldvest/config": "workspace:*",
+    "@yieldvest/core": "workspace:*",
+    "@yieldvest/db": "workspace:*",
     "postgres": "3.4.9",
     "viem": "2.56.8"
   },

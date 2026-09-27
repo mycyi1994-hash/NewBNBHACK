@@ -1,5 +1,5 @@
 {
-  "name": "@ijaro/agent",
+  "name": "@yieldvest/agent",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,16 +8,16 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. --project @ijaro/agent",
+    "test": "vitest run --root ../.. --project @yieldvest/agent",
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@ijaro/binance": "workspace:*",
-    "@ijaro/chain": "workspace:*",
-    "@ijaro/config": "workspace:*",
-    "@ijaro/core": "workspace:*",
-    "@ijaro/db": "workspace:*",
+    "@yieldvest/binance": "workspace:*",
+    "@yieldvest/chain": "workspace:*",
+    "@yieldvest/config": "workspace:*",
+    "@yieldvest/core": "workspace:*",
+    "@yieldvest/db": "workspace:*",
     "viem": "2.56.8"
   },
   "devDependencies": {

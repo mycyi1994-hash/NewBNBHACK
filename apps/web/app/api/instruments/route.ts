@@ -1,5 +1,5 @@
 /** GET /api/instruments — the verified registry (addresses from the RWA API, checked on chain, D-07). */
-import { instrumentFromRow, listInstruments } from '@ijaro/db';
+import { instrumentFromRow, listInstruments } from '@yieldvest/db';
 import { context } from '../../../lib/server/context';
 import { guard, json, unavailable } from '../../../lib/server/http';
 

@@ -4,7 +4,7 @@
  * and answers with `baw` argv (never calldata); /report records only what the chain shows.
  */
 import { randomUUID } from 'node:crypto';
-import { BSC_USDT } from '@ijaro/chain';
+import { BSC_USDT } from '@yieldvest/chain';
 import {
   createDb,
   getPlan,
@@ -15,7 +15,7 @@ import {
   workerStatus,
   writeWorkerStatus,
   type InstrumentRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GET as nextRoute } from '../app/api/plans/[id]/next/route';
@@ -145,7 +145,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
 
     const { id, token, wallet, created } = await skillPlan();
     expect(created.plan).toMatchObject({ owner: { kind: 'skill' }, status: 'active' });
-    expect(token).toMatch(/^ijr_[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^yv_[A-Za-z0-9_-]{43}$/);
     const [stored] = await db.select().from(skillTokens).where(eq(skillTokens.id, created.tokenId));
     expect(stored).toMatchObject({ tokenHash: sha256Hex(token), walletAddress: wallet });
     expect(JSON.stringify(stored)).not.toContain(token);

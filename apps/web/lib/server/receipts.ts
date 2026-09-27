@@ -1,5 +1,5 @@
 /** The receipt feed (Watch screen, GET /api/receipts): every on-chain action with its reason. */
-import { cycles, isoTime, listReceipts, plans, type Db } from '@ijaro/db';
+import { cycles, isoTime, listReceipts, plans, type Db } from '@yieldvest/db';
 import { inArray } from 'drizzle-orm';
 
 export async function receiptFeed(db: Db, limit: number) {

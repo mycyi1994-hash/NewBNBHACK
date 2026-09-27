@@ -6,9 +6,9 @@
  * same transaction at boot instead of signing a second one. A receipt that does not arrive in time
  * leaves the row PENDING — never FAILED — so the same buy is never sent twice.
  */
-import { BinanceApiError, broadcastSigned } from '@ijaro/binance';
-import type { BinanceClient } from '@ijaro/binance';
-import { BSC_CHAIN_ID, signableTx } from '@ijaro/chain';
+import { BinanceApiError, broadcastSigned } from '@yieldvest/binance';
+import type { BinanceClient } from '@yieldvest/binance';
+import { BSC_CHAIN_ID, signableTx } from '@yieldvest/chain';
 import {
   isoTime,
   lastOutboxNonce,
@@ -16,7 +16,7 @@ import {
   recordSigned,
   unsettledOutbox,
   type Db,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { keccak256, type Hex } from 'viem';
 import type { ChainPort, ReceiptLike } from './chain-port.js';
 import type { Signer } from './signer.js';

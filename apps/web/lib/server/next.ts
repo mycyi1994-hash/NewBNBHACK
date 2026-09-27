@@ -5,7 +5,7 @@
  * signing on our side (DECISIONS D-03). Planning uses a tape estimate; the wallet quotes again,
  * and the answer says the least it may accept.
  */
-import { BSC_USDT } from '@ijaro/chain';
+import { BSC_USDT } from '@yieldvest/chain';
 import {
   decideCycle,
   formatShares,
@@ -18,7 +18,7 @@ import {
   type Plan,
   type QuoteObservation,
   type Why,
-} from '@ijaro/core';
+} from '@yieldvest/core';
 import { estimateQuote, marketsFromTape, type TapeView } from './market';
 
 /** A decision is good for five minutes; after that, ask again. */

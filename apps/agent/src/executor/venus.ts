@@ -13,7 +13,7 @@ import {
   simulateCall,
   type DeFiCall,
   type SimulationResult,
-} from '@ijaro/binance';
+} from '@yieldvest/binance';
 import {
   apiInt,
   BSC_USDT,
@@ -22,8 +22,8 @@ import {
   encodeApprove,
   transferredFrom,
   transferredTo,
-} from '@ijaro/chain';
-import { fromUnits, toUnits, underlyingFromVTokens } from '@ijaro/core';
+} from '@yieldvest/chain';
+import { fromUnits, toUnits, underlyingFromVTokens } from '@yieldvest/core';
 import { getAddress, isAddressEqual, type Hex } from 'viem';
 import type { ChainPort } from './chain-port.js';
 import { sendTransaction, type SendResult } from './send.js';

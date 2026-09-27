@@ -3,7 +3,7 @@
  * are configured, the worker log otherwise. Cycles alert only when they FAIL; DX findings alert on
  * their first sighting. One key is sent once per window, and an alert never breaks the worker.
  */
-import type { CycleOutcome } from '@ijaro/core';
+import type { CycleOutcome } from '@yieldvest/core';
 
 export interface Alert {
   /** Repeats of the same key inside the window are suppressed. */
@@ -102,7 +102,7 @@ export function cycleAlert(cycle: {
   return {
     key: `cycle-failed:${cycle.planId}:${code}`,
     text:
-      `[ijaro] ${cycle.planId} cycle #${cycle.cycleId} FAILED (${cycle.executionMode}): ` +
+      `[yieldvest] ${cycle.planId} cycle #${cycle.cycleId} FAILED (${cycle.executionMode}): ` +
       `${code} — ${message}; ${moved}.`,
   };
 }

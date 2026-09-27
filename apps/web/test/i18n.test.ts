@@ -70,7 +70,7 @@ describe('UX_COPY → dictionaries', () => {
 describe('translate', () => {
   it('fills placeholders, keeping the literal $ of the copy', () => {
     expect(translate('en', 'judge.code.hint', { cap: '5.00' })).toBe(
-      "One code covers up to $5.00. Funds come from Ijaro's own wallet.",
+      "One code covers up to $5.00. Funds come from Yieldvest's own wallet.",
     );
   });
 

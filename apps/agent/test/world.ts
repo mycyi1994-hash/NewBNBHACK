@@ -4,9 +4,9 @@
  * set allowances and swaps deliver tokens. Guardian inputs (Venus TVL, USDT price) are settable.
  */
 import { randomUUID } from 'node:crypto';
-import { decodeVenusCall, encodeApprove } from '@ijaro/chain';
-import { toUnits, underlyingFromVTokens } from '@ijaro/core';
-import { parseConfig } from '@ijaro/config';
+import { decodeVenusCall, encodeApprove } from '@yieldvest/chain';
+import { toUnits, underlyingFromVTokens } from '@yieldvest/core';
+import { parseConfig } from '@yieldvest/config';
 import {
   insertPlan,
   lastOutboxNonce,
@@ -14,7 +14,7 @@ import {
   type Db,
   type InstrumentRow,
   type PlanInsert,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { encodeFunctionData, parseAbi, type Hex } from 'viem';
 import { createAlerter } from '../src/alerts.js';
 import type { CycleDeps } from '../src/cycle.js';

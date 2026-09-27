@@ -1,14 +1,14 @@
 /**
- * Integration test against a real Postgres. Runs when IJARO_TEST_DATABASE_URL points at a
+ * Integration test against a real Postgres. Runs when YIELDVEST_TEST_DATABASE_URL points at a
  * disposable database (CI starts one); never point it at a shared database.
  */
 import { randomUUID } from 'node:crypto';
-import type { ApiCallRecord } from '@ijaro/binance';
+import type { ApiCallRecord } from '@yieldvest/binance';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { apiCalls, createApiCallSink, createDb, listApiCalls, migrateDb } from './index.js';
 
-const url = process.env.IJARO_TEST_DATABASE_URL;
+const url = process.env.YIELDVEST_TEST_DATABASE_URL;
 
 describe.skipIf(!url)('api_calls on Postgres', () => {
   const { db, close } = createDb(url ?? 'postgres://unused');

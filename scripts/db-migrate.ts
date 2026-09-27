@@ -1,6 +1,6 @@
 /** pnpm db:migrate — apply packages/db/drizzle migrations to DATABASE_URL. */
-import { loadConfig } from '@ijaro/config';
-import { createDb, migrateDb } from '@ijaro/db';
+import { loadConfig } from '@yieldvest/config';
+import { createDb, migrateDb } from '@yieldvest/db';
 
 const config = loadConfig();
 if (!config.databaseUrl) {

@@ -224,7 +224,7 @@ export function openApiDocument(serverUrl: string) {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'Ijaro (이자로) API',
+      title: 'Yieldvest API',
       version: '1.0.0',
       description:
         'Buy tokenized US stocks on BSC with the interest of a USDT deposit, only in the US regular session, under hard caps, with a receipt and a one-sentence reason for every action. The web reads what the worker recorded and queues work; it never signs and never calls the Binance Web3 API. Skill plans (mode C) run in the user’s own Binance Agentic Wallet: /next answers with `baw` commands, /report is checked against the chain.',
@@ -241,7 +241,7 @@ export function openApiDocument(serverUrl: string) {
         skillToken: {
           type: 'http',
           scheme: 'bearer',
-          bearerFormat: 'ijr_…',
+          bearerFormat: 'yv_…',
           description:
             'Issued once by POST /api/plans with owner "skill"; only its hash is stored.',
         },

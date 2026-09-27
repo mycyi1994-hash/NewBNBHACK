@@ -6,8 +6,8 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { decideCycle, type Plan } from '@ijaro/core';
-import { createDb, instruments, upsertInstruments, type InstrumentRow } from '@ijaro/db';
+import { decideCycle, type Plan } from '@yieldvest/core';
+import { createDb, instruments, upsertInstruments, type InstrumentRow } from '@yieldvest/db';
 import { inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';

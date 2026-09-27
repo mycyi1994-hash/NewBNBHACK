@@ -12,8 +12,8 @@ import {
   listReceipts,
   txOutbox,
   upsertHolding,
-} from '@ijaro/db';
-import { sharesFromTokens } from '@ijaro/core';
+} from '@yieldvest/db';
+import { sharesFromTokens } from '@yieldvest/core';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';

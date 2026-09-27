@@ -4,7 +4,7 @@
  * is bounded by the plan owner's cap (sandbox for judges) and the principal cap, and refused while
  * the guardian holds deposits.
  */
-import { fromUnits, nextDue, toUnits } from '@ijaro/core';
+import { fromUnits, nextDue, toUnits } from '@yieldvest/core';
 import {
   applyDeposit,
   judgeExposureUsd,
@@ -15,7 +15,7 @@ import {
   updatePlanIf,
   usdText,
   type PlanRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import type { CycleDeps } from './cycle.js';
 import { depositPrincipal } from './executor/venus.js';
 import { PublicError } from './public-error.js';

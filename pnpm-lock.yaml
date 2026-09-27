@@ -50,19 +50,19 @@ importers:
 
   apps/agent:
     dependencies:
-      '@ijaro/binance':
+      '@yieldvest/binance':
         specifier: workspace:*
         version: link:../../packages/binance
-      '@ijaro/chain':
+      '@yieldvest/chain':
         specifier: workspace:*
         version: link:../../packages/chain
-      '@ijaro/config':
+      '@yieldvest/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@ijaro/core':
+      '@yieldvest/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@ijaro/db':
+      '@yieldvest/db':
         specifier: workspace:*
         version: link:../../packages/db
       viem:
@@ -75,19 +75,19 @@ importers:
 
   apps/web:
     dependencies:
-      '@ijaro/binance':
+      '@yieldvest/binance':
         specifier: workspace:*
         version: link:../../packages/binance
-      '@ijaro/chain':
+      '@yieldvest/chain':
         specifier: workspace:*
         version: link:../../packages/chain
-      '@ijaro/config':
+      '@yieldvest/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@ijaro/core':
+      '@yieldvest/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@ijaro/db':
+      '@yieldvest/db':
         specifier: workspace:*
         version: link:../../packages/db
       drizzle-orm:
@@ -130,10 +130,10 @@ importers:
 
   packages/chain:
     dependencies:
-      '@ijaro/config':
+      '@yieldvest/config':
         specifier: workspace:*
         version: link:../config
-      '@ijaro/core':
+      '@yieldvest/core':
         specifier: workspace:*
         version: link:../core
       viem:
@@ -154,10 +154,10 @@ importers:
 
   packages/db:
     dependencies:
-      '@ijaro/binance':
+      '@yieldvest/binance':
         specifier: workspace:*
         version: link:../binance
-      '@ijaro/core':
+      '@yieldvest/core':
         specifier: workspace:*
         version: link:../core
       drizzle-orm:
@@ -173,22 +173,22 @@ importers:
 
   scripts:
     dependencies:
-      '@ijaro/agent':
+      '@yieldvest/agent':
         specifier: workspace:*
         version: link:../apps/agent
-      '@ijaro/binance':
+      '@yieldvest/binance':
         specifier: workspace:*
         version: link:../packages/binance
-      '@ijaro/chain':
+      '@yieldvest/chain':
         specifier: workspace:*
         version: link:../packages/chain
-      '@ijaro/config':
+      '@yieldvest/config':
         specifier: workspace:*
         version: link:../packages/config
-      '@ijaro/core':
+      '@yieldvest/core':
         specifier: workspace:*
         version: link:../packages/core
-      '@ijaro/db':
+      '@yieldvest/db':
         specifier: workspace:*
         version: link:../packages/db
       postgres:

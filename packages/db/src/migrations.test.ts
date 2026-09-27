@@ -69,7 +69,7 @@ async function schemaSnapshot(db: Db) {
 
 describe.skipIf(!url)('migrations round trip on Postgres', () => {
   const admin = createDb(url ?? 'postgres://unused');
-  const name = `ijaro_rt_${randomBytes(4).toString('hex')}`;
+  const name = `yieldvest_rt_${randomBytes(4).toString('hex')}`;
   let target: ReturnType<typeof createDb> | undefined;
 
   beforeAll(async () => {

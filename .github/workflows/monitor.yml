@@ -1,5 +1,5 @@
 # M2-12 monitor: every 30 minutes, `pnpm smoke --alert` against the deployed web. Anything but
-# green goes to the ops Telegram chat. Off until the repository variable IJARO_APP_URL is set
+# green goes to the ops Telegram chat. Off until the repository variable YIELDVEST_APP_URL is set
 # (Settings → Secrets and variables → Actions); the bot token and chat id are repository secrets.
 # Actions are pinned to full commit SHAs, and the URL reaches the script as an environment variable,
 # never as an expression expanded inside it.
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   smoke:
-    if: ${{ vars.IJARO_APP_URL != '' }}
+    if: ${{ vars.YIELDVEST_APP_URL != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -35,6 +35,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm smoke --url "$IJARO_APP_URL" --alert
+      - run: pnpm smoke --url "$YIELDVEST_APP_URL" --alert
         env:
-          IJARO_APP_URL: ${{ vars.IJARO_APP_URL }}
+          YIELDVEST_APP_URL: ${{ vars.YIELDVEST_APP_URL }}

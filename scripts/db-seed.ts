@@ -3,9 +3,9 @@
  * the judge codes from JUDGE_CODES (stored as SHA-256 hashes, missing ones disabled). Migrates
  * first; never overwrites a plan that exists.
  */
-import { loadConfig } from '@ijaro/config';
-import { nextRegularOpen, OPEN_SETTLE_MS } from '@ijaro/core';
-import { createDb, migrateDb, seedHousePlans, syncJudgeCodes } from '@ijaro/db';
+import { loadConfig } from '@yieldvest/config';
+import { nextRegularOpen, OPEN_SETTLE_MS } from '@yieldvest/core';
+import { createDb, migrateDb, seedHousePlans, syncJudgeCodes } from '@yieldvest/db';
 
 const config = loadConfig();
 if (!config.databaseUrl) {

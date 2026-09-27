@@ -3,7 +3,7 @@
  * on chain, shares and the next buy; the limits; the guardian; the full history with receipts;
  * and, for the judge who owns it, "플랜 멈추기" (a yield plan's position is redeemed).
  */
-import { fromUnits, toUnits } from '@ijaro/core';
+import { fromUnits, toUnits } from '@yieldvest/core';
 import {
   getPlan,
   latestGuardianSamples,
@@ -11,7 +11,7 @@ import {
   readWorkerStatus,
   usdText,
   type PlanRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';

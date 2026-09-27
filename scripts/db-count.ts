@@ -3,8 +3,8 @@
  * Prints the exact SQL it runs. Default tables: api_calls, instruments, tape_samples; the M1 tables
  * (plans, cycles, receipts, …) on request.
  */
-import { loadConfig } from '@ijaro/config';
-import { postgresUrl } from '@ijaro/db';
+import { loadConfig } from '@yieldvest/config';
+import { postgresUrl } from '@yieldvest/db';
 import postgres from 'postgres';
 
 const DEFAULT = ['api_calls', 'instruments', 'tape_samples'] as const;

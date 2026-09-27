@@ -19,10 +19,10 @@ import {
   previewOperatorRedeem,
   recordOperatorRedeem,
   type RedeemRefusal,
-} from '@ijaro/agent';
-import { assertBscChain } from '@ijaro/chain';
-import { loadConfig } from '@ijaro/config';
-import { migrateDb } from '@ijaro/db';
+} from '@yieldvest/agent';
+import { assertBscChain } from '@yieldvest/chain';
+import { loadConfig } from '@yieldvest/config';
+import { migrateDb } from '@yieldvest/db';
 import type { Hex } from 'viem';
 import { parseFlags, TX_HASH } from './args.js';
 import { confirmSpend } from './confirm.js';

@@ -10,7 +10,7 @@
  * A receipt the node does not return yet, or a Venus market not known yet, waits for the next
  * tick: nothing is ever booked as "not sent" while it may have been mined.
  */
-import { BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
+import { BSC_USDT, transferredFrom, transferredTo } from '@yieldvest/chain';
 import {
   boughtOutcome,
   fromUnits,
@@ -18,7 +18,7 @@ import {
   type CycleOutcome,
   type ExecuteDecision,
   type Why,
-} from '@ijaro/core';
+} from '@yieldvest/core';
 import {
   applyDeposit,
   applyInterestRedeem,
@@ -43,7 +43,7 @@ import {
   type CycleRow,
   type OutboxRow,
   type ReceiptFacts,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import type { Hex } from 'viem';
 import { cycleAlert } from './alerts.js';
 import type { CycleDeps } from './cycle.js';
@@ -228,7 +228,7 @@ export async function completeAwaitingCycles(deps: CycleDeps): Promise<string[]>
         await updatePlan(deps.db, plan.id, { status: 'paused', pausedReason: 'needs_review' });
         await deps.alerter?.send({
           key: `anomaly:${plan.id}:${cycle.id}`,
-          text: `[ijaro] ${plan.id} cycle #${cycle.id} needs review: swap confirmed but no tokens arrived. The plan is paused.`,
+          text: `[yieldvest] ${plan.id} cycle #${cycle.id} needs review: swap confirmed but no tokens arrived. The plan is paused.`,
         });
         continue;
       }

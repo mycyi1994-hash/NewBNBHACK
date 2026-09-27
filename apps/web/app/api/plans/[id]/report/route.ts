@@ -2,7 +2,7 @@
  * POST /api/plans/:id/report {kind, txHash, orderId?} (skill token) — the wallet reports what it
  * did; the chain decides what is recorded (SPEC §8.2). 202 while the transaction is not mined.
  */
-import { instrumentFromRow, listInstruments, planFromRow, readWorkerStatus } from '@ijaro/db';
+import { instrumentFromRow, listInstruments, planFromRow, readWorkerStatus } from '@yieldvest/db';
 import { skillOf, ownedPlan } from '../../../../../lib/server/auth';
 import { webChain } from '../../../../../lib/server/chain';
 import { context } from '../../../../../lib/server/context';

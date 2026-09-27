@@ -26,10 +26,10 @@ import {
   settleOutbox,
   type SentTx,
   type VenusMarket,
-} from '@ijaro/agent';
-import { assertBscChain, BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
-import { loadConfig } from '@ijaro/config';
-import { fromUnits } from '@ijaro/core';
+} from '@yieldvest/agent';
+import { assertBscChain, BSC_USDT, transferredFrom, transferredTo } from '@yieldvest/chain';
+import { loadConfig } from '@yieldvest/config';
+import { fromUnits } from '@yieldvest/core';
 import {
   acquirePlanLock,
   applyDeposit,
@@ -40,7 +40,7 @@ import {
   planFromRow,
   releasePlanLock,
   type PlanRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import type { Hex } from 'viem';
 import { parseFlags, TX_HASH, type Flags } from './args.js';
 import { confirmSpend } from './confirm.js';

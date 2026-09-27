@@ -16,10 +16,10 @@ import {
   type BinanceClient,
   type QuoteRoute,
   type SimulationResult,
-} from '@ijaro/binance';
-import { apiInt, BSC_USDT, decodeApprove, transferredFrom, transferredTo } from '@ijaro/chain';
-import { MAX_QUOTE_AGE_MS, type Instrument, type QuoteObservation } from '@ijaro/core';
-import type { Db } from '@ijaro/db';
+} from '@yieldvest/binance';
+import { apiInt, BSC_USDT, decodeApprove, transferredFrom, transferredTo } from '@yieldvest/chain';
+import { MAX_QUOTE_AGE_MS, type Instrument, type QuoteObservation } from '@yieldvest/core';
+import type { Db } from '@yieldvest/db';
 import { isAddressEqual, type Hex } from 'viem';
 import type { ChainPort, ReceiptLike } from './chain-port.js';
 import { sendTransaction, type SendResult } from './send.js';

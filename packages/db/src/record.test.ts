@@ -4,7 +4,7 @@
  * hash changes nothing. Also the money CHECKs that back it and the compare-and-set plan update.
  */
 import { randomBytes } from 'node:crypto';
-import type { Instrument } from '@ijaro/core';
+import type { Instrument } from '@yieldvest/core';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import {

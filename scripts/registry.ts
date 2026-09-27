@@ -5,9 +5,9 @@
  * Flags: --fixtures (save the RWA list response under fixtures/rwa/).
  */
 import { parseArgs } from 'node:util';
-import { createRuntime, refreshRegistry } from '@ijaro/agent';
-import { loadConfig } from '@ijaro/config';
-import { migrateDb } from '@ijaro/db';
+import { createRuntime, refreshRegistry } from '@yieldvest/agent';
+import { loadConfig } from '@yieldvest/config';
+import { migrateDb } from '@yieldvest/db';
 
 const { values: flags } = parseArgs({ options: { fixtures: { type: 'boolean', default: false } } });
 const rt = createRuntime(loadConfig(), { fixtures: flags.fixtures });

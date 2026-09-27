@@ -17,7 +17,7 @@ import {
   workerStatus,
   writeWorkerStatus,
   type InstrumentRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { POST as session } from '../app/api/judge/session/route';
@@ -364,7 +364,7 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
 
     // A body that is not declared JSON is refused unread; so is a large one.
     const form = await createPlan(
-      new Request('https://ijaro.test/api/plans', {
+      new Request('https://yieldvest.test/api/plans', {
         method: 'POST',
         headers: { cookie, 'content-type': 'text/plain', 'x-real-ip': '198.51.100.9' },
         body: JSON.stringify({ ticker: instrument.ticker, mode: 'safe', amountUsd: '1' }),

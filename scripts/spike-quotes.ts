@@ -3,10 +3,10 @@
  * Read-only (GET /quote only). Prints a Markdown table for dx/LOG.md and saves each response as a
  * fixture under fixtures/trading/ (house address redacted).
  */
-import { createRuntime, maskHouse, quoteUsdtTo, routeOf } from '@ijaro/agent';
-import { fromUnits, usSession } from '@ijaro/core';
-import { loadConfig } from '@ijaro/config';
-import { listInstruments } from '@ijaro/db';
+import { createRuntime, maskHouse, quoteUsdtTo, routeOf } from '@yieldvest/agent';
+import { fromUnits, usSession } from '@yieldvest/core';
+import { loadConfig } from '@yieldvest/config';
+import { listInstruments } from '@yieldvest/db';
 
 const SIZES = [1, 5, 50];
 const TICKERS = ['NVDA', 'QQQ'];

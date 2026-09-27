@@ -6,7 +6,7 @@
  * is still recorded (it happened) but pauses the plan. Each report is written in one transaction
  * with its receipt (packages/db record.ts), so a replayed or concurrent report changes nothing.
  */
-import { BSC_USDT, transferredFrom, transferredTo, type BscClient } from '@ijaro/chain';
+import { BSC_USDT, transferredFrom, transferredTo, type BscClient } from '@yieldvest/chain';
 import {
   boughtOutcome,
   fromUnits,
@@ -16,7 +16,7 @@ import {
   type Instrument,
   type Plan,
   type Why,
-} from '@ijaro/core';
+} from '@yieldvest/core';
 import {
   applyDeposit,
   applyReportedRedeem,
@@ -28,7 +28,7 @@ import {
   utcDay,
   type Db,
   type PlanRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { getAddress, isAddressEqual, type Hex, type Log } from 'viem';
 
 /** A skill yield plan's state until its first deposit is reported (POST /api/plans). */

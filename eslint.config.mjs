@@ -6,7 +6,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-const CONFIG_ONLY = 'Read configuration through @ijaro/config (loadConfig/parseConfig).';
+const CONFIG_ONLY = 'Read configuration through @yieldvest/config (loadConfig/parseConfig).';
 const PROCESS_MODULE = '/^(node:)?process$/';
 /**
  * The ways around a plain `process.env` ban: reaching `process` through the global object, giving
@@ -66,7 +66,7 @@ export default defineConfig(
       },
     },
     rules: {
-      // CLAUDE.md rule 5: caps (and every other setting) are read only through @ijaro/config.
+      // CLAUDE.md rule 5: caps (and every other setting) are read only through @yieldvest/config.
       // process.env, process['env'] and const { env } = process:
       'no-restricted-properties': [
         'error',

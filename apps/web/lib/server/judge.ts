@@ -1,6 +1,6 @@
 /** What a judge code may still spend (sandbox cap across its plans; house daily cap). */
-import type { Config } from '@ijaro/config';
-import { remainingSpend, syncJudgeCodes, usdText, utcDay, type Db } from '@ijaro/db';
+import type { Config } from '@yieldvest/config';
+import { remainingSpend, syncJudgeCodes, usdText, utcDay, type Db } from '@yieldvest/db';
 
 export async function judgeRemaining(
   db: Db,

@@ -4,8 +4,8 @@
  * decoding them. The signer is Hardhat's public test key #0 — known to everyone, never funded by
  * us, and nothing here touches a network.
  */
-import { BinanceClient, RateLimiter, type Clock } from '@ijaro/binance';
-import { BSC_USDT, decodeApprove } from '@ijaro/chain';
+import { BinanceClient, RateLimiter, type Clock } from '@yieldvest/binance';
+import { BSC_USDT, decodeApprove } from '@yieldvest/chain';
 import {
   cycles,
   guardianEvents,
@@ -17,7 +17,7 @@ import {
   spendLedger,
   txOutbox,
   type Db,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { inArray } from 'drizzle-orm';
 import {
   encodeAbiParameters,

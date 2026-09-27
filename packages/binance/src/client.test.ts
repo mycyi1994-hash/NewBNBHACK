@@ -477,7 +477,7 @@ describe('BinanceClient.request', () => {
     const house = '0xAbCdEf0000000000000000000000000000000001';
     const bare = house.slice(2).toLowerCase();
     const calldata = `0x095ea7b3${'0'.repeat(24)}${bare}${'0'.repeat(58)}f4240`;
-    const root = path.join(await mkdtemp(path.join(tmpdir(), 'ijaro-fixtures-')), 'fixtures');
+    const root = path.join(await mkdtemp(path.join(tmpdir(), 'yieldvest-fixtures-')), 'fixtures');
     const reply = JSON.stringify({ code: 40001, msg: `bad calldata ${calldata}`, data: null });
     const { client, records } = harness([new Response(reply)], {
       redact: [house],
@@ -602,7 +602,7 @@ describe('BinanceClient.request', () => {
   });
 
   it('records fixtures with our wallet and key redacted, numbered per day', async () => {
-    const root = path.join(await mkdtemp(path.join(tmpdir(), 'ijaro-fixtures-')), 'fixtures');
+    const root = path.join(await mkdtemp(path.join(tmpdir(), 'yieldvest-fixtures-')), 'fixtures');
     // The recorder only knows the wallet; the client adds its own key/secret to the redact list.
     const fixtures = createFixtureRecorder({ rootDir: root, redact: [WALLET] });
     const reply = () =>

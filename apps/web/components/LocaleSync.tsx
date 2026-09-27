@@ -18,13 +18,13 @@ export function LocaleSync({ lang, tz, label }: { lang: Lang; tz: string; label:
   useEffect(() => {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (zone && zone !== tz) {
-      setCookie('ijaro_tz', zone);
+      setCookie('yieldvest_tz', zone);
       router.refresh();
     }
   }, [tz, router]);
   const choose = (next: Lang) => {
     if (next === lang) return;
-    setCookie('ijaro_lang', next);
+    setCookie('yieldvest_lang', next);
     router.refresh();
   };
   return (

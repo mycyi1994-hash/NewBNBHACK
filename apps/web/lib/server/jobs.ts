@@ -4,7 +4,7 @@
  * refused for that: it is answered with the stop already waiting, if there is one.
  */
 import { randomUUID } from 'node:crypto';
-import { enqueueJob, jobs, type Db } from '@ijaro/db';
+import { enqueueJob, jobs, type Db } from '@yieldvest/db';
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { json, problem } from './http';
 

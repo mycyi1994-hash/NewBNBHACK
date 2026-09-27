@@ -8,11 +8,17 @@
  *   4. Transaction API: simulate every dataList item as an EVM tx from the house address.
  * Every response is saved under fixtures/ with the house address redacted.
  */
-import { createRuntime, maskHouse, type Runtime } from '@ijaro/agent';
-import { BinanceApiError, type ApiModule } from '@ijaro/binance';
-import { BSC_USDT, assertUsdt, erc20Abi, readVTokenBalance, readVTokenState } from '@ijaro/chain';
-import { fromUnits, underlyingFromVTokens, utilizationBps } from '@ijaro/core';
-import { loadConfig } from '@ijaro/config';
+import { createRuntime, maskHouse, type Runtime } from '@yieldvest/agent';
+import { BinanceApiError, type ApiModule } from '@yieldvest/binance';
+import {
+  BSC_USDT,
+  assertUsdt,
+  erc20Abi,
+  readVTokenBalance,
+  readVTokenState,
+} from '@yieldvest/chain';
+import { fromUnits, underlyingFromVTokens, utilizationBps } from '@yieldvest/core';
+import { loadConfig } from '@yieldvest/config';
 import { decodeFunctionData, getAddress, maxUint256, parseAbi } from 'viem';
 
 const AMOUNT_USDT = '1';

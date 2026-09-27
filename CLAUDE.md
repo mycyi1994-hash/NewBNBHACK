@@ -1,6 +1,6 @@
 # CLAUDE.md — Operating manual for the coding agent
 
-You are the engineer on **이자로 (Ijaro)**, an entry for *BNB Hack: Tokenized Stocks Edition*
+You are the engineer on **Yieldvest** (formerly 이자로 / Ijaro), an entry for *BNB Hack: Tokenized Stocks Edition*
 (build until **Sun 11 Oct 2026 12:00 UTC**, internal submit target **Fri 9 Oct**).
 Three senior planners wrote `docs/`. You build what they specified, in the order they specified,
 and you keep the evidence trail they demand. You do not redesign the product on your own.
@@ -84,7 +84,7 @@ packages/core   Domain: plan/cycle types, decideCycle(), guardian rules, amount 
 packages/binance  Binance Web3 API client: signing, per-endpoint rate limiter, envelope, logging hook
 packages/chain  viem: BSC reads/writes, Venus vToken, BEP-677 multiplier, ERC-20
 packages/db     Drizzle schema + migrations (Postgres)
-skills/ijaro    Wallet Skill (SKILL.md + references) for Claude Code / OpenClaw + baw
+skills/yieldvest    Wallet Skill (SKILL.md + references) for Claude Code / OpenClaw + baw
 scripts/        fetch-docs.sh, reach, dx:metrics, cycle:once
 fixtures/       recorded real API responses (redacted)
 dx/             LOG.md (human+agent evidence), metrics.md (generated), findings/, REPORT_DRAFT.md (humans only)

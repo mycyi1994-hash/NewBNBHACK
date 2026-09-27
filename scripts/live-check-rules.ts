@@ -2,7 +2,7 @@
  * The GO / NO-GO rules of `pnpm live:check` (docs/LIVE_TEST.md): what must hold before a person
  * types `y` for the small live test. Pure, so every rule has a test; the script gathers the facts.
  */
-import { toUnits, type Plan } from '@ijaro/core';
+import { toUnits, type Plan } from '@yieldvest/core';
 
 export type Mark = 'ok' | 'warn' | 'fail';
 export interface Check {

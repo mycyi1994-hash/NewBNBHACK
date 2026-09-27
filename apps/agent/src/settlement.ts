@@ -21,7 +21,7 @@ export async function settleOutbox(
     await deps.alerter?.send({
       key: `outbox:${row.txHash}`,
       text:
-        `[ijaro] outbox ${row.txHash}: ${row.reason}. New signing stays blocked until a human ` +
+        `[yieldvest] outbox ${row.txHash}: ${row.reason}. New signing stays blocked until a human ` +
         `checks it on BscScan (RUNBOOK §3.4).`,
     });
   }

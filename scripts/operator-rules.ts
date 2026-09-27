@@ -8,9 +8,9 @@ import {
   type CycleReport,
   type DepositResult,
   type SimulatedBuy,
-} from '@ijaro/agent';
-import { BSC_USDT } from '@ijaro/chain';
-import { formatShares, fromUnits, toUnits, type Instrument } from '@ijaro/core';
+} from '@yieldvest/agent';
+import { BSC_USDT } from '@yieldvest/chain';
+import { formatShares, fromUnits, toUnits, type Instrument } from '@yieldvest/core';
 
 /** A worker_status row as readWorkerStatus returns it. */
 export interface WorkerStatus {

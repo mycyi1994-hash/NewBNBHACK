@@ -8,8 +8,8 @@ import {
   readVTokenState,
   vTokenAbi,
   type BscClient,
-} from '@ijaro/chain';
-import { utilizationBps } from '@ijaro/core';
+} from '@yieldvest/chain';
+import { utilizationBps } from '@yieldvest/core';
 import { getAddress, WaitForTransactionReceiptTimeoutError, type Hex, type Log } from 'viem';
 
 export interface ReceiptLike {

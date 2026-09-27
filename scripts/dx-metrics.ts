@@ -8,9 +8,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { renderMetricsMarkdown } from '@ijaro/binance';
-import { findWorkspaceRoot, loadConfig } from '@ijaro/config';
-import { createDb, listApiCalls } from '@ijaro/db';
+import { renderMetricsMarkdown } from '@yieldvest/binance';
+import { findWorkspaceRoot, loadConfig } from '@yieldvest/config';
+import { createDb, listApiCalls } from '@yieldvest/db';
 
 const { values: flags } = parseArgs({
   options: { since: { type: 'string' }, out: { type: 'string' } },

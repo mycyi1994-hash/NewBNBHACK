@@ -1,5 +1,5 @@
 /** GET /api/plans/:id — the public plan view (timeline, receipts, holdings, limits, guardian). */
-import { getPlan } from '@ijaro/db';
+import { getPlan } from '@yieldvest/db';
 import { context } from '../../../../lib/server/context';
 import { guard, json, problem, unavailable } from '../../../../lib/server/http';
 import { planView } from '../../../../lib/server/plan-view';

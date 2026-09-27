@@ -7,8 +7,8 @@
  *   5. every active plan that is due, one at a time (one signer, one nonce sequence).
  * A failure in one plan is logged and alerted; the tick goes on with the next.
  */
-import { BSC_USDT } from '@ijaro/chain';
-import { nextDue } from '@ijaro/core';
+import { BSC_USDT } from '@yieldvest/chain';
+import { nextDue } from '@yieldvest/core';
 import {
   claimJob,
   duePlans,
@@ -22,7 +22,7 @@ import {
   writeWorkerStatus,
   type JobRow,
   type PlanRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { runCycle, type CycleDeps, type CycleReport } from './cycle.js';
 import { startYieldPlan } from './deposit.js';
 import type { Reconciliation } from './executor/send.js';
@@ -183,7 +183,7 @@ export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promi
       deps.log(`tick: ${what} FAILED — ${message(error)}`);
       await deps.alerter?.send({
         key: `tick:${what}`,
-        text: `[ijaro] worker ${what} failed: ${message(error)}`,
+        text: `[yieldvest] worker ${what} failed: ${message(error)}`,
       });
     }
   };

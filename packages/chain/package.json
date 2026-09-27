@@ -1,5 +1,5 @@
 {
-  "name": "@ijaro/chain",
+  "name": "@yieldvest/chain",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,11 +8,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. --project @ijaro/chain"
+    "test": "vitest run --root ../.. --project @yieldvest/chain"
   },
   "dependencies": {
-    "@ijaro/config": "workspace:*",
-    "@ijaro/core": "workspace:*",
+    "@yieldvest/config": "workspace:*",
+    "@yieldvest/core": "workspace:*",
     "viem": "2.56.8"
   },
   "devDependencies": {

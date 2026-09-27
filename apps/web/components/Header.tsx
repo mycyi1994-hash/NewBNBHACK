@@ -3,7 +3,7 @@
  * US market badge from our NYSE calendar, the tape's data state and the language toggle.
  */
 import Link from 'next/link';
-import { nextRegularOpen, regularClose, usSession } from '@ijaro/core';
+import { nextRegularOpen, regularClose, usSession } from '@yieldvest/core';
 import type { Lang, T } from '../lib/i18n/translate';
 import { LocaleSync } from './LocaleSync';
 import { MarketBadge, StateBadge, type DataState } from './ui';
@@ -31,8 +31,8 @@ export function Header({
     <header className="sticky top-0 z-20 border-b border-line bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
         <Link href="/" className="flex items-baseline gap-1.5">
-          <span className="text-xl font-extrabold tracking-tight text-ink">이자로</span>
-          <span className="text-xs font-semibold text-muted">Ijaro</span>
+          <span className="text-xl font-extrabold tracking-tight text-ink">Yieldvest</span>
+          <span className="text-xs font-semibold text-muted">Yieldvest</span>
         </Link>
         <nav className="order-3 flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium md:order-none md:w-auto">
           {links.map((link) => (

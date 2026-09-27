@@ -11,8 +11,8 @@
  * is already stored is skipped before any API call, and the insert is ON CONFLICT DO NOTHING on
  * (slot_at, instrument_id, size_usd), so a worker that dies and comes back never duplicates rows.
  */
-import { assertBscChain, assertUsdt } from '@ijaro/chain';
-import { describeConfig, loadConfig } from '@ijaro/config';
+import { assertBscChain, assertUsdt } from '@yieldvest/chain';
+import { describeConfig, loadConfig } from '@yieldvest/config';
 import {
   abandonRunningJobs,
   insertTapeSamples,
@@ -21,7 +21,7 @@ import {
   migrateDb,
   tapeSlotRecorded,
   writeWorkerStatus,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import type { CycleDeps } from './cycle.js';
 import { discoverVenusUsdt } from './executor/venus.js';
 import { refreshRegistry } from './registry.js';

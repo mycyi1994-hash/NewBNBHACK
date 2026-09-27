@@ -1,7 +1,7 @@
 # Running a plan: `/next` → steps → report
 
 ```bash
-curl -sS -H "$AUTH" "$IJARO_URL/api/plans/$PLAN/next"
+curl -sS -H "$AUTH" "$YIELDVEST_URL/api/plans/$PLAN/next"
 ```
 
 ## Answers
@@ -16,7 +16,7 @@ curl -sS -H "$AUTH" "$IJARO_URL/api/plans/$PLAN/next"
 - `decision: "failed"` — relay the reason; do not improvise a trade.
 - `decision: "buy"` — run `steps` in order, before `expiresAt` (five minutes). Show the user
   `spendUsd`, the stock (`instrument.symbol`, full `instrument.address`) and `estimate.shares`
-  (a planning estimate from Ijaro's recordings — the wallet quotes again).
+  (a planning estimate from Yieldvest's recordings — the wallet quotes again).
 
 ## Steps
 
@@ -28,7 +28,7 @@ and `report`. Placeholders in angle brackets come from the previous command's JS
    - Report `{"kind": "redeem", "txHash": "<data.txHash>"}` once it is mined (retry on `202`).
 2. `quote`
    - Run it. **Stop** unless `data.toCoinAmount` ≥ `acceptMinToCoinAmount` (the price moved more
-     than Ijaro's 1 % impact limit) and the quote's `toCoinSymbol` matches `instrument.symbol`.
+     than Yieldvest's 1 % impact limit) and the quote's `toCoinSymbol` matches `instrument.symbol`.
    - Do the token check in [safety.md](safety.md).
 3. `swap`
    - Complete the `binance-agentic-wallet` swap security pre-check; show amount, token, slippage
@@ -41,7 +41,7 @@ and `report`. Placeholders in angle brackets come from the previous command's JS
 
 ```bash
 curl -sS -X POST -H "$AUTH" -H 'content-type: application/json' \
-  "$IJARO_URL/api/plans/$PLAN/report" -d '{"kind": "swap", "txHash": "0x…", "orderId": "…"}'
+  "$YIELDVEST_URL/api/plans/$PLAN/report" -d '{"kind": "swap", "txHash": "0x…", "orderId": "…"}'
 ```
 
 ## Report answers
@@ -52,7 +52,7 @@ curl -sS -X POST -H "$AUTH" -H 'content-type: application/json' \
   plan is paused. Tell the user; do not continue until they decide.
 - `202 pending` — not mined yet; report again in ~15 s.
 - `422 rejected` — the chain does not show what was reported (reverted, another sender, no tokens
-  received, older than the plan, a transaction of Ijaro's own house wallet). Relay the reason
+  received, older than the plan, a transaction of Yieldvest's own house wallet). Relay the reason
   verbatim.
 
 ## Scheduling

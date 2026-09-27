@@ -11,10 +11,10 @@
  * Exit: 0 the cycle ran (bought, simulated, sent and awaiting its receipt, or chose not to buy) ·
  * 1 FAILED, needs review, not started (outbox busy, locked, stopped) or refused · 2 usage.
  */
-import { createRuntime, discoverVenusUsdt, executorDeps, runCycle } from '@ijaro/agent';
-import { assertBscChain } from '@ijaro/chain';
-import { loadConfig } from '@ijaro/config';
-import { getPlan, instrumentFromRow, listInstruments, migrateDb, planFromRow } from '@ijaro/db';
+import { createRuntime, discoverVenusUsdt, executorDeps, runCycle } from '@yieldvest/agent';
+import { assertBscChain } from '@yieldvest/chain';
+import { loadConfig } from '@yieldvest/config';
+import { getPlan, instrumentFromRow, listInstruments, migrateDb, planFromRow } from '@yieldvest/db';
 import { parseFlags } from './args.js';
 import { confirmSpend } from './confirm.js';
 import {

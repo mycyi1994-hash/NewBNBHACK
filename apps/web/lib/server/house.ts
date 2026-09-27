@@ -3,8 +3,8 @@
  * (the plan's vTokens at the on-chain rate minus its principal, read now), shares held, the next
  * buy, today's use of the limit, the receipt count and the last outcome with its reason.
  */
-import type { Config } from '@ijaro/config';
-import { fromUnits, toUnits } from '@ijaro/core';
+import type { Config } from '@yieldvest/config';
+import { fromUnits, toUnits } from '@yieldvest/core';
 import {
   holdingFromRow,
   isoTime,
@@ -19,7 +19,7 @@ import {
   usdText,
   utcDay,
   type Db,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { inArray, sql } from 'drizzle-orm';
 import { webChain } from './chain';
 

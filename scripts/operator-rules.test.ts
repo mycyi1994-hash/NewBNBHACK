@@ -1,5 +1,10 @@
-import { houseRedactions, type ChainPort, type CycleReport, type SimulatedBuy } from '@ijaro/agent';
-import { BSC_USDT } from '@ijaro/chain';
+import {
+  houseRedactions,
+  type ChainPort,
+  type CycleReport,
+  type SimulatedBuy,
+} from '@yieldvest/agent';
+import { BSC_USDT } from '@yieldvest/chain';
 import { describe, expect, it } from 'vitest';
 import {
   buyProblem,

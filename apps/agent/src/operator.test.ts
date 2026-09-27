@@ -4,7 +4,7 @@
  * a late receipt is applied once from our own outbox, and a skill plan is never touched. Real
  * Postgres (the agent tests' database), fake API and chain, public test key.
  */
-import { toUnits } from '@ijaro/core';
+import { toUnits } from '@yieldvest/core';
 import {
   acquirePlanLock,
   createDb,
@@ -12,7 +12,7 @@ import {
   listReceipts,
   releasePlanLock,
   updatePlan,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import type { Hex } from 'viem';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';

@@ -15,7 +15,7 @@ import {
   type PlanOwner,
   type PlanStatus,
   type PlanWindow,
-} from '@ijaro/core';
+} from '@yieldvest/core';
 import type { InstrumentRow } from './index.js';
 import type { HoldingRow, PlanRow } from './plans.js';
 

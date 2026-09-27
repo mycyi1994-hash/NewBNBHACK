@@ -9,9 +9,9 @@
  * skill plans belong to their owners and are refused. An active plan asks for a typed `y` first:
  * the worker spends the new amounts at its next due time.
  */
-import { loadConfig } from '@ijaro/config';
-import { changePlanSettings, planSettings, type PlanSettingsChange } from '@ijaro/core';
-import { createDb, getPlan, migrateDb, planFromRow, updatePlan } from '@ijaro/db';
+import { loadConfig } from '@yieldvest/config';
+import { changePlanSettings, planSettings, type PlanSettingsChange } from '@yieldvest/core';
+import { createDb, getPlan, migrateDb, planFromRow, updatePlan } from '@yieldvest/db';
 import { confirmSpend } from './confirm.js';
 
 const FLAGS = {

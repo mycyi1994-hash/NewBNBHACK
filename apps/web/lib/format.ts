@@ -3,7 +3,7 @@
  * decimals, signed percentages with a real minus sign, times in the viewer's zone. Inputs are the
  * decimal strings the API and database use; nothing here invents a value — missing stays missing.
  */
-import { formatShares, formatUsd, toUnits } from '@ijaro/core';
+import { formatShares, formatUsd, toUnits } from '@yieldvest/core';
 import type { Lang } from './i18n/translate';
 
 const DECIMAL = /^-?\d+(\.\d+)?$/;

@@ -3,8 +3,8 @@
  * or response shape the official docs do not list is stored in dx_events, and its first sighting
  * alerts ops. `pnpm dx:events` prints the findings in the dx/LOG.md format (facts only).
  */
-import { dxFindingOf, type ApiCallSink } from '@ijaro/binance';
-import type { DxEventInsert } from '@ijaro/db';
+import { dxFindingOf, type ApiCallSink } from '@yieldvest/binance';
+import type { DxEventInsert } from '@yieldvest/db';
 import type { Alerter } from './alerts.js';
 
 export interface DxWatchDeps {
@@ -35,7 +35,7 @@ export function watchDxFindings(inner: ApiCallSink, deps: DxWatchDeps): ApiCallS
     await deps.alerter.send({
       key: `dx:${finding.kind}:${call.module}:${call.endpoint}:${code}`,
       text:
-        `[ijaro dx] first sighting — ${call.module}/${call.endpoint}: ${finding.meaning} ` +
+        `[yieldvest dx] first sighting — ${call.module}/${call.endpoint}: ${finding.meaning} ` +
         `(HTTP ${call.httpStatus ?? '-'}, msg "${call.msg ?? ''}", request id ${call.requestId ?? '-'}). ` +
         'Log it with pnpm dx:events.',
     });

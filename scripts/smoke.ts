@@ -5,8 +5,8 @@
  * exits 0 with a warning, or 1 with --strict. With --alert, anything but green is also sent to
  * the ops channel (Telegram when configured, the log otherwise) — the M2-12 monitor runs this.
  */
-import { createAlerter } from '@ijaro/agent';
-import { loadConfig } from '@ijaro/config';
+import { createAlerter } from '@yieldvest/agent';
+import { loadConfig } from '@yieldvest/config';
 
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const urlFlag = args.indexOf('--url');
@@ -29,7 +29,7 @@ async function alert(text: string): Promise<void> {
   const alerter = createAlerter({
     telegram: botToken && opsChatId ? { botToken, chatId: opsChatId } : undefined,
   });
-  const result = await alerter.send({ key: `smoke:${target}`, text: `[ijaro] ${text}` });
+  const result = await alerter.send({ key: `smoke:${target}`, text: `[yieldvest] ${text}` });
   console.log(`alert: channel ${alerter.channel}, result ${result}`);
   if (result === 'failed') process.exitCode = 1;
 }

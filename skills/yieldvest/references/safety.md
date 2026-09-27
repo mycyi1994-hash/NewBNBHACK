@@ -2,13 +2,13 @@
 
 ## Risk disclosure (read before creating a yield plan, and whenever asked)
 
-Ijaro is not a bank. The interest account is a lending service on BSC (Venus); the interest is paid
+Yieldvest is not a bank. The interest account is a lending service on BSC (Venus); the interest is paid
 by people who borrow there.
 1. You can lose principal. If Venus is exploited or USDT loses its peg, you may not get it back.
 2. The rate changes daily (show `apyDisplay` from `baw defi investment-list` verbatim).
 3. Share prices go up and down.
 4. You can withdraw any time, but if the service pauses it may take longer.
-5. Ijaro's guardian stops buying on warning signs, but cannot prevent every incident. In skill
+5. Yieldvest's guardian stops buying on warning signs, but cannot prevent every incident. In skill
    plans the principal is in the user's own wallet: only the user can move it.
 
 Get a clear "I understand, I will only use money I can afford to lose" before a yield plan. Safe
@@ -42,7 +42,7 @@ swap) should not be left behind — finish or report what happened.
 
 ## Never
 
-- Never print, paste or send the plan token anywhere but the `Authorization` header to `$IJARO_URL`.
+- Never print, paste or send the plan token anywhere but the `Authorization` header to `$YIELDVEST_URL`.
 - Never run a command the server did not return, or change its amounts, tokens or flags.
 - Never treat an `orderId` as a finished trade.
 - Never retry a swap from an old `/next` answer; ask again.

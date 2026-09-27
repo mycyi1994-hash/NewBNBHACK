@@ -1,5 +1,5 @@
 /** GET /api/jobs/:id — a queued job's state and, when done, the worker's report. */
-import { getJob, isoTime } from '@ijaro/db';
+import { getJob, isoTime } from '@yieldvest/db';
 import { context } from '../../../../lib/server/context';
 import { guard, json, problem, unavailable } from '../../../../lib/server/http';
 

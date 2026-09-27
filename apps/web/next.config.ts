@@ -15,11 +15,11 @@ const nextConfig: NextConfig = {
   headers: () => Promise.resolve([{ source: '/:path*', headers: SECURITY_HEADERS }]),
   // Workspace packages ship TypeScript sources (exports → src/*.ts) with NodeNext `.js` imports.
   transpilePackages: [
-    '@ijaro/binance',
-    '@ijaro/chain',
-    '@ijaro/config',
-    '@ijaro/core',
-    '@ijaro/db',
+    '@yieldvest/binance',
+    '@yieldvest/chain',
+    '@yieldvest/config',
+    '@yieldvest/core',
+    '@yieldvest/db',
   ],
   webpack: (config: { resolve: { extensionAlias?: Record<string, string[]> } }) => {
     config.resolve.extensionAlias = { '.js': ['.ts', '.tsx', '.js'] };

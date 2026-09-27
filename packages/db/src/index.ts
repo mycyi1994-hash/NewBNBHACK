@@ -1,4 +1,4 @@
-import type { ApiCallRecord, ApiCallSink, ApiModule } from '@ijaro/binance';
+import type { ApiCallRecord, ApiCallSink, ApiModule } from '@yieldvest/binance';
 import { asc, desc, eq, getTableColumns, gte, sql as rawSql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';

@@ -1,10 +1,10 @@
-/** Vitest global setup for @ijaro/agent: create and migrate the agent tests' own database. */
-import { createDb, migrateDb } from '@ijaro/db';
+/** Vitest global setup for @yieldvest/agent: create and migrate the agent tests' own database. */
+import { createDb, migrateDb } from '@yieldvest/db';
 import { sql } from 'drizzle-orm';
 import { agentDatabaseUrl } from './db.js';
 
 export default async function migrateOnce(): Promise<void> {
-  const base = process.env.IJARO_TEST_DATABASE_URL;
+  const base = process.env.YIELDVEST_TEST_DATABASE_URL;
   if (!base) return;
   const target = agentDatabaseUrl(base);
   const name = new URL(target).pathname.slice(1);

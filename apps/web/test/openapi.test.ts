@@ -29,7 +29,7 @@ const routes = routeFiles(API).map((file) => ({
 }));
 
 describe('OpenAPI document', () => {
-  const doc = openApiDocument('https://ijaro.example');
+  const doc = openApiDocument('https://yieldvest.example');
 
   it('documents every route file, with exactly the methods it exports', async () => {
     expect(Object.keys(doc.paths).sort()).toEqual(routes.map((r) => r.path).sort());

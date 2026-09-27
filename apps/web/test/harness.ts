@@ -4,8 +4,8 @@
  * them. Everything runs against the web tests' own Postgres (test/db.ts); nothing leaves the host.
  */
 import { randomBytes, randomInt } from 'node:crypto';
-import { BSC_USDT } from '@ijaro/chain';
-import { fromUnits } from '@ijaro/core';
+import { BSC_USDT } from '@yieldvest/chain';
+import { fromUnits } from '@yieldvest/core';
 import {
   cycles,
   guardianEvents,
@@ -25,7 +25,7 @@ import {
   type Db,
   type InstrumentRow,
   type TapeSampleInsert,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { inArray } from 'drizzle-orm';
 import {
   encodeAbiParameters,
@@ -83,7 +83,7 @@ export async function call<T = Record<string, unknown>>(
     headers.set('content-type', 'application/json');
     body = typeof init.body === 'string' ? init.body : JSON.stringify(init.body);
   }
-  const request = new Request(`https://ijaro.test${init.path}`, {
+  const request = new Request(`https://yieldvest.test${init.path}`, {
     method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
     headers,
     ...(body === undefined ? {} : { body }),

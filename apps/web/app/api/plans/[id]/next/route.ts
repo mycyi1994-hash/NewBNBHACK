@@ -13,7 +13,7 @@ import {
   remainingSpend,
   usdText,
   utcDay,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { skillOf, ownedPlan } from '../../../../../lib/server/auth';
 import { planPositionUsd, webChain } from '../../../../../lib/server/chain';
 import { context } from '../../../../../lib/server/context';

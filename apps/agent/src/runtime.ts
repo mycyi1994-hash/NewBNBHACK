@@ -4,10 +4,10 @@
  * `executorDeps(rt, 'live')`, which requires EXECUTION_MODE=live — the house signer.
  */
 import path from 'node:path';
-import { BinanceClient, createFixtureRecorder } from '@ijaro/binance';
-import { createBscClient } from '@ijaro/chain';
-import { findWorkspaceRoot, type Config } from '@ijaro/config';
-import { createApiCallSink, createDb, recordDxEvent } from '@ijaro/db';
+import { BinanceClient, createFixtureRecorder } from '@yieldvest/binance';
+import { createBscClient } from '@yieldvest/chain';
+import { findWorkspaceRoot, type Config } from '@yieldvest/config';
+import { createApiCallSink, createDb, recordDxEvent } from '@yieldvest/db';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createAlerter, type Alerter } from './alerts.js';
 import type { CycleDeps } from './cycle.js';

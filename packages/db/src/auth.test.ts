@@ -61,7 +61,7 @@ describe.skipIf(!url)('judge codes and skill tokens on Postgres', () => {
     const wallet = '0x00000000000000000000000000000000000000a1';
     const { id, token } = await createSkillToken(db, wallet);
     tokenIds.push(id);
-    expect(token).toMatch(/^ijr_[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^yv_[A-Za-z0-9_-]{43}$/);
     expect(id).toMatch(/^sk_[0-9a-f]{16}$/);
 
     const [row] = await db.select().from(skillTokens).where(eq(skillTokens.id, id));

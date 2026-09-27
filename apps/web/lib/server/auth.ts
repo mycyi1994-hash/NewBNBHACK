@@ -6,8 +6,8 @@ import {
   type Db,
   type PlanRow,
   type SkillTokenRow,
-} from '@ijaro/db';
-import type { Config } from '@ijaro/config';
+} from '@yieldvest/db';
+import type { Config } from '@yieldvest/config';
 import { problem } from './http';
 import { ensureJudgeCodes } from './judge';
 import { cookieValue, SESSION_COOKIE, verifySession } from './session';
@@ -23,7 +23,7 @@ export function judgeOf(request: Request, config: Config, nowMs = Date.now()): C
 
 export async function skillOf(request: Request, db: Db): Promise<Caller | undefined> {
   const header = request.headers.get('authorization') ?? '';
-  const match = /^Bearer (ijr_[A-Za-z0-9_-]{43})$/.exec(header);
+  const match = /^Bearer (yv_[A-Za-z0-9_-]{43})$/.exec(header);
   if (!match?.[1]) return undefined;
   const token = await findSkillToken(db, match[1]);
   return token ? { kind: 'skill', token } : undefined;

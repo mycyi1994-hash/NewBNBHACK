@@ -2,10 +2,10 @@
  * Chain reads the web does itself (public BSC RPC, no keys): Venus positions and the transactions
  * a skill wallet reports. Tests replace them with setChainForTests.
  */
-import { createBscClient, readVTokenBalance, vTokenAbi } from '@ijaro/chain';
-import type { Config } from '@ijaro/config';
-import { fromUnits, toUnits, underlyingFromVTokens } from '@ijaro/core';
-import { usdText, type PlanRow } from '@ijaro/db';
+import { createBscClient, readVTokenBalance, vTokenAbi } from '@yieldvest/chain';
+import type { Config } from '@yieldvest/config';
+import { fromUnits, toUnits, underlyingFromVTokens } from '@yieldvest/core';
+import { usdText, type PlanRow } from '@yieldvest/db';
 import { getAddress } from 'viem';
 import { viemReader, type ChainReader } from './report';
 

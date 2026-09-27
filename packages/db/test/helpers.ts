@@ -1,4 +1,4 @@
-/** Shared helpers for the @ijaro/db integration tests (disposable database only). */
+/** Shared helpers for the @yieldvest/db integration tests (disposable database only). */
 import { randomInt, randomUUID } from 'node:crypto';
 import { inArray } from 'drizzle-orm';
 import {
@@ -15,7 +15,7 @@ import {
   type PlanInsert,
 } from '../src/index.js';
 
-export const testDatabaseUrl = process.env.IJARO_TEST_DATABASE_URL;
+export const testDatabaseUrl = process.env.YIELDVEST_TEST_DATABASE_URL;
 
 /** A valid plan row with a unique id; override what the test is about. */
 export function testPlan(overrides: Partial<PlanInsert> = {}): PlanInsert {

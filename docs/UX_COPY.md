@@ -34,7 +34,7 @@
 - `home.market.closed`: 미국 장 마감 · 다음 개장 {open} / US market closed · opens {open}
 - `home.cta.judge`: 심사위원 코드로 체험하기 / Try it with a judge code
 - `home.cta.skill`: 내 AI 비서로 시작하기 / Start with my AI assistant
-- `home.house.card.title`: 이자로가 직접 돌리는 플랜 / A plan Ijaro runs itself
+- `home.house.card.title`: Yieldvest가 직접 돌리는 플랜 / A plan Yieldvest runs itself
 - `home.house.principal`: 이자 통장 원금 / Principal in the interest account
 - `home.house.interest`: 지금까지 쌓인 이자 / Interest earned so far
 - `home.house.shares`: 모은 주식 / Shares collected
@@ -42,7 +42,7 @@
 
 ### 3.2 Judge Mode
 - `judge.code.title`: 심사위원 코드를 입력해 주세요 / Enter your judge code
-- `judge.code.hint`: 코드 하나로 최대 ${cap}까지 체험할 수 있어요. 돈은 이자로의 지갑에서 나가요. / One code covers up to ${cap}. Funds come from Ijaro's own wallet.
+- `judge.code.hint`: 코드 하나로 최대 ${cap}까지 체험할 수 있어요. 돈은 Yieldvest의 지갑에서 나가요. / One code covers up to ${cap}. Funds come from Yieldvest's own wallet.
 - `judge.pick.title`: 어떤 주식을 모을까요? / Which stock should we collect?
 - `judge.pick.sector`: 또는 분야로 고르기 / Or pick a sector
 - `judge.pick.issuer.auto`: 발행사는 자동으로 골라요 ({issuer}) / Issuer chosen automatically ({issuer})
@@ -74,8 +74,8 @@
 - `skill.title`: 내 AI 비서에게 맡기기 / Hand it to your AI assistant
 - `skill.step1`: Binance 앱에서 Agentic Wallet을 만들어요. / Create an Agentic Wallet in the Binance app.
 - `skill.step2`: 비서에 이 한 줄을 설치해요. / Install this one line into your assistant.
-- `skill.step3`: "이자로 시작해줘"라고 말해요. 비서가 매번 확인을 받고 실행해요. / Say "Start Ijaro". Your assistant asks before every action.
-- `skill.note`: 이자로 서버는 결정만 해요. 지갑 서명은 항상 내 기기에서. / Ijaro's server only decides. Signing always happens on your device.
+- `skill.step3`: "Yieldvest 시작해줘"라고 말해요. 비서가 매번 확인을 받고 실행해요. / Say "Start Yieldvest". Your assistant asks before every action.
+- `skill.note`: Yieldvest 서버는 결정만 해요. 지갑 서명은 항상 내 기기에서. / Yieldvest's server only decides. Signing always happens on your device.
 
 ## 4. 사유 한 줄 (whyKey)
 | 키 | KR | EN |
@@ -98,21 +98,21 @@
 
 ## 5. 위험 고지 (전문, 이자 모드 켤 때 + `/risk`)
 **KR**
-> 이자로는 은행이 아니에요. 이자 통장은 BSC의 대출 서비스(Venus)예요. 이자는 거기서 돈을 빌린 사람들이 내요.
+> Yieldvest는 은행이 아니에요. 이자 통장은 BSC의 대출 서비스(Venus)예요. 이자는 거기서 돈을 빌린 사람들이 내요.
 > 1. 원금을 잃을 수 있어요. Venus가 해킹되거나 USDT 가치가 흔들리면 돌려받지 못할 수 있어요.
 > 2. 이자율은 매일 바뀌어요. 지금은 연 {apy}%예요(플랫폼 보안 점수 {score}).
 > 3. 주식 조각의 가격은 오르내려요.
 > 4. 언제든 꺼낼 수 있지만, 서비스가 멈추면 늦어질 수 있어요.
-> 5. 이자로의 지킴이는 이상 징후를 보면 원금을 지갑으로 옮기지만, 모든 사고를 막지는 못해요.
+> 5. Yieldvest의 지킴이는 이상 징후를 보면 원금을 지갑으로 옮기지만, 모든 사고를 막지는 못해요.
 > 이 내용을 이해했고, 잃어도 되는 돈만 넣을게요. [동의하고 켜기]
 
 **EN**
-> Ijaro is not a bank. The interest account is a lending service on BSC (Venus). The interest is paid by people who borrow there.
+> Yieldvest is not a bank. The interest account is a lending service on BSC (Venus). The interest is paid by people who borrow there.
 > 1. You can lose principal. If Venus is exploited or USDT loses its peg, you may not get it back.
 > 2. The rate changes daily. Today it is {apy}% APY (platform security score {score}).
 > 3. Share prices go up and down.
 > 4. You can withdraw any time, but if the service pauses it may take longer.
-> 5. Ijaro's guardian moves principal back to your wallet on warning signs, but cannot prevent every incident.
+> 5. Yieldvest's guardian moves principal back to your wallet on warning signs, but cannot prevent every incident.
 > I understand this and will only use money I can afford to lose. [Agree and turn on]
 
 ## 6. 금지어 (`pnpm lint:copy`)
@@ -128,7 +128,7 @@
 - `nav.dx`: 기록·데이터 / Data
 - `nav.risk`: 위험 고지 / Risks
 - `lang.label`: 언어 / Language
-- `footer.risk`: 이자로는 은행이 아니에요. 원금을 잃을 수 있어요. / Ijaro is not a bank. You can lose principal.
+- `footer.risk`: Yieldvest는 은행이 아니에요. 원금을 잃을 수 있어요. / Yieldvest is not a bank. You can lose principal.
 - `footer.apis`: Binance Web3 API · BNB Chain 사용 / Built on the Binance Web3 API · BNB Chain
 - `footer.simulate`: 모든 매수는 실행 전에 블록체인에서 미리 돌려봐요. / Every buy is dry-run on-chain before it runs.
 - `footer.github`: 소스 코드 (GitHub) / Source code (GitHub)
@@ -192,7 +192,7 @@
 - `plan.status.active`: 진행 중 / Running
 - `plan.status.paused`: 일시정지 / Paused
 - `plan.status.stopped`: 멈춤 / Stopped
-- `plan.owner.house`: 이자로가 직접 / Run by Ijaro
+- `plan.owner.house`: Yieldvest가 직접 / Run by Yieldvest
 - `plan.owner.judge`: 심사위원 체험 / Judge trial
 - `plan.owner.skill`: 내 AI 비서 / My AI assistant
 - `plan.paused.awaiting_funding`: 자금이 들어오면 시작해요 / Starts once funded
@@ -239,7 +239,7 @@
 - `judge.window.anytime.closed`: 지금 바로 사요 · 한도 절반(${half}) / Buys right away · half the limit (${half})
 - `judge.amount.custom`: 직접 입력 / Custom
 - `judge.yield.amount`: 이자 통장에 넣을 금액 / Amount to put in the interest account
-- `judge.yield.note`: 이자는 쌓이는 대로 기록돼요. 이자로 사는 장면은 이자로가 직접 돌리는 플랜에서 볼 수 있어요. / Interest is recorded as it accrues. Buys made with interest show on Ijaro's own plan.
+- `judge.yield.note`: 이자는 쌓이는 대로 기록돼요. 이자로 사는 장면은 Yieldvest가 직접 돌리는 플랜에서 볼 수 있어요. / Interest is recorded as it accrues. Buys made with interest show on Yieldvest's own plan.
 - `judge.risk.check`: 이해했어요 / I understand
 - `judge.preview.cta`: 미리 돌려보기 / Dry-run it
 - `judge.preview.waiting`: 서버가 블록체인에서 미리 돌려보는 중… / Our server is dry-running it on-chain…
@@ -268,7 +268,7 @@
 - `skill.example.title`: 대화 예시 / Example conversation
 - `skill.example.me`: 나 / Me
 - `skill.example.assistant`: 비서 / Assistant
-- `skill.example.1`: 이자로 시작해줘. 매주 $5씩 NVDA 모아줘. / Start Ijaro. Collect $5 of NVDA every week.
+- `skill.example.1`: Yieldvest 시작해줘. 매주 $5씩 NVDA 모아줘. / Start Yieldvest. Collect $5 of NVDA every week.
 - `skill.example.2`: 시작하기 전에 위험 고지를 읽어 드릴게요. 원금을 잃을 수 있어요. 동의하시나요? / Before we start, here are the risks. You can lose principal. Do you agree?
 - `skill.example.3`: 지금 NVDA를 $5어치 사요. 미리 돌려봤더니 성공이에요. 진행할까요? / I'll buy $5 of NVDA now. The dry-run succeeded. Go ahead?
 - `skill.example.4`: 응 / Yes
@@ -281,7 +281,7 @@
 - `skill.rules.5`: 오류 문구는 고치지 않고 그대로 전해요. / It passes error messages on as they are.
 - `skill.api`: 개발자용 API 문서 (OpenAPI) / API reference for developers (OpenAPI)
 - `dx.title`: 기록·데이터 / Data
-- `dx.sub`: 이자로가 Binance Web3 API를 실제로 호출하며 잰 숫자예요. / Numbers we measured from our real calls to the Binance Web3 API.
+- `dx.sub`: Yieldvest가 Binance Web3 API를 실제로 호출하며 잰 숫자예요. / Numbers we measured from our real calls to the Binance Web3 API.
 - `dx.summary.calls`: API 호출 / API calls
 - `dx.summary.error_rate`: 오류율 / Error rate
 - `dx.summary.p95`: p95 지연 / p95 latency

@@ -5,10 +5,10 @@
  * Trading API quote per size ($5/$50/$500 USDT → token). Read-only: quotes are never swapped. A
  * failed quote or stock price is a row with its error, not a gap.
  */
-import { BinanceApiError, type BinanceClient } from '@ijaro/binance';
-import { BSC_CHAIN_ID, BSC_USDT } from '@ijaro/chain';
-import { toUnits, usSession } from '@ijaro/core';
-import type { InstrumentRow, TapeSampleInsert } from '@ijaro/db';
+import { BinanceApiError, type BinanceClient } from '@yieldvest/binance';
+import { BSC_CHAIN_ID, BSC_USDT } from '@yieldvest/chain';
+import { toUnits, usSession } from '@yieldvest/core';
+import type { InstrumentRow, TapeSampleInsert } from '@yieldvest/db';
 import { fetchRwaTokens, type RwaToken } from './registry.js';
 import { fetchStockQuote, stockQuotesByTicker, type StockQuoteResult } from './stock-price.js';
 

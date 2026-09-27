@@ -4,7 +4,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export const SESSION_COOKIE = 'ijaro_judge';
+export const SESSION_COOKIE = 'yieldvest_judge';
 /** Judge plans run for seven days; the session lasts as long. */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 

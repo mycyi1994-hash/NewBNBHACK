@@ -20,7 +20,7 @@ import {
   writeWorkerStatus,
   type InstrumentRow,
   type PlanInsert,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GET as dxMetrics } from '../app/api/dx/metrics/route';

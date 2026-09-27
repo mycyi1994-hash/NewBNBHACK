@@ -5,8 +5,8 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { BSC_USDT, decodeApprove, decodeVenusCall, encodeApprove } from '@ijaro/chain';
-import { createDb, lastOutboxNonce, type Db } from '@ijaro/db';
+import { BSC_USDT, decodeApprove, decodeVenusCall, encodeApprove } from '@yieldvest/chain';
+import { createDb, lastOutboxNonce, type Db } from '@yieldvest/db';
 import { getAddress, type Hex } from 'viem';
 import { afterAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../../test/db.js';
@@ -278,7 +278,7 @@ describe.skipIf(!url)('Venus live path on Postgres (fake chain)', () => {
   });
 
   it('deposits with an exact approval, then redeems, reading amounts from the logs', async () => {
-    const { insertPlan } = await import('@ijaro/db');
+    const { insertPlan } = await import('@yieldvest/db');
     const planId = `T-${Date.now()}-venus`;
     planIds.push(planId);
     await insertPlan(db, {

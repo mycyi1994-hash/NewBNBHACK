@@ -1,6 +1,6 @@
 /** First-sighting DX events: store every finding, alert only the first time. */
-import type { ApiCallRecord } from '@ijaro/binance';
-import type { DxEventInsert } from '@ijaro/db';
+import type { ApiCallRecord } from '@yieldvest/binance';
+import type { DxEventInsert } from '@yieldvest/db';
 import { describe, expect, it } from 'vitest';
 import { createAlerter } from './alerts.js';
 import { watchDxFindings } from './dx-watch.js';

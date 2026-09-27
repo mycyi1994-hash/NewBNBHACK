@@ -1,4 +1,4 @@
-# 이자로 (Ijaro) — Interest buys the stock. Principal stays.
+# Yieldvest — Interest buys the stock. Principal stays.
 
 > **EN, one line:** an agent that keeps your principal in a USDT savings pool (Venus on BNB Smart Chain) and buys tokenized US stocks (bStocks / Ondo) with the interest — or a fixed amount in safe mode — **only during the US regular session**, under hard caps, with an on-chain receipt and a one-sentence reason for every action.
 
@@ -13,15 +13,15 @@ BNB Hack: Tokenized Stocks Edition 출품작. 빌드 9/23 → 내부 제출 10/9
 ## 3분 체험 (Judge Mode, `/judge`)
 
 홈 → **심사위원 코드로 체험하기** → 코드 → 종목(NVDA 등) → 적립만 · $5 · 정규장 → **미리 돌려보기**(워커가 블록체인에서 시뮬레이션) → **지금 사기** → 영수증 또는 "예약됨"(장이 닫혀 있으면 다음 개장 +2분에 자동 매수) → **플랜 멈추기**.
-코드 1개 = 최대 $5, 돈은 이자로의 하우스 지갑에서 나갑니다. 플랜은 7일 뒤 자동 종료.
+코드 1개 = 최대 $5, 돈은 Yieldvest의 하우스 지갑에서 나갑니다. 플랜은 7일 뒤 자동 종료.
 
-## 이자로가 직접 돌린 기록
+## Yieldvest가 직접 돌린 기록
 
 `pnpm receipts:table`이 DB에서 이 표를 만듭니다(시각 · 플랜 · 행동 · 결과/사유 · 영수증). **현재 영수증 0개** — 하우스 지갑 충전과 live 전환은 사람의 돈 결정(REPLAN R1–R4)을 기다립니다. 받는 대로 여기에 붙입니다.
 
 ## 모듈 매트릭스 (PLAN §6.1 + 코드 기준 상태)
 
-| 모듈 | 이자로에서 쓰는 곳 | 상태 |
+| 모듈 | Yieldvest에서 쓰는 곳 | 상태 |
 | --- | --- | --- |
 | RWA Data API | 토큰 목록(주소·배수·상태 코드·다음 개장), RWA 가격 — 레지스트리·테이프·결정 | 사용 중(프랑크푸르트 워커, 테이프 10분) |
 | 공개 bapi RWA Dynamic V2 (Web3 API 밖) | 미국 주가(`stockInfo.price`, 장외 null) — 괴리 계산·테이프. 키 없는 공개 엔드포인트, 문서는 Skills Hub `binance-tokenized-securities-info`뿐 | 사용 중(`apps/agent/src/stock-price.ts`) |
@@ -30,7 +30,7 @@ BNB Hack: Tokenized Stocks Edition 출품작. 빌드 9/23 → 내부 제출 10/9
 | Transaction API | 모든 서명 전 시뮬레이션, 가스 한도 추정, 브로드캐스트(RPC 대체 경로) | 코드 완료, live 대기. 상태 조회(transaction-detail)는 쓰지 않음: 영수증은 BSC RPC로 확인 |
 | DeFi API | Venus USDT 투자·APY(`apyDisplay`), TVL·보안 점수(지킴이·위험 고지), 예치·상환 calldata | 코드 완료 |
 | Wallet API | — (하우스 잔고는 BSC RPC로 읽음) | 미사용 |
-| Agentic Wallet / Wallet Skills | `skills/ijaro`: 서버는 `/next`로 `baw` 명령만, 서명은 사용자 기기, `/report`는 체인 확인 | 코드·문서 완료, 실제 실행 데모는 사람(M2-09) |
+| Agentic Wallet / Wallet Skills | `skills/yieldvest`: 서버는 `/next`로 `baw` 명령만, 서명은 사용자 기기, `/report`는 체인 확인 | 코드·문서 완료, 실제 실행 데모는 사람(M2-09) |
 | b402 Payments | — | 미구현(M3-01, 컷 후보) |
 | BNB Agent Studio | — | 미구현(M2-10) |
 | BSC | viem 읽기·쓰기, 영수증 Transfer 로그로 수량 확정, Venus vToken | 사용 중 |
@@ -38,12 +38,12 @@ BNB Hack: Tokenized Stocks Edition 출품작. 빌드 9/23 → 내부 제출 10/9
 ## 내 AI 비서로 쓰기 (Agentic Wallet, 모드 C)
 
 ```bash
-git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK ijaro-src \
-  && mkdir -p ~/.claude/skills && cp -r ijaro-src/skills/ijaro ~/.claude/skills/
-export IJARO_URL=<사이트 주소>
+git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK yieldvest-src \
+  && mkdir -p ~/.claude/skills && cp -r yieldvest-src/skills/yieldvest ~/.claude/skills/
+export YIELDVEST_URL=<사이트 주소>
 ```
 
-그다음 "이자로 시작해줘". 필요: `binance-agentic-wallet` 스킬과 `baw`. 서버는 결정만 하고(키·세션을 저장하지 않음), 모든 거래는 사용자 확인 뒤 사용자 지갑이 서명합니다. API 계약: `/api/openapi`(OpenAPI 3.1).
+그다음 "Yieldvest 시작해줘". 필요: `binance-agentic-wallet` 스킬과 `baw`. 서버는 결정만 하고(키·세션을 저장하지 않음), 모든 거래는 사용자 확인 뒤 사용자 지갑이 서명합니다. API 계약: `/api/openapi`(OpenAPI 3.1).
 
 ## 구조
 
@@ -54,7 +54,7 @@ packages/core   결정 규칙 decideCycle, 지킴이 규칙, 금액·주 수 계
 packages/binance  Web3 API 클라이언트: HMAC 서명, 레이트리밋, 오류 분류표(SPEC §11), 호출 계측(api_calls)
 packages/chain  viem: ERC-20·Venus·영수증 로그
 packages/db     Drizzle 스키마·마이그레이션(되돌리기 포함)·지출 원장(advisory lock)·아웃박스·잡
-skills/ijaro    Wallet Skill (SKILL.md + references)
+skills/yieldvest    Wallet Skill (SKILL.md + references)
 ```
 
 ## 안전 장치 (요약 — 자세히는 [`docs/SECURITY.md`](docs/SECURITY.md))
@@ -67,7 +67,7 @@ skills/ijaro    Wallet Skill (SKILL.md + references)
 
 ## 위험
 
-[`/risk`](apps/web/app/risk/page.tsx) — 이자로는 은행이 아닙니다. 원금을 잃을 수 있습니다(Venus 해킹, USDT 디페그). 이자율은 매일 바뀌고 주가는 오르내립니다. 안전 모드(적립만)가 기본값입니다.
+[`/risk`](apps/web/app/risk/page.tsx) — Yieldvest는 은행이 아닙니다. 원금을 잃을 수 있습니다(Venus 해킹, USDT 디페그). 이자율은 매일 바뀌고 주가는 오르내립니다. 안전 모드(적립만)가 기본값입니다.
 
 ## 실행
 
@@ -77,7 +77,7 @@ cp .env.example .env          # EXECUTION_MODE=simulate(기본)는 아무것도 
                               # 워커의 테이프·결정에는 Binance Web3 API 키가 필요(Q-01: 한 리전에서만 사용)
 pnpm db:migrate && pnpm db:seed   # DATABASE_URL 필요(Postgres)
 pnpm dev                      # 웹 + 워커. 데이터가 없으면 화면은 "불러올 수 없어요(이유)"로 정직하게 뜹니다
-pnpm typecheck && pnpm lint && pnpm test   # 테스트 DB: IJARO_TEST_DATABASE_URL
+pnpm typecheck && pnpm lint && pnpm test   # 테스트 DB: YIELDVEST_TEST_DATABASE_URL
 pnpm smoke --url http://localhost:3000     # /api/judge/smoke
 ```
 

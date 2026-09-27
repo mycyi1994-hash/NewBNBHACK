@@ -1,5 +1,5 @@
 /**
- * The environment the route handlers see in tests (they read it through @ijaro/config, as in
+ * The environment the route handlers see in tests (they read it through @yieldvest/config, as in
  * production): the web tests' database, a session secret, and nothing that could reach a real
  * database, key or chain — values from a developer's .env are overridden (real env wins).
  */

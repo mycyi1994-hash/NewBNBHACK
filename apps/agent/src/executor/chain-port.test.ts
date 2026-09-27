@@ -2,7 +2,7 @@
  * viemChainPort's receipt handling, with a stub client: viem follows a replacement transaction
  * (same nonce, other bytes) and returns its receipt — that is never taken for ours.
  */
-import type { BscClient } from '@ijaro/chain';
+import type { BscClient } from '@yieldvest/chain';
 import { WaitForTransactionReceiptTimeoutError, type Hex } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { viemChainPort } from './chain-port.js';

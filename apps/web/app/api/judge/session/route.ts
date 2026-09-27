@@ -3,7 +3,7 @@
  * the signed session cookie. The answer says what the code may still spend (UX: "코드 하나로
  * 최대 $5까지", "이 코드는 한도를 다 썼어요").
  */
-import { findJudgeCode } from '@ijaro/db';
+import { findJudgeCode } from '@yieldvest/db';
 import { context } from '../../../../lib/server/context';
 import {
   clientIp,

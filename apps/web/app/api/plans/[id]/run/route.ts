@@ -3,8 +3,8 @@
  * worker, which signs; the page polls /api/jobs/:jobId. A yield plan starts with its deposit.
  * The worker checks everything again; these checks answer at once instead of after a poll.
  */
-import { fromUnits, toUnits } from '@ijaro/core';
-import { judgeExposureUsd, usdText } from '@ijaro/db';
+import { fromUnits, toUnits } from '@yieldvest/core';
+import { judgeExposureUsd, usdText } from '@yieldvest/db';
 import { activeJudgeOf, ownedPlan } from '../../../../../lib/server/auth';
 import { context } from '../../../../../lib/server/context';
 import { guard, problem, readBody, unavailable } from '../../../../../lib/server/http';

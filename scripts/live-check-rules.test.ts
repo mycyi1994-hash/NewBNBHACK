@@ -1,4 +1,4 @@
-import type { Plan } from '@ijaro/core';
+import type { Plan } from '@yieldvest/core';
 import { describe, expect, it } from 'vitest';
 import { liveChecks, type LiveCheckFacts } from './live-check-rules.js';
 

@@ -7,7 +7,7 @@
  * paused (a stopped plan stays stopped). A skill plan's position is in its owner's wallet and is
  * never redeemed here (D-19).
  */
-import { BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
+import { BSC_USDT, transferredFrom, transferredTo } from '@yieldvest/chain';
 import {
   acquirePlanLock,
   applyPositionRedeem,
@@ -18,7 +18,7 @@ import {
   unsettledOutbox,
   usdText,
   type PlanRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import type { Hex } from 'viem';
 import type { CycleDeps } from './cycle.js';
 import { LOCK_TTL_MS } from './plan-lock.js';

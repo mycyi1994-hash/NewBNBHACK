@@ -1,10 +1,10 @@
-/** Vitest global setup for @ijaro/web: create and migrate the web tests' own database. */
-import { createDb, migrateDb } from '@ijaro/db';
+/** Vitest global setup for @yieldvest/web: create and migrate the web tests' own database. */
+import { createDb, migrateDb } from '@yieldvest/db';
 import { sql } from 'drizzle-orm';
 import { webDatabaseUrl } from './db';
 
 export default async function migrateOnce(): Promise<void> {
-  const base = process.env.IJARO_TEST_DATABASE_URL;
+  const base = process.env.YIELDVEST_TEST_DATABASE_URL;
   if (!base) return;
   const target = webDatabaseUrl(base);
   const name = new URL(target).pathname.slice(1);

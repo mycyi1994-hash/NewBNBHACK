@@ -3,7 +3,7 @@
  * receipts), and the two ways to try it. Every block states its data: live, stale with its time,
  * or unavailable with the reason — nothing here is a placeholder number.
  */
-import { latestGuardianSamples, openGuardianActions } from '@ijaro/db';
+import { latestGuardianSamples, openGuardianActions } from '@yieldvest/db';
 import Link from 'next/link';
 import { InterestCounter } from '../components/home/InterestCounter';
 import { planName, pausedText, ruleName, statusText } from '../components/plan-text';

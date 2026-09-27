@@ -16,7 +16,7 @@ import {
   listGuardianEvents,
   resolveGuardianEvents,
   updatePlan,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';

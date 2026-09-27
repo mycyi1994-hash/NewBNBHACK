@@ -8,8 +8,8 @@
  *   - redeem_all: yield plans are paused and, in live mode only, their whole position is redeemed
  *     — only after the redeem simulation passes; otherwise a human is asked.
  */
-import { BinanceApiError, getProtocolSummary, getTokenPrices } from '@ijaro/binance';
-import { BSC_USDT } from '@ijaro/chain';
+import { BinanceApiError, getProtocolSummary, getTokenPrices } from '@yieldvest/binance';
+import { BSC_USDT } from '@yieldvest/chain';
 import {
   evaluateGuardian,
   fromUnits,
@@ -19,7 +19,7 @@ import {
   type GuardianAction,
   type GuardianInputs,
   type GuardianRule,
-} from '@ijaro/core';
+} from '@yieldvest/core';
 import {
   acquirePlanLock,
   applyPositionRedeem,
@@ -36,7 +36,7 @@ import {
   updatePlan,
   getPlan,
   type PlanRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import type { CycleDeps } from './cycle.js';
 import { redeemFromVenus, type VenusMarket } from './executor/venus.js';
 import { LOCK_TTL_MS } from './plan-lock.js';
@@ -168,7 +168,7 @@ export async function redeemPlanPosition(
     await deps.alerter?.send({
       key: `redeem-all:${plan.id}`,
       text:
-        `[ijaro] ${outcome.reason}: redeeming ${plan.id} did not complete (${detail}). ` +
+        `[yieldvest] ${outcome.reason}: redeeming ${plan.id} did not complete (${detail}). ` +
         `The plan is ${outcome.status}; a human must decide.`,
     });
   };
@@ -314,7 +314,7 @@ export async function guardianTick(deps: CycleDeps): Promise<GuardianReport> {
       report.opened.push(action.rule);
       await deps.alerter?.send({
         key: `guardian:${action.rule}`,
-        text: `[ijaro] guardian ${action.rule} → ${action.action} ${JSON.stringify(action.detail)}`,
+        text: `[yieldvest] guardian ${action.rule} → ${action.action} ${JSON.stringify(action.detail)}`,
       });
     }
     if (action.action === 'redeem_all') await redeemAll(deps, action, report);

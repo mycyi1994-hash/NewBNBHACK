@@ -60,5 +60,5 @@ Next:
      Wallet API, Address portfolio, DeFi data, DeFi transaction building, b402 payments, Authentication.
   2. Keep docs/vendor/ENDPOINTS.md (committed) in sync and close the ⚠️VERIFY items in docs/DECISIONS.md.
   3. Reference implementation for signing/paths: packages/binance/node_modules/@binance-web3/wallet
-     (devDependency of @ijaro/binance) and its dependency @binance-web3/common.
+     (devDependency of @yieldvest/binance) and its dependency @binance-web3/common.
 EOF

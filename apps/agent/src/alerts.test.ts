@@ -104,7 +104,7 @@ describe('cycleAlert', () => {
       }),
     ).toEqual({
       key: 'cycle-failed:H-SAFE:SIM_REVERT',
-      text: '[ijaro] H-SAFE cycle #42 FAILED (live): SIM_REVERT — execution reverted; no funds moved.',
+      text: '[yieldvest] H-SAFE cycle #42 FAILED (live): SIM_REVERT — execution reverted; no funds moved.',
     });
     expect(
       cycleAlert({

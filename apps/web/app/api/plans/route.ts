@@ -5,7 +5,7 @@
  * Tickers must be in the registry; amounts are validated as decimals, never floats.
  */
 import { randomUUID } from 'node:crypto';
-import { fromUnits, toUnits, VENUE_MIN_USD, type Issuer } from '@ijaro/core';
+import { fromUnits, toUnits, VENUE_MIN_USD, type Issuer } from '@yieldvest/core';
 import {
   insertJudgePlan,
   insertSkillPlan,
@@ -16,7 +16,7 @@ import {
   remainingSpend,
   usdText,
   utcDay,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { getAddress, isAddressEqual } from 'viem';
 import { activeJudgeOf } from '../../../lib/server/auth';
 import { AWAITING_DEPOSIT } from '../../../lib/server/report';

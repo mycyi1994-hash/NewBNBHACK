@@ -7,7 +7,7 @@ import { Card, SectionTitle } from '../../components/ui';
 import { REPO_URL } from '../../components/Footer';
 import { locale } from '../../lib/i18n/server';
 
-const INSTALL = `git clone --depth 1 ${REPO_URL} ijaro-src && mkdir -p ~/.claude/skills && cp -r ijaro-src/skills/ijaro ~/.claude/skills/`;
+const INSTALL = `git clone --depth 1 ${REPO_URL} yieldvest-src && mkdir -p ~/.claude/skills && cp -r yieldvest-src/skills/yieldvest ~/.claude/skills/`;
 
 export default async function SkillPage() {
   const { t } = await locale();

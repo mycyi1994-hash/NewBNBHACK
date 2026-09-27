@@ -1,5 +1,5 @@
 {
-  "name": "@ijaro/db",
+  "name": "@yieldvest/db",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,13 +8,13 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. --project @ijaro/db",
+    "test": "vitest run --root ../.. --project @yieldvest/db",
     "db:generate": "drizzle-kit generate",
     "db:generate:check": "drizzle-kit check"
   },
   "dependencies": {
-    "@ijaro/binance": "workspace:*",
-    "@ijaro/core": "workspace:*",
+    "@yieldvest/binance": "workspace:*",
+    "@yieldvest/core": "workspace:*",
     "drizzle-orm": "0.45.3",
     "postgres": "3.4.9"
   },

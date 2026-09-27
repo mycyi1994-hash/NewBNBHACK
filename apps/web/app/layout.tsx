@@ -11,7 +11,7 @@ import { settle } from '../lib/server/settle';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: '이자로 (Ijaro)',
+  title: 'Yieldvest',
   description: COPY.en['home.sub'],
 };
 

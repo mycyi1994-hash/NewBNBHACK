@@ -6,8 +6,8 @@
 import { cookies, headers } from 'next/headers';
 import { makeT, type Lang, type T } from './translate';
 
-export const LANG_COOKIE = 'ijaro_lang';
-export const TZ_COOKIE = 'ijaro_tz';
+export const LANG_COOKIE = 'yieldvest_lang';
+export const TZ_COOKIE = 'yieldvest_tz';
 
 function validZone(zone: string | undefined): zone is string {
   if (!zone || zone.length > 64) return false;

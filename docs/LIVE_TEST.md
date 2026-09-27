@@ -7,7 +7,7 @@
 ## 0. 원칙
 
 - **서명은 사람이 터미널에서 `y`를 칠 때만 한다.** live 명령은 대화형 터미널이 아니면 거부한다(`scripts/confirm.ts`). Claude(PC든 클라우드든)는 준비·확인·기록만 한다.
-- **live 명령은 Fly 워커 머신 안에서** 실행한다: `fly ssh console -a ijaro-agent` → `cd /app`.
+- **live 명령은 Fly 워커 머신 안에서** 실행한다: `fly ssh console -a yieldvest-agent` → `cd /app`.
   - API 키를 워커와 같은 리전(fra)·IP에서 쓴다. 한국 PC에서 쓰면 다중 리전 동시 접속(40303) 위험이 있다(DECISIONS Q-01).
   - 워커 이미지에 스크립트와 tsx가 들어 있다(Dockerfile).
 - **워커 자체는 `EXECUTION_MODE=simulate` 그대로 둔다**(fly.toml). live 명령 한 줄에만 `EXECUTION_MODE=live`를 붙인다. 워커는 일정대로 서명하지 않고, 서명자는 그 명령 하나뿐이다.
@@ -17,10 +17,10 @@
 ## 1. 준비 (사람)
 
 1. PR을 병합하고 워커를 배포한다.
-   - `fly deploy -a ijaro-agent`
-   - `fly logs -a ijaro-agent`에 `agent: configuration valid`, 그리고 `tick:` 줄이 보이면 된다.
+   - `fly deploy -a yieldvest-agent`
+   - `fly logs -a yieldvest-agent`에 `agent: configuration valid`, 그리고 `tick:` 줄이 보이면 된다.
    - 웹 배포는 선택이다(`/plans/H-SAFE` 화면 확인용).
-2. Fly 시크릿 이름을 확인한다: `fly secrets list -a ijaro-agent`.
+2. Fly 시크릿 이름을 확인한다: `fly secrets list -a yieldvest-agent`.
    - `MIN_BUY_USD`가 있으면 지우거나 `0.25`로 둔다. 코드 기본값이 이제 0.25다.
    - `EXECUTION_MODE`가 시크릿으로 `live`면 지운다(fly.toml의 simulate가 적용된다).
 3. 하우스 지갑(BSC)을 충전한다: **USDT 3~5, BNB 0.005.**
@@ -28,7 +28,7 @@
    - 주소는 지갑을 만든 운영자가 안다(로그·화면에서는 가려진다).
 4. 매수 단계(5–6)는 **미국 정규장에만** 한다. 9/28(월) 22:30 KST 개장 → **22:32 이후**, 05:00 KST 마감 전. 예치·상환은 아무 때나 된다.
 
-## 2. 절차 (`fly ssh console -a ijaro-agent` 안, `cd /app`)
+## 2. 절차 (`fly ssh console -a yieldvest-agent` 안, `cd /app`)
 
 | # | 명령 | 기대 결과 | 멈춤 |
 | --- | --- | --- | --- |
@@ -70,5 +70,5 @@
 선행(사람): §1의 1–3 완료, 사람이 터미널 앞에 있음. Claude는 `--live` 명령을 실행하지 않는다(TTY가 없어 거부된다). 사람에게 명령을 알려 주고, 사람이 붙여 준 출력을 확인한다.
 
 ```
-이자로의 $1 실거래 시험을 끝낸다. docs/LIVE_TEST.md와 DECISIONS D-21을 읽는다. 사람이 입회 중이고, 모든 실제 지출은 사람이 Fly 워커 머신(fly ssh console -a ijaro-agent, cd /app)에서 `EXECUTION_MODE=live pnpm … --live`를 실행하고 y를 입력할 때만 일어난다. 너는 읽기 전용 확인만 직접 실행한다: `fly ssh console -a ijaro-agent -C "sh -c 'cd /app && pnpm live:check'"`, 시뮬레이션 명령(--live 없음), `plan:set`(H-SAFE가 paused일 때만), receipts:table, plan:status. 완료 조건: 1) 첫 live 단계 전 live:check가 GO였다(출력 인용). 2) H-YIELD $1 예치: deposit 영수증 tx 해시와 approve 금액이 정확히 1 USDT(1000000000000000000)였음을 인용. 3) H-SAFE $1 매수가 정규장에 BOUGHT: swap 영수증 해시, approve 금액 = 1 USDT, 사유 why.bought.regular 인용. 4) H-YIELD 상환: redeem 영수증 해시, 플랜 paused(operator_redeem), 원금 0 인용. 5) 끝난 뒤 live:check의 outbox가 settled이고, 겪은 오류·지연·문서 불일치를 dx/LOG.md에 적었고, TASKS M1-03·M1-05에 증거를 붙여 커밋했다. 제약: 이 골 전체 지출 $2 + 가스 이하, 캡 변경 금지, 새 지출 경로 금지, 한국 PC에서 Binance Web3 API 호출 금지(Q-01), 실패한 지출 자동 재시도 금지 — 원인을 기록하고 사람에게 묻는다. 매 턴 끝에 GOAL STATUS 블록으로 조건 1~5를 PASS/FAIL과 증거(tx 해시·출력 인용)로 보고. 15턴 안에 못 끝내면 남은 항목과 이유를 적고 멈춘다.
+Yieldvest의 $1 실거래 시험을 끝낸다. docs/LIVE_TEST.md와 DECISIONS D-21을 읽는다. 사람이 입회 중이고, 모든 실제 지출은 사람이 Fly 워커 머신(fly ssh console -a yieldvest-agent, cd /app)에서 `EXECUTION_MODE=live pnpm … --live`를 실행하고 y를 입력할 때만 일어난다. 너는 읽기 전용 확인만 직접 실행한다: `fly ssh console -a yieldvest-agent -C "sh -c 'cd /app && pnpm live:check'"`, 시뮬레이션 명령(--live 없음), `plan:set`(H-SAFE가 paused일 때만), receipts:table, plan:status. 완료 조건: 1) 첫 live 단계 전 live:check가 GO였다(출력 인용). 2) H-YIELD $1 예치: deposit 영수증 tx 해시와 approve 금액이 정확히 1 USDT(1000000000000000000)였음을 인용. 3) H-SAFE $1 매수가 정규장에 BOUGHT: swap 영수증 해시, approve 금액 = 1 USDT, 사유 why.bought.regular 인용. 4) H-YIELD 상환: redeem 영수증 해시, 플랜 paused(operator_redeem), 원금 0 인용. 5) 끝난 뒤 live:check의 outbox가 settled이고, 겪은 오류·지연·문서 불일치를 dx/LOG.md에 적었고, TASKS M1-03·M1-05에 증거를 붙여 커밋했다. 제약: 이 골 전체 지출 $2 + 가스 이하, 캡 변경 금지, 새 지출 경로 금지, 한국 PC에서 Binance Web3 API 호출 금지(Q-01), 실패한 지출 자동 재시도 금지 — 원인을 기록하고 사람에게 묻는다. 매 턴 끝에 GOAL STATUS 블록으로 조건 1~5를 PASS/FAIL과 증거(tx 해시·출력 인용)로 보고. 15턴 안에 못 끝내면 남은 항목과 이유를 적고 멈춘다.
 ```

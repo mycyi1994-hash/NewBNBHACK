@@ -21,7 +21,7 @@
 - `packages/binance`: Web3 API 클라이언트.
 - `packages/chain`: viem 기반 BSC 읽기·서명. RPC: 공식 BSC 데이터시드 + 예비 1개.
 - `packages/db`: Drizzle + Postgres(Neon, 프랑크푸르트). 로컬 개발도 Postgres(도커) — SQLite 분기 금지.
-- `skills/ijaro`: Wallet Skill.
+- `skills/yieldvest`: Wallet Skill.
 - 공통 설정: `packages/config` (zod로 env 검증, 캡 상수).
 
 ## 2. 환경 변수 (`.env.example` 참조)
@@ -267,7 +267,7 @@ PLAN §7 표를 그대로 구현. 입력은 `GuardianInputs {comptrollerPaused, 
 
 쓰기 라우트는 모두 레이트리밋(IP·세션)과 캡 검증. 심사 코드별 총액 캡. 샌드박스 플랜은 7일 후 자동 stop.
 
-## 9. Wallet Skill (`skills/ijaro`)
+## 9. Wallet Skill (`skills/yieldvest`)
 - 형식은 Skills Hub의 `binance-agentic-wallet`을 따른다(frontmatter `name/description/metadata`, `references/`). `requires: bins: [baw]`, 선행 스킬 `binance-agentic-wallet` 설치 확인.
 - 명령 라우팅: 플랜 만들기 → `POST /api/plans`; 지금 할 일 → `GET /next`; 실행 → 서버가 준 파라미터로 `baw defi deposit|redeem`, `baw market-order quote → swap`, 완료 확인 `market-order list --orderId`; 보고 → `POST /report`; 상태·정지.
 - 안전 규칙(스킬 문서에 명시): 위험 고지 낭독 후 동의, 상태 변경 전 항상 미리보기·확인, 서버가 준 주소는 RWA 목록 API로 교차검증, 세션 만료 2시간 전 알림, `orderId`≠체결, 오류 원문 그대로 전달.

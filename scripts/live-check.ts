@@ -4,9 +4,9 @@
  * It never calls the Binance Web3 API, never signs and never writes. Prints each check and GO,
  * or NO-GO with exit code 1. The rules are in live-check-rules.ts (tested).
  */
-import { createRuntime, viemChainPort } from '@ijaro/agent';
-import { assertBscChain, BSC_USDT } from '@ijaro/chain';
-import { loadConfig } from '@ijaro/config';
+import { createRuntime, viemChainPort } from '@yieldvest/agent';
+import { assertBscChain, BSC_USDT } from '@yieldvest/chain';
+import { loadConfig } from '@yieldvest/config';
 import {
   getPlan,
   isoTime,
@@ -16,7 +16,7 @@ import {
   planFromRow,
   readWorkerStatus,
   unsettledOutbox,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { liveChecks, type LiveCheckFacts } from './live-check-rules.js';
 
 const MARK = { ok: '✓', warn: '!', fail: '✗' } as const;

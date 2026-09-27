@@ -17,8 +17,8 @@ import {
   utcDay,
   type Db,
   type PlanRow,
-} from '@ijaro/db';
-import type { Config } from '@ijaro/config';
+} from '@yieldvest/db';
+import type { Config } from '@yieldvest/config';
 
 export const shortAddress = (address: string | null) =>
   address ? `${address.slice(0, 6)}…${address.slice(-4)}` : null;

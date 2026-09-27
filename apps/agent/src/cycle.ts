@@ -14,8 +14,8 @@
  * awaiting-cycle path when it signed something, closed with its reservation freed when it did not
  * — and a plan never starts a cycle while an earlier one is still out on chain (DECISIONS D-23).
  */
-import type { QuoteRoute } from '@ijaro/binance';
-import type { Config } from '@ijaro/config';
+import type { QuoteRoute } from '@yieldvest/binance';
+import type { Config } from '@yieldvest/config';
 import {
   boughtOutcome,
   decideCycle,
@@ -31,7 +31,7 @@ import {
   type Plan,
   type QuoteObservation,
   type Why,
-} from '@ijaro/core';
+} from '@yieldvest/core';
 import {
   acquirePlanLock,
   appendCycleStep,
@@ -58,7 +58,7 @@ import {
   type PlanRow,
   type ReceiptFacts,
   type SpendCaps,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { cycleAlert, type Alerter } from './alerts.js';
 import { lastExecute } from './awaiting.js';
 import {
@@ -265,7 +265,7 @@ export async function recoverInterrupted(deps: CycleDeps, cycle: CycleRow): Prom
     await updatePlan(deps.db, cycle.planId, { status: 'paused', pausedReason: 'needs_review' });
     await deps.alerter?.send({
       key: `interrupted:${cycle.planId}:${cycle.id}`,
-      text: `[ijaro] ${cycle.planId} cycle #${cycle.id} was interrupted after signing with no recorded decision. The plan is paused; a human must check it.`,
+      text: `[yieldvest] ${cycle.planId} cycle #${cycle.id} was interrupted after signing with no recorded decision. The plan is paused; a human must check it.`,
     });
     return;
   }
@@ -687,7 +687,7 @@ async function cycleBody(
           setPlan({ status: 'paused', pausedReason: 'needs_review' });
           await deps.alerter?.send({
             key: `anomaly:${plan.id}:${cycle.id}`,
-            text: `[ijaro] ${plan.id} cycle #${cycle.id} needs review: ${swap.message}. The plan is paused.`,
+            text: `[yieldvest] ${plan.id} cycle #${cycle.id} needs review: ${swap.message}. The plan is paused.`,
           });
           return { status: 'review', planId: plan.id, cycleId: cycle.id, message: swap.message };
         }

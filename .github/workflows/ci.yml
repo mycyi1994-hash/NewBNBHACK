@@ -24,7 +24,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: ci
-          POSTGRES_DB: ijaro_ci
+          POSTGRES_DB: yieldvest_ci
         ports:
           - 5432:5432
         options: >-
@@ -33,7 +33,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      IJARO_TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/ijaro_ci
+      YIELDVEST_TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/yieldvest_ci
       NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,4 +50,4 @@ jobs:
       - run: pnpm test
       - run: pnpm coverage:core
       # Builds without secrets or DATABASE_URL, like any fresh checkout.
-      - run: pnpm --filter @ijaro/web build
+      - run: pnpm --filter @yieldvest/web build

@@ -112,7 +112,7 @@ async function introspectConnector(): Promise<Map<string, ConnectorOperation>> {
         .split(',')
         .map((p) => p.trim())
         .filter(Boolean);
-      const sentinel = (p: string) => `__ijaro_${p}__`;
+      const sentinel = (p: string) => `__yieldvest_${p}__`;
       const built = await build(...params.map(sentinel));
       const placements = new Map<string, Placement[]>();
       const place = (p: string, where: Placement) =>

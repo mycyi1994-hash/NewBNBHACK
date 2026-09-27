@@ -1,4 +1,4 @@
-# PLAN.md — 이자로 (Ijaro) 마스터 기획서
+# PLAN.md — Yieldvest 마스터 기획서
 
 > **한 줄:** 원금은 USDT 예치에 그대로 두고, 이자(또는 정한 적립금)로 미국 주식 토큰을 정규장에만 자동 매수하는 에이전트.
 > **영문 태그라인:** *Interest buys the stock. Principal stays.*
@@ -101,8 +101,8 @@
 7. 플랜은 7일간 자동 사이클을 돌고(캡 내), 심사위원은 나중에 다시 와서 기록을 본다.
 
 ### 5.2 저축형 투자자의 플랜 (모드 C)
-1. Claude Code에 `npx skills add mycyi1994-hash/NewBNBHACK/skills/ijaro` (정확한 경로는 M2-09에서 확정).
-2. "이자로 시작해줘. USDT 500 맡기고 이자로 NVDA 사줘."
+1. Claude Code에 `npx skills add mycyi1994-hash/NewBNBHACK/skills/yieldvest` (정확한 경로는 M2-09에서 확정).
+2. "Yieldvest 시작해줘. USDT 500 맡기고 이자로 NVDA 사줘."
 3. 스킬이 우리 API로 플랜을 만들고(`POST /api/plans`), 위험 고지를 사용자에게 읽히고, `baw defi deposit`으로 예치(사용자 확인).
 4. 이후 비서가 켜질 때마다 `GET /api/plans/:id/next` → 결정("지금 $2.10 이자로 NVDAB 매수, 견적·주소·사유") → `baw market-order swap` → 결과를 `POST /report`.
 5. 세션 만료가 가까우면 스킬이 먼저 알린다(`wallet settings`의 `sessionExpireTime`).
@@ -123,7 +123,7 @@ apps/agent (5분 틱, 테이프, 가디언, 알림)     apps/web (Watch · Judge
       │                                            │
    하우스 지갑 (viem 서명 → Transaction API 브로드캐스트)   Postgres (packages/db)
                                                    │
-                                     skills/ijaro ── 사용자 비서 ── baw (사용자 지갑)
+                                     skills/yieldvest ── 사용자 비서 ── baw (사용자 지갑)
 [BSC 메인넷] Venus vUSDT · 주식 토큰(BEP-20/BEP-677) · PancakeSwap/RFQ 유동성
 [Agent Studio] 하우스 에이전트 신원(ERC-8004) · 런타임/MCP (Should)
 ```

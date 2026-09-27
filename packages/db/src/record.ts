@@ -9,7 +9,13 @@
  * taken earlier (DECISIONS D-23). Holdings snapshot the multiplier on every buy and recompute
  * shares from all tokens at the current multiplier; a change since the last write is logged.
  */
-import { fromUnits, sameMultiplier, sharesFromTokens, toUnits, type Instrument } from '@ijaro/core';
+import {
+  fromUnits,
+  sameMultiplier,
+  sharesFromTokens,
+  toUnits,
+  type Instrument,
+} from '@yieldvest/core';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './index.js';
 import { usdText } from './mappers.js';

@@ -2,9 +2,9 @@
  * pnpm tape:once — one tape run (TASKS M0-08): all instruments × $5/$50/$500 quotes → tape_samples.
  * Read-only against Binance (quotes only, nothing is swapped). Prints one line per row.
  */
-import { createRuntime, maskHouse, sampleTape } from '@ijaro/agent';
-import { loadConfig } from '@ijaro/config';
-import { insertTapeSamples, listInstruments, migrateDb } from '@ijaro/db';
+import { createRuntime, maskHouse, sampleTape } from '@yieldvest/agent';
+import { loadConfig } from '@yieldvest/config';
+import { insertTapeSamples, listInstruments, migrateDb } from '@yieldvest/db';
 
 const rt = createRuntime(loadConfig());
 try {

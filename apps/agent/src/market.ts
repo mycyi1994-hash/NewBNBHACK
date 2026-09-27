@@ -10,10 +10,15 @@ import {
   getRwaPrices,
   type BinanceClient,
   type QuoteRoute,
-} from '@ijaro/binance';
-import { BSC_USDT } from '@ijaro/chain';
-import { toUnits, VENUE_MIN_USD, type InstrumentMarket, type QuoteObservation } from '@ijaro/core';
-import { instrumentFromRow, listInstruments, type Db } from '@ijaro/db';
+} from '@yieldvest/binance';
+import { BSC_USDT } from '@yieldvest/chain';
+import {
+  toUnits,
+  VENUE_MIN_USD,
+  type InstrumentMarket,
+  type QuoteObservation,
+} from '@yieldvest/core';
+import { instrumentFromRow, listInstruments, type Db } from '@yieldvest/db';
 import { fetchRwaTokens, type RwaToken } from './registry.js';
 import { fetchStockQuote, type StockQuoteResult } from './stock-price.js';
 

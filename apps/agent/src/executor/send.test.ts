@@ -3,8 +3,8 @@
  * and chain, with the outbox on real Postgres: a broadcast that may have gone out is tracked, one
  * that certainly did not is released, and stale swap bytes the node lost are never sent again.
  */
-import { encodeApprove } from '@ijaro/chain';
-import { createDb, lastOutboxNonce, txOutbox } from '@ijaro/db';
+import { encodeApprove } from '@yieldvest/chain';
+import { createDb, lastOutboxNonce, txOutbox } from '@yieldvest/db';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../../test/db.js';

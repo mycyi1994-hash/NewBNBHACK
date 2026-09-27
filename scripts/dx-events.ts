@@ -3,8 +3,14 @@
  * response shapes (dx_events, M1-07), printed in the dx/LOG.md entry format of DX_PROTOCOL §3.1.
  * Facts only: the human adds the "소감" line. --mark-logged records that they were copied.
  */
-import { loadConfig } from '@ijaro/config';
-import { createDb, isoTime, listDxEvents, markDxEventsLogged, type DxEventRow } from '@ijaro/db';
+import { loadConfig } from '@yieldvest/config';
+import {
+  createDb,
+  isoTime,
+  listDxEvents,
+  markDxEventsLogged,
+  type DxEventRow,
+} from '@yieldvest/db';
 
 const args = process.argv.slice(2);
 const all = args.includes('--all');

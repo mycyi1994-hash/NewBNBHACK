@@ -10,8 +10,8 @@
  * in the past moves to the next regular open + 2 minutes. Any other mix of flags prints the usage
  * line (exit 2).
  */
-import { loadConfig } from '@ijaro/config';
-import { nextRegularOpen, OPEN_SETTLE_MS } from '@ijaro/core';
+import { loadConfig } from '@yieldvest/config';
+import { nextRegularOpen, OPEN_SETTLE_MS } from '@yieldvest/core';
 import {
   createDb,
   getPlan,
@@ -20,7 +20,7 @@ import {
   planFromRow,
   readWorkerStatus,
   updatePlan,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { parseFlags, type Flags } from './args.js';
 import { confirmSpend } from './confirm.js';
 import { liveActivationReasons } from './operator-rules.js';

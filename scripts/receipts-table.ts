@@ -4,8 +4,8 @@
  * nothing is written anywhere. Wallet addresses never appear (receipts hold hashes, not owners).
  */
 import { parseArgs } from 'node:util';
-import { loadConfig } from '@ijaro/config';
-import { createDb, getCycle, getPlan, isoTime, listReceipts } from '@ijaro/db';
+import { loadConfig } from '@yieldvest/config';
+import { createDb, getCycle, getPlan, isoTime, listReceipts } from '@yieldvest/db';
 
 const { values } = parseArgs({ options: { limit: { type: 'string', default: '20' } } });
 const config = loadConfig();

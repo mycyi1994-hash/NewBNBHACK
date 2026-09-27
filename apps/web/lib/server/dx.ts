@@ -3,8 +3,8 @@
  * result codes and regions from api_calls; first sightings from dx_events; tape aggregates.
  * All measured by the worker; each block states how.
  */
-import { summarizeCalls } from '@ijaro/binance';
-import { isoTime, listApiCalls, listDxEvents, tapeSummary, type Db } from '@ijaro/db';
+import { summarizeCalls } from '@yieldvest/binance';
+import { isoTime, listApiCalls, listDxEvents, tapeSummary, type Db } from '@yieldvest/db';
 
 export const CALLS_METHOD =
   'every HTTP attempt the worker made to the Binance Web3 API (api_calls), latency measured around fetch';

@@ -5,7 +5,7 @@
  * starts its plan; a whole-position redeem waits for the plan's lock and for its unsettled
  * transactions; a manual run left awaiting never moves the schedule; a lagging node is waited for.
  */
-import { toUnits } from '@ijaro/core';
+import { toUnits } from '@yieldvest/core';
 import {
   acquirePlanLock,
   appendCycleStep,
@@ -23,7 +23,7 @@ import {
   spendLedger,
   txOutbox,
   usdText,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { eq } from 'drizzle-orm';
 import type { Hex } from 'viem';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

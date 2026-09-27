@@ -3,8 +3,8 @@
  * instance. The web never holds a signing key and never calls the Binance Web3 API: it reads what
  * the worker wrote and queues jobs (SPEC §5 v2) — one API key used from one region only (Q-01).
  */
-import { loadConfig, type Config } from '@ijaro/config';
-import { createDb, type Db } from '@ijaro/db';
+import { loadConfig, type Config } from '@yieldvest/config';
+import { createDb, type Db } from '@yieldvest/db';
 
 let cached: { config: Config; db: Db | undefined; close: () => Promise<void> } | undefined;
 

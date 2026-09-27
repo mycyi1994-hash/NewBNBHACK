@@ -3,8 +3,8 @@
  * (packages/db/drizzle-down/<tag>.sql). Destructive: the tables it created are dropped with their
  * rows, so it refuses without --yes. For development databases and the RUNBOOK recovery drill.
  */
-import { loadConfig } from '@ijaro/config';
-import { appliedMigrations, createDb, rollbackMigration } from '@ijaro/db';
+import { loadConfig } from '@yieldvest/config';
+import { appliedMigrations, createDb, rollbackMigration } from '@yieldvest/db';
 
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const tag = args.find((a) => !a.startsWith('--'));

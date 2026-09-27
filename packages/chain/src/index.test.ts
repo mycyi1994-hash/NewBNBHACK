@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import { utilizationBps, underlyingFromVTokens } from '@ijaro/core';
+import { utilizationBps, underlyingFromVTokens } from '@yieldvest/core';
 import { createPublicClient, custom, fallback } from 'viem';
 import { bsc } from 'viem/chains';
 import { describe, expect, it } from 'vitest';

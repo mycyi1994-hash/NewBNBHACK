@@ -20,9 +20,9 @@ import {
   createFixtureRecorder,
   type ApiCallRecord,
   type ApiModule,
-} from '@ijaro/binance';
-import { describeConfig, findWorkspaceRoot, loadConfig } from '@ijaro/config';
-import { createApiCallSink, createDb } from '@ijaro/db';
+} from '@yieldvest/binance';
+import { describeConfig, findWorkspaceRoot, loadConfig } from '@yieldvest/config';
+import { createApiCallSink, createDb } from '@yieldvest/db';
 
 const { values: flags } = parseArgs({
   options: {

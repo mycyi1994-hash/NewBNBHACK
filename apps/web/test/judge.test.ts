@@ -14,7 +14,7 @@ import {
   sha256Hex,
   utcDay,
   type PlanRow,
-} from '@ijaro/db';
+} from '@yieldvest/db';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GET as getJobRoute } from '../app/api/jobs/[id]/route';
@@ -102,7 +102,7 @@ describe.skipIf(!webTestUrl)('Judge Mode routes', () => {
       exhausted: false,
     });
     const header = right.headers.get('set-cookie') ?? '';
-    expect(header).toMatch(/^ijaro_judge=[0-9a-f]{64}\.\d{13}\.[\w-]+; Path=\/; HttpOnly;/);
+    expect(header).toMatch(/^yieldvest_judge=[0-9a-f]{64}\.\d{13}\.[\w-]+; Path=\/; HttpOnly;/);
     expect(header).toContain('SameSite=Lax');
     expect(header).toContain(`Max-Age=${SESSION_TTL_MS / 1000}`);
     expect(header).toContain('Secure');
