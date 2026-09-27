@@ -1,4 +1,13 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -95,10 +104,68 @@ describe('caps', () => {
     expect(error.message).toContain(message);
   });
 
+  // Consumers turn caps back into text for toUnits(): String(5e-7) is '5e-7', which it refuses.
+  it.each(
+    CAP_NAMES.flatMap((name) =>
+      ['1e21', '0x19', '0.0000005', '2.5e1', '+5', '25.', '.5', '1_000'].map((raw) => [name, raw]),
+    ),
+  )('rejects %s=%s (not a plain decimal)', (name, raw) => {
+    const error = errorOf(() => parseConfig({ [name]: raw }));
+    expect(error.issues).toHaveLength(1);
+    expect(error.issues[0]).toMatch(
+      new RegExp(`^${name} must be (a plain decimal such as 25 or 0\\.25|a number)`),
+    );
+    expect(error.message).not.toContain(raw);
+  });
+
+  it('bounds every cap at 1,000,000 and the minimum buy at one cent', () => {
+    for (const name of CAP_NAMES) {
+      expect(errorOf(() => parseConfig({ [name]: '1000000.5' })).issues).toEqual([
+        `${name} must be at most 1000000`,
+      ]);
+    }
+    expect(errorOf(() => parseConfig({ MIN_BUY_USD: '0.009' })).issues).toEqual([
+      'MIN_BUY_USD must be at least 0.01',
+    ]);
+    expect(parseConfig({ MIN_BUY_USD: '0.01' }).caps.minBuyUsd).toBe(0.01);
+    expect(parseConfig({ MAX_PRINCIPAL_USD: '1000000' }).caps.maxPrincipalUsd).toBe(1_000_000);
+  });
+
+  it('keeps accepted caps numeric, and their text form a plain decimal again', () => {
+    const { caps } = parseConfig({
+      HOUSE_MAX_PER_TX_USD: ' 12.345678 ',
+      MAX_PRINCIPAL_USD: '0.000001',
+      DAILY_SPEND_CAP_USD: '999999.999999',
+    });
+    expect(caps).toMatchObject({
+      houseMaxPerTxUsd: 12.345678,
+      maxPrincipalUsd: 0.000001,
+      dailySpendCapUsd: 999_999.999999,
+    });
+    for (const value of Object.values(caps)) expect(String(value)).toMatch(/^\d+(\.\d{1,6})?$/);
+  });
+
   it('rejects a minimum buy above the per-plan sandbox cap', () => {
     const error = errorOf(() => parseConfig({ MIN_BUY_USD: '6' }));
     expect(error.issues.join('\n')).toContain(
       'MIN_BUY_USD must not exceed SANDBOX_MAX_PER_PLAN_USD',
+    );
+  });
+
+  it('rejects a sandbox plan cap above the house per-transaction cap (the house signs judge buys)', () => {
+    const error = errorOf(() =>
+      parseConfig({ SANDBOX_MAX_PER_PLAN_USD: '30', HOUSE_MAX_PER_TX_USD: '25' }),
+    );
+    expect(error.issues).toEqual([
+      'SANDBOX_MAX_PER_PLAN_USD must not exceed HOUSE_MAX_PER_TX_USD (judge plans are signed by the house wallet)',
+    ]);
+    // Equal is fine: a judge buy may use the whole house per-transaction cap.
+    expect(
+      parseConfig({ SANDBOX_MAX_PER_PLAN_USD: '25', HOUSE_MAX_PER_TX_USD: '25' }).caps,
+    ).toMatchObject({ sandboxMaxPerPlanUsd: 25, houseMaxPerTxUsd: 25 });
+    // Lowering the house cap alone below the default sandbox cap ($5) is caught too.
+    expect(errorOf(() => parseConfig({ HOUSE_MAX_PER_TX_USD: '4' })).issues).toContain(
+      'SANDBOX_MAX_PER_PLAN_USD must not exceed HOUSE_MAX_PER_TX_USD (judge plans are signed by the house wallet)',
     );
   });
 
@@ -171,25 +238,116 @@ describe('secrets and modes', () => {
     expect(config.caps.minBuyUsd).toBe(3);
     expect(config.caps.houseMaxPerTxUsd).toBe(25);
   });
+
+  it('loadConfig never lets a blank real cap hide the cap in the .env file', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ijaro-config-'));
+    try {
+      const envFile = path.join(dir, '.env');
+      writeFileSync(
+        envFile,
+        'DAILY_SPEND_CAP_USD=10\nHOUSE_MAX_PER_TX_USD=5\nBINANCE_WEB3_API_KEY=key-from-file\n',
+      );
+      for (const blank of ['', '   ']) {
+        // Before: the blank variable won, counted as unset, and the default daily cap (50) applied.
+        const { caps } = loadConfig({
+          envFile,
+          env: { DAILY_SPEND_CAP_USD: blank, HOUSE_MAX_PER_TX_USD: blank },
+        });
+        expect([caps.dailySpendCapUsd, caps.houseMaxPerTxUsd]).toEqual([10, 5]);
+      }
+      // A real value still wins over the file.
+      expect(loadConfig({ envFile, env: { DAILY_SPEND_CAP_USD: '8' } }).caps.dailySpendCapUsd).toBe(
+        8,
+      );
+      // Everything else keeps "blank = unset": that is its safe side, and the web tests use it
+      // to keep a developer's keys out of the test process.
+      expect(
+        loadConfig({ envFile, env: { BINANCE_WEB3_API_KEY: '' } }).binance.apiKey,
+      ).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
-describe('architecture: caps are read only in packages/config', () => {
-  const SOURCE = /\.(ts|tsx|mts|js|mjs|cjs)$/;
-  const SKIP = new Set(['node_modules', '.next', 'dist', 'coverage']);
-  function walk(dir: string): string[] {
-    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      if (SKIP.has(entry.name)) return [];
-      const full = path.join(dir, entry.name);
-      return entry.isDirectory() ? walk(full) : SOURCE.test(entry.name) ? [full] : [];
-    });
-  }
+/**
+ * Files under `root` that name a cap variable outside the allowed places, relative to `root`.
+ * Scanned: every text file (any extension: .cts, .jsx, .sh, .yml, nested .env files, …) under
+ * apps/, packages/, scripts/, skills/ and .github/, and every file at the root. Allowed:
+ * packages/config, the root env files (.env.example documents the caps, a local .env sets them)
+ * and Markdown prose at the root, like docs/*.md, which is not scanned.
+ */
+function capOffenders(root: string): string[] {
+  const TREES = ['apps', 'packages', 'scripts', 'skills', '.github'];
+  const SKIP = new Set(['node_modules', '.next', 'dist', 'coverage', '.turbo', '.git']);
+  const configDir = path.join(root, 'packages', 'config') + path.sep;
+  const walk = (dir: string): string[] =>
+    existsSync(dir)
+      ? readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+          if (SKIP.has(entry.name)) return [];
+          const full = path.join(dir, entry.name);
+          return entry.isDirectory() ? walk(full) : entry.isFile() ? [full] : [];
+        })
+      : [];
+  const rootFiles = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .filter((entry) => !/^\.env(\..+)?$/.test(entry.name) && !entry.name.endsWith('.md'))
+    .map((entry) => path.join(root, entry.name));
+  return [...TREES.flatMap((tree) => walk(path.join(root, tree))), ...rootFiles]
+    .filter((file) => !file.startsWith(configDir))
+    .filter((file) => {
+      const bytes = readFileSync(file);
+      if (bytes.includes(0)) return false; // binary (images, fonts)
+      const text = bytes.toString('utf8');
+      return CAP_NAMES.some((name) => text.includes(name));
+    })
+    .map((file) => path.relative(root, file).split(path.sep).join('/'))
+    .sort();
+}
 
-  it('no source file outside packages/config mentions a cap variable', () => {
-    const configDir = path.join(ROOT, 'packages', 'config') + path.sep;
-    const offenders = ['apps', 'packages', 'scripts']
-      .flatMap((dir) => walk(path.join(ROOT, dir)))
-      .filter((file) => !file.startsWith(configDir))
-      .filter((file) => CAP_NAMES.some((name) => readFileSync(file, 'utf8').includes(name)));
-    expect(offenders).toEqual([]);
+describe('architecture: caps are read only in packages/config', () => {
+  it('no file outside packages/config and the root env files names a cap variable', () => {
+    expect(capOffenders(ROOT)).toEqual([]);
+  });
+
+  it('looks at every file type, skills/, .github/ and the root, not only .ts sources', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'ijaro-arch-'));
+    try {
+      const put = (file: string, text: string | Buffer) => {
+        mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        writeFileSync(path.join(root, file), text);
+      };
+      const cap = 'DAILY_SPEND_CAP_USD';
+      // Allowed places.
+      put('packages/config/src/index.ts', `const cap = '${cap}';`);
+      put('.env.example', `${cap}=50\n`);
+      put('.env', `${cap}=10\n`);
+      put('CLAUDE.md', `total <= ${cap}\n`);
+      put('docs/SPEC.md', `${cap}\n`);
+      put('apps/web/public/logo.png', Buffer.concat([Buffer.from([0x89, 0, 1]), Buffer.from(cap)]));
+      // Everything else.
+      put('apps/agent/src/caps.cts', `process.env.${cap}`);
+      put('apps/web/components/Cap.jsx', `<p>{'${cap}'}</p>`);
+      put('apps/web/.env.production', `${cap}=500\n`);
+      put('packages/core/src/legacy.cjs', `module.exports = '${cap}';`);
+      put('scripts/cap.sh', `echo $${cap}\n`);
+      put('skills/ijaro/SKILL.md', `Read ${cap} from the environment.\n`);
+      put('.github/workflows/ci.yml', `env:\n  ${cap}: 5000\n`);
+      put('fly.toml', `[env]\n  ${cap} = "5000"\n`);
+      put('vitest.config.ts', `export const cap = '${cap}';`);
+      expect(capOffenders(root)).toEqual([
+        '.github/workflows/ci.yml',
+        'apps/agent/src/caps.cts',
+        'apps/web/.env.production',
+        'apps/web/components/Cap.jsx',
+        'fly.toml',
+        'packages/core/src/legacy.cjs',
+        'scripts/cap.sh',
+        'skills/ijaro/SKILL.md',
+        'vitest.config.ts',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

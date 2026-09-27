@@ -26,15 +26,46 @@ const httpUrl = (fallback: string) =>
       .default(fallback),
   );
 
-const usd = (fallback: number) =>
+/**
+ * Caps are written as plain decimals. Consumers turn them back into text (`String(cap)`) for
+ * toUnits(), so `1e21`, `0x19` or `0.0000005` must fail here rather than later in a cycle.
+ */
+const PLAIN_DECIMAL = /^\d+(\.\d{1,6})?$/;
+/** Upper bound for every cap (USD); a larger value is a typo, not a budget. */
+const MAX_CAP_USD = 1_000_000;
+/** Lower bound for MIN_BUY_USD (USD): one cent. */
+const MIN_BUY_FLOOR_USD = 0.01;
+
+const usd = (fallback: number, min?: number) =>
   z.preprocess(
     blankToUndefined,
-    // zod 4 numbers already exclude NaN and ±Infinity.
-    z.coerce
-      .number({ message: 'must be a number' })
-      .positive({ message: 'must be greater than 0' })
+    z
+      .string()
+      .trim()
+      .superRefine((raw, ctx) => {
+        const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+        const value = Number(raw);
+        if (!Number.isFinite(value)) return fail('must be a number');
+        if (value <= 0) return fail('must be greater than 0');
+        if (!PLAIN_DECIMAL.test(raw)) {
+          return fail(
+            'must be a plain decimal such as 25 or 0.25 (at most 6 decimals, no exponent)',
+          );
+        }
+        if (min !== undefined && value < min) return fail(`must be at least ${min}`);
+        if (value > MAX_CAP_USD) return fail(`must be at most ${MAX_CAP_USD}`);
+      })
+      .transform(Number)
       .default(fallback),
   );
+
+const CAP_KEYS = [
+  'HOUSE_MAX_PER_TX_USD',
+  'SANDBOX_MAX_PER_PLAN_USD',
+  'DAILY_SPEND_CAP_USD',
+  'MIN_BUY_USD',
+  'MAX_PRINCIPAL_USD',
+] as const;
 
 export const envSchema = z
   .object({
@@ -78,7 +109,7 @@ export const envSchema = z
     HOUSE_MAX_PER_TX_USD: usd(25),
     SANDBOX_MAX_PER_PLAN_USD: usd(5),
     DAILY_SPEND_CAP_USD: usd(50),
-    MIN_BUY_USD: usd(0.25),
+    MIN_BUY_USD: usd(0.25, MIN_BUY_FLOOR_USD),
     MAX_PRINCIPAL_USD: usd(1000),
     JUDGE_CODES: z.preprocess(
       blankToUndefined,
@@ -112,17 +143,29 @@ export const envSchema = z
   .superRefine((env, ctx) => {
     const fail = (key: string, message: string) =>
       ctx.addIssue({ code: 'custom', path: [key], message });
-    if (env.MIN_BUY_USD > env.HOUSE_MAX_PER_TX_USD) {
-      fail('MIN_BUY_USD', 'must not exceed HOUSE_MAX_PER_TX_USD (no buy could ever run)');
-    }
-    if (env.MIN_BUY_USD > env.SANDBOX_MAX_PER_PLAN_USD) {
-      fail('MIN_BUY_USD', 'must not exceed SANDBOX_MAX_PER_PLAN_USD (no sandbox buy could run)');
-    }
-    if (env.HOUSE_MAX_PER_TX_USD > env.DAILY_SPEND_CAP_USD) {
-      fail('HOUSE_MAX_PER_TX_USD', 'must not exceed DAILY_SPEND_CAP_USD');
-    }
-    if (env.SANDBOX_MAX_PER_PLAN_USD > env.DAILY_SPEND_CAP_USD) {
-      fail('SANDBOX_MAX_PER_PLAN_USD', 'must not exceed DAILY_SPEND_CAP_USD');
+    // zod runs this even when a field failed, handing over that field's raw text: compare the
+    // caps only once every one of them is a validated number.
+    if (CAP_KEYS.every((key) => typeof (env[key] as unknown) === 'number')) {
+      if (env.MIN_BUY_USD > env.HOUSE_MAX_PER_TX_USD) {
+        fail('MIN_BUY_USD', 'must not exceed HOUSE_MAX_PER_TX_USD (no buy could ever run)');
+      }
+      if (env.MIN_BUY_USD > env.SANDBOX_MAX_PER_PLAN_USD) {
+        fail('MIN_BUY_USD', 'must not exceed SANDBOX_MAX_PER_PLAN_USD (no sandbox buy could run)');
+      }
+      // Judge plans are signed by the house wallet with the sandbox cap as their per-buy cap, so a
+      // sandbox cap above the house cap would let one house transaction exceed the house cap.
+      if (env.SANDBOX_MAX_PER_PLAN_USD > env.HOUSE_MAX_PER_TX_USD) {
+        fail(
+          'SANDBOX_MAX_PER_PLAN_USD',
+          'must not exceed HOUSE_MAX_PER_TX_USD (judge plans are signed by the house wallet)',
+        );
+      }
+      if (env.HOUSE_MAX_PER_TX_USD > env.DAILY_SPEND_CAP_USD) {
+        fail('HOUSE_MAX_PER_TX_USD', 'must not exceed DAILY_SPEND_CAP_USD');
+      }
+      if (env.SANDBOX_MAX_PER_PLAN_USD > env.DAILY_SPEND_CAP_USD) {
+        fail('SANDBOX_MAX_PER_PLAN_USD', 'must not exceed DAILY_SPEND_CAP_USD');
+      }
     }
     if (env.EXECUTION_MODE === 'live') {
       // Live mode signs and spends: it needs credentials, the house key, and the spend ledger
@@ -233,7 +276,10 @@ export function findWorkspaceRoot(from: string = process.cwd()): string | undefi
 export interface LoadOptions {
   /** Path of a .env file, or false to skip. Default: `<workspace root>/.env` when it exists. */
   envFile?: string | false;
-  /** Defaults to process.env. Real environment variables win over the file, like dotenv. */
+  /**
+   * Defaults to process.env. Real environment variables win over the file, like dotenv — except
+   * a blank cap, which never hides the file's cap (see loadConfig).
+   */
   env?: EnvInput;
 }
 
@@ -243,7 +289,16 @@ export function loadConfig(options: LoadOptions = {}): Config {
       ? undefined
       : (options.envFile ?? path.join(findWorkspaceRoot() ?? process.cwd(), '.env'));
   const fromFile = envFile && existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {};
-  return parseConfig({ ...fromFile, ...(options.env ?? process.env) });
+  // A blank cap counts as unset and falls back to its default, which can be looser than the cap
+  // in the file (DAILY_SPEND_CAP_USD=10 in .env plus an exported empty variable gave 50), so blank
+  // caps are dropped from the real environment before merging. Other blank variables still
+  // override the file: unset is their safe side (no key, no database), and the web tests rely on
+  // that to keep a developer's .env keys and database out (apps/web/test/env.ts).
+  const caps: readonly string[] = CAP_KEYS;
+  const real = Object.entries(options.env ?? process.env).filter(
+    ([key, value]) => !caps.includes(key) || blankToUndefined(value) !== undefined,
+  );
+  return parseConfig({ ...fromFile, ...Object.fromEntries(real) });
 }
 
 /** A loggable view: secrets become booleans, the database URL loses its credentials. */

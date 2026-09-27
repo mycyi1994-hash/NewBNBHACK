@@ -6,6 +6,7 @@
  * for GET. The signature test compares this module with the official connector byte for byte.
  */
 import { createHmac } from 'node:crypto';
+import { maskSensitive } from './telemetry.js';
 
 export type QueryValue = string | number | boolean | bigint;
 export type Query = Readonly<Record<string, QueryValue | null | undefined>>;
@@ -59,7 +60,11 @@ export interface WireTarget {
  * parsing leaves the result untouched — otherwise the signature would not match the wire.
  */
 export function buildTarget(baseUrl: string, apiPath: string, query?: Query): WireTarget {
-  if (!apiPath.startsWith('/')) throw new Error(`API path must start with "/": ${apiPath}`);
+  // Paths and queries can carry a wallet (userWalletAddress, path parameters): errors show them
+  // with every address shortened, like api_calls.msg.
+  if (!apiPath.startsWith('/')) {
+    throw new Error(`API path must start with "/": ${maskSensitive(apiPath)}`);
+  }
   const base = new URL(baseUrl);
   const basePath = base.pathname.replace(/\/+$/, '');
   const search = encodeQuery(query);
@@ -67,7 +72,7 @@ export function buildTarget(baseUrl: string, apiPath: string, query?: Query): Wi
   const url = `${base.origin}${requestPath}`;
   const parsed = new URL(url);
   if (`${parsed.pathname}${parsed.search}` !== requestPath) {
-    throw new Error(`request path would be rewritten on the wire: ${requestPath}`);
+    throw new Error(`request path would be rewritten on the wire: ${maskSensitive(requestPath)}`);
   }
   return { url, requestPath };
 }
@@ -90,6 +95,20 @@ export function signPreHash(secretKey: string, preHashString: string): string {
 /** `X-OC-TIMESTAMP` format: UTC ISO 8601 with milliseconds, e.g. 2026-05-11T10:08:57.715Z. */
 export function formatTimestamp(epochMs: number): string {
   return new Date(epochMs).toISOString();
+}
+
+/**
+ * Whole-millisecond timestamps that strictly increase: max(now, last + 1 ms). We send no
+ * X-OC-NONCE, so the signature itself is the nonce (llms-full.txt § Timestamp & Anti-Replay);
+ * two identical requests in one millisecond would carry the same X-OC-SIGN, and the gateway
+ * rejects the second as a replay (40103).
+ */
+export function increasingTimestamps(now: () => number): () => number {
+  let last = Number.NEGATIVE_INFINITY;
+  return () => {
+    last = Math.max(Math.floor(now()), last + 1);
+    return last;
+  };
 }
 
 export interface AuthInput extends PreHashParts {

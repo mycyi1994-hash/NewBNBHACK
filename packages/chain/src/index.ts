@@ -3,7 +3,16 @@
  * and Comptroller reads (M0-07), BEP-677 share multiplier (M1-08). Addresses of stock tokens never
  * live here — they come from the RWA registry (DECISIONS D-07).
  */
-import { createPublicClient, fallback, getAddress, http, parseAbi, type Address } from 'viem';
+import {
+  createPublicClient,
+  fallback,
+  getAddress,
+  hexToNumber,
+  http,
+  isHex,
+  parseAbi,
+  type Address,
+} from 'viem';
 import { bsc } from 'viem/chains';
 
 export const BSC_CHAIN_ID = 56;
@@ -16,6 +25,61 @@ export function createBscClient(rpc: { rpcUrl: string; rpcUrlFallback: string })
 }
 
 export type BscClient = ReturnType<typeof createBscClient>;
+
+/** One RPC endpoint as the check sees it: a JSON-RPC request function and, for http, its URL. */
+interface RpcEndpoint {
+  request: (args: { method: 'eth_chainId' }) => Promise<unknown>;
+  value?: { url?: string | undefined } | undefined;
+}
+
+/** " (host)" of an RPC URL for messages; providers often keep the API key in the path. */
+function hostOf(url: string | undefined): string {
+  return url && URL.canParse(url) ? ` (${new URL(url).host})` : '';
+}
+
+/**
+ * Why an RPC did not answer, in one line: viem's short message and the innermost cause
+ * (ECONNREFUSED …) — never viem's full message, whose "URL:" line can hold an API key.
+ */
+function reasonOf(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const short = (error as { shortMessage?: unknown }).shortMessage;
+  const head = typeof short === 'string' ? short : (error.message.split('\n')[0] ?? '');
+  let root: Error = error;
+  for (let depth = 0; depth < 5 && root.cause instanceof Error; depth++) root = root.cause;
+  const tail = root === error ? '' : (root.message.split('\n')[0] ?? '').slice(0, 200);
+  return tail && !head.includes(tail) ? `${head} (${tail})` : head;
+}
+
+/**
+ * Throws unless every RPC behind `client` answers eth_chainId with 56 (BSC mainnet). The fallback
+ * transport only reaches its second URL once the first fails, so each URL is asked directly: a
+ * testnet or other-chain URL must stop start-up, not surface mid-cycle as wrong balances or a
+ * refused transaction. An RPC that does not answer fails the check too — its chain is unknown.
+ */
+export async function assertBscChain(client: BscClient): Promise<void> {
+  // createBscClient always has a primary and a fallback; any other client is asked as it is.
+  const inner: readonly RpcEndpoint[] | undefined = client.transport.transports;
+  const endpoints = inner?.length
+    ? inner.map((endpoint, i) => ({
+        name: `${i === 0 ? 'primary' : 'fallback'} RPC${hostOf(endpoint.value?.url)}`,
+        request: endpoint.request,
+      }))
+    : [{ name: 'RPC', request: (args: { method: 'eth_chainId' }) => client.request(args) }];
+  const answers = await Promise.allSettled(
+    endpoints.map((endpoint) => endpoint.request({ method: 'eth_chainId' })),
+  );
+  const problems = answers.flatMap((answer, i) => {
+    const name = endpoints[i]?.name ?? 'RPC';
+    if (answer.status === 'rejected') {
+      return [`${name} did not answer eth_chainId: ${reasonOf(answer.reason)}`];
+    }
+    const chainId = isHex(answer.value) ? hexToNumber(answer.value) : undefined;
+    if (chainId === BSC_CHAIN_ID) return [];
+    return [`${name} is on chain ${chainId ?? JSON.stringify(answer.value)}, not ${BSC_CHAIN_ID}`];
+  });
+  if (problems.length > 0) throw new Error(`BSC RPC check failed: ${problems.join('; ')}`);
+}
 
 export const erc20Abi = parseAbi([
   'function symbol() view returns (string)',

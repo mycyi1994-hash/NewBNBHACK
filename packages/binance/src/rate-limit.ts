@@ -97,6 +97,14 @@ export interface RateLimiterSpec {
   groups: Readonly<Record<string, WindowSpec>>;
 }
 
+/**
+ * The longest Retry-After we wait out, in the limiter pause and in a retry sleep. Anything longer
+ * (3600 s would freeze every call; ≥ 2,147,484 s overflows setTimeout to 1 ms and disables pacing)
+ * is not slept: the request fails with its retryable error, which carries the full
+ * `retryAfterMs`, and the caller decides when to come back.
+ */
+export const MAX_RETRY_AFTER_MS = 30_000;
+
 export const DEFAULT_LIMITS: RateLimiterSpec = {
   perEndpoint: { max: 5, windowMs: 1000, marginMs: 250 },
   global: { capacity: 20, perSecond: 20 },
@@ -134,9 +142,14 @@ export class RateLimiter {
     return wait;
   }
 
-  /** After a 429 the gateway does not say which dimension tripped, so everything waits. */
+  /**
+   * After a 429 the gateway does not say which dimension tripped, so everything waits — at most
+   * MAX_RETRY_AFTER_MS, whatever the server asked for (NaN, 0 or less: no pause).
+   */
   pause(ms: number): void {
-    this.pausedUntil = Math.max(this.pausedUntil, this.clock.now() + ms);
+    if (!(ms > 0)) return;
+    const until = this.clock.now() + Math.min(ms, MAX_RETRY_AFTER_MS);
+    this.pausedUntil = Math.max(this.pausedUntil, until);
   }
 
   private window(map: Map<string, SlidingWindow>, key: string, spec: WindowSpec): SlidingWindow {

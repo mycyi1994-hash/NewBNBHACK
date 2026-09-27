@@ -30,24 +30,33 @@ export interface CallStats {
   p95Ms: number | null;
 }
 
+/** O(n log n): one pass for the counts, one sort for the percentiles. */
 function stats(records: readonly ApiCallRecord[]): CallStats {
   const latencies = records.map((r) => r.latencyMs).sort((a, b) => a - b);
+  let errors = 0;
+  for (const record of records) if (!isSuccess(record)) errors += 1;
   return {
     calls: records.length,
-    errors: records.filter((r) => !isSuccess(r)).length,
+    errors,
     p50Ms: percentile(latencies, 50),
     p95Ms: percentile(latencies, 95),
   };
 }
 
+/**
+ * Groups in one linear pass (rows are appended to their group, never copied), then sorts the
+ * group keys. The /dx page summarizes every api_calls row of the window on each request.
+ */
 function groupBy<K extends string>(
   records: readonly ApiCallRecord[],
   key: (r: ApiCallRecord) => K,
-) {
+): [K, ApiCallRecord[]][] {
   const groups = new Map<K, ApiCallRecord[]>();
   for (const record of records) {
     const k = key(record);
-    groups.set(k, [...(groups.get(k) ?? []), record]);
+    const group = groups.get(k);
+    if (group) group.push(record);
+    else groups.set(k, [record]);
   }
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
@@ -146,7 +155,10 @@ export function summarizeCalls(records: readonly ApiCallRecord[]): {
   const endpoints = groupBy(records, (r) => `${r.module}\u0000${r.endpoint}`).map(([key, rows]) => {
     const [module = '', endpoint = ''] = key.split('\u0000');
     const codes: Record<string, number> = {};
-    for (const row of rows) codes[codeLabel(row)] = (codes[codeLabel(row)] ?? 0) + 1;
+    for (const row of rows) {
+      const label = codeLabel(row);
+      codes[label] = (codes[label] ?? 0) + 1;
+    }
     return { module, endpoint, ...stats(rows), codes };
   });
   const regions = groupBy(records, (r) => r.region ?? 'unset').map(([region, rows]) => ({

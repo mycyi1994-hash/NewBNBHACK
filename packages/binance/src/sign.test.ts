@@ -7,6 +7,7 @@ import {
   encodeRfc3986,
   fillPathParams,
   formatTimestamp,
+  increasingTimestamps,
   preHash,
   signPreHash,
 } from './sign.js';
@@ -65,11 +66,43 @@ describe('buildTarget', () => {
     expect(() => buildTarget('https://h/build', 'api/v1')).toThrow('must start with');
   });
 
+  it('shortens wallet addresses in its errors', () => {
+    const wallet = '0x55d398326f99059fF775485246999027B3197955';
+    const messageOf = (fn: () => unknown) => {
+      try {
+        fn();
+      } catch (error) {
+        return (error as Error).message;
+      }
+      throw new Error('expected an error');
+    };
+    const rewritten = messageOf(() =>
+      buildTarget('https://h/build', '/api/../v1', { userWalletAddress: wallet }),
+    );
+    expect(rewritten).toContain('rewritten on the wire');
+    expect(rewritten).toContain('userWalletAddress=0x55d3…7955');
+    const relative = messageOf(() => buildTarget('https://h/build', `api/v1/${wallet}`));
+    expect(relative).toContain('must start with');
+    for (const message of [rewritten, relative]) expect(message).not.toContain(wallet);
+  });
+
   it('fills and encodes path parameters', () => {
     expect(fillPathParams('/api/v1/dex/aggregator/order/{orderId}', { orderId: 'a/b c' })).toBe(
       '/api/v1/dex/aggregator/order/a%2Fb%20c',
     );
     expect(() => fillPathParams('/order/{orderId}')).toThrow('missing path parameter');
+  });
+});
+
+describe('increasingTimestamps', () => {
+  it('never repeats a millisecond, and follows the clock when it moves ahead', () => {
+    let now = 1_000;
+    const next = increasingTimestamps(() => now);
+    expect([next(), next(), next()]).toEqual([1_000, 1_001, 1_002]);
+    now = 5_000.9;
+    expect(next()).toBe(5_000);
+    now = 4_000; // the clock steps back (NTP): still strictly increasing
+    expect([next(), next()]).toEqual([5_001, 5_002]);
   });
 });
 

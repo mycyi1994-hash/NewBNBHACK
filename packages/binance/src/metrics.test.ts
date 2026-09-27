@@ -154,4 +154,36 @@ describe('summarizeCalls', () => {
     // Percentiles are taken over every call, not averaged from the groups.
     expect(summary.total).toEqual({ calls: 3, errors: 2, p50Ms: 300, p95Ms: 15000 });
   });
+
+  it('stays linear on a large api_calls window (60k rows well under a second)', () => {
+    // Grouping used to copy the whole group for every row: 30k rows took ~5-9 s and blocked /dx.
+    const n = 60_000;
+    // 7919 is prime and coprime to 60,000, so the latencies are a permutation of 0..59,999.
+    const records = Array.from({ length: n }, (_, i) =>
+      call({
+        endpoint: `endpoint${i % 3}`,
+        latencyMs: (i * 7919) % n,
+        code: i % 10 === 0 ? '40375' : '0',
+      }),
+    );
+    const started = performance.now();
+    const summary = summarizeCalls(records);
+    const markdown = renderMetricsMarkdown(records, {
+      generatedAt: new Date('2026-09-27T00:00:00Z'),
+      since: null,
+    });
+    const elapsedMs = performance.now() - started;
+
+    expect(elapsedMs).toBeLessThan(1_000);
+    expect(summary.total).toEqual({ calls: n, errors: 6_000, p50Ms: 29_999, p95Ms: 56_999 });
+    expect(summary.endpoints.map((e) => [e.endpoint, e.calls, e.codes])).toEqual([
+      ['endpoint0', 20_000, { '0': 18_000, '40375': 2_000 }],
+      ['endpoint1', 20_000, { '0': 18_000, '40375': 2_000 }],
+      ['endpoint2', 20_000, { '0': 18_000, '40375': 2_000 }],
+    ]);
+    expect(summary.regions).toEqual([
+      { region: 'fra', calls: n, errors: 6_000, p50Ms: 29_999, p95Ms: 56_999 },
+    ]);
+    expect(markdown).toContain('| fra | 60000 | 6000 | 29999 | 56999 |');
+  });
 });
