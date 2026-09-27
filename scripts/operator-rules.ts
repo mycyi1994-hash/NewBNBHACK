@@ -10,7 +10,7 @@ import {
   type SimulatedBuy,
 } from '@ijaro/agent';
 import { BSC_USDT } from '@ijaro/chain';
-import { formatShares, toUnits, type Instrument } from '@ijaro/core';
+import { formatShares, fromUnits, toUnits, type Instrument } from '@ijaro/core';
 
 /** A worker_status row as readWorkerStatus returns it. */
 export interface WorkerStatus {
@@ -231,4 +231,53 @@ export function pendingDepositHint(args: {
     default:
       return `pending: ${txHash} (${link}) is not mined yet and the outbox does not know it; look at it on BscScan first`;
   }
+}
+
+/** What depositRefusal reads of a plan. */
+export interface DepositPlan {
+  id: string;
+  ownerKind: string;
+  mode: string;
+  principalUsd: string;
+}
+
+/**
+ * Why yield:deposit must not put house USDT into this plan, or undefined (audit L4). Only a house
+ * or judge yield plan: a skill plan's position is its owner's own wallet (D-19), so the house key
+ * never deposits for it. With `usd` (a new deposit, not a --record): no guardian hold on deposits,
+ * and the plan's principal stays within the principal cap — for a judge plan also within the
+ * sandbox cap, as the Judge Mode deposit is (apps/agent/src/deposit.ts).
+ */
+export function depositRefusal(args: {
+  plan: DepositPlan;
+  usd?: string;
+  caps: { maxPrincipalUsd: number; sandboxMaxPerPlanUsd: number };
+  guardian: readonly { rule: string; action: string }[];
+}): string | undefined {
+  const { plan, usd, caps } = args;
+  if (plan.ownerKind === 'skill') {
+    return `${plan.id} is a skill plan: its principal is in its owner's wallet, and the owner deposits it with the skill`;
+  }
+  if (plan.ownerKind !== 'house' && plan.ownerKind !== 'judge') {
+    return `${plan.id} belongs to a ${plan.ownerKind}, not the house or a judge`;
+  }
+  if (plan.mode !== 'yield') return `${plan.id} is a ${plan.mode} plan, not yield`;
+  if (usd === undefined) return undefined;
+  const hold = args.guardian.find((a) =>
+    ['stop_deposits', 'redeem_all', 'pause_buys'].includes(a.action),
+  );
+  if (hold) return `the guardian holds new deposits: ${hold.rule} (${hold.action})`;
+  const judge = plan.ownerKind === 'judge';
+  const cap = judge
+    ? Math.min(caps.maxPrincipalUsd, caps.sandboxMaxPerPlanUsd)
+    : caps.maxPrincipalUsd;
+  const amount = toUnits(usd, 18);
+  const after = toUnits(plan.principalUsd, 18) + amount;
+  if (amount <= 0n || after > toUnits(String(cap), 18)) {
+    return (
+      `principal would be ${fromUnits(after, 18)} USD; the ${judge ? 'judge plan' : 'principal'} ` +
+      `cap is ${cap}`
+    );
+  }
+  return undefined;
 }

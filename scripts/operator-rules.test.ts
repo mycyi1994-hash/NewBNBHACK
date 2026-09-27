@@ -7,6 +7,7 @@ import {
   cycleReportText,
   depositProblem,
   depositRecordRefusal,
+  depositRefusal,
   liveActivationReasons,
   pendingDepositHint,
   watchAllowances,
@@ -280,5 +281,54 @@ describe('yield:deposit --record and its pending hint (audit S15)', () => {
     expect(hint('approve')).toContain('pnpm yield:deposit --plan H-YIELD --usd 1 --live');
     expect(hint('approve')).not.toContain('--record');
     expect(hint(undefined)).not.toContain('--record');
+  });
+});
+
+describe('depositRefusal (yield:deposit, audit L4)', () => {
+  const caps = { maxPrincipalUsd: 1000, sandboxMaxPerPlanUsd: 5 };
+  const house = { id: 'H-YIELD', ownerKind: 'house', mode: 'yield', principalUsd: '0' };
+  const refuse = (
+    plan: typeof house,
+    usd?: string,
+    guardian: { rule: string; action: string }[] = [],
+  ) => depositRefusal({ plan, ...(usd === undefined ? {} : { usd }), caps, guardian });
+
+  it("never deposits house money into a skill plan (the position is its owner's wallet)", () => {
+    const skill = { ...house, id: 'S-1', ownerKind: 'skill' };
+    expect(refuse(skill, '1')).toBe(
+      "S-1 is a skill plan: its principal is in its owner's wallet, and the owner deposits it with the skill",
+    );
+    // Not even a --record of one.
+    expect(refuse(skill)).toContain('is a skill plan');
+    expect(refuse({ ...house, ownerKind: 'stranger' }, '1')).toBe(
+      'H-YIELD belongs to a stranger, not the house or a judge',
+    );
+    expect(refuse({ ...house, mode: 'safe' }, '1')).toBe('H-YIELD is a safe plan, not yield');
+  });
+
+  it('lets a house or judge yield plan deposit within its cap', () => {
+    expect(refuse(house, '1')).toBeUndefined();
+    expect(refuse({ ...house, principalUsd: '999' }, '1')).toBeUndefined();
+    expect(refuse(house)).toBeUndefined();
+    expect(refuse({ ...house, id: 'J-1', ownerKind: 'judge' }, '5')).toBeUndefined();
+  });
+
+  it('keeps the principal cap, and the sandbox cap for a judge plan', () => {
+    expect(refuse({ ...house, principalUsd: '999.5' }, '1')).toBe(
+      'principal would be 1000.5 USD; the principal cap is 1000',
+    );
+    expect(refuse(house, '0')).toBe('principal would be 0 USD; the principal cap is 1000');
+    expect(refuse({ ...house, id: 'J-1', ownerKind: 'judge', principalUsd: '4' }, '1.01')).toBe(
+      'principal would be 5.01 USD; the judge plan cap is 5',
+    );
+  });
+
+  it('holds new deposits while the guardian does, but still records one', () => {
+    const hold = [{ rule: 'venus_paused', action: 'stop_deposits' }];
+    expect(refuse(house, '1', hold)).toBe(
+      'the guardian holds new deposits: venus_paused (stop_deposits)',
+    );
+    expect(refuse(house, undefined, hold)).toBeUndefined();
+    expect(refuse(house, '1', [{ rule: 'other', action: 'alert' }])).toBeUndefined();
   });
 });

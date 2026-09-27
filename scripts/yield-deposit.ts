@@ -6,7 +6,9 @@
  *                                                           only a deposit our outbox signed for
  *                                                           this plan
  *
- * The principal cap (config) bounds the plan's total principal. Without --live everything up to
+ * House and judge yield plans only: a skill plan's principal is its owner's own wallet, never the
+ * house's to deposit. The principal cap (config; for a judge plan also the sandbox cap) bounds the
+ * plan's total principal, and the guardian can hold new deposits. Without --live everything up to
  * the simulations is real and nothing is signed. --live needs EXECUTION_MODE=live, the house key
  * and a typed `y`, and a dry run that did not fail (a FAILED mint simulation after a simulated
  * approval is expected and does not count). The plan's principal and vTokens are written from the
@@ -23,7 +25,7 @@ import {
 } from '@ijaro/agent';
 import { BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
 import { loadConfig } from '@ijaro/config';
-import { fromUnits, toUnits } from '@ijaro/core';
+import { fromUnits } from '@ijaro/core';
 import {
   applyDeposit,
   getPlan,
@@ -31,11 +33,17 @@ import {
   openGuardianActions,
   outboxByHash,
   planFromRow,
+  type PlanRow,
 } from '@ijaro/db';
 import type { Hex } from 'viem';
 import { parseFlags, TX_HASH, type Flags } from './args.js';
 import { confirmSpend } from './confirm.js';
-import { depositProblem, depositRecordRefusal, pendingDepositHint } from './operator-rules.js';
+import {
+  depositProblem,
+  depositRecordRefusal,
+  depositRefusal,
+  pendingDepositHint,
+} from './operator-rules.js';
 
 /** A deposit (--usd, maybe --live) or a record (--record); any other mix is a usage error. */
 function misuse({ values }: Flags<'plan' | 'usd' | 'record', 'live', 'plan'>) {
@@ -82,10 +90,24 @@ if (!flags.ok || problem !== undefined) {
   const rt = createRuntime(config);
   try {
     await migrateDb(rt.database.db);
+    /** Why this plan takes no deposit (or, without `amountUsd`, no --record); see depositRefusal. */
+    const refusalFor = async (row: PlanRow, amountUsd: string | undefined) => {
+      const plan = planFromRow(row);
+      return depositRefusal({
+        plan: {
+          id: plan.id,
+          ownerKind: plan.owner.kind,
+          mode: plan.mode,
+          principalUsd: plan.principalUsd,
+        },
+        ...(amountUsd === undefined ? {} : { usd: amountUsd }),
+        caps: config.caps,
+        guardian: amountUsd === undefined ? [] : await openGuardianActions(rt.database.db, planId),
+      });
+    };
     const row = await getPlan(rt.database.db, planId);
     if (!row) throw new Error(`plan ${planId} not found`);
-    const plan = planFromRow(row);
-    if (plan.mode !== 'yield') throw new Error(`${planId} is a ${plan.mode} plan, not yield`);
+    const refused = await refusalFor(row, usd);
     const simulate = executorDeps(rt, 'simulate');
     const venus = async (): Promise<VenusMarket> => {
       const market = await discoverVenusUsdt(simulate);
@@ -95,7 +117,10 @@ if (!flags.ok || problem !== undefined) {
       return market;
     };
 
-    if (recordHash) {
+    if (refused) {
+      console.log(`refused: ${refused}`);
+      process.exitCode = 1;
+    } else if (recordHash) {
       const signed = await outboxByHash(rt.database.db, recordHash);
       const refusal = depositRecordRefusal(signed, planId, recordHash);
       if (refusal || !signed) {
@@ -131,19 +156,6 @@ if (!flags.ok || problem !== undefined) {
         );
       }
     } else if (usd) {
-      const blocking = (await openGuardianActions(rt.database.db, planId)).find((a) =>
-        ['stop_deposits', 'redeem_all', 'pause_buys'].includes(a.action),
-      );
-      if (blocking)
-        throw new Error(`the guardian holds new deposits: ${blocking.rule} (${blocking.action})`);
-      const amount = toUnits(usd, 18);
-      const cap = toUnits(String(config.caps.maxPrincipalUsd), 18);
-      const after = toUnits(plan.principalUsd, 18) + amount;
-      if (amount <= 0n || after > cap) {
-        throw new Error(
-          `principal would be ${fromUnits(after, 18)} USD; the principal cap is ${config.caps.maxPrincipalUsd}`,
-        );
-      }
       const market = await venus();
       const dry = await depositPrincipal(simulate, { planId, market, amountUsd: usd });
       console.log(
