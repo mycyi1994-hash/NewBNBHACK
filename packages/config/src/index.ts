@@ -78,7 +78,7 @@ export const envSchema = z
     HOUSE_MAX_PER_TX_USD: usd(25),
     SANDBOX_MAX_PER_PLAN_USD: usd(5),
     DAILY_SPEND_CAP_USD: usd(50),
-    MIN_BUY_USD: usd(2),
+    MIN_BUY_USD: usd(0.25),
     MAX_PRINCIPAL_USD: usd(1000),
     JUDGE_CODES: z.preprocess(
       blankToUndefined,

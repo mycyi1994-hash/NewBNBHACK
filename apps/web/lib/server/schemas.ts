@@ -23,7 +23,7 @@ const window = z
   .enum(['regular_session', 'anytime'])
   .default('regular_session')
   .describe(
-    'When buys may run: the US regular session (default) or any time (off-hours halves the per-buy limit)',
+    'When buys may run: the US regular session (default) or any time (off-hours halves the per-buy limit; below the minimum buy it waits for the session)',
   );
 
 const txHash = z

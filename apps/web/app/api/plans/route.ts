@@ -55,16 +55,18 @@ async function handlePOST(request: Request): Promise<Response> {
     if (body instanceof Response) return body;
     if (issuersOf(body.ticker).length === 0)
       return problem(400, 'unknown_ticker', `${body.ticker} is not in the registry`);
+    // A per-buy limit under the minimum buy could never run (decideCycle refuses it).
+    const min = units(String(config.caps.minBuyUsd));
     const cap = units(String(config.caps.houseMaxPerTxUsd));
     if (
-      units(body.maxPerBuyUsd) <= 0n ||
+      units(body.maxPerBuyUsd) < min ||
       units(body.maxPerBuyUsd) > cap ||
       units(body.maxDailyUsd) < units(body.maxPerBuyUsd)
     ) {
       return problem(
         400,
         'bad_limits',
-        `per buy must be in (0, ${config.caps.houseMaxPerTxUsd}] and per day at least per buy`,
+        `per buy must be in [${config.caps.minBuyUsd}, ${config.caps.houseMaxPerTxUsd}] and per day at least per buy`,
       );
     }
     const wallet = getAddress(body.walletAddress);

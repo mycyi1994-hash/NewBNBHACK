@@ -199,12 +199,17 @@ export function decideCycle(input: CycleInput): Decision {
 
   // BUDGET
   const minBuy = units(input.caps.minBuyUsd);
-  let maxPerBuy = smallest(units(plan.limits.maxPerBuyUsd), units(input.caps.maxPerTxUsd));
-  if (offHours) maxPerBuy /= 2n;
-  if (maxPerBuy < minBuy) {
+  const perBuyLimit = smallest(units(plan.limits.maxPerBuyUsd), units(input.caps.maxPerTxUsd));
+  if (perBuyLimit < minBuy) {
     throw new Error(
-      `plan ${plan.id}: per-buy limit ${decimal(maxPerBuy)} is below the minimum buy ${decimal(minBuy)}`,
+      `plan ${plan.id}: per-buy limit ${decimal(perBuyLimit)} is below the minimum buy ${decimal(minBuy)}`,
     );
+  }
+  // Off-hours an anytime plan buys at half its limit. When half is under the minimum it waits for
+  // the regular session, where the whole limit applies (DECISIONS D-22).
+  const maxPerBuy = offHours ? perBuyLimit / 2n : perBuyLimit;
+  if (maxPerBuy < minBuy) {
+    return marketClosed(nextRegularOpen(now).getTime() + OPEN_SETTLE_MS, 'half_limit_below_min');
   }
   let interestInPosition = 0n;
   let harvestedUnspent = 0n;

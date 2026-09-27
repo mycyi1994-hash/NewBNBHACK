@@ -12,8 +12,10 @@ All requests go to `$IJARO_URL`. Bodies are JSON. Amounts are decimal strings (`
    - `contributionUsd` — per buy in safe mode; `"0"` for yield mode (interest only).
    - `cadence` — `daily` or `weekly` (default `weekly`).
    - `window` — `regular_session` (default, recommended) or `anytime`.
-   - `maxPerBuyUsd`, `maxDailyUsd` — hard limits; per buy at most the site's per-transaction cap,
-     per day at least per buy. The server refuses anything else (`bad_limits`).
+   - `maxPerBuyUsd`, `maxDailyUsd` — hard limits; per buy between the site's minimum buy and its
+     per-transaction cap, per day at least per buy. The server refuses anything else
+     (`bad_limits`). Off-hours an `anytime` plan buys at half the per-buy limit; when half is under
+     the minimum it waits for the regular session.
 4. Create it:
 
 ```bash

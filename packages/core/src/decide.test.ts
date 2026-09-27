@@ -197,9 +197,32 @@ describe('decideCycle — WINDOW', () => {
     expect(d).toEqual({ kind: 'quote', instrumentId: 'NVDA:bstocks', spendUsd: '2.5' });
   });
 
-  it('treats a halved limit below the minimum as a configuration error', () => {
+  it('waits for the regular session when half the limit is below the minimum', () => {
     const plan = { ...ANYTIME, limits: { maxPerBuyUsd: '3', maxDailyUsd: '3' } };
-    expect(() => decideCycle(input({ now: OVERNIGHT, plan }))).toThrow(/below the minimum buy/);
+    const d = terminal(decideCycle(input({ now: OVERNIGHT, plan })));
+    expect(d.outcome).toEqual({
+      kind: 'DEFERRED',
+      reason: 'market_closed',
+      retryAt: '2026-09-24T13:32:00.000Z',
+      detail: 'half_limit_below_min',
+    });
+    expect(d.why).toEqual({
+      key: 'why.deferred.market_closed',
+      params: { open: '2026-09-24T13:32:00.000Z' },
+    });
+    // In the session the whole limit applies.
+    expect(decideCycle(input({ plan }))).toEqual({
+      kind: 'quote',
+      instrumentId: 'NVDA:bstocks',
+      spendUsd: '3',
+    });
+  });
+
+  it('treats a per-buy limit below the minimum as a configuration error', () => {
+    const plan = { ...H_SAFE, limits: { maxPerBuyUsd: '1', maxDailyUsd: '1' } };
+    expect(() => decideCycle(input({ plan }))).toThrow(/below the minimum buy/);
+    const capped = input({ caps: { minBuyUsd: '2', maxPerTxUsd: '1.5' } });
+    expect(() => decideCycle(capped)).toThrow(/per-buy limit 1.5 is below the minimum buy 2/);
   });
 });
 

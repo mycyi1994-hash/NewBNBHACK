@@ -131,7 +131,7 @@ describe.skipIf(!webTestUrl)('Judge Mode routes', () => {
       [{ ticker, amountUsd: '5' }, undefined, 401, 'no_session'],
       [{ ticker, amountUsd: '5' }, `${cookie.slice(0, -2)}xx`, 401, 'no_session'],
       [{ ticker, amountUsd: '6' }, cookie, 400, 'over_cap'],
-      [{ ticker, amountUsd: '1' }, cookie, 400, 'below_min'],
+      [{ ticker, amountUsd: '0.2' }, cookie, 400, 'below_min'],
       [{ ticker, amountUsd: '5.123' }, cookie, 400, 'bad_request'],
       [{ ticker: 'ZZZZZZ', amountUsd: '5' }, cookie, 400, 'unknown_ticker'],
       [{ ticker, amountUsd: '5', mode: 'margin' }, cookie, 400, 'bad_request'],

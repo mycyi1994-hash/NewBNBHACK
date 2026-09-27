@@ -34,7 +34,7 @@
 | `DATABASE_URL` | Postgres |
 | `HOUSE_WALLET_PRIVATE_KEY` | 하우스 지갑 (서버 전용, 총 잔고 ≤ $300) |
 | `EXECUTION_MODE` | `simulate`(기본) / `live` |
-| `HOUSE_MAX_PER_TX_USD`=25, `SANDBOX_MAX_PER_PLAN_USD`=5, `DAILY_SPEND_CAP_USD`=50, `MIN_BUY_USD`=2, `MAX_PRINCIPAL_USD`=1000 | 캡 |
+| `HOUSE_MAX_PER_TX_USD`=25, `SANDBOX_MAX_PER_PLAN_USD`=5, `DAILY_SPEND_CAP_USD`=50, `MIN_BUY_USD`=0.25(9/27, D-21), `MAX_PRINCIPAL_USD`=1000 | 캡 |
 | `JUDGE_CODES` | 쉼표 구분 심사 코드 |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OPS_CHAT_ID` | 운영 알림 |
 | `REGION_TAG` | 계측용 (`fra`, `icn`, `kr-dev`) |
@@ -162,7 +162,7 @@ DB 테이블: `plans, cycles, receipts, holdings, instruments, api_calls, tape_s
 ### 5.2 WINDOW
 - **v2: 게이트는 우리 NYSE 달력이다**(`packages/core/session.ts`: 뉴욕 시각, 휴장일·조기폐장 표). RWA `statusInfo`는 장 판단에 쓰지 않는다. bStocks는 장외에도 `openState:true, reasonCode:TRADING, marketStatus:null`이다(dx/LOG.md 2026-09-24 00:45).
 - `window === 'regular_session'`: 정규장이 아니면 `DEFERRED(market_closed, retryAt = 다음 개장 + 2분)`이다(개장 직후 첫 견적의 이상치를 피함).
-- `anytime`: 통과하되 1회 한도를 절반으로 적용하고, 사유는 `why.bought.anytime`이다. 절반 한도가 최소 매수보다 작으면 설정 오류로 본다(플랜 생성 시 검증).
+- `anytime`: 통과하되 1회 한도를 절반으로 적용하고, 사유는 `why.bought.anytime`이다. 절반 한도가 최소 매수보다 작으면 장외에는 사지 않고 정규장 개장 2분 뒤로 미룬다(`DEFERRED(market_closed)`, detail `half_limit_below_min`, D-22). 1회 한도 자체가 최소 매수보다 작으면 설정 오류다(플랜 생성 시 검증).
 
 ### 5.3 BUDGET
 - safe: `budget = contributionUsd`.

@@ -124,6 +124,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
       [{ walletAddress: '0x1234' }, 'bad_request'],
       [{ maxPerBuyUsd: '30', maxDailyUsd: '30' }, 'bad_limits'],
       [{ maxPerBuyUsd: '5', maxDailyUsd: '4' }, 'bad_limits'],
+      [{ maxPerBuyUsd: '0.2', maxDailyUsd: '1' }, 'bad_limits'],
       [{ ticker: 'ZZZZZZ' }, 'unknown_ticker'],
     ];
     for (const [override, errorCode] of bad) {
@@ -408,7 +409,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
     // After every earlier tape run in this file: the latest run is the one the decision reads.
     at('2026-10-05T14:10:00.000Z');
     await writeTape(db, instrument, '2026-10-05T14:05:00.000Z');
-    chain.venusPositionUsdValue = '100.5'; // $0.50 of interest: under the $2 minimum
+    chain.venusPositionUsdValue = '100.1'; // $0.10 of interest: under the $0.25 minimum
     expect((await next(id, token)).body).toMatchObject({
       decision: 'skip',
       why: { key: 'why.skipped.below_min' },

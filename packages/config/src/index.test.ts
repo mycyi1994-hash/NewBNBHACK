@@ -45,7 +45,7 @@ describe('env schema vs .env.example', () => {
       houseMaxPerTxUsd: 25,
       sandboxMaxPerPlanUsd: 5,
       dailySpendCapUsd: 50,
-      minBuyUsd: 2,
+      minBuyUsd: 0.25,
       maxPrincipalUsd: 1000,
     });
     expect(config.binance.apiKey).toBeUndefined();
