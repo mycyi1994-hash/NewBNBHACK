@@ -398,3 +398,5 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 ---
 
 ## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]
+- [~] 9/27: agent draft in JUDGING §4 with its evidence — Technical 5, Creativity 8, DX 6, UX 6, weighted 6.2. Top priority: the money decisions (R1–R4), then the $1 live test and a web deploy.
+  - [ ] [HUMAN] Confirm or change the 9/27 scores.
