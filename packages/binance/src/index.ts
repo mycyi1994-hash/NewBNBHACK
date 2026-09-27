@@ -11,6 +11,7 @@ export { API_MODULES, envelopeFlavour, rateLimitGroup } from './modules.js';
 export type { ApiModule, EnvelopeFlavour } from './modules.js';
 export {
   DEFAULT_LIMITS,
+  MAX_RETRY_AFTER_MS,
   RateLimiter,
   SlidingWindow,
   TokenBucket,

@@ -14,7 +14,13 @@ import { parseEnvelope } from './envelope.js';
 import type { FixtureRecorder } from './fixtures.js';
 import { stringifyJsonLossless } from './json.js';
 import { envelopeFlavour, rateLimitGroup, type ApiModule } from './modules.js';
-import { RateLimiter, retryAfterMs, systemClock, type Clock } from './rate-limit.js';
+import {
+  MAX_RETRY_AFTER_MS,
+  RateLimiter,
+  retryAfterMs,
+  systemClock,
+  type Clock,
+} from './rate-limit.js';
 import { authHeaders, buildTarget, fillPathParams, formatTimestamp, type Query } from './sign.js';
 import { isTransient } from './taxonomy.js';
 import { maskSensitive, requestIdOf, type ApiCallRecord, type ApiCallSink } from './telemetry.js';
@@ -63,8 +69,9 @@ export interface RequestOptions {
   recordFixture?: boolean;
   /**
    * Extra attempts after a transient failure (SPEC §11: network, timeout, 5xx, 50000/50001, and
-   * the module codes the taxonomy marks `retry`), with `retryBackoffMs` between them. Only for
-   * idempotent calls; default 0. A 429 is always retried once after Retry-After, independently.
+   * the module codes the taxonomy marks `retry`), with `retryBackoffMs` (or the server's
+   * Retry-After) between them. Only for idempotent calls; default 0. A 429 is retried once after
+   * Retry-After, independently. A Retry-After above MAX_RETRY_AFTER_MS is never waited out.
    */
   retries?: number;
 }
@@ -287,13 +294,16 @@ export class BinanceClient {
         requestId,
         ...(waitMs === undefined ? {} : { retryAfterMs: waitMs }),
       });
+      // A Retry-After past MAX_RETRY_AFTER_MS is not slept here: the caller gets the retryable
+      // error with the full retryAfterMs (the limiter pause is clamped as well).
+      const waitsTooLong = waitMs !== undefined && waitMs > MAX_RETRY_AFTER_MS;
       if (isRateLimited(response.status, envelope.code)) {
         this.limiter.pause(waitMs ?? 1_000);
         // SPEC §11: on 429, honour Retry-After and retry once with a fresh timestamp/signature.
-        if (attempt === 0) continue;
+        if (attempt === 0 && !waitsTooLong) continue;
         throw error;
       }
-      if (error.retryable && attempt < retries) {
+      if (error.retryable && attempt < retries && !waitsTooLong) {
         await this.clock.sleep(waitMs ?? retryBackoffMs(attempt));
         continue;
       }

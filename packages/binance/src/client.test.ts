@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { BinanceClient } from './client.js';
 import { BinanceApiError } from './errors.js';
 import { createFixtureRecorder } from './fixtures.js';
-import { RateLimiter, type Clock } from './rate-limit.js';
+import { MAX_RETRY_AFTER_MS, RateLimiter, type Clock } from './rate-limit.js';
 import { preHash, signPreHash } from './sign.js';
 import type { ApiCallRecord } from './telemetry.js';
 
@@ -41,6 +41,7 @@ function harness(
   const sent: Sent[] = [];
   const records: ApiCallRecord[] = [];
   const clock = fakeClock();
+  const limiter = new RateLimiter(undefined, clock);
   const fetchImpl = (input: string | URL | Request, init?: RequestInit) => {
     sent.push({
       url: typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
@@ -59,13 +60,22 @@ function harness(
     region: 'kr-dev',
     fetch: fetchImpl,
     clock,
-    limiter: new RateLimiter(undefined, clock),
+    limiter,
     onApiCall: (r) => {
       records.push(r);
     },
     ...extra,
   });
-  return { client, sent, records };
+  return { client, sent, records, clock, limiter };
+}
+
+const SUPPORTED_CHAINS = { method: 'GET', path: '/api/v1/dex/market/supported/chain' } as const;
+
+function rateLimited(retryAfter?: string): Response {
+  return new Response(JSON.stringify({ code: 42900, msg: 'limited', data: null }), {
+    status: 429,
+    headers: retryAfter === undefined ? {} : { 'Retry-After': retryAfter },
+  });
 }
 
 function verifySignature(request: Sent) {
@@ -185,6 +195,49 @@ describe('BinanceClient.request', () => {
         path: '/api/v1/dex/market/supported/chain',
       }),
     ).rejects.toMatchObject({ code: 42900, retryable: true, httpStatus: 429 });
+  });
+
+  it('does not wait out a Retry-After beyond 30 s: one attempt, a retryable error with the wait', async () => {
+    for (const [header, askedMs] of [
+      ['3600', 3_600_000],
+      ['2147484', 2_147_484_000], // past setTimeout's range: used to become a 1 ms sleep
+    ] as const) {
+      const { client, sent, clock, limiter } = harness([rateLimited(header)]);
+      const started = clock.now();
+      await expect(
+        client.request('market', 'getSupportedChains', SUPPORTED_CHAINS),
+      ).rejects.toMatchObject({
+        code: 42900,
+        httpStatus: 429,
+        retryable: true,
+        retryAfterMs: askedMs,
+      });
+      expect(sent).toHaveLength(1);
+      expect(clock.now()).toBe(started); // nothing was slept
+      // Every other call waits for the clamped pause only.
+      expect(await limiter.acquire('GET /other')).toBe(MAX_RETRY_AFTER_MS);
+    }
+  });
+
+  it('still retries a 429 whose Retry-After is exactly the 30 s limit', async () => {
+    const { client, sent } = harness([rateLimited('30'), new Response(OK([]))]);
+    const response = await client.request('market', 'getSupportedChains', SUPPORTED_CHAINS);
+    expect(response.retryCount).toBe(1);
+    expect(sent[1]!.headers['x-oc-timestamp']).toBe('2026-09-23T12:00:30.000Z');
+  });
+
+  it('does not sleep before retrying a transient failure whose Retry-After is too long', async () => {
+    const unavailable = new Response(
+      JSON.stringify({ code: 50001, msg: 'Service unavailable', data: null }),
+      { status: 503, headers: { 'Retry-After': '120' } },
+    );
+    const { client, sent, clock } = harness([unavailable]);
+    const started = clock.now();
+    await expect(
+      client.request('market', 'getSupportedChains', { ...SUPPORTED_CHAINS, retries: 2 }),
+    ).rejects.toMatchObject({ code: 50001, retryable: true, retryAfterMs: 120_000 });
+    expect(sent).toHaveLength(1);
+    expect(clock.now()).toBe(started);
   });
 
   it('retries transient failures of idempotent calls with backoff, when asked', async () => {

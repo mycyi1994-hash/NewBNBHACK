@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { RateLimiter, TokenBucket, retryAfterMs, type Clock } from './rate-limit.js';
+import {
+  MAX_RETRY_AFTER_MS,
+  RateLimiter,
+  TokenBucket,
+  retryAfterMs,
+  type Clock,
+} from './rate-limit.js';
 
 function fakeClock(start = 0): Clock & { advance(ms: number): void; slept: number[] } {
   let now = start;
@@ -82,6 +88,27 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter(undefined, clock);
     limiter.pause(3_000);
     expect(await limiter.acquire('GET /x')).toBe(3_000);
+  });
+
+  it('never pauses longer than MAX_RETRY_AFTER_MS, however long the server asks', async () => {
+    // 3600 s would freeze every call; 2^31 ms and beyond overflowed setTimeout into a 1 ms sleep
+    // while the pause (and every window slot) was pushed to an absurd time.
+    for (const asked of [3_600_000, 2_147_484_000, 1e303, Number.POSITIVE_INFINITY]) {
+      const clock = fakeClock();
+      const limiter = new RateLimiter(undefined, clock);
+      limiter.pause(asked);
+      expect(await limiter.acquire('GET /x')).toBe(MAX_RETRY_AFTER_MS);
+      // Pacing still works afterwards: the next call on another endpoint goes straight out.
+      expect(await limiter.acquire('GET /y')).toBe(0);
+    }
+    expect(MAX_RETRY_AFTER_MS).toBe(30_000);
+  });
+
+  it('ignores a pause that is not a positive number', async () => {
+    const clock = fakeClock();
+    const limiter = new RateLimiter(undefined, clock);
+    for (const asked of [0, -5_000, Number.NaN]) limiter.pause(asked);
+    expect(await limiter.acquire('GET /x')).toBe(0);
   });
 
   it('counts a retry at the time it is sent after a 429 pause', async () => {
