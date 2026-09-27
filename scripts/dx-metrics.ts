@@ -1,9 +1,11 @@
 /**
  * pnpm dx:metrics — regenerate dx/metrics.md from the api_calls table (DX_PROTOCOL §3.2).
  * Flags: --since <ISO date> (only newer calls), --out <path> (default dx/metrics.md).
+ * The output directory is created when it is missing: the worker image has no dx/ (.dockerignore),
+ * and RUNBOOK uses this command there for incident triage.
  * Exit: 0 written · 3 UNAVAILABLE (no DATABASE_URL; the file is left untouched).
  */
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { renderMetricsMarkdown } from '@ijaro/binance';
@@ -27,6 +29,7 @@ if (!config.databaseUrl) {
   const { db, close } = createDb(config.databaseUrl);
   try {
     const records = await listApiCalls(db, since ?? undefined);
+    await mkdir(path.dirname(out), { recursive: true });
     await writeFile(out, renderMetricsMarkdown(records, { generatedAt: new Date(), since }));
     console.log(`${path.relative(root, out)}: ${records.length} api_calls rows summarized`);
   } finally {
