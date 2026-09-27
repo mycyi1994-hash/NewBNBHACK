@@ -23,6 +23,7 @@ import {
 import { loadConfig } from '@ijaro/config';
 import { migrateDb } from '@ijaro/db';
 import type { Hex } from 'viem';
+import { parseFlags, TX_HASH } from './args.js';
 import { confirmSpend } from './confirm.js';
 
 const REFUSED: Record<RedeemRefusal['reason'], string> = {
@@ -33,21 +34,24 @@ const REFUSED: Record<RedeemRefusal['reason'], string> = {
   nothing_to_redeem: 'no Venus position on record for this plan',
 };
 
-const args = process.argv.slice(2).filter((a) => a !== '--');
-const valueOf = (flag: string) => {
-  const i = args.indexOf(flag);
-  return i >= 0 ? args[i + 1] : undefined;
-};
-const planId = valueOf('--plan');
-const recordHash = valueOf('--record');
-const live = args.includes('--live');
+const flags = parseFlags(process.argv.slice(2), {
+  values: ['plan', 'record'],
+  switches: ['live'],
+  required: ['plan'],
+});
 const json = (value: unknown) =>
   JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
 
-if (!planId || (recordHash !== undefined && !/^0x[0-9a-fA-F]{64}$/.test(recordHash))) {
-  console.log('usage: pnpm yield:redeem --plan <id> [--live] | --record <txHash>');
+if (!flags.ok || (flags.values.record !== undefined && !TX_HASH.test(flags.values.record))) {
+  console.log(
+    `${flags.ok ? '--record needs a transaction hash (0x and 64 hex digits)' : flags.error}\n` +
+      'usage: pnpm yield:redeem --plan <id> [--live] | --record <txHash>',
+  );
   process.exitCode = 2;
 } else {
+  const planId = flags.values.plan;
+  const recordHash = flags.values.record;
+  const { live } = flags.switches;
   const config = loadConfig();
   const rt = createRuntime(config);
   const show = (line: string) => console.log(maskHouse(line, rt.redact));

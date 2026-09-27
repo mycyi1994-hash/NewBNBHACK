@@ -18,11 +18,14 @@ import {
 import { loadConfig } from '@ijaro/config';
 import { formatShares, toUnits } from '@ijaro/core';
 import { getPlan, migrateDb, planFromRow } from '@ijaro/db';
+import { parseFlags } from './args.js';
 import { confirmSpend } from './confirm.js';
 
-const args = process.argv.slice(2).filter((a) => a !== '--');
-const planId = args[args.indexOf('--plan') + 1];
-const live = args.includes('--live');
+const flags = parseFlags(process.argv.slice(2), {
+  values: ['plan'],
+  switches: ['live'],
+  required: ['plan'],
+});
 
 function show(report: CycleReport, redact: readonly string[]): string {
   const text = (value: unknown) => maskHouse(JSON.stringify(value), redact);
@@ -60,10 +63,12 @@ function show(report: CycleReport, redact: readonly string[]): string {
   }
 }
 
-if (!planId) {
-  console.log('usage: pnpm cycle:once --plan <id> [--live]');
+if (!flags.ok) {
+  console.log(`${flags.error}\nusage: pnpm cycle:once --plan <id> [--live]`);
   process.exitCode = 2;
 } else {
+  const planId = flags.values.plan;
+  const { live } = flags.switches;
   const config = loadConfig();
   const rt = createRuntime(config);
   try {

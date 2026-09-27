@@ -23,17 +23,29 @@ import { loadConfig } from '@ijaro/config';
 import { fromUnits, toUnits } from '@ijaro/core';
 import { applyDeposit, getPlan, migrateDb, openGuardianActions, planFromRow } from '@ijaro/db';
 import type { Hex } from 'viem';
+import { parseFlags, TX_HASH, type Flags } from './args.js';
 import { confirmSpend } from './confirm.js';
 
-const args = process.argv.slice(2).filter((a) => a !== '--');
-const valueOf = (flag: string) => {
-  const i = args.indexOf(flag);
-  return i >= 0 ? args[i + 1] : undefined;
-};
-const planId = valueOf('--plan');
-const usd = valueOf('--usd');
-const recordHash = valueOf('--record') as Hex | undefined;
-const live = args.includes('--live');
+/** A deposit (--usd, maybe --live) or a record (--record); any other mix is a usage error. */
+function misuse({ values }: Flags<'plan' | 'usd' | 'record', 'live', 'plan'>) {
+  if ((values.usd === undefined) === (values.record === undefined)) {
+    return 'give --usd <amount> or --record <txHash>';
+  }
+  if (values.usd !== undefined && !/^\d+(\.\d{1,18})?$/.test(values.usd)) {
+    return '--usd needs an amount in dollars, e.g. 1 or 2.50';
+  }
+  if (values.record !== undefined && !TX_HASH.test(values.record)) {
+    return '--record needs a transaction hash (0x and 64 hex digits)';
+  }
+  return undefined;
+}
+
+const flags = parseFlags(process.argv.slice(2), {
+  values: ['plan', 'usd', 'record'],
+  switches: ['live'],
+  required: ['plan'],
+});
+const problem = flags.ok ? misuse(flags) : flags.error;
 
 /** SentTx → the facts the receipts table keeps. */
 const factsOf = (sent: SentTx) => ({
@@ -46,10 +58,15 @@ const factsOf = (sent: SentTx) => ({
   amounts: sent.amounts,
 });
 
-if (!planId || (!usd && !recordHash)) {
-  console.log('usage: pnpm yield:deposit --plan <id> --usd <amount> [--live] | --record <txHash>');
+if (!flags.ok || problem !== undefined) {
+  console.log(
+    `${problem}\nusage: pnpm yield:deposit --plan <id> --usd <amount> [--live] | --record <txHash>`,
+  );
   process.exitCode = 2;
 } else {
+  const { plan: planId, usd } = flags.values;
+  const recordHash = flags.values.record as Hex | undefined;
+  const { live } = flags.switches;
   const config = loadConfig();
   const rt = createRuntime(config);
   try {
