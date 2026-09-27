@@ -20,6 +20,7 @@ import {
   recordOperatorRedeem,
   type RedeemRefusal,
 } from '@ijaro/agent';
+import { assertBscChain } from '@ijaro/chain';
 import { loadConfig } from '@ijaro/config';
 import { migrateDb } from '@ijaro/db';
 import type { Hex } from 'viem';
@@ -57,6 +58,8 @@ if (!flags.ok || (flags.values.record !== undefined && !TX_HASH.test(flags.value
   const show = (line: string) => console.log(maskHouse(line, rt.redact));
   try {
     await migrateDb(rt.database.db);
+    // Every RPC must be BSC mainnet before anything is read or signed.
+    await assertBscChain(rt.bsc);
     const simulate = executorDeps(rt, 'simulate');
     const venus = await discoverVenusUsdt(simulate);
     show(

@@ -5,7 +5,7 @@
  * or NO-GO with exit code 1. The rules are in live-check-rules.ts (tested).
  */
 import { createRuntime, viemChainPort } from '@ijaro/agent';
-import { BSC_USDT } from '@ijaro/chain';
+import { assertBscChain, BSC_USDT } from '@ijaro/chain';
 import { loadConfig } from '@ijaro/config';
 import {
   getPlan,
@@ -107,7 +107,18 @@ if (!/^\d+(\.\d{1,2})?$/.test(testUsd)) {
           (c) => c.code,
         ),
       };
-      const { checks, go } = liveChecks(facts);
+      const { checks, go: rulesGo } = liveChecks(facts);
+      // Every RPC behind the client must be BSC mainnet (the message names hosts, never paths).
+      const chainProblem = await assertBscChain(rt.bsc).then(
+        () => undefined,
+        (error: unknown) => (error instanceof Error ? error.message : 'unknown'),
+      );
+      checks.push(
+        chainProblem === undefined
+          ? { name: 'rpc chain', mark: 'ok', detail: 'every RPC answers chain id 56' }
+          : { name: 'rpc chain', mark: 'fail', detail: chainProblem },
+      );
+      const go = rulesGo && chainProblem === undefined;
       console.log(`live:check — $${testUsd} test, ${now.toISOString()}`);
       for (const check of checks) {
         console.log(`  ${MARK[check.mark]} ${check.name.padEnd(9)} ${check.detail}`);

@@ -89,7 +89,7 @@ async function rpcServer(chainIdHex: string): Promise<{ server: Server; url: str
 
 describe('assertBscChain', () => {
   it('passes when the primary and the fallback RPC are both BSC mainnet (56)', async () => {
-    await expect(assertBscChain(fakeRpcs('0x38', '0x38'))).resolves.toBeUndefined();
+    await expect(assertBscChain(fakeRpcs('0x38', '0x38'))).resolves.toEqual([]);
   });
 
   it('asks the fallback directly, which the fallback transport only reaches on failure', async () => {
@@ -114,8 +114,20 @@ describe('assertBscChain', () => {
     );
   });
 
+  it('on request, only warns about an RPC that does not answer — a wrong chain still fails', async () => {
+    const warned = await assertBscChain(fakeRpcs('0x38', new Error('connection refused')), {
+      unreachable: 'warn',
+    });
+    expect(warned).toEqual([
+      'fallback RPC did not answer eth_chainId: An unknown RPC error occurred. (connection refused)',
+    ]);
+    await expect(
+      assertBscChain(fakeRpcs('0x61', new Error('connection refused')), { unreachable: 'warn' }),
+    ).rejects.toThrow('BSC RPC check failed: primary RPC is on chain 97, not 56');
+  });
+
   it('checks a client without a fallback as it is', async () => {
-    await expect(assertBscChain(fakeRpcs('0x38'))).resolves.toBeUndefined();
+    await expect(assertBscChain(fakeRpcs('0x38'))).resolves.toEqual([]);
     await expect(assertBscChain(fakeRpcs('0x61'))).rejects.toThrow('RPC is on chain 97, not 56');
   });
 
@@ -124,7 +136,7 @@ describe('assertBscChain', () => {
     const testnet = await rpcServer('0x61');
     try {
       const ok = createBscClient({ rpcUrl: mainnet.url, rpcUrlFallback: mainnet.url });
-      await expect(assertBscChain(ok)).resolves.toBeUndefined();
+      await expect(assertBscChain(ok)).resolves.toEqual([]);
       const wrong = createBscClient({
         rpcUrl: `${mainnet.url}/v1/primary-api-key`,
         rpcUrlFallback: `${testnet.url}/v1/fallback-api-key`,

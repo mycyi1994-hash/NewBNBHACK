@@ -23,11 +23,11 @@ import {
   executorDeps,
   LOCK_TTL_MS,
   maskHouse,
-  reconcileOutbox,
+  settleOutbox,
   type SentTx,
   type VenusMarket,
 } from '@ijaro/agent';
-import { BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
+import { assertBscChain, BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
 import { loadConfig } from '@ijaro/config';
 import { fromUnits } from '@ijaro/core';
 import {
@@ -97,6 +97,8 @@ if (!flags.ok || problem !== undefined) {
   const rt = createRuntime(config);
   try {
     await migrateDb(rt.database.db);
+    // Every RPC must be BSC mainnet before anything is read or signed.
+    await assertBscChain(rt.bsc);
     /** Why this plan takes no deposit (or, without `amountUsd`, no --record); see depositRefusal. */
     const refusalFor = async (row: PlanRow, amountUsd: string | undefined) => {
       const plan = planFromRow(row);
@@ -114,13 +116,21 @@ if (!flags.ok || problem !== undefined) {
     };
     /** Signs the deposit after the human's `y` (audit S9, as operatorRedeem does for a redeem). */
     const depositLive = async (market: VenusMarket, amountUsd: string) => {
-      const deps = executorDeps(rt, 'live');
+      const deps = { ...executorDeps(rt, 'live'), venus: market };
+      // The lock is released only by its holder: keep the value this run set.
+      let lockUntil: string | null = null;
       const guarded = await whenSettledAndLocked(
         {
-          reconcile: () => reconcileOutbox(deps, { from: deps.house }),
-          lock: async () =>
-            (await acquirePlanLock(rt.database.db, planId, deps.now(), LOCK_TTL_MS)) !== undefined,
-          release: () => releasePlanLock(rt.database.db, planId),
+          // Settle, and write down what settled, before anything new is signed (DECISIONS D-23).
+          reconcile: () => settleOutbox(deps),
+          lock: async () => {
+            const held = await acquirePlanLock(rt.database.db, planId, deps.now(), LOCK_TTL_MS);
+            lockUntil = held?.lockUntil ?? null;
+            return held !== undefined;
+          },
+          release: async () => {
+            await releasePlanLock(rt.database.db, planId, lockUntil);
+          },
         },
         async () => {
           // Read again under the lock: a cycle or another deposit may have changed the plan.

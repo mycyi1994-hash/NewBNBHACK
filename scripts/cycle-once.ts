@@ -12,6 +12,7 @@
  * 1 FAILED, needs review, not started (outbox busy, locked, stopped) or refused · 2 usage.
  */
 import { createRuntime, discoverVenusUsdt, executorDeps, runCycle } from '@ijaro/agent';
+import { assertBscChain } from '@ijaro/chain';
 import { loadConfig } from '@ijaro/config';
 import { getPlan, instrumentFromRow, listInstruments, migrateDb, planFromRow } from '@ijaro/db';
 import { parseFlags } from './args.js';
@@ -40,6 +41,8 @@ if (!flags.ok) {
   const rt = createRuntime(config);
   try {
     await migrateDb(rt.database.db);
+    // Every RPC must be BSC mainnet before anything is read or signed.
+    await assertBscChain(rt.bsc);
     const row = await getPlan(rt.database.db, planId);
     if (!row) throw new Error(`plan ${planId} not found`);
     const plan = planFromRow(row);

@@ -11,7 +11,7 @@
  * is already stored is skipped before any API call, and the insert is ON CONFLICT DO NOTHING on
  * (slot_at, instrument_id, size_usd), so a worker that dies and comes back never duplicates rows.
  */
-import { assertUsdt } from '@ijaro/chain';
+import { assertBscChain, assertUsdt } from '@ijaro/chain';
 import { describeConfig, loadConfig } from '@ijaro/config';
 import {
   abandonRunningJobs,
@@ -45,6 +45,11 @@ const abandoned = await abandonRunningJobs(
 );
 if (abandoned > 0)
   console.log(`agent: ${abandoned} job(s) left running by the last worker closed as failed`);
+// Every RPC must be BSC mainnet; one that does not answer now is logged (it is only a fallback
+// until the primary fails) rather than stopping the worker.
+for (const warning of await assertBscChain(rt.bsc, { unreachable: 'warn' })) {
+  console.log(maskHouse(`agent: ${warning}`, rt.redact));
+}
 await assertUsdt(rt.bsc);
 
 // The scheduler needs the house address; without it the worker only records the tape.

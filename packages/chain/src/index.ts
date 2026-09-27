@@ -55,9 +55,14 @@ function reasonOf(error: unknown): string {
  * Throws unless every RPC behind `client` answers eth_chainId with 56 (BSC mainnet). The fallback
  * transport only reaches its second URL once the first fails, so each URL is asked directly: a
  * testnet or other-chain URL must stop start-up, not surface mid-cycle as wrong balances or a
- * refused transaction. An RPC that does not answer fails the check too — its chain is unknown.
+ * refused transaction. An RPC that does not answer fails the check too — its chain is unknown —
+ * unless `unreachable: 'warn'` (a long-running worker must not crash-loop on a fallback outage):
+ * then the silent ones are returned, and only a wrong chain throws.
  */
-export async function assertBscChain(client: BscClient): Promise<void> {
+export async function assertBscChain(
+  client: BscClient,
+  options: { unreachable?: 'fail' | 'warn' } = {},
+): Promise<string[]> {
   // createBscClient always has a primary and a fallback; any other client is asked as it is.
   const inner: readonly RpcEndpoint[] | undefined = client.transport.transports;
   const endpoints = inner?.length
@@ -69,16 +74,24 @@ export async function assertBscChain(client: BscClient): Promise<void> {
   const answers = await Promise.allSettled(
     endpoints.map((endpoint) => endpoint.request({ method: 'eth_chainId' })),
   );
-  const problems = answers.flatMap((answer, i) => {
+  const silent: string[] = [];
+  const wrong: string[] = [];
+  answers.forEach((answer, i) => {
     const name = endpoints[i]?.name ?? 'RPC';
     if (answer.status === 'rejected') {
-      return [`${name} did not answer eth_chainId: ${reasonOf(answer.reason)}`];
+      silent.push(`${name} did not answer eth_chainId: ${reasonOf(answer.reason)}`);
+      return;
     }
     const chainId = isHex(answer.value) ? hexToNumber(answer.value) : undefined;
-    if (chainId === BSC_CHAIN_ID) return [];
-    return [`${name} is on chain ${chainId ?? JSON.stringify(answer.value)}, not ${BSC_CHAIN_ID}`];
+    if (chainId !== BSC_CHAIN_ID) {
+      wrong.push(
+        `${name} is on chain ${chainId ?? JSON.stringify(answer.value)}, not ${BSC_CHAIN_ID}`,
+      );
+    }
   });
+  const problems = options.unreachable === 'warn' ? wrong : [...silent, ...wrong];
   if (problems.length > 0) throw new Error(`BSC RPC check failed: ${problems.join('; ')}`);
+  return silent;
 }
 
 export const erc20Abi = parseAbi([
