@@ -1,6 +1,6 @@
 # Yieldvest — Interest becomes ownership.
 
-**프론트 디자인 / Frontend design:** 승인된 BNB 스타일 UI와 Yieldvest 로고는 [frontend-preview](frontend-preview/README.md)에 있습니다. Claude 및 다른 개발자는 먼저 [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md)를 읽으세요. 별도 React/Vite 미리보기이며 기존 apps/web과 아직 연결되지 않았습니다.
+**프론트 디자인 / Frontend design:** 승인된 BNB 스타일 UI와 Yieldvest 로고(원본: [frontend-preview](frontend-preview/README.md), 인수인계: [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md))를 실제 웹 `apps/web`에 옮겼습니다(DECISIONS D-25). 탭 4개 — 한눈에(Overview) · 이자(Earn) · 투자(Invest = 심사위원 체험) · 내역(Activity) — 가 모두 서버·체인의 실제 값만 보여 줍니다. `frontend-preview/`는 예시 데이터로 도는 디자인 원본으로 남습니다.
 
 > **EN, one line:** an agent that keeps your principal in a USDT savings pool (Venus on BNB Smart Chain) and buys tokenized US stocks (bStocks / Ondo) with the interest — or a fixed amount in safe mode — **only during the US regular session**, under hard caps, with an on-chain receipt and a one-sentence reason for every action.
 
@@ -12,9 +12,9 @@ BNB Hack: Tokenized Stocks Edition 출품작. 빌드 9/23 → 내부 제출 10/9
 
 원금은 USDT 이자 통장(Venus)에 그대로 두고, **이자(또는 정한 적립금)로만** 미국 주식 조각을 **미국 정규장에만** 삽니다. 안전 모드(적립만)가 기본값입니다. 결정은 모델이 아니라 결정 규칙(`packages/core` `decideCycle`, 커버리지 100%)이 하고, 모든 매수는 Binance Web3 **Transaction API로 미리 돌려본 뒤에만** 서명합니다. 매 사이클은 영수증(BscScan)과 이유 한 줄(`why.*`)을 남기고, 못 사는 이유(장 마감·가격 괴리·한도·지킴이)도 그대로 보여 줍니다.
 
-## 3분 체험 (Judge Mode, `/judge`)
+## 3분 체험 (Judge Mode, `/invest` — 예전 주소 `/judge`도 여기로 연결)
 
-홈 → **심사위원 코드로 체험하기** → 코드 → 종목(NVDA 등) → 적립만 · $5 · 정규장 → **미리 돌려보기**(워커가 블록체인에서 시뮬레이션) → **지금 사기** → 영수증 또는 "예약됨"(장이 닫혀 있으면 다음 개장 +2분에 자동 매수) → **플랜 멈추기**.
+**체험하기(Try it)** 또는 투자(Invest) 탭 → 코드 → 종목(NVDA 등) → 적립만 · $5 · 정규장 → **미리 돌려보기**(워커가 블록체인에서 시뮬레이션) → **지금 사기** → 영수증 또는 "예약됨"(장이 닫혀 있으면 다음 개장 +2분에 자동 매수) → **플랜 멈추기**.
 코드 1개 = 최대 $5, 돈은 Yieldvest의 하우스 지갑에서 나갑니다. 플랜은 7일 뒤 자동 종료.
 
 ## Yieldvest가 직접 돌린 기록
@@ -50,7 +50,7 @@ export YIELDVEST_URL=<사이트 주소>
 ## 구조
 
 ```
-apps/web        Next.js: 화면(홈·체험·플랜·비서·데이터·위험)과 API. 서명하지 않고 Web3 API도 부르지 않음
+apps/web        Next.js: 화면(한눈에·이자·투자(체험)·내역·플랜·비서·데이터·위험)과 API. 서명하지 않고 Web3 API도 부르지 않음
 apps/agent      워커(유일한 서명자): 테이프 10분, 틱 5분(아웃박스·대기 사이클·지킴이·잡·기한 된 플랜), 웹 잡 3초
 packages/core   결정 규칙 decideCycle, 지킴이 규칙, 금액·주 수 계산, NYSE 달력 — 순수 함수, 커버리지 100%
 packages/binance  Web3 API 클라이언트: HMAC 서명, 레이트리밋, 오류 분류표(SPEC §11), 호출 계측(api_calls)
@@ -65,7 +65,7 @@ skills/yieldvest    Wallet Skill (SKILL.md + references)
 - 정확 금액 승인만, 서명 전 calldata 해독·검증(스왑은 승인한 라우터만 호출), **시뮬레이션 SUCCESS 없이는 서명 없음**, 3분 안에 영수증이 없으면 아웃박스 PENDING으로 새 서명 차단. 체인에서 확정된 효과는 영수증과 한 트랜잭션으로 정확히 한 번 기록 — 결과가 불분명하면 추측하지 않고 사람에게 묻는다([DECISIONS D-23](docs/DECISIONS.md)).
 - 지킴이: Venus 일시정지·TVL 24시간 −30%·이용률 95%·USDT 0.99 30분 → 매수 중단/전액 상환(live에서 시뮬레이션 통과 시에만).
 - 모든 데이터 블록은 실시간 / n분 전 / 불러올 수 없음(이유) 중 하나. 없는 숫자를 만들지 않습니다.
-- CSP(요청마다 nonce), HSTS, 화면 375px 가로 스크롤 없음·KO/EN(`pnpm ui:check`).
+- CSP(요청마다 nonce), HSTS, 화면 375px 가로 스크롤 없음·영어만(D-26)(`pnpm ui:check`).
 
 ## 위험
 
@@ -95,7 +95,7 @@ pnpm smoke --url http://localhost:3000     # /api/judge/smoke
 | [`docs/TASKS.md`](docs/TASKS.md) | 티켓과 증거 |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | 잠긴 결정·열린 질문 |
 | [`docs/DX_PROTOCOL.md`](docs/DX_PROTOCOL.md) · [`dx/LOG.md`](dx/LOG.md) | 개발자 경험 증거 |
-| [`docs/UX_COPY.md`](docs/UX_COPY.md) | 화면 문구 KR/EN(§7은 사람 확정 전 초안) |
+| [`docs/UX_COPY.md`](docs/UX_COPY.md) | 화면 문구(화면은 EN 열만, D-26) |
 | [`docs/SECURITY.md`](docs/SECURITY.md) · [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | 보안 점검·운영 |
 | [`CLAUDE.md`](CLAUDE.md) · [`docs/GOALS.md`](docs/GOALS.md) | 코딩 에이전트 운영 규칙·골 |
 

@@ -1,83 +1,93 @@
 /**
- * Shared pieces (DESIGN_BRIEF §6): cards, badges with icon + text (never colour alone), the data
- * state badge every data block carries (CLAUDE.md rule 4), the market badge and reason lines.
+ * Shared pieces in the approved design: the receipt panel and its ledger, the summary strip, section
+ * headings, badges with an icon and text (never colour alone), the data-state badge every data view
+ * carries (CLAUDE.md rule 4: live, n min old, or unavailable with the reason), the market badge and
+ * the one-line reasons. Safe to use from server and client components alike.
  */
 import type { ReactNode } from 'react';
 import { displayParams, minutesSince, timeText } from '../lib/format';
 import { isCopyKey, type Lang, type T } from '../lib/i18n/translate';
+import { Icon, type IconName } from './Icon';
 
 export type Tone = 'ok' | 'wait' | 'skip' | 'fail' | 'info' | 'neutral';
 
-const TONES: Record<Tone, string> = {
-  ok: 'bg-brand-soft text-ok',
-  wait: 'bg-wait-soft text-wait',
-  skip: 'bg-skip-soft text-skip',
-  fail: 'bg-fail-soft text-fail',
-  info: 'bg-info-soft text-info',
-  neutral: 'bg-canvas text-muted',
-};
-
-const ICONS: Record<Tone, string> = {
-  ok: '✓',
-  wait: '◷',
-  skip: '–',
-  fail: '✕',
-  info: 'i',
-  neutral: '•',
+const TONE_ICON: Record<Tone, IconName | null> = {
+  ok: 'check',
+  wait: 'clock',
+  skip: 'minus',
+  fail: 'x',
+  info: 'info',
+  neutral: null,
 };
 
 export function Pill({
   tone,
   children,
   icon = true,
+  title,
 }: {
   tone: Tone;
   children: ReactNode;
   icon?: boolean;
+  title?: string;
 }) {
+  const name = icon ? TONE_ICON[tone] : null;
   return (
-    <span
-      className={`inline-flex w-fit max-w-full items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONES[tone]}`}
-    >
-      {icon ? <span aria-hidden="true">{ICONS[tone]}</span> : null}
-      <span className="truncate">{children}</span>
+    <span className={`pill ${tone}`} title={title}>
+      {name ? <Icon name={name} size={14} /> : null}
+      <span className="pill-text">{children}</span>
     </span>
   );
 }
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
+/** A toolbar status in the approved "demo pill" style: a dot and a short line. */
+export function StatusPill({
+  tone,
+  children,
+  title,
+}: {
+  tone: Tone;
+  children: ReactNode;
+  title?: string;
+}) {
   return (
-    <section
-      className={`rounded-2xl border border-line bg-white p-5 shadow-[0_1px_2px_rgba(17,20,24,0.04)] ${className}`}
-    >
+    <span className={`demo-pill status-pill ${tone}`} title={title}>
+      <span aria-hidden="true" />
       {children}
-    </section>
+    </span>
   );
 }
 
-export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+/** The summary strip's status: a dot and a line, as in the approved design. */
+export function Status({ tone = 'ok', children }: { tone?: Tone; children: ReactNode }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-      <h2 className="text-lg font-bold text-ink">{children}</h2>
-      {aside}
-    </div>
+    <span className={`status ${tone}`}>
+      <span className="status-dot" aria-hidden="true" />
+      {children}
+    </span>
   );
 }
 
 export type DataState =
   { state: 'LIVE' } | { state: 'STALE'; at: string } | { state: 'UNAVAILABLE'; reason: string };
 
+export function dataTone(data: DataState): Tone {
+  return data.state === 'LIVE' ? 'ok' : data.state === 'STALE' ? 'wait' : 'skip';
+}
+
+export function dataText(t: T, data: DataState, now: Date): string {
+  if (data.state === 'LIVE') return t('home.status.live');
+  if (data.state === 'STALE') return t('home.status.stale', { min: minutesSince(data.at, now) });
+  return t('home.status.unavailable', { reason: data.reason });
+}
+
 /** LIVE / n분 전 / 불러올 수 없음 (with the reason), as UX_COPY §3.1 words them. */
 export function StateBadge({ t, data, now }: { t: T; data: DataState; now: Date }) {
-  if (data.state === 'LIVE') return <Pill tone="ok">{t('home.status.live')}</Pill>;
-  if (data.state === 'STALE') {
-    return (
-      <span title={data.at}>
-        <Pill tone="wait">{t('home.status.stale', { min: minutesSince(data.at, now) })}</Pill>
-      </span>
-    );
-  }
-  return <Pill tone="skip">{t('home.status.unavailable', { reason: data.reason })}</Pill>;
+  return (
+    <Pill tone={dataTone(data)} title={data.state === 'STALE' ? data.at : undefined}>
+      {dataText(t, data, now)}
+    </Pill>
+  );
 }
 
 export function MarketBadge({
@@ -97,28 +107,37 @@ export function MarketBadge({
 }) {
   if (session === 'regular' && regularClose) {
     return (
-      <Pill tone="ok">{t('home.market.regular', { close: timeText(regularClose, lang, tz) })}</Pill>
+      <StatusPill tone="ok">
+        {t('home.market.regular', { close: timeText(regularClose, lang, tz) })}
+      </StatusPill>
     );
   }
   return (
-    <Pill tone="neutral">{t('home.market.closed', { open: timeText(nextOpen, lang, tz) })}</Pill>
+    <StatusPill tone="neutral">
+      {t('home.market.closed', { open: timeText(nextOpen, lang, tz) })}
+    </StatusPill>
   );
 }
 
-const OUTCOME_TONE: Record<string, Tone> = {
+export const OUTCOME_TONE: Record<string, Tone> = {
   BOUGHT: 'ok',
   DEFERRED: 'wait',
   SKIPPED: 'skip',
   FAILED: 'fail',
+  SIMULATED: 'info',
 };
 
-export function OutcomeBadge({ t, kind }: { t: T; kind: string | null | undefined }) {
+export function outcomeText(t: T, kind: string | null | undefined): string {
   // A dry run (simulate mode, or a Judge Mode preview) bought nothing: it says so.
-  if (kind === 'SIMULATED') return <Pill tone="info">{t('outcome.simulated')}</Pill>;
+  if (kind === 'SIMULATED') return t('outcome.simulated');
   if (kind === 'BOUGHT' || kind === 'DEFERRED' || kind === 'SKIPPED' || kind === 'FAILED') {
-    return <Pill tone={OUTCOME_TONE[kind] ?? 'neutral'}>{t(`outcome.${kind}`)}</Pill>;
+    return t(`outcome.${kind}`);
   }
-  return <Pill tone="info">{t('outcome.running')}</Pill>;
+  return t('outcome.running');
+}
+
+export function OutcomeBadge({ t, kind }: { t: T; kind: string | null | undefined }) {
+  return <Pill tone={(kind && OUTCOME_TONE[kind]) || 'info'}>{outcomeText(t, kind)}</Pill>;
 }
 
 /** The one-line reason (UX_COPY §4) in the viewer's language, times in their zone. */
@@ -140,43 +159,11 @@ export function whyText(
 export function ReceiptLink({ t, href }: { t: T; href: string | null | undefined }) {
   if (!href) return null;
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="whitespace-nowrap text-sm font-medium text-brand underline-offset-2 hover:underline"
-    >
+    <a href={href} target="_blank" rel="noopener noreferrer" className="receipt-link">
       {t('receipt.view')}
     </a>
   );
 }
-
-export function Stat({
-  label,
-  value,
-  sub,
-}: {
-  label: ReactNode;
-  value: ReactNode;
-  sub?: ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <div className="text-sm text-muted">{label}</div>
-      <div className="num mt-1 text-xl font-bold text-ink">{value}</div>
-      {sub ? <div className="mt-1 text-xs text-muted">{sub}</div> : null}
-    </div>
-  );
-}
-
-export const buttonClass = {
-  primary:
-    'inline-flex items-center justify-center rounded-xl bg-brand px-5 py-3 text-base font-semibold text-white hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50',
-  secondary:
-    'inline-flex items-center justify-center rounded-xl border border-line bg-white px-5 py-3 text-base font-semibold text-ink hover:bg-canvas disabled:cursor-not-allowed disabled:opacity-50',
-  danger:
-    'inline-flex items-center justify-center rounded-xl border border-fail px-5 py-3 text-base font-semibold text-fail hover:bg-fail-soft disabled:cursor-not-allowed disabled:opacity-50',
-};
 
 /** Tape-derived data state: LIVE, STALE with its time, or UNAVAILABLE with the reason. */
 export function tapeState(
@@ -186,4 +173,117 @@ export function tapeState(
   if (data.state === 'LIVE') return { state: 'LIVE' };
   if (data.state === 'STALE' && data.sampledAt) return { state: 'STALE', at: data.sampledAt };
   return { state: 'UNAVAILABLE', reason };
+}
+
+/** The yellow check (done) or the hollow ring (waiting) of the approved receipt panels. */
+export function CheckBadge({ waiting = false }: { waiting?: boolean }) {
+  return (
+    <span className={`check-badge ${waiting ? 'waiting' : ''}`} aria-hidden="true">
+      {waiting ? null : <Icon name="check" size={24} />}
+    </span>
+  );
+}
+
+/** The pale receipt panel of the approved design. */
+export function Panel({
+  eyebrow,
+  title,
+  children,
+  waiting = false,
+  badge = true,
+  className = '',
+  as: Tag = 'aside',
+}: {
+  eyebrow: ReactNode;
+  title: ReactNode;
+  children: ReactNode;
+  waiting?: boolean;
+  badge?: boolean;
+  className?: string;
+  as?: 'aside' | 'section';
+}) {
+  return (
+    <Tag className={`receipt-panel ${className}`}>
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">{eyebrow}</p>
+          <h3>{title}</h3>
+        </div>
+        {badge ? <CheckBadge waiting={waiting} /> : null}
+      </div>
+      {children}
+    </Tag>
+  );
+}
+
+export function Ledger({ rows }: { rows: [ReactNode, ReactNode][] }) {
+  return (
+    <dl className="ledger">
+      {rows.map(([label, value], index) => (
+        <div key={index}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export interface SummaryItem {
+  label: ReactNode;
+  value: ReactNode;
+  /** A short line under the value: when it was read, or why it is missing. */
+  note?: ReactNode;
+}
+
+export function SummaryStrip({
+  label,
+  items,
+  status,
+}: {
+  label: string;
+  items: SummaryItem[];
+  status?: ReactNode;
+}) {
+  return (
+    <section className="summary-strip" aria-label={label}>
+      {items.map((item, index) => (
+        <div className="summary-stat" key={index}>
+          <span>{item.label}</span>
+          <strong>{item.value}</strong>
+          {item.note ? <small className="summary-note">{item.note}</small> : null}
+        </div>
+      ))}
+      <div className="summary-status">{status}</div>
+    </section>
+  );
+}
+
+export function SectionHeading({ title, sub }: { title: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="section-heading">
+      <h2>{title}</h2>
+      {sub ? <p>{sub}</p> : null}
+    </div>
+  );
+}
+
+/** A data view that has no value to show says why, in place of the number (CLAUDE.md rule 4). */
+export function Unavailable({ t, reason }: { t: T; reason: string }) {
+  return (
+    <p className="state-line">
+      <Icon name="info" size={16} />
+      <span>{t('home.status.unavailable', { reason })}</span>
+    </p>
+  );
+}
+
+/** A heading for the secondary blocks of a page (tables, lists), with an optional status. */
+export function BlockTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="block-title">
+      <h2>{children}</h2>
+      {aside}
+    </div>
+  );
 }
