@@ -1,4 +1,5 @@
-# Quality gates from CLAUDE.md rule 9: typecheck, lint, test. No secrets are used; deploys are manual.
+# Quality gates from CLAUDE.md rule 9: typecheck, lint, test; then the core coverage gate (SPEC §12:
+# 100%, as the README says) and the web production build. No secrets are used; deploys are manual.
 # Third-party actions are pinned to full commit SHAs (the comment names the tag each one resolved to).
 name: ci
 
@@ -47,3 +48,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - run: pnpm coverage:core
+      # Builds without secrets or DATABASE_URL, like any fresh checkout.
+      - run: pnpm --filter @ijaro/web build
