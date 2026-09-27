@@ -28,18 +28,13 @@ export function LocaleSync({ lang, tz, label }: { lang: Lang; tz: string; label:
     router.refresh();
   };
   return (
-    <div
-      role="group"
-      aria-label={label}
-      className="flex overflow-hidden rounded-full border border-line text-sm"
-    >
+    <div role="group" aria-label={label} className="lang-toggle">
       {(['ko', 'en'] as const).map((option) => (
         <button
           key={option}
           type="button"
           onClick={() => choose(option)}
           aria-pressed={option === lang}
-          className={`px-2.5 py-1 font-medium ${option === lang ? 'bg-ink text-white' : 'text-muted hover:text-ink'}`}
         >
           {option === 'ko' ? 'KO' : 'EN'}
         </button>

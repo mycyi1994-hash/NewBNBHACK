@@ -314,3 +314,99 @@
 - `dx.session.overnight`: 야간 / Overnight
 - `dx.session.weekend`: 주말 / Weekend
 - `dx.session.holiday`: 휴장일 / Holiday
+
+### 7.6 승인된 새 디자인 (frontend-preview → apps/web, DECISIONS D-25)
+> 작성: 코딩 에이전트(9/27). 사용자가 승인한 영어 디자인(`frontend-preview/`)을 실제 앱에 옮기며 추가한 키다. **영어는 승인된 미리보기 문구를 그대로 옮긴 것이 원칙**이다(탭 이름, "See where your interest goes.", "Small interest. Next investment.", "Every step, accounted for.", "Interest becomes ownership", 흐름도·영수증·진행 막대 라벨 등). 미리보기가 예시용으로만 쓴 문구("Illustrative demo", "Sample receipt" 등)는 실제 데이터용 문구로 바꿨고, 미리보기에 없던 상태(불러올 수 없음, 체험 한도, 실행 기록 단계)는 에이전트가 새로 썼다. **한국어는 전부 에이전트 초안**이다. 사람이 검토·수정해 확정할 때까지 초안이다.
+
+- `brand.tagline`: 이자가 주식이 돼요 / Interest becomes ownership
+- `brand.home`: Yieldvest 홈 / Yieldvest overview · `brand.built_on`: 기반 체인 / Built on
+- `nav.overview`: 한눈에 / Overview · `nav.earn`: 이자 / Earn · `nav.invest`: 투자 / Invest · `nav.activity`: 내역 / Activity
+- `nav.main`: 주 메뉴 / Main navigation · `nav.mobile`: 하단 메뉴 / Mobile navigation
+- `common.skip`: 본문으로 건너뛰기 / Skip to content
+- `motion.pause`: 움직임 멈추기 / Pause animations · `motion.play`: 움직임 켜기 / Play animations
+- `motion.reduced`: 시스템 설정에 따라 움직임을 껐어요 / Animations disabled by your system preference
+- `toolbar.data`: 시세 데이터 · {state} / Market data · {state}
+- `overview.summary`: 계좌 요약 / Account summary
+- `overview.supplied`: 넣어 둔 USDT / USDT supplied · `overview.available`: 쓸 수 있는 이자 / Interest available · `overview.next`: 다음 매수 / Next purchase
+- `overview.next.note`: 다음 확인 {time} / Next check {time}
+- `overview.status.waiting`: 이자를 모으는 중 / Waiting for interest · `overview.status.ready`: 다음 주기에 사요 / Buys at the next cycle
+- `overview.flow.title`: 이자가 어디로 가는지 보세요. / See where your interest goes.
+- `overview.flow.since`: {date}부터 / Since {date}
+- `overview.flow.note`: 이 매수에는 쌓인 이자만 써요. 원금은 이자 통장에 그대로 있어요. / Only earned interest funds these purchases. Principal stays in the interest account.
+- `overview.flow.first`: 아직 이자로 산 적이 없어요. 이자가 {min} USDT가 되면 사요. / No purchase with interest yet. It buys once interest reaches {min} USDT.
+- `overview.flow.aria`: 쌓인 이자 {earned} USDT 중 {spent} USDT로 {ticker}를 샀고 {carried} USDT는 다음 매수로 넘어갔어요. / {earned} USDT of interest: {spent} USDT bought {ticker}, {carried} USDT carried forward.
+- `flow.earned`: 쌓인 이자 / Interest earned · `flow.reinvested`: {ticker} 매수에 씀 / Reinvested into {ticker} · `flow.carried`: 다음으로 넘김 / Carried forward
+- `progress.aria`: 다음 매수까지 진행 / Progress toward the next purchase
+- `progress.next`: 다음 주기 · {ticker} / Next cycle · {ticker}
+- `progress.amount`: {min} USDT 중 {available} USDT / {available} of {min} USDT
+- `progress.left`: {left} USDT 남음 / {left} USDT to go · `progress.ready`: 다음 주기에 사요 / Ready for the next cycle
+- `earn.title`: 작은 이자로, 다음 투자를. / Small interest. Next investment.
+- `earn.since`: 이번 주기 · {time}부터 / Current cycle · since {time}
+- `earn.status`: 이자가 쌓이는 중 / Accruing interest · `earn.threshold`: 최소 매수 금액 / Purchase threshold
+- `earn.chart.start`: 주기 시작 / Cycle start · `earn.chart.now`: 지금 / Now
+- `earn.chart.threshold`: {min} USDT · 최소 매수 / {min} USDT · Buy threshold
+- `earn.chart.aria`: 이번 주기 이자: 시작 {carried} USDT, 지금 {available} USDT, 최소 매수 {min} USDT / Interest this cycle: {carried} USDT at the start, {available} USDT now, buy threshold {min} USDT
+- `earn.legend.carried`: 넘겨받은 이자 · {value} USDT / Carried forward · {value} USDT · `earn.legend.new`: 새로 쌓인 이자 · {value} USDT / New interest · {value} USDT
+- `earn.panel.eyebrow`: 이자 내역 / Earning details
+- `earn.panel.waiting`: {min}이 되면 사요. / Ready at {min}. · `earn.panel.ready`: 다음 주기에 사요. / Ready for the next cycle.
+- `earn.panel.unavailable`: 지금은 불러올 수 없어요 / Not available right now
+- `earn.protocol`: 서비스 / Protocol · `earn.asset`: 자산 / Asset · `earn.apy`: 연 이자율 / Rate (APY) · `earn.score`: 보안 점수 / Security score
+- `earn.new`: 새로 쌓인 이자 / New interest · `earn.available`: 쓸 수 있는 이자 / Available
+- `earn.note.left`: 최소 매수 금액까지 {left} USDT 남았어요. / {left} USDT more to reach the purchase threshold.
+- `earn.note.ready`: 최소 매수 금액이 모였어요. 다음 주기에 사요. / Interest has reached the purchase threshold. It buys at the next cycle.
+- `earn.cta.activity`: 이자 플랜 기록 보기 / View earning activity
+- `invest.summary`: 투자 요약 / Investment summary
+- `invest.title.contribution`: 다음 투자를 골라요. / Choose your next investment. · `invest.title.interest`: 이자로 살 주식을 골라요. / Choose what your interest buys.
+- `invest.sub`: BNB Chain의 주식 조각 / Tokenized stocks on BNB Chain
+- `invest.funding`: 자금 / Funding · `invest.funding.contribution`: 적립금 / Contribution · `invest.funding.interest`: 쌓인 이자 / Earned interest
+- `invest.target`: 종목 / Target · `invest.min`: 최소 매수 / Minimum buy
+- `invest.limit`: 체험 한도 / Code limit · `invest.limit.left`: 이 코드로 남은 금액 / Left on this code
+- `invest.when`: 사는 시간 · {window} / When · {window}
+- `invest.panel.eyebrow`: 플랜 미리보기 / Plan preview · `invest.panel.title`: {funding} → {ticker} / {funding} → {ticker}
+- `invest.process`: 진행 단계 / Your steps
+- `invest.review.title`: {ticker} 매수를 확인해요. / Review {ticker}.
+- `invest.amount.error`: {min}–{max} USDT 사이로, 소수 둘째 자리까지 넣어 주세요. / Enter {min}–{max} USDT, with up to two decimals.
+- `invest.deposit.cta`: 이자 통장에 넣기 / Put it in the interest account
+- `stock.name.{nvda|tsla|msft|qqq|aapl}`: 엔비디아 / 테슬라 / 마이크로소프트 / 나스닥 100 ETF / 애플 — NVIDIA / Tesla / Microsoft / Nasdaq-100 ETF / Apple
+- `activity.summary`: 기록 요약 / Activity summary
+- `activity.title`: 모든 단계를 기록해요. / Every step, accounted for.
+- `activity.sub`: 이자가 생겨 주식이 되기까지 따라가 보세요. / Trace interest from earning to ownership.
+- `activity.filter`: 기록 거르기 / Filter activity · `activity.list`: 기록 목록 / Activity list
+- `activity.col.event`: 내용 / Event · `activity.col.amount`: 금액 / Amount · `activity.col.status`: 상태 / Status
+- `activity.count`: {total}건 중 {shown}건 / Showing {shown} of {total}
+- `activity.stat.purchases`: 매수 횟수 / Purchases · `activity.stat.bought`: 산 금액 합계 / Total invested · `activity.stat.receipts`: 블록체인 영수증 / Receipts on-chain
+- `activity.stat.last`: 마지막 매수 {time} / Last purchase {time}
+- `activity.status.recorded`: 기록됨 / Recorded
+- `activity.event.bought`: {ticker} 샀어요 / {ticker} purchased · `activity.event.simulated`: {ticker} 미리 돌려봄 / {ticker} dry run
+- `activity.event.deferred`: {ticker} 기다려요 / {ticker} waiting · `activity.event.skipped`: {ticker} 건너뛰었어요 / {ticker} skipped
+- `activity.event.failed`: {ticker} 실패 / {ticker} failed · `activity.event.running`: {ticker} 진행 중 / {ticker} in progress
+- `receipt.latest`: 최근 영수증 / Latest receipt · `receipt.eyebrow`: 영수증 / Receipt · `receipt.details.title`: 영수증 자세히 / Receipt details
+- `receipt.inspect`: 영수증 자세히 보기 / Inspect receipt · `receipt.inspect.record`: 기록 자세히 보기 / Inspect record · `receipt.eyebrow.record`: 기록 / Record
+- `receipt.none.title`: 아직 매수 기록이 없어요 / No purchase yet
+- `receipt.none.note`: 플랜이 블록체인에서 사면 여기에 영수증이 떠요. / Receipts appear here once a plan buys on-chain.
+- `receipt.plan`: 플랜 / Plan · `receipt.source`: 자금 출처 / Source · `receipt.source.interest`: Venus 이자 / Venus interest · `receipt.source.contribution`: 적립금 / Contribution
+- `receipt.spent`: 산 금액 / Invested · `receipt.amount`: 금액 / Amount · `receipt.shares`: 받은 주식 / Shares received · `receipt.chain`: 체인 / Chain
+- `receipt.asset`: 산 자산 / Purchased asset · `receipt.asset.value`: {ticker} · 주식 조각 / {ticker} · Tokenized stock
+- `receipt.mode`: 실행 방식 / Execution · `receipt.interest_used`: 쓴 이자 / Interest used · `receipt.contributed`: 적립금 / Contributed
+- `receipt.doc.interest`: 이자로 투자했어요. / Interest invested. · `receipt.doc.contribution`: 적립금으로 투자했어요. / Contribution invested.
+- `receipt.flow.aria`: {source} USDT로 {ticker}를 샀어요 / {source} USDT bought {ticker}
+- `receipt.disclaimer.onchain`: 블록체인에 기록된 거래예요. 영수증 링크로 직접 확인할 수 있어요. / Recorded on-chain. Check it yourself with the receipt links.
+- `receipt.disclaimer.none`: 이 주기는 블록체인에 거래를 남기지 않았어요. / This cycle sent nothing to the chain.
+- `receipt.back`: 내역으로 돌아가기 / Back to activity
+- `receipt.link.{approve|swap|deposit|redeem}`: 사용 허용 영수증 ↗ / 매수 영수증 ↗ / 넣은 영수증 ↗ / 꺼낸 영수증 ↗ — Allowance receipt ↗ / Buy receipt ↗ / Deposit receipt ↗ / Withdrawal receipt ↗
+- `trace.eyebrow`: 실행 기록 / Execution trace · `trace.title`: 이자에서 주식까지. / From interest to ownership.
+- `trace.none`: 기록된 단계가 없어요. / No steps recorded.
+- `trace.caption`: {start} 시작 · {end} 끝 / Started {start} · finished {end}
+- `trace.caption.open`: {start} 시작 · 아직 진행 중 / Started {start} · still open
+- `trace.inputs`: 시장 확인 / Read the market · `trace.inputs.body`: 살 수 있는 곳 {n}곳 · {mode} / {n} venues checked · {mode}
+- `trace.mode.live`: 실제 실행 / Live · `trace.mode.simulate`: 미리 돌려보기만 / Dry run only
+- `trace.quote`: 견적 받기 / Quote · `trace.quote.body`: ${usd} 견적 / Quote for ${usd} · `trace.quote.error`: 견적 실패 ({code}) / Quote refused ({code})
+- `trace.requote`: 다시 견적 받기 / New quote
+- `trace.execute`: 매수 결정 / Decide to buy · `trace.execute.body`: ${usd}어치 사기로 했어요 / Buy ${usd}
+- `trace.reserve`: 한도 안에서 예약 / Reserve within the limits · `trace.reserve.refused`: 오늘 한도를 넘어 멈췄어요 / Refused: over today's limit
+- `trace.redeem`: 이자 꺼내기 / Take out interest · `trace.redeem.body`: 이자 통장에서 ${usd}를 꺼냈어요 / ${usd} taken out of the interest account
+- `trace.approve`: 정확한 금액만 사용 허용 / Allow the exact amount · `trace.approve.existing`: 이미 허용돼 있어요 / Allowance already in place
+- `trace.simulated`: 블록체인에서 미리 돌려보기 / Dry-run on-chain · `trace.bought`: 매수 완료 · 블록체인에 기록됨 / Bought · recorded on-chain
+- `trace.awaiting`: 블록체인 기록을 기다리는 중 / Waiting for the blockchain record · `trace.anomaly`: 사람 확인이 필요해요 / Needs review
+- `trace.decided`: 결정 / Decision
+- `plan.summary`: 플랜 요약 / Plan summary · `plan.contribution`: 1회 적립금 / Per buy · `plan.limits.title`: 한도 / Limits

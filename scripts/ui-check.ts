@@ -15,7 +15,10 @@ const { values } = parseArgs({
     url: { type: 'string', default: 'http://localhost:3000' },
     out: { type: 'string' },
     chromium: { type: 'string' },
-    pages: { type: 'string', default: '/,/judge,/skill,/risk,/dx,/plans/H-SAFE,/plans/H-YIELD' },
+    pages: {
+      type: 'string',
+      default: '/,/earn,/invest,/activity,/skill,/risk,/dx,/plans/H-SAFE,/plans/H-YIELD',
+    },
   },
 });
 const base = values.url.replace(/\/+$/, '');

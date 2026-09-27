@@ -1,45 +1,9 @@
-@import 'tailwindcss';
-
 /*
- * Design tokens (DESIGN_BRIEF §3): light and calm, one accent (deep teal), meaning colours that
- * never stand for price up/down, tabular numbers for money and shares, AA contrast on white.
+ * The approved Yieldvest design (frontend-preview, DECISIONS D-25): dark canvas, BNB yellow for the
+ * flow of interest and the main action, pale receipt panels, Inter Variable. preview.css and
+ * motion.css are verbatim ports; app.css adds what the real app needs (live, stale and unavailable
+ * states, forms, tables, the pages the preview did not have).
  */
-@theme {
-  --color-ink: #111418;
-  --color-muted: #545b67;
-  --color-line: #e3e6ea;
-  --color-canvas: #f7f8fa;
-  --color-brand: #0f6b64;
-  --color-brand-strong: #0b524d;
-  --color-brand-soft: #e5f3f1;
-  --color-ok: #0f6b64;
-  --color-wait: #9a4a07;
-  --color-wait-soft: #fdf2e3;
-  --color-skip: #5a6170;
-  --color-skip-soft: #eef0f3;
-  --color-fail: #b3261e;
-  --color-fail-soft: #fbeaea;
-  --color-info: #1f4fb8;
-  --color-info-soft: #e8effc;
-  --font-sans:
-    Pretendard, 'Pretendard Variable', Inter, -apple-system, BlinkMacSystemFont,
-    'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', Roboto, sans-serif;
-}
-
-html {
-  -webkit-text-size-adjust: 100%;
-}
-
-body {
-  font-size: 16px;
-  overflow-wrap: anywhere;
-}
-
-:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
-}
-
-.num {
-  font-variant-numeric: tabular-nums;
-}
+@import './styles/preview.css';
+@import './styles/motion.css';
+@import './styles/app.css';
