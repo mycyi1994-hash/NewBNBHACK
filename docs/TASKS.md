@@ -95,8 +95,15 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 - Acceptance: support matrix and time taken in DECISIONS and dx/LOG.md
 
 ### M0-10 Agent Studio spike · Criterion: Studio special prize
-- [ ] Install `bag`, agent creation flow, how the wallet is provided, runtime constraints (arbitrary worker possible?), MCP registration, ERC-8004 registration cost
-- Acceptance: DECISIONS D-STUDIO go/no-go
+- [x] Install `bag`, agent creation flow, how the wallet is provided, runtime constraints (arbitrary worker possible?), MCP registration, ERC-8004 registration cost
+  - (9/27, read-only: no login, no wallet created, no transaction) `@bnbagent/studio-cli@0.0.14`, official (`bnb-chain/bnbagent-studio`, maintainers at bnbchain.org and nodereal.io): 280 packages, 469 MB, 38 s to install.
+  - Agent creation: `bag init <name>` scaffolds a seller agent (TypeScript in `app/agent/`, `studio.toml`, a `runWork` hook), driven by the `/bnbagent-studio` IDE skill.
+  - Wallet: an `evm-local` keystore in `.studio/wallets/`, a Trust Wallet Agent Kit wallet, or a bounded Altana session.
+  - Runtime: the managed BNB trial is a 48-hour BSC testnet sandbox (the wallet key goes to the operator); self-hosted means AWS AgentCore, Azure Foundry or CreateOS; the faces are request-driven (A2A on port 9000, MCP at `/mcp`, `/x402`). Not a place for an arbitrary long-running worker, so ours stays on Fly.
+  - MCP: a face of the seller project (`/mcp`), written into the ERC-8004 registration JSON as `services[].name = MCP`.
+  - ERC-8004 cost: mainnet registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`, `register(string)` is nonpayable, about 163k gas ≈ $0.006 at 0.05 gwei, sponsored by MegaFuel by default. `bag erc8004` only works inside a `bag init` project.
+  - dx/LOG.md 2026-09-27 14:09, 14:11 and 14:12.
+- Acceptance: DECISIONS D-STUDIO go/no-go — **D-28** (agent proposal): runtime no-go, identity only. The registration transaction waits for the web deploy and a human yes.
 
 ### M0-11 House wallet setup [HUMAN] · Criterion: Technical
 - [ ] Generate the key offline, register it in the runner env, fund it, put the address in DECISIONS (public), check the caps
@@ -313,6 +320,7 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 
 ### M2-10 Agent Studio · Criterion: Studio special prize
 - [ ] Register the house agent identity (ERC-8004), runtime/MCP if possible, identity link on the site
+  - (9/27) Per D-28: identity only, no runtime. Registering costs about $0.006 of gas or nothing (sponsored). It needs the deployed web URL for the agent URI, a fresh identity wallet (not the house key) and a [HUMAN] yes for the transaction (CLAUDE.md rule 5).
 - Acceptance: registration tx and agent ID in the README
 
 ### M2-11 /dx page · Criterion: DX
