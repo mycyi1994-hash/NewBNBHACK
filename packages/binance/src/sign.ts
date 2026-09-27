@@ -92,6 +92,20 @@ export function formatTimestamp(epochMs: number): string {
   return new Date(epochMs).toISOString();
 }
 
+/**
+ * Whole-millisecond timestamps that strictly increase: max(now, last + 1 ms). We send no
+ * X-OC-NONCE, so the signature itself is the nonce (llms-full.txt § Timestamp & Anti-Replay);
+ * two identical requests in one millisecond would carry the same X-OC-SIGN, and the gateway
+ * rejects the second as a replay (40103).
+ */
+export function increasingTimestamps(now: () => number): () => number {
+  let last = Number.NEGATIVE_INFINITY;
+  return () => {
+    last = Math.max(Math.floor(now()), last + 1);
+    return last;
+  };
+}
+
 export interface AuthInput extends PreHashParts {
   apiKey: string;
   apiSecret: string;

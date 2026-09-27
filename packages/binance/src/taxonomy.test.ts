@@ -72,6 +72,11 @@ describe('classifyError — SPEC §11 by code', () => {
     expect(api(module, code)).toMatchObject({ ...expected, code: String(code), documented: true });
   });
 
+  it('names both causes of 40103, as the gateway table does', () => {
+    // llms-full.txt § Authentication › Error Codes: "Timestamp expired or request replayed".
+    expect(api('rwa', 40103).meaning).toMatch(/^timestamp expired or request replayed/);
+  });
+
   it('reads string codes the same as numbers (api_calls stores text)', () => {
     expect(
       classifyError({ kind: 'api', module: 'trading', httpStatus: 200, code: '40401' }).action,

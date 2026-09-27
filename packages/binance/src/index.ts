@@ -27,6 +27,7 @@ export {
   encodeRfc3986,
   fillPathParams,
   formatTimestamp,
+  increasingTimestamps,
   preHash,
   signPreHash,
 } from './sign.js';

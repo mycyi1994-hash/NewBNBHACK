@@ -124,6 +124,24 @@ describe('BinanceClient.request', () => {
     ]);
   });
 
+  it('never signs two identical requests in the same millisecond alike (40103 replay)', async () => {
+    // The fake clock stands still between requests, like two calls inside one millisecond.
+    const { client, sent, records } = harness([new Response(OK([])), new Response(OK([]))]);
+    await client.request('market', 'getSupportedChains', SUPPORTED_CHAINS);
+    await client.request('market', 'getSupportedChains', SUPPORTED_CHAINS);
+    expect(sent.map((s) => s.headers['x-oc-timestamp'])).toEqual([
+      '2026-09-23T12:00:00.000Z',
+      '2026-09-23T12:00:00.001Z',
+    ]);
+    expect(sent[1]!.headers['x-oc-sign']).not.toBe(sent[0]!.headers['x-oc-sign']);
+    for (const request of sent) verifySignature(request);
+    // api_calls.ts is the timestamp that was sent.
+    expect(records.map((r) => r.ts)).toEqual([
+      '2026-09-23T12:00:00.000Z',
+      '2026-09-23T12:00:00.001Z',
+    ]);
+  });
+
   it('sends and signs the same JSON body bytes for POST', async () => {
     const { client, sent } = harness([new Response(OK({ dataList: [] }))]);
     await client.request('defi-transaction', 'buildDeFiDepositTransaction', {

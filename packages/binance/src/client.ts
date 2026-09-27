@@ -21,7 +21,14 @@ import {
   systemClock,
   type Clock,
 } from './rate-limit.js';
-import { authHeaders, buildTarget, fillPathParams, formatTimestamp, type Query } from './sign.js';
+import {
+  authHeaders,
+  buildTarget,
+  fillPathParams,
+  formatTimestamp,
+  increasingTimestamps,
+  type Query,
+} from './sign.js';
 import { isTransient } from './taxonomy.js';
 import { maskSensitive, requestIdOf, type ApiCallRecord, type ApiCallSink } from './telemetry.js';
 
@@ -113,11 +120,14 @@ export class BinanceClient {
   private readonly clock: Clock;
   private readonly limiter: RateLimiter;
   private readonly secrets: string[];
+  /** X-OC-TIMESTAMP source: never the same millisecond twice (see increasingTimestamps). */
+  private readonly nextTimestamp: () => number;
 
   constructor(private readonly options: BinanceClientOptions) {
     this.fetchImpl = options.fetch ?? fetch;
     this.clock = options.clock ?? systemClock;
     this.limiter = options.limiter ?? new RateLimiter(undefined, this.clock);
+    this.nextTimestamp = increasingTimestamps(() => this.clock.now());
     this.secrets = [options.apiKey, options.apiSecret, ...(options.redact ?? [])].filter(
       (v): v is string => typeof v === 'string' && v !== '',
     );
@@ -172,7 +182,7 @@ export class BinanceClient {
 
     for (let attempt = 0; ; attempt++) {
       await this.limiter.acquire(`${opts.method} ${opts.path}`, group);
-      const timestamp = formatTimestamp(this.clock.now());
+      const timestamp = formatTimestamp(this.nextTimestamp());
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (bodyText !== '') headers['Content-Type'] = 'application/json';
       if (signed) {
