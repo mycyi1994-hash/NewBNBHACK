@@ -37,8 +37,11 @@ export function createAlerter(options: AlerterOptions = {}): Alerter {
   const dedupeMs = options.dedupeMs ?? 60 * 60_000;
   const fetchImpl = options.fetch ?? fetch;
   const secrets = [...(options.redact ?? []), options.telegram?.botToken ?? ''].filter(Boolean);
+  // A URL's path and query can carry a key (RPC providers put it there): only the host is kept.
   const mask = (text: string) =>
-    secrets.reduce((out, secret) => out.replaceAll(secret, '[redacted]'), text);
+    secrets
+      .reduce((out, secret) => out.replaceAll(secret, '[redacted]'), text)
+      .replace(/\b(https?|wss?):\/\/([^/\s?#]+)[^\s]*/gi, '$1://$2/…');
   const lastSent = new Map<string, number>();
 
   return {

@@ -58,6 +58,18 @@ describe('createAlerter', () => {
     expect(down.lines.join('\n')).not.toContain(TOKEN);
   });
 
+  it('keeps only the host of a URL: an RPC key in its path never reaches the chat', async () => {
+    const lines: string[] = [];
+    const alerter = createAlerter({ log: (line) => lines.push(line) });
+    await alerter.send({
+      key: 'tick:settle',
+      text: 'worker settle failed: HTTP request failed. URL: https://bsc.example.com/v1/SECRET?k=1 Details',
+    });
+    expect(lines).toEqual([
+      'ALERT tick:settle: worker settle failed: HTTP request failed. URL: https://bsc.example.com/… Details',
+    ]);
+  });
+
   it('writes to the worker log when no Telegram is configured', async () => {
     const lines: string[] = [];
     const alerter = createAlerter({ log: (line) => lines.push(line) });
