@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { newYorkTimeOn, nextRegularOpen, regularClose, usSession } from './session.js';
+import {
+  addNewYorkDays,
+  firstOpenOnOrAfter,
+  newYorkTimeOn,
+  nextRegularOpen,
+  regularClose,
+  usSession,
+} from './session.js';
 
 const at = (iso: string) => usSession(new Date(iso));
 
@@ -26,6 +33,29 @@ describe('usSession', () => {
   it('closes at 13:00 ET on early-close days', () => {
     expect(at('2026-11-27T17:59:00Z')).toBe('regular');
     expect(at('2026-11-27T18:00:00Z')).toBe('post');
+  });
+
+  it('knows 2027: observed holidays and the day after Thanksgiving', () => {
+    expect(at('2027-07-05T15:00:00Z')).toBe('holiday'); // 4 July is a Sunday
+    expect(at('2027-06-18T15:00:00Z')).toBe('holiday'); // 19 June is a Saturday
+    expect(at('2027-03-26T15:00:00Z')).toBe('holiday'); // Good Friday
+    expect(at('2027-11-26T18:00:00Z')).toBe('post');
+    expect(at('2027-01-04T15:00:00Z')).toBe('regular');
+  });
+
+  it('treats a year it has no table for as closed rather than guessing', () => {
+    expect(at('2028-01-04T15:00:00Z')).toBe('holiday');
+    expect(() => nextRegularOpen(new Date('2027-12-31T22:00:00Z'))).toThrow(/no NYSE session/);
+  });
+});
+
+describe('calendar days', () => {
+  it('adds New York days without DST drift and finds the first open on or after a date', () => {
+    expect(addNewYorkDays('2026-10-30', 7)).toBe('2026-11-06');
+    expect(addNewYorkDays('2026-12-31', 1)).toBe('2027-01-01');
+    expect(firstOpenOnOrAfter('2026-09-28').toISOString()).toBe('2026-09-28T13:30:00.000Z');
+    expect(firstOpenOnOrAfter('2026-09-26').toISOString()).toBe('2026-09-28T13:30:00.000Z');
+    expect(firstOpenOnOrAfter('2026-11-26').toISOString()).toBe('2026-11-27T14:30:00.000Z');
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateGuardian, guardianVerdict } from './guardian.js';
+import { evaluateGuardian, guardianVerdict, unevaluatedRules } from './guardian.js';
 
 const now = new Date('2026-09-28T14:00:00Z');
 const calm = {
@@ -39,6 +39,31 @@ describe('evaluateGuardian', () => {
     expect(evaluateGuardian({ ...calm, tvl: { nowUsd: 701, dayAgoUsd: 1_000 } })).toEqual([]);
     expect(evaluateGuardian({ ...calm, tvl: { nowUsd: 1, dayAgoUsd: null } })).toEqual([]);
     expect(evaluateGuardian({ ...calm, tvl: { nowUsd: 1, dayAgoUsd: 0 } })).toEqual([]);
+  });
+
+  it('never reads a bad sample as a crash: TVL 0 or NaN and a zero USDT price count as missing', () => {
+    // One bad TVL read of 0 used to look like a −100 % drop and redeem every yield plan.
+    expect(evaluateGuardian({ ...calm, tvl: { nowUsd: 0, dayAgoUsd: 1_350_000_000 } })).toEqual([]);
+    expect(evaluateGuardian({ ...calm, tvl: { nowUsd: NaN, dayAgoUsd: 1_000 } })).toEqual([]);
+    const zero = { priceUsd: 0, belowPegSince: '2026-09-28T13:00:00.000Z' };
+    expect(evaluateGuardian({ ...calm, usdt: zero })).toEqual([]);
+    expect(unevaluatedRules({ ...calm, tvl: { nowUsd: 0, dayAgoUsd: 1_000 }, usdt: zero })).toEqual(
+      ['tvl_drop', 'usdt_depeg'],
+    );
+  });
+
+  it('names the rules it could not evaluate, so their open events stay open', () => {
+    expect(unevaluatedRules(calm)).toEqual([]);
+    expect(unevaluatedRules({ now })).toEqual([
+      'protocol_paused',
+      'utilization_high',
+      'tvl_drop',
+      'usdt_depeg',
+    ]);
+    // No sample from a day ago yet: the drop cannot be measured.
+    expect(unevaluatedRules({ ...calm, tvl: { nowUsd: 1, dayAgoUsd: null } })).toEqual([
+      'tvl_drop',
+    ]);
   });
 
   it('stops new deposits above 95 % utilisation', () => {

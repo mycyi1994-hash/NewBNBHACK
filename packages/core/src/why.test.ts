@@ -3,7 +3,7 @@ import { uxCopyWhyTable } from '../test/ux-copy.js';
 import { WHY_KEYS, formatPct, formatShares, formatUsd } from './why.js';
 
 describe('WHY_KEYS', () => {
-  it('is exactly the key list of UX_COPY §4', () => {
+  it('is exactly the key list of UX_COPY §4 and the §7 draft why lines', () => {
     expect([...WHY_KEYS].sort()).toEqual([...uxCopyWhyTable().keys()].sort());
   });
 });
@@ -27,5 +27,6 @@ describe('formatters', () => {
   it('shows percentages with two decimals', () => {
     expect(formatPct(2.3456)).toBe('2.35');
     expect(formatPct(-0.35)).toBe('-0.35');
+    expect(formatPct(-0.001)).toBe('0.00');
   });
 });

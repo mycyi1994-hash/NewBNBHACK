@@ -21,3 +21,6 @@ docs/vendor/*
 # local
 .DS_Store
 *.log
+
+# Agent worktrees created by the Claude Code harness (never part of the repo)
+.claude/worktrees/

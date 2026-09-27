@@ -7,3 +7,4 @@ pnpm-lock.yaml
 packages/db/drizzle/
 **/.next/
 **/next-env.d.ts
+.claude/worktrees/

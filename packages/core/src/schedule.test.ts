@@ -36,6 +36,22 @@ describe('nextDue', () => {
     });
   });
 
+  it('counts New York calendar days, so a DST switch keeps the weekday and the slot', () => {
+    // Fri 30 Oct 09:32 EDT → Fri 6 Nov 09:32 EST (not Thu 5 Nov after adding 6 × 24 h).
+    expect(nextDue('weekly', new Date('2026-10-30T13:32:00Z'))).toEqual({
+      kind: 'due',
+      nextDueAt: '2026-11-06T14:32:00.000Z',
+    });
+  });
+
+  it('never makes a daily plan due again on the day it bought before the open', () => {
+    // An anytime plan that bought Mon 08:00 ET is next due Tuesday, not Monday 09:32.
+    expect(nextDue('daily', new Date('2026-09-28T12:00:00Z'))).toEqual({
+      kind: 'due',
+      nextDueAt: '2026-09-29T13:32:00.000Z',
+    });
+  });
+
   it('stops a once plan after anything but a deferral', () => {
     expect(nextDue('once', MON_0932)).toEqual({ kind: 'stop' });
   });

@@ -5,6 +5,7 @@ import {
   supplyApyFromRatePerBlock,
   toUnits,
   underlyingFromVTokens,
+  truncateDecimal,
   utilizationBps,
   vTokensForUnderlying,
 } from './amounts.js';
@@ -54,6 +55,9 @@ describe('utilizationBps', () => {
   });
 
   it('is 0 for an empty market', () => {
+    // Rounded up: 95.001 % is above a 95 % limit.
+    expect(utilizationBps(4_999n, 95_001n, 0n)).toBe(9501);
+    expect(utilizationBps(5_000n, 95_000n, 0n)).toBe(9500);
     expect(utilizationBps(0n, 0n, 0n)).toBe(0);
     expect(utilizationBps(100n, 0n, 0n)).toBe(0);
   });
@@ -76,5 +80,15 @@ describe('supplyApyFromRatePerBlock', () => {
     // 1e-9 per block over 1e7 blocks ≈ e^0.01 − 1.
     const apy = supplyApyFromRatePerBlock(1_000_000_000n, 10_000_000);
     expect(apy).toBeCloseTo(Math.expm1(0.01), 6);
+  });
+});
+
+describe('truncateDecimal', () => {
+  it('cuts extra decimals and refuses what is not a plain decimal', () => {
+    expect(truncateDecimal('1.0007782237528078650001', 18)).toBe('1.000778223752807865');
+    expect(truncateDecimal(' 2.5 ', 18)).toBe('2.5');
+    expect(truncateDecimal('3.000', 0)).toBe('3');
+    expect(() => truncateDecimal('1e0', 18)).toThrow('not a non-negative decimal');
+    expect(() => truncateDecimal('-1', 18)).toThrow('not a non-negative decimal');
   });
 });

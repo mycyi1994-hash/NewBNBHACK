@@ -4,20 +4,24 @@
  * `balanceOf` fixed through dividends and splits and move the multiplier instead, so a holding is
  * revalued whenever the multiplier changes.
  */
-import { fromUnits, toUnits } from './amounts.js';
+import { fromUnits, toUnits, truncateDecimal } from './amounts.js';
 
 const MULTIPLIER_DECIMALS = 18;
 const ONE = 10n ** 18n;
 
+/** A multiplier in 18-decimal units; extra decimals are cut, never a reason to throw after a buy. */
+const multiplierUnits = (multiplier: string) =>
+  toUnits(truncateDecimal(multiplier, MULTIPLIER_DECIMALS), MULTIPLIER_DECIMALS);
+
 /** Token base units (with the token's `decimals`) × multiplier → shares, rounded down. */
 export function sharesFromTokens(tokenUnits: bigint, decimals: number, multiplier: string): string {
-  const shareUnits = (tokenUnits * toUnits(multiplier, MULTIPLIER_DECIMALS)) / ONE;
+  const shareUnits = (tokenUnits * multiplierUnits(multiplier)) / ONE;
   return fromUnits(shareUnits, decimals);
 }
 
 /** Numeric equality of two multiplier strings ("1.0" equals "1"). */
 export function sameMultiplier(a: string, b: string): boolean {
-  return toUnits(a, MULTIPLIER_DECIMALS) === toUnits(b, MULTIPLIER_DECIMALS);
+  return multiplierUnits(a) === multiplierUnits(b);
 }
 
 export interface HoldingSnapshot {

@@ -40,13 +40,26 @@ export function vTokensForUnderlying(underlying: bigint, exchangeRate: bigint): 
 }
 
 /**
- * Compound utilisation = borrows / (cash + borrows − reserves), in basis points (0–10000).
- * Returns 0 for an empty market.
+ * Compound utilisation = borrows / (cash + borrows − reserves), in basis points (0–10000),
+ * rounded up so a limit like "above 95 %" fires at 95.001 % too. Returns 0 for an empty market.
  */
 export function utilizationBps(cash: bigint, borrows: bigint, reserves: bigint): number {
   const supplied = cash + borrows - reserves;
   if (borrows === 0n || supplied <= 0n) return 0;
-  return Number((borrows * 10_000n) / supplied);
+  return Number((borrows * 10_000n + supplied - 1n) / supplied);
+}
+
+/**
+ * A plain non-negative decimal cut to `decimals` places ("1.0007782237528078650001" → 18 places),
+ * for values an API or chain hands over with more precision than we keep (a share multiplier).
+ * Throws on anything else (exponents, signs, empty), like toUnits.
+ */
+export function truncateDecimal(value: string, decimals: number): string {
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match) throw new Error(`not a non-negative decimal: ${value}`);
+  const [, whole = '0', frac = ''] = match;
+  const kept = frac.slice(0, decimals);
+  return kept ? `${whole}.${kept}` : whole;
 }
 
 /**

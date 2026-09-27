@@ -130,6 +130,7 @@ describe.skipIf(!url)('recorded RWA list → marketSnapshot → decideCycle', ()
     caps: { minBuyUsd: '2', maxPerTxUsd: '25' },
     dailyRemainingUsd: '50',
     dailyLimitUsd: '50',
+    guardian: { blocked: false } as const,
     markets,
   });
 

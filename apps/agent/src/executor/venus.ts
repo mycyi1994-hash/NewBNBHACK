@@ -64,12 +64,27 @@ export async function discoverVenusUsdt(
     investType: 'Earn',
     tokenAddress: BSC_USDT,
   });
-  const usdt = investments.find((inv) =>
-    inv.assetTokenList?.some(
-      (t) => t.tokenAddress && isAddressEqual(t.tokenAddress as Hex, BSC_USDT),
-    ),
+  // The request already filters by the USDT address, and the real list response names no asset
+  // tokens (fixtures/defi-data/listDeFiInvestments-20260924-1.json); an item that does name them
+  // must name USDT. Which market it is gets proved below: the deposit build names the vToken and
+  // the chain confirms its underlying() is USDT.
+  const candidates = investments.filter(
+    (inv) =>
+      (inv.investType === undefined || inv.investType === 'Earn') &&
+      (inv.assetTokenList === undefined ||
+        inv.assetTokenList.some(
+          (t) => t.tokenAddress !== undefined && isAddressEqual(t.tokenAddress as Hex, BSC_USDT),
+        )),
   );
-  if (!usdt) throw new Error('no Venus USDT Earn investment in the DeFi API');
+  const named = candidates.filter((inv) => inv.investmentName === 'USDT');
+  const usdt = candidates.length === 1 ? candidates[0] : named.length === 1 ? named[0] : undefined;
+  if (!usdt) {
+    throw new Error(
+      candidates.length === 0
+        ? 'no Venus USDT Earn investment in the DeFi API'
+        : `${candidates.length} Venus USDT investments and not exactly one named USDT`,
+    );
+  }
   const build = await buildDeFi(deps.client, 'deposit', {
     address: deps.house,
     investmentId: usdt.investmentId,

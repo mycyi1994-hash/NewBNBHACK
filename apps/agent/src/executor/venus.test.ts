@@ -48,6 +48,11 @@ function recorded(file: string): { dataList: Item[]; redeemDelayDays?: number[] 
   return { ...data, dataList: data.dataList.map((item) => ({ ...item, from: HOUSE })) };
 }
 
+const RECORDED_LIST = (
+  JSON.parse(
+    readFileSync(path.join(FIXTURES, 'defi-data/listDeFiInvestments-20260924-1.json'), 'utf8'),
+  ) as { response: { body: { data: { list: Record<string, unknown>[] } } } }
+).response.body.data;
 const DEPOSIT = recorded('defi-transaction/buildDeFiDepositTransaction-20260924-3.json');
 const REDEEM = recorded('defi-transaction/buildDeFiRedeemTransaction-20260924-3.json');
 const REDEEM_VTOKENS = decodeVenusCall(REDEEM.dataList[0]?.data ?? '').amount;
@@ -62,16 +67,10 @@ function world(mode: 'simulate' | 'live', db?: Db, startNonce = 0) {
   const simulated: { to: string; data: string }[] = [];
   let depositBuild = DEPOSIT;
   let redeemBuild = REDEEM;
+  let investmentList: { list: Record<string, unknown>[] } = RECORDED_LIST;
   const api = fakeApi(clock, {
-    '/api/v1/defi/data/investment/list': () => ({
-      list: [
-        {
-          investmentId: 'other',
-          assetTokenList: [{ tokenAddress: '0x0000000000000000000000000000000000000001' }],
-        },
-        { investmentId: INVESTMENT, assetTokenList: [{ tokenAddress: BSC_USDT.toLowerCase() }] },
-      ],
-    }),
+    // The recorded real response: its items name no asset tokens (the request filters by USDT).
+    '/api/v1/defi/data/investment/list': () => investmentList,
     '/api/v1/defi/transaction/deposit': () => depositBuild,
     '/api/v1/defi/transaction/redeem': () => redeemBuild,
     '/api/v1/dex/pre-transaction/gas-limit': () => ({ gasLimit: '150000' }),
@@ -132,15 +131,40 @@ function world(mode: 'simulate' | 'live', db?: Db, startNonce = 0) {
     market: { investmentId: INVESTMENT, vToken: VUSDT },
     setDeposit: (build: typeof DEPOSIT) => (depositBuild = build),
     setRedeem: (build: typeof REDEEM) => (redeemBuild = build),
+    setList: (list: Record<string, unknown>[]) => (investmentList = { list }),
   };
 }
 
 describe('discoverVenusUsdt', () => {
-  it('finds the USDT investment and checks the market on chain', async () => {
+  it('finds the USDT investment in the real list response and checks the market on chain', async () => {
     const w = world('simulate');
-    expect(await discoverVenusUsdt(w.deps)).toEqual({ investmentId: INVESTMENT, vToken: VUSDT });
+    expect(await discoverVenusUsdt(w.deps)).toEqual({
+      investmentId: INVESTMENT,
+      vToken: VUSDT,
+      apyBps: 316,
+      apyDisplay: '3.16%',
+    });
     w.chain.underlyingOf = () => Promise.resolve('0x0000000000000000000000000000000000000002');
     await expect(discoverVenusUsdt(w.deps)).rejects.toThrow('not USDT');
+  });
+
+  it('skips items that name other tokens, and refuses to guess between several', async () => {
+    const w = world('simulate');
+    const other = {
+      investmentId: 'other',
+      investType: 'Earn',
+      assetTokenList: [{ tokenAddress: '0x0000000000000000000000000000000000000001' }],
+    };
+    const usdt = { investmentId: INVESTMENT, investType: 'Earn', investmentName: 'USDT' };
+    w.setList([other, usdt]);
+    expect(await discoverVenusUsdt(w.deps)).toMatchObject({ investmentId: INVESTMENT });
+    w.setList([
+      { investmentId: 'a', investType: 'Earn' },
+      { investmentId: 'b', investType: 'Earn' },
+    ]);
+    await expect(discoverVenusUsdt(w.deps)).rejects.toThrow('not exactly one named USDT');
+    w.setList([other]);
+    await expect(discoverVenusUsdt(w.deps)).rejects.toThrow('no Venus USDT Earn investment');
   });
 });
 

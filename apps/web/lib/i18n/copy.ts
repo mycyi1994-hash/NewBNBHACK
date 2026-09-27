@@ -116,6 +116,9 @@ export const COPY = {
     'outcome.redeem': '이자 통장에서 꺼냈어요',
     'why.data.stale': '데이터가 오래돼 기다려요. {time}에 다시 봐요.',
     'why.data.unavailable': '데이터를 불러올 수 없어 기다려요.',
+    'why.skipped.guardian.hold': '지킴이가 매수를 멈췄어요: {rule}. 원금은 그대로 있어요.',
+    'why.skipped.venue_minimum':
+      '{ticker}는 한 번에 ${min} 이상 사야 해요. 이 플랜의 1회 한도(${limit})로는 살 수 없어요.',
     'home.house.next.progress': '다음 매수까지 ${left} 남음',
     'home.house.next.min': '이자가 ${min}가 되면',
     'home.house.receipts': '영수증 {n}개',
@@ -388,6 +391,9 @@ export const COPY = {
     'outcome.redeem': 'Taken out of the interest account',
     'why.data.stale': 'The data is old, so we wait. Checking again at {time}.',
     'why.data.unavailable': 'The data is unavailable, so we wait.',
+    'why.skipped.guardian.hold': 'The guardian paused buying: {rule}. Principal stays where it is.',
+    'why.skipped.venue_minimum':
+      "{ticker} needs an order of at least ${min}. This plan's per-buy limit (${limit}) can't reach it.",
     'home.house.next.progress': '${left} to the next buy',
     'home.house.next.min': 'When interest reaches ${min}',
     'home.house.receipts': '{n} receipts',

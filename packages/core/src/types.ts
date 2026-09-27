@@ -51,7 +51,8 @@ export interface Plan {
   expiresAt?: string;
 }
 
-export type DeferredReason = 'market_closed' | 'price_gap' | 'session_expiring' | 'quote_impact';
+export type DeferredReason =
+  'market_closed' | 'price_gap' | 'session_expiring' | 'quote_impact' | 'data_unavailable';
 export type SkippedReason =
   'below_min' | 'corporate_action' | 'daily_cap' | 'guardian' | 'no_instrument';
 

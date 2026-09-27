@@ -154,6 +154,8 @@
 - `outcome.redeem`: 이자 통장에서 꺼냈어요 / Taken out of the interest account
 - `why.data.stale`: 데이터가 오래돼 기다려요. {time}에 다시 봐요. / The data is old, so we wait. Checking again at {time}.
 - `why.data.unavailable`: 데이터를 불러올 수 없어 기다려요. / The data is unavailable, so we wait.
+- `why.skipped.guardian.hold`: 지킴이가 매수를 멈췄어요: {rule}. 원금은 그대로 있어요. / The guardian paused buying: {rule}. Principal stays where it is.
+- `why.skipped.venue_minimum`: {ticker}는 한 번에 ${min} 이상 사야 해요. 이 플랜의 1회 한도(${limit})로는 살 수 없어요. / {ticker} needs an order of at least ${min}. This plan's per-buy limit (${limit}) can't reach it.
 
 ### 7.2 홈
 - `home.house.next.progress`: 다음 매수까지 ${left} 남음 / ${left} to the next buy

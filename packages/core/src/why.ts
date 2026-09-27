@@ -1,6 +1,7 @@
 /**
- * The one-line "why" behind every cycle (UX_COPY §4). Keys here must match that table exactly —
- * the engine may not invent copy; `why.test.ts` compares the two. Params are display strings.
+ * The one-line "why" behind every cycle (UX_COPY §4, plus the §7 drafts). Keys here must match
+ * the copy exactly — the engine may not invent copy; `why.test.ts` compares the two. Params are
+ * display strings.
  */
 import { fromUnits } from './amounts.js';
 
@@ -20,6 +21,11 @@ export const WHY_KEYS = [
   'why.skipped.no_liquidity',
   'why.failed.simulation',
   'why.failed.onchain',
+  // UX_COPY §7 agent drafts, pending human review (DECISIONS D-20).
+  'why.data.stale',
+  'why.data.unavailable',
+  'why.skipped.guardian.hold',
+  'why.skipped.venue_minimum',
 ] as const;
 
 export type WhyKey = (typeof WHY_KEYS)[number];
@@ -45,7 +51,8 @@ export function formatShares(units: bigint): string {
   return six === 0n && units !== 0n ? fromUnits(units, 18) : fromUnits(six, 18);
 }
 
-/** A percentage for copy: two decimals, sign kept ("-0.35"). */
+/** A percentage for copy: two decimals, sign kept ("-0.35"), never "-0.00". */
 export function formatPct(value: number): string {
-  return value.toFixed(2);
+  const text = value.toFixed(2);
+  return text === '-0.00' ? '0.00' : text;
 }

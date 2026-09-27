@@ -46,7 +46,7 @@ describe('readVTokenState', () => {
     expect(state.underlying).toBe('0x55d398326f99059fF775485246999027B3197955');
     expect(state.mintPaused).toBe(false);
     expect([...blocks]).toEqual([123664140n]);
-    expect(utilizationBps(state.cash, state.totalBorrows, state.totalReserves)).toBe(7278);
+    expect(utilizationBps(state.cash, state.totalBorrows, state.totalReserves)).toBe(7279);
     // 1 vUSDT (1e8 units) ≈ 0.0265 USDT
     expect(underlyingFromVTokens(10n ** 8n, state.exchangeRateStored)).toBe(26511585476404609n);
   });

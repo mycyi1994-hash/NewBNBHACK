@@ -13,6 +13,7 @@ import { BSC_USDT } from '@ijaro/chain';
 import {
   evaluateGuardian,
   fromUnits,
+  unevaluatedRules,
   underlyingFromVTokens,
   USDT_PEG_FLOOR,
   type GuardianAction,
@@ -36,6 +37,9 @@ import type { CycleDeps } from './cycle.js';
 import { redeemFromVenus, type VenusMarket } from './executor/venus.js';
 
 const DAY_MS = 86_400_000;
+
+/** A positive plain decimal: a TVL or price of "", "0" or garbage is no reading at all. */
+const usableAmount = (value: string) => /^\d+(\.\d+)?$/.test(value) && Number(value) > 0;
 /** A TVL sample counts as "24 h ago" within ±2 h. */
 const DAY_AGO_TOLERANCE_MS = 2 * 60 * 60_000;
 
@@ -87,7 +91,7 @@ async function readInputs(deps: CycleDeps, unavailable: string[]): Promise<Guard
         source: 'defi-data',
       });
     }
-    if (tvl !== null) {
+    if (tvl !== null && usableAmount(tvl)) {
       await insertGuardianSample(deps.db, {
         ts,
         metric: 'venus_tvl_usd',
@@ -103,7 +107,9 @@ async function readInputs(deps: CycleDeps, unavailable: string[]): Promise<Guard
       );
       inputs.tvl = { nowUsd: Number(tvl), dayAgoUsd: dayAgo ? Number(dayAgo.value) : null };
     } else {
-      unavailable.push('venus tvl: missing in protocol detail');
+      unavailable.push(
+        `venus tvl: ${tvl === null ? 'missing in protocol detail' : 'not a positive amount'}`,
+      );
     }
   } catch (error) {
     if (!(error instanceof BinanceApiError)) throw error;
@@ -111,7 +117,7 @@ async function readInputs(deps: CycleDeps, unavailable: string[]): Promise<Guard
   }
   try {
     const [usdt] = await getTokenPrices(deps.client, [BSC_USDT]);
-    if (usdt?.price) {
+    if (usdt?.price && usableAmount(usdt.price)) {
       await insertGuardianSample(deps.db, {
         ts,
         metric: 'usdt_price_usd',
@@ -121,7 +127,7 @@ async function readInputs(deps: CycleDeps, unavailable: string[]): Promise<Guard
       const since = await belowSince(deps.db, 'usdt_price_usd', 'market', String(USDT_PEG_FLOOR));
       inputs.usdt = { priceUsd: Number(usdt.price), belowPegSince: since ? isoTime(since) : null };
     } else {
-      unavailable.push('usdt price: missing');
+      unavailable.push(`usdt price: ${usdt?.price ? 'not a positive amount' : 'missing'}`);
     }
   } catch (error) {
     if (!(error instanceof BinanceApiError)) throw error;
@@ -239,9 +245,10 @@ export async function guardianTick(deps: CycleDeps): Promise<GuardianReport> {
     (event) => event.planId === null && event.rule in NEEDS,
   );
   const firing = new Set(report.actions.map((a) => a.rule));
+  // Only a rule that was evaluated this tick and is quiet may close: missing data is not calm.
+  const unevaluated = new Set<string>(unevaluatedRules(inputs));
   for (const rule of new Set(open.map((event) => event.rule))) {
-    const needs = NEEDS[rule as GuardianRule];
-    if (!firing.has(rule as GuardianRule) && inputs[needs] !== undefined) {
+    if (!firing.has(rule as GuardianRule) && !unevaluated.has(rule)) {
       await resolveGuardianEvents(deps.db, rule, inputs.now);
       report.resolved.push(rule);
     }

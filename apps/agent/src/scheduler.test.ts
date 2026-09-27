@@ -112,7 +112,7 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
         planId: id,
         status: 'done',
         outcome: { kind: 'SKIPPED', reason: 'guardian', detail: 'usdt_depeg' },
-        why: { key: 'why.skipped.guardian' },
+        why: { key: 'why.skipped.guardian.hold' },
       },
     ]);
     expect(w.alerts.some((line) => line.includes('usdt_depeg'))).toBe(true);

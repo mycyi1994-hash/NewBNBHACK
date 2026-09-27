@@ -268,7 +268,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
     try {
       expect((await next(id, token)).body).toMatchObject({
         decision: 'skip',
-        why: { key: 'why.skipped.guardian', params: { rule: 'usdt_depeg' } },
+        why: { key: 'why.skipped.guardian.hold', params: { rule: 'usdt_depeg' } },
       });
     } finally {
       await resolveGuardianEvents(db, 'usdt_depeg', new Date());

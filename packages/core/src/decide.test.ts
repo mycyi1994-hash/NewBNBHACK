@@ -96,6 +96,7 @@ function input(overrides: Partial<CycleInput> = {}): CycleInput {
     dailyRemainingUsd: '50',
     dailyLimitUsd: '50',
     markets: [market('NVDA', 'bstocks'), market('NVDA', 'ondo')],
+    guardian: { blocked: false },
     ...overrides,
   };
 }
@@ -169,7 +170,11 @@ describe('decideCycle — GUARDIAN', () => {
       decideCycle(input({ guardian: { blocked: true, rule: 'utilization>95%' } })),
     );
     expect(d.outcome).toEqual({ kind: 'SKIPPED', reason: 'guardian', detail: 'utilization>95%' });
-    expect(d.why).toEqual({ key: 'why.skipped.guardian', params: { rule: 'utilization>95%' } });
+    // Buying is paused; the skip never claims principal moved (a redeem has its own receipt).
+    expect(d.why).toEqual({
+      key: 'why.skipped.guardian.hold',
+      params: { rule: 'utilization>95%' },
+    });
   });
 });
 
@@ -303,11 +308,58 @@ describe('decideCycle — ASSET', () => {
     expect(d).toEqual({ kind: 'quote', instrumentId: 'AAPL:ondo', spendUsd: '6' });
   });
 
-  it('respects the venue minimum: $5 cannot buy an Ondo-only stock', () => {
+  it('says a $5 plan can never buy an Ondo-only stock, instead of promising to', () => {
     const plan = { ...H_SAFE, target: { type: 'ticker' as const, ticker: 'AAPL' } };
     const d = terminal(decideCycle(input({ plan, markets: [market('AAPL', 'ondo')] })));
+    expect(d.outcome).toEqual({
+      kind: 'SKIPPED',
+      reason: 'below_min',
+      detail: 'venue_minimum_above_limit',
+    });
+    expect(d.why).toEqual({
+      key: 'why.skipped.venue_minimum',
+      params: { ticker: 'AAPL', min: '5.01', limit: '5.00' },
+    });
+  });
+
+  it('shows the whole accumulated budget when interest has yet to reach the venue minimum', () => {
+    const plan = { ...H_YIELD, target: { type: 'ticker' as const, ticker: 'AAPL' } };
+    const position = { underlyingUsd: '1003', harvestedUnspentUsd: '0' };
+    const d = terminal(decideCycle(input({ plan, position, markets: [market('AAPL', 'ondo')] })));
     expect(d.outcome).toEqual({ kind: 'SKIPPED', reason: 'below_min', detail: 'venue_minimum' });
-    expect(d.why.params).toEqual({ acc: '5.00', min: '5.01' });
+    expect(d.why).toEqual({ key: 'why.skipped.below_min', params: { acc: '3.00', min: '5.01' } });
+  });
+
+  it('names the daily limit when only what is left today is under the venue minimum', () => {
+    const plan = {
+      ...H_SAFE,
+      target: { type: 'ticker' as const, ticker: 'AAPL' },
+      contributionUsd: '10',
+      limits: { maxPerBuyUsd: '10', maxDailyUsd: '10' },
+    };
+    const d = terminal(
+      decideCycle(input({ plan, markets: [market('AAPL', 'ondo')], dailyRemainingUsd: '3' })),
+    );
+    expect(d.outcome).toEqual({ kind: 'SKIPPED', reason: 'daily_cap', detail: 'venue_minimum' });
+    expect(d.why).toEqual({ key: 'why.skipped.daily_cap', params: { daily: '50.00' } });
+  });
+
+  it('waits for the session when only the off-hours half is under the venue minimum', () => {
+    const plan = {
+      ...ANYTIME,
+      target: { type: 'ticker' as const, ticker: 'AAPL' },
+      contributionUsd: '8',
+      limits: { maxPerBuyUsd: '8', maxDailyUsd: '8' },
+    };
+    const d = terminal(
+      decideCycle(input({ now: OVERNIGHT, plan, markets: [market('AAPL', 'ondo')] })),
+    );
+    expect(d.outcome).toEqual({
+      kind: 'DEFERRED',
+      reason: 'market_closed',
+      retryAt: '2026-09-24T13:32:00.000Z',
+      detail: 'half_limit_below_venue_min',
+    });
   });
 
   it('skips for earnings without switching issuer', () => {
@@ -699,6 +751,110 @@ describe('decideCycle — QUOTE', () => {
   });
 });
 
+describe('decideCycle — audit fixes (9/27)', () => {
+  it('never treats a date it cannot read as due, nor keeps a plan with an unreadable expiry', () => {
+    expect(decideCycle(input({ plan: { ...H_SAFE, nextDueAt: 'soon' } }))).toEqual({
+      kind: 'not_due',
+    });
+    expect(decideCycle(input({ plan: { ...ANYTIME, expiresAt: 'never' } }))).toEqual({
+      kind: 'not_due',
+    });
+  });
+
+  it('refuses a yield plan with no principal on record (its whole position would be interest)', () => {
+    const plan = { ...H_YIELD, principalUsd: '0' };
+    const position = { underlyingUsd: '1000', harvestedUnspentUsd: '0' };
+    expect(() => decideCycle(input({ plan, position }))).toThrow(/needs its principal on record/);
+  });
+
+  it('waits when the RWA status could not be read, instead of calling it "no liquidity"', () => {
+    const unavailable = { ...TRADING, openState: null, reasonCode: 'UNAVAILABLE' };
+    const d = terminal(
+      decideCycle(
+        input({
+          markets: [
+            market('NVDA', 'bstocks', { status: unavailable }),
+            market('NVDA', 'ondo', { status: unavailable }),
+          ],
+        }),
+      ),
+    );
+    expect(d.outcome).toEqual({
+      kind: 'DEFERRED',
+      reason: 'data_unavailable',
+      retryAt: '2026-09-28T14:30:00.000Z',
+      detail: 'NVDA:bstocks:status_unavailable, NVDA:ondo:status_unavailable',
+    });
+    expect(d.why).toEqual({ key: 'why.data.unavailable', params: {} });
+    // Another issuer whose status is known still buys.
+    const plan = {
+      ...H_SAFE,
+      contributionUsd: '6',
+      limits: { maxPerBuyUsd: '6', maxDailyUsd: '6' },
+    };
+    expect(
+      decideCycle(
+        input({
+          plan,
+          markets: [market('NVDA', 'bstocks', { status: unavailable }), market('NVDA', 'ondo')],
+        }),
+      ),
+    ).toEqual({ kind: 'quote', instrumentId: 'NVDA:ondo', spendUsd: '6' });
+  });
+
+  it('quotes again at the allowed amount when the last quote is for more (session just closed)', () => {
+    // A $5 quote from 15:59:50 ET; at 16:00:05 an anytime plan may spend only half.
+    const now = new Date('2026-09-28T20:00:05Z');
+    const quotes = [quote('NVDA:bstocks', '5', { receivedAt: '2026-09-28T19:59:50.000Z' })];
+    expect(decideCycle(input({ now, plan: ANYTIME, quotes }))).toEqual({
+      kind: 'quote',
+      instrumentId: 'NVDA:bstocks',
+      spendUsd: '2.5',
+    });
+  });
+
+  it('quotes again when interest shrank below the quoted spend (never pays the rest from the house)', () => {
+    // $3 was quoted; the position now holds only $2.50 of interest.
+    const position = { underlyingUsd: '1002.5', harvestedUnspentUsd: '0' };
+    const quotes = [quote('NVDA:bstocks', '3')];
+    expect(decideCycle(input({ plan: H_YIELD, position, quotes }))).toEqual({
+      kind: 'quote',
+      instrumentId: 'NVDA:bstocks',
+      spendUsd: '2.5',
+    });
+  });
+
+  it('counts only impact halvings towards the re-quote limit, and re-quotes an unreadable receive time', () => {
+    const stale = (spend: string) =>
+      quote('NVDA:bstocks', spend, { receivedAt: '2026-09-28T13:00:00.000Z' });
+    const high = quote('NVDA:bstocks', '5', { priceImpactPct: '1.5' });
+    expect(decideCycle(input({ quotes: [stale('5'), stale('5'), high] }))).toEqual({
+      kind: 'quote',
+      instrumentId: 'NVDA:bstocks',
+      spendUsd: '2.5',
+    });
+    const unreadable = quote('NVDA:bstocks', '5', { receivedAt: 'yesterday' });
+    expect(decideCycle(input({ quotes: [unreadable] }))).toEqual({
+      kind: 'quote',
+      instrumentId: 'NVDA:bstocks',
+      spendUsd: '5',
+    });
+  });
+
+  it('ignores an independent or on-chain price that is zero or not a number', () => {
+    for (const bad of [
+      { independentSharePriceUsd: '0' },
+      { independentSharePriceUsd: 'NaN' },
+      { onchainSharePriceUsd: 'junk', independentSharePriceUsd: '225.00' },
+      { onchainSharePriceUsd: null, independentSharePriceUsd: '225.00' },
+    ]) {
+      const quotes = [quote('NVDA:bstocks', '5')];
+      const d = decideCycle(input({ markets: [market('NVDA', 'bstocks', bad)], quotes }));
+      expect(d).toMatchObject({ kind: 'execute', refGapPct: null });
+    }
+  });
+});
+
 describe('boughtOutcome', () => {
   const nvdab = instrument('NVDA', 'bstocks', '1.000778223752807865');
   const base: ExecuteDecision = {
@@ -738,6 +894,10 @@ describe('boughtOutcome', () => {
   it('uses the off-hours line for an anytime buy outside the session', () => {
     const { why } = boughtOutcome({ ...base, offHours: true }, nvdab, '22212154002358266');
     expect(why.key).toBe('why.bought.anytime');
+    // Even when interest paid for all of it: the market-closed line and its gap come first.
+    const interest = { ...base, offHours: true, interestUsd: '5', refGapPct: '0.61' };
+    const paid = boughtOutcome(interest, nvdab, '22212154002358266');
+    expect(paid.why).toMatchObject({ key: 'why.bought.anytime', params: { gap: '0.61' } });
   });
 
   it('uses the interest line only when interest paid for the whole buy', () => {
@@ -790,7 +950,7 @@ describe('decideCycle — edge cases', () => {
         }),
       ),
     );
-    expect(d.why.params).toEqual({ acc: '5.00', min: '5.01' });
+    expect(d.why.params).toEqual({ ticker: 'NVDA', min: '5.01', limit: '5.00' });
   });
 
   it('fails with a generic message when the quote error has none', () => {
@@ -799,9 +959,18 @@ describe('decideCycle — edge cases', () => {
     expect(d.outcome).toMatchObject({ code: '40370', message: 'quote failed' });
   });
 
-  it('treats a quote without a price impact as no impact', () => {
-    const quotes = [quote('NVDA:bstocks', '5', { priceImpactPct: undefined })];
-    expect(decideCycle(input({ quotes })).kind).toBe('execute');
+  it('never assumes 0 % impact: a quote without a readable impact waits', () => {
+    for (const priceImpactPct of [undefined, 'n/a']) {
+      const quotes = [quote('NVDA:bstocks', '5', { priceImpactPct })];
+      const d = terminal(decideCycle(input({ quotes })));
+      expect(d.outcome).toEqual({
+        kind: 'DEFERRED',
+        reason: 'data_unavailable',
+        retryAt: '2026-09-28T14:30:00.000Z',
+        detail: 'price_impact_unknown',
+      });
+      expect(d.why).toEqual({ key: 'why.data.unavailable', params: {} });
+    }
   });
 
   it('halves only while the half still meets the venue minimum', () => {

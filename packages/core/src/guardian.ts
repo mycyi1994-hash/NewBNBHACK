@@ -33,6 +33,22 @@ export const UTILIZATION_LIMIT_BPS = 9_500;
 export const USDT_PEG_FLOOR = 0.99;
 export const USDT_DEPEG_MS = 30 * 60_000;
 
+/** A usable positive reading: a bad sample (0, NaN, "") counts as missing, never as a crash. */
+const usable = (value: number | null | undefined): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+/**
+ * Rules this tick could not evaluate for lack of data. Their open events stay open: missing
+ * data is never read as "all clear" (a dead feed must not resolve a redeem_all).
+ */
+export function unevaluatedRules(inputs: GuardianInputs): GuardianRule[] {
+  const rules: GuardianRule[] = [];
+  if (!inputs.venus) rules.push('protocol_paused', 'utilization_high');
+  if (!usable(inputs.tvl?.nowUsd) || !usable(inputs.tvl?.dayAgoUsd)) rules.push('tvl_drop');
+  if (!usable(inputs.usdt?.priceUsd)) rules.push('usdt_depeg');
+  return rules;
+}
+
 export function evaluateGuardian(inputs: GuardianInputs): GuardianAction[] {
   const actions: GuardianAction[] = [];
   const { venus, tvl, usdt } = inputs;
@@ -50,7 +66,7 @@ export function evaluateGuardian(inputs: GuardianInputs): GuardianAction[] {
     });
   }
 
-  if (tvl && tvl.dayAgoUsd !== null && tvl.dayAgoUsd > 0) {
+  if (tvl && usable(tvl.nowUsd) && usable(tvl.dayAgoUsd)) {
     const changePct = (tvl.nowUsd / tvl.dayAgoUsd - 1) * 100;
     if (changePct <= -TVL_DROP_PCT) {
       actions.push({
@@ -73,7 +89,7 @@ export function evaluateGuardian(inputs: GuardianInputs): GuardianAction[] {
     });
   }
 
-  if (usdt && usdt.priceUsd < USDT_PEG_FLOOR && usdt.belowPegSince !== null) {
+  if (usdt && usable(usdt.priceUsd) && usdt.priceUsd < USDT_PEG_FLOOR && usdt.belowPegSince) {
     const heldMs = inputs.now.getTime() - Date.parse(usdt.belowPegSince);
     if (heldMs >= USDT_DEPEG_MS) {
       actions.push({

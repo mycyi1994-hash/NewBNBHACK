@@ -28,6 +28,8 @@ const CORPORATE_ACTION_CODES = new Set(['ASSET_PAUSED', 'ASSET_LIMITED']);
 const SESSION_CLOSED_CODES = new Set(['MARKET_CLOSED', 'MARKET_PAUSED', 'MARKET_MAINTENANCE']);
 /** Trading API codes: bStock / Ondo RFQ rejected outside the session; no liquidity; Ondo minimum. */
 const OFF_HOURS_QUOTE_CODES = new Set(['40369', '40367']);
+/** What the agent and the web put in `reasonCode` when the RWA status call itself failed. */
+const STATUS_UNAVAILABLE = 'UNAVAILABLE';
 const NO_LIQUIDITY_CODE = '40374';
 const VENUE_MINIMUM_CODE = '40375';
 
@@ -93,7 +95,8 @@ export interface CycleInput {
   markets: readonly InstrumentMarket[];
   /** Yield plans: the Venus position and interest already redeemed but not yet spent. */
   position?: { underlyingUsd: string; harvestedUnspentUsd: string };
-  guardian?: { blocked: false } | { blocked: true; rule: string };
+  /** Required: a missing verdict must never read as "not blocked". */
+  guardian: { blocked: false } | { blocked: true; rule: string };
   /** Quotes fetched so far in this cycle, oldest first. */
   quotes?: readonly QuoteObservation[];
 }
@@ -125,6 +128,7 @@ const decimal = (value: bigint) => fromUnits(value, 18);
 const smallest = (first: bigint, ...rest: bigint[]) =>
   rest.reduce((a, b) => (b < a ? b : a), first);
 const iso = (ms: number) => new Date(ms).toISOString();
+const positive = (value: number) => Number.isFinite(value) && value > 0;
 
 function done(outcome: TerminalOutcome, key: WhyKey, params: Record<string, string>): Decision {
   return { kind: 'done', outcome, why: { key, params } };
@@ -173,21 +177,25 @@ export function decideCycle(input: CycleInput): Decision {
 
   // DUE
   if (plan.status !== 'active') return { kind: 'not_due' };
-  if (plan.expiresAt !== undefined && Date.parse(plan.expiresAt) <= nowMs) {
+  // A date that does not parse never makes a plan due and never keeps an expired one running.
+  if (plan.expiresAt !== undefined && !(Date.parse(plan.expiresAt) > nowMs)) {
     return { kind: 'not_due' };
   }
-  if (Date.parse(plan.nextDueAt) > nowMs) return { kind: 'not_due' };
+  if (!(Date.parse(plan.nextDueAt) <= nowMs)) return { kind: 'not_due' };
   if (plan.target.type !== 'ticker') {
     throw new Error(`plan ${plan.id}: sector targets are not implemented`);
   }
   const ticker = plan.target.ticker;
 
-  // GUARDIAN — rules live in guardian.ts (M2-06); the engine only honours the verdict.
-  if (input.guardian?.blocked) {
+  // GUARDIAN — rules live in guardian.ts (M2-06); the engine only honours the verdict. The skip
+  // says buying is paused, not that principal moved: a redeem, when there is one, has its own record.
+  if (input.guardian.blocked) {
     const { rule } = input.guardian;
-    return done({ kind: 'SKIPPED', reason: 'guardian', detail: rule }, 'why.skipped.guardian', {
-      rule,
-    });
+    return done(
+      { kind: 'SKIPPED', reason: 'guardian', detail: rule },
+      'why.skipped.guardian.hold',
+      { rule },
+    );
   }
 
   // WINDOW — our NYSE calendar is the gate (bStocks report TRADING overnight).
@@ -215,6 +223,10 @@ export function decideCycle(input: CycleInput): Decision {
   let harvestedUnspent = 0n;
   if (plan.mode === 'yield') {
     if (!input.position) throw new Error(`plan ${plan.id}: yield cycle without a position`);
+    // With no principal on record the whole position would count as interest (DECISIONS D-16).
+    if (units(plan.principalUsd) <= 0n) {
+      throw new Error(`plan ${plan.id}: a yield plan needs its principal on record`);
+    }
     // Never negative: a position under principal has no interest to spend.
     interestInPosition = interestUnits(
       units(input.position.underlyingUsd),
@@ -255,6 +267,7 @@ export function decideCycle(input: CycleInput): Decision {
 
   let chosen: InstrumentMarket | undefined;
   let sessionClosed: { code: string; nextOpenTime: number | null } | undefined;
+  let statusUnavailable = false;
   let venueMinimum: bigint | undefined;
   const notes: string[] = [];
   for (const market of candidates) {
@@ -262,6 +275,12 @@ export function decideCycle(input: CycleInput): Decision {
     const exclusion = excluded.get(instrument.id);
     if (exclusion) {
       notes.push(`${instrument.id}:${exclusion}`);
+      continue;
+    }
+    if (status.reasonCode === STATUS_UNAVAILABLE) {
+      // Not knowing the status is not "no liquidity": wait and read it again.
+      statusUnavailable = true;
+      notes.push(`${instrument.id}:status_unavailable`);
       continue;
     }
     if (status.openState !== true || status.reasonCode !== 'TRADING') {
@@ -301,11 +320,48 @@ export function decideCycle(input: CycleInput): Decision {
         next !== null && next > nowMs ? next + OPEN_SETTLE_MS : nowMs + RETRY_LATER_MS;
       return marketClosed(retryAtMs, sessionClosed.code);
     }
-    if (venueMinimum !== undefined) {
+    if (statusUnavailable) {
       return done(
-        { kind: 'SKIPPED', reason: 'below_min', detail: 'venue_minimum' },
-        'why.skipped.below_min',
-        { acc: formatUsd(plannedSpend), min: formatUsd(venueMinimum) },
+        {
+          kind: 'DEFERRED',
+          reason: 'data_unavailable',
+          retryAt: iso(nowMs + RETRY_LATER_MS),
+          detail: notes.join(', '),
+        },
+        'why.data.unavailable',
+        {},
+      );
+    }
+    if (venueMinimum !== undefined) {
+      // A safe plan never has more than its contribution; interest (yield) can grow into the minimum.
+      const cap = (limit: bigint) =>
+        plan.mode === 'safe' ? smallest(limit, units(plan.contributionUsd)) : limit;
+      if (cap(maxPerBuy) < venueMinimum) {
+        if (cap(perBuyLimit) >= venueMinimum) {
+          // Only the off-hours half is too small: the whole limit applies in the regular session.
+          return marketClosed(
+            nextRegularOpen(now).getTime() + OPEN_SETTLE_MS,
+            'half_limit_below_venue_min',
+          );
+        }
+        return done(
+          { kind: 'SKIPPED', reason: 'below_min', detail: 'venue_minimum_above_limit' },
+          'why.skipped.venue_minimum',
+          { ticker, min: formatUsd(venueMinimum), limit: formatUsd(cap(perBuyLimit)) },
+        );
+      }
+      if (budget < venueMinimum) {
+        return done(
+          { kind: 'SKIPPED', reason: 'below_min', detail: 'venue_minimum' },
+          'why.skipped.below_min',
+          { acc: formatUsd(budget), min: formatUsd(venueMinimum) },
+        );
+      }
+      // Budget and limits reach the minimum; what is left today does not.
+      return done(
+        { kind: 'SKIPPED', reason: 'daily_cap', detail: 'venue_minimum' },
+        'why.skipped.daily_cap',
+        { daily: formatUsd(units(input.dailyLimitUsd)) },
       );
     }
     return done(
@@ -319,11 +375,13 @@ export function decideCycle(input: CycleInput): Decision {
     );
   }
 
-  // PRICE — only an independent stock price can show a premium.
+  // PRICE — only an independent stock price can show a premium; a price that is zero or not a
+  // number is no price at all.
   let refGapPct: string | null = null;
-  if (chosen.independentSharePriceUsd !== null && chosen.onchainSharePriceUsd !== null) {
-    const gap =
-      (Number(chosen.onchainSharePriceUsd) / Number(chosen.independentSharePriceUsd) - 1) * 100;
+  const onchainPrice = Number(chosen.onchainSharePriceUsd ?? NaN);
+  const independentPrice = Number(chosen.independentSharePriceUsd ?? NaN);
+  if (positive(onchainPrice) && positive(independentPrice)) {
+    const gap = (onchainPrice / independentPrice - 1) * 100;
     refGapPct = formatPct(gap);
     if (regular && gap > MAX_PRICE_GAP_PCT) {
       return done(
@@ -371,11 +429,32 @@ export function decideCycle(input: CycleInput): Decision {
     );
   }
 
-  const impact = Number(last.priceImpactPct ?? '0');
+  // The quote is for more than may be spent now (the session closed, the interest shrank):
+  // quote again at the current amount rather than execute the old one.
+  if (units(last.spendUsd) > plannedSpend) {
+    return { kind: 'quote', instrumentId, spendUsd: decimal(plannedSpend) };
+  }
+
+  // A quote without a readable price impact cannot pass the 1 % check: wait, never assume 0 %.
+  const impact = Number(last.priceImpactPct ?? NaN);
+  if (!Number.isFinite(impact)) {
+    return done(
+      {
+        kind: 'DEFERRED',
+        reason: 'data_unavailable',
+        retryAt: iso(nowMs + RETRY_LATER_MS),
+        detail: 'price_impact_unknown',
+      },
+      'why.data.unavailable',
+      {},
+    );
+  }
   if (impact > MAX_PRICE_IMPACT_PCT) {
     const half = units(last.spendUsd) / 2n;
     const venueMin = chosen.venueMinUsd === null ? 0n : units(chosen.venueMinUsd);
-    if (own.length <= MAX_REQUOTES && half >= minBuy && half >= venueMin) {
+    // Only impact halvings count towards the limit; re-quotes of a stale quote do not.
+    const halvings = own.filter((q) => Number(q.priceImpactPct) > MAX_PRICE_IMPACT_PCT).length;
+    if (halvings <= MAX_REQUOTES && half >= minBuy && half >= venueMin) {
       return { kind: 'quote', instrumentId, spendUsd: decimal(half) };
     }
     return done(
@@ -384,7 +463,8 @@ export function decideCycle(input: CycleInput): Decision {
       { impact: formatPct(impact) },
     );
   }
-  if (nowMs - Date.parse(last.receivedAt) > MAX_QUOTE_AGE_MS) {
+  // A receive time that does not parse counts as stale.
+  if (!(nowMs - Date.parse(last.receivedAt) <= MAX_QUOTE_AGE_MS)) {
     return { kind: 'quote', instrumentId, spendUsd: last.spendUsd };
   }
 
@@ -430,7 +510,12 @@ export function boughtOutcome(
     interestUsd: decision.interestUsd,
     refGapPct: decision.refGapPct,
   };
-  if (decision.interestUsd !== null && units(decision.interestUsd) === spend) {
+  // Off-hours the "market was closed" line and its gap come first, whoever paid.
+  if (
+    !decision.offHours &&
+    decision.interestUsd !== null &&
+    units(decision.interestUsd) === spend
+  ) {
     return {
       outcome,
       why: {

@@ -14,6 +14,8 @@ describe('sharesFromTokens', () => {
     );
     expect(sharesFromTokens(10n ** 18n, 18, '10')).toBe('10');
     expect(sharesFromTokens(1_500_000n, 6, '1')).toBe('1.5');
+    // A multiplier with more than 18 decimals is cut, not a crash after the buy has settled.
+    expect(sharesFromTokens(10n ** 18n, 18, '1.0000000000000000019')).toBe('1.000000000000000001');
   });
 });
 
