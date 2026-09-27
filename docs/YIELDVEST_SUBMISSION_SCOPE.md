@@ -21,6 +21,8 @@
 | 실거래 증거 | README의 하우스 기록 및 TASKS M1-04/05 | README에 영수증 0개, live 검증 대기로 기록. 운영 환경의 최신 상태는 별도 확인 필요 |
 | 제출 자료 | README의 Live/Video/DX, docs/TASKS.md | 링크 미기입. dx/LOG.md는 있으나 이 체크아웃에 dx/REPORT_DRAFT.md와 LICENSE 없음 |
 
+> 갱신(9/27, DECISIONS D-25): 새 디자인을 `apps/web`에 통합했다. 탭 4개(Overview·Earn·Invest·Activity)와 영수증 상세가 기존 API·잡·상태 모델의 실제 값만 보여 준다 — 아래 P0-1의 화면 연결 부분. 실제 이자 매수 증거·배포·제출 자료는 그대로 남은 일이다.
+
 ## 권장 완료선: 한 흐름을 끝까지 증명하기
 
 아래는 Yieldvest에 맞춘 구현 권장안이다. 공식 필수 기능 목록과 구분한다.

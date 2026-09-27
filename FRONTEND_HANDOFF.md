@@ -59,20 +59,24 @@ Open http://127.0.0.1:5173 on that machine. For a production preview, run npm ru
 
 ## Integration boundary
 
-This folder is intentionally outside the root pnpm workspace. Its npm lockfile, build and tests are independent. The root CI has a separate frontend-preview job. The existing apps/web application and its API remain the production implementation.
+This folder is intentionally outside the root pnpm workspace. Its npm lockfile, build and tests are independent. The root CI has a separate frontend-preview job.
 
 The preview does **not** connect a wallet, call Binance APIs, sign, submit a transaction, or read live balances. All displayed balances, thresholds, purchases and receipts are examples, labelled as such. In particular, its 0.25 USDT threshold is not a verified universal venue minimum.
 
-For the next integration task, reuse the visual components and styles in the existing Next.js frontend while using its actual API contracts:
+## Integrated into apps/web (DECISIONS D-25)
 
-| Preview view | Existing implementation to inspect |
-| --- | --- |
-| Overview / Earn | apps/web/app/page.tsx, lib/server/house.ts, market.ts, plan-view.ts |
-| Invest / preview / execution | components/judge/JudgeFlow.tsx, lib/server/judge.ts, jobs.ts, schemas.ts |
-| Activity / receipts | lib/server/receipts.ts, app/plans/[id]/page.tsx, components/plan/Timeline.tsx |
-| Stop / status / failures | components/plan/StopPlan.tsx, components/ui.tsx and server state contracts |
+The approved presentation now runs in the production app with the existing API contracts; the preview's demo state was not carried over. Its CSS is ported verbatim to `apps/web/app/styles/preview.css` and `motion.css` (compare them with `src/styles.css` and `src/motion.css`); what the real app adds (live / stale / unavailable states, forms, tables) is in `app.css`.
 
-Preserve the user's approved sparse layout, BNB identity, useful flow visualization and English copy. Financial values and actual execution states must come from the server; retain the existing caps, simulation, confirmation, risk disclosures and failure handling. Review current upstream code before integration rather than assuming that the demo model matches the server model.
+| Preview view | apps/web page | Data |
+| --- | --- | --- |
+| Overview | app/page.tsx | lib/server/overview.ts (house interest plan), activity.ts (latest receipt) |
+| Earn | app/earn/page.tsx | overview.ts, house.ts `venusInfo` |
+| Invest / preview / execution | app/invest/page.tsx, components/invest/InvestFlow.tsx (`/judge` redirects here) | the Judge Mode API: /api/judge/session, /api/plans, /preview, /run, /api/jobs |
+| Activity | app/activity/page.tsx, components/activity/ | lib/server/activity.ts |
+| Receipt details | app/activity/[id]/page.tsx | activity.ts `cycleDetail` (cycle, receipts, step log) |
+| Stop / status / failures | components/plan/StopPlan.tsx, app/plans/[id]/page.tsx | server state contracts |
+
+Shared pieces: `components/design.tsx` (MoneyFlow, ProgressStrip, InterestChart, Process, Dialog), `components/motion.tsx` (MotionProvider and the pause control), `components/ui.tsx` (panel, ledger, summary strip, badges), `components/Header.tsx`, `Nav.tsx`, `Toolbar.tsx`, `Footer.tsx`. Copy keys for the new screens are in `docs/UX_COPY.md` §7.6: English is the preview's wording, Korean is an agent draft until a person confirms it.
 
 ## Validation
 

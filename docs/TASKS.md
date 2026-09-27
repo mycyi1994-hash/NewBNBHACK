@@ -327,6 +327,18 @@
   - 증거: `read.test.ts`(틱 없음 → red 503, 전부 기록 → green, RPC 다운 → red). 로컬 실측 `pnpm smoke --url http://127.0.0.1:3100 --alert` → `database green, worker red(no tick recorded), web3api red, rpc green(block 124196543), house degraded, receipts degraded, tape red` → `status: red`, exit 1, 알림 채널 log(텔레그램 미설정).
   - [ ] [HUMAN] 배포된 웹 + 워커에서 전 항목 녹색, `YIELDVEST_APP_URL`·`TELEGRAM_BOT_TOKEN`·`TELEGRAM_OPS_CHAT_ID` 설정 후 모니터 텔레그램 1회 수신 확인.
 
+### M2-13 승인된 디자인을 실제 웹에 (frontend-preview → apps/web, D-25) · 기준: UX·기술
+- [x] (9/27) 사용자가 승인한 `frontend-preview/` 디자인을 `apps/web`에 옮김 — 탭 4개(한눈에 `/` · 이자 `/earn` · 투자 `/invest` · 내역 `/activity`)와 영수증 상세 `/activity/[id]`, 플랜·비서·위험·데이터 페이지까지 같은 디자인. `/judge`는 `/invest`로 리다이렉트(제출 링크 유지).
+  - 디자인: 미리보기 CSS를 그대로 옮김(`apps/web/app/styles/preview.css`·`motion.css`, 원본과 대조 가능) + 실제 앱에 필요한 것만 `app.css`. 로컬 Inter Variable, Yieldvest 마크, BNB Chain 로고, 모션(일시정지 버튼·시스템 움직임 줄이기·화면 밖/숨은 탭에서 멈춤). Tailwind 제거.
+  - 데이터: 예시 상태는 옮기지 않음(규칙 4). Overview 흐름도 = 하우스 이자 플랜의 쌓인 이자(이자로 산 금액 + 지금 쓸 수 있는 이자, decideCycle과 같은 식), Earn 차트 = 읽은 값 두 개만, Activity·영수증 = 새 읽기 전용 조회 `apps/web/lib/server/activity.ts`(하우스 플랜은 모든 사이클, 다른 플랜은 체인에 기록된 것만, 실행 기록은 step 로그). 못 읽으면 "불러올 수 없어요(이유)".
+  - 체험(Invest): Judge Mode의 API·잡·캡·위험 고지 동의·미리보기 후 실행을 그대로 쓰고 화면만 바꿈(`components/invest/InvestFlow.tsx`). 새 지출 경로·캡 변경 없음.
+  - 문구: UX_COPY §7.6(영어는 미리보기 원문, 한국어는 에이전트 초안), `copy:gen` 414키.
+- 수용: 375px 가로 스크롤 없음, KO/EN, CSP 위반 0, 기존 게이트 통과
+  - [x] `pnpm ui:check`(프로덕션 `next start`, 로컬 DB): 9페이지 × KO/EN × 375/1440px = 36회 전부 HTTP 200·`scrollWidth` = 화면 폭, 페이지 오류·콘솔 오류(CSP 포함) 0 → `ui:check — 0 problems`.
+  - [x] `pnpm typecheck`, `pnpm lint`(`lint:copy — 414 keys, 11 banned words, 0 problems`), `pnpm test` 58파일 584 통과 · 10 건너뜀(새 테스트 `apps/web/test/activity.test.ts` 7개, `i18n.test.ts` 포맷 2개), `pnpm --filter @yieldvest/web build`.
+  - [x] 브라우저 확인(Playwright, 로컬 DB에 손으로 넣은 예시 행 — 커밋하지 않음, 실적 아님): 코드 오류 → 코드 → 미리 돌려보기 → 지금 사기 → 영수증 → 플랜 기록·멈추기, 데스크톱 EN·휴대폰 KO. 워커 잡 결과는 손으로 기록했다(실제 체결 증거 아님).
+  - [ ] [HUMAN] §7.6 한국어 문구 검토·확정, 배포 후 첫 화면 3초 이해 리허설(M2-01과 함께).
+
 ---
 
 ## M3 완성도 (10/5 ~ 10/7)

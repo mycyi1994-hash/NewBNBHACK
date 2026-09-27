@@ -7,7 +7,7 @@ and you keep the evidence trail they demand. You do not redesign the product on 
 
 ## Read in this order, every session
 
-**Frontend design handoff:** the user-approved Yieldvest UI, logo, motion, and reference screenshot are in `frontend-preview/`. Start with [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md) for the source map and how to run it. It is a standalone React/Vite design preview with explicitly illustrative data; reuse its presentation when integrating with `apps/web`, not its demo financial state. This preview follows the user's English, BNB-yellow/black neobank direction.
+**Frontend design:** the user-approved Yieldvest UI, logo, motion, and reference screenshot are in `frontend-preview/` (standalone React/Vite, illustrative data). It is integrated into `apps/web` (DECISIONS D-25): its CSS is ported verbatim to `apps/web/app/styles/preview.css` and `motion.css`, real-app additions live in `app.css`, and every value comes from the server — never from the preview's demo state. Keep the user's English, BNB-yellow/black neobank direction; [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md) maps each preview view to its page.
 
 1. `docs/JUDGING.md` — the official scoring criteria (verbatim) and how every feature maps to them. **Never forget these.**
 2. `docs/PLAN.md` — what we build, for whom, scope tiers, milestones, cut lines, review minutes.
