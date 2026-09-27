@@ -164,6 +164,8 @@ export async function recordReport(args: {
     const received = transferredTo(tx.logs, BSC_USDT, wallet);
     const burned = transferredFrom(tx.logs, args.vToken, wallet);
     if (received === 0n) return { status: 'rejected', reason: 'no USDT reached the wallet' };
+    // A Venus redeem always burns vUSDT: without it the USDT is not from this position.
+    if (burned === 0n) return { status: 'rejected', reason: 'no vUSDT left the wallet' };
     const fresh = await applyReportedRedeem(
       db,
       plan.id,

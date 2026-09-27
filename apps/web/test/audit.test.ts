@@ -221,6 +221,17 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
     expect((await report(id, token, { kind: 'redeem', txHash: redeem })).body.status).toBe(
       'recorded',
     );
+    // USDT that arrived without any vUSDT leaving the wallet is not a redeem of this position.
+    const gift = randomHash();
+    chain.mine(gift, {
+      status: 'success',
+      from: wallet,
+      logs: [transferLog(USDT, VTOKEN, wallet, 50n * E18)],
+    });
+    expect(await report(id, token, { kind: 'redeem', txHash: gift })).toMatchObject({
+      status: 422,
+      body: { reason: 'no vUSDT left the wallet' },
+    });
     let row = await getPlan(db, id);
     expect(usdText(row?.harvestedUnspentUsd ?? '')).toBe('3');
     expect(usdText(row?.principalUsd ?? '')).toBe('100');
