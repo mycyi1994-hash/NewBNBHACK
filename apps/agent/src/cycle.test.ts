@@ -176,6 +176,25 @@ describe.skipIf(!url)('runCycle on Postgres', () => {
     expect(w.alerts[0]).toContain('APPROVE_NOT_EXACT');
   });
 
+  it('live: a swap that calls anything but the approved router is never signed', async () => {
+    const id = await plan();
+    const w = await world(MON_1000);
+    const swap = w.api.routes['/api/v1/dex/aggregator/swap'];
+    w.api.routes['/api/v1/dex/aggregator/swap'] = (u, body) => {
+      const built = swap?.(u, body) as { tx: Record<string, unknown> };
+      return { ...built, tx: { ...built.tx, to: '0x000000000000000000000000000000000000bEEF' } };
+    };
+    const report = await runCycle(w.deps('live'), id);
+    // The approval went out first, so its gas was spent: the why says so.
+    expect(report).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'FAILED', code: 'SWAP_TARGET_MISMATCH', fundsMoved: 'gas_only' },
+      why: { key: 'why.failed.onchain', params: { code: 'SWAP_TARGET_MISMATCH' } },
+    });
+    expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3']);
+    expect(w.api.calls.filter((c) => c.endsWith('/broadcast-transaction'))).toHaveLength(1);
+  });
+
   it('live: on Saturday the cycle defers to Monday 09:32 ET without a single quote', async () => {
     const id = await plan({ nextDueAt: '2026-09-26T13:32:00.000Z' });
     const w = await world(SATURDAY);

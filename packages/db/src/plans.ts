@@ -102,12 +102,24 @@ export type PlanPatch = Partial<
   >
 >;
 
-/** Applies `patch` and releases the lock. */
-export async function releasePlanLock(db: Db, id: string, patch: PlanPatch = {}): Promise<void> {
-  await db
+/**
+ * Applies `patch` and releases the lock — only when this holder still has it: `lockUntil` is the
+ * value acquirePlanLock set. A holder whose lock expired and was taken over releases nothing and
+ * writes nothing (the new holder decides). Returns whether it did.
+ */
+export async function releasePlanLock(
+  db: Db,
+  id: string,
+  lockUntil: string | null,
+  patch: PlanPatch = {},
+): Promise<boolean> {
+  if (lockUntil === null) return false;
+  const rows = await db
     .update(plans)
     .set({ ...patch, lockUntil: null })
-    .where(eq(plans.id, id));
+    .where(and(eq(plans.id, id), eq(plans.lockUntil, lockUntil)))
+    .returning({ id: plans.id });
+  return rows.length > 0;
 }
 
 export async function updatePlan(
@@ -117,6 +129,33 @@ export async function updatePlan(
 ): Promise<PlanRow | undefined> {
   const [row] = await db.update(plans).set(patch).where(eq(plans.id, id)).returning();
   return row;
+}
+
+/**
+ * Applies `patch` only while the plan's status and paused reason are still the ones the caller
+ * read: a stop, a guardian pause or a review hold written in between is never overwritten.
+ * Returns whether it did.
+ */
+export async function updatePlanIf(
+  db: Db,
+  id: string,
+  expected: { status: PlanRow['status']; pausedReason: string | null },
+  patch: PlanPatch,
+): Promise<boolean> {
+  const rows = await db
+    .update(plans)
+    .set(patch)
+    .where(
+      and(
+        eq(plans.id, id),
+        eq(plans.status, expected.status),
+        expected.pausedReason === null
+          ? isNull(plans.pausedReason)
+          : eq(plans.pausedReason, expected.pausedReason),
+      ),
+    )
+    .returning({ id: plans.id });
+  return rows.length > 0;
 }
 
 /** Opens the cycle for (plan, dueAt), or returns the one already opened for it. */
@@ -189,6 +228,19 @@ export async function listCycles(
 }
 
 /** Cycles left 'awaiting_tx' by a broadcast whose receipt has not been reconciled yet. */
+/** A plan's cycles in any of `states` (e.g. 'running', 'awaiting_tx'), oldest first. */
+export async function cyclesOfPlan(
+  db: Db,
+  planId: string,
+  states: readonly string[],
+): Promise<CycleRow[]> {
+  return db
+    .select()
+    .from(cycles)
+    .where(and(eq(cycles.planId, planId), inArray(cycles.state, [...states])))
+    .orderBy(asc(cycles.id));
+}
+
 export async function cyclesAwaitingTx(db: Db): Promise<CycleRow[]> {
   return db.select().from(cycles).where(eq(cycles.state, 'awaiting_tx')).orderBy(asc(cycles.id));
 }
@@ -235,14 +287,18 @@ export async function listHoldings(db: Db, planId?: string): Promise<HoldingRow[
 export async function insertReceipt(db: Db, row: ReceiptInsert): Promise<boolean> {
   const created = await db
     .insert(receipts)
-    .values(row)
+    .values({ ...row, txHash: row.txHash.toLowerCase() })
     .onConflictDoNothing({ target: receipts.txHash })
     .returning({ id: receipts.id });
   return created.length > 0;
 }
 
 export async function receiptByHash(db: Db, txHash: string): Promise<ReceiptRow | undefined> {
-  const [row] = await db.select().from(receipts).where(eq(receipts.txHash, txHash)).limit(1);
+  const [row] = await db
+    .select()
+    .from(receipts)
+    .where(eq(receipts.txHash, txHash.toLowerCase()))
+    .limit(1);
   return row;
 }
 

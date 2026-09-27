@@ -7,9 +7,13 @@
 import { fromUnits, nextDue, toUnits } from '@ijaro/core';
 import {
   applyDeposit,
+  judgeExposureUsd,
+  listPlans,
   openGuardianActions,
   planFromRow,
-  updatePlan,
+  unfinishedTransactions,
+  updatePlanIf,
+  usdText,
   type PlanRow,
 } from '@ijaro/db';
 import type { CycleDeps } from './cycle.js';
@@ -35,6 +39,26 @@ export async function startYieldPlan(
     ['stop_deposits', 'redeem_all', 'pause_buys'].includes(a.action),
   );
   if (held) throw new Error(`the guardian holds new deposits: ${held.rule}`);
+  // One deposit at a time: a deposit still settling would otherwise be sent a second time (its
+  // principal is recorded only from its receipt). For a judge, across all the code's plans, and
+  // the code's principal plus its spend stays within the sandbox cap in total.
+  const siblings =
+    plan.owner.kind === 'judge' && row.ownerRef !== null
+      ? await listPlans(deps.db, { ownerKind: 'judge', ownerRef: row.ownerRef })
+      : [row];
+  for (const sibling of siblings) {
+    if ((await unfinishedTransactions(deps.db, sibling.id)).length > 0) {
+      throw new Error('an earlier transaction of this plan is still settling');
+    }
+  }
+  if (plan.owner.kind === 'judge' && row.ownerRef !== null) {
+    const used = toUnits(usdText(await judgeExposureUsd(deps.db, row.ownerRef)), 18);
+    if (used + amount > toUnits(cap, 18)) {
+      throw new Error(
+        `this code has ${fromUnits(used >= toUnits(cap, 18) ? 0n : toUnits(cap, 18) - used, 18)} USD left`,
+      );
+    }
+  }
 
   const result = await depositPrincipal(deps, {
     planId: plan.id,
@@ -69,12 +93,20 @@ export async function startYieldPlan(
           },
         );
       }
+      // The plan runs from now on — unless a stop, a guardian pause or a review hold came in
+      // while the deposit was out: that one stands.
       const next = nextDue(plan.cadence, deps.now());
-      await updatePlan(deps.db, plan.id, {
-        status: 'active',
-        pausedReason: null,
-        ...(next.kind === 'due' ? { nextDueAt: next.nextDueAt } : {}),
-      });
+      const started = await updatePlanIf(
+        deps.db,
+        plan.id,
+        { status: row.status, pausedReason: row.pausedReason },
+        {
+          status: 'active',
+          pausedReason: null,
+          ...(next.kind === 'due' ? { nextDueAt: next.nextDueAt } : {}),
+        },
+      );
+      if (!started) deps.log(`deposit: ${plan.id} changed state meanwhile; left as it is`);
       return {
         status: 'deposited',
         depositedUsd: fromUnits(result.usdtSpent, 18),

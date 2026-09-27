@@ -21,6 +21,7 @@ import {
   type GuardianRule,
 } from '@ijaro/core';
 import {
+  acquirePlanLock,
   applyPositionRedeem,
   belowSince,
   insertGuardianEvent,
@@ -28,13 +29,17 @@ import {
   isoTime,
   listGuardianEvents,
   listPlans,
+  releasePlanLock,
   resolveGuardianEvents,
   sampleNear,
+  unfinishedTransactions,
   updatePlan,
+  getPlan,
   type PlanRow,
 } from '@ijaro/db';
 import type { CycleDeps } from './cycle.js';
 import { redeemFromVenus, type VenusMarket } from './executor/venus.js';
+import { LOCK_TTL_MS } from './plan-lock.js';
 
 const DAY_MS = 86_400_000;
 
@@ -138,67 +143,104 @@ async function readInputs(deps: CycleDeps, unavailable: string[]): Promise<Guard
 
 /**
  * Takes one yield plan's whole Venus position out (live mode only, and only after the redeem
- * simulation passes) and sets its status. Without live mode or on failure the plan is still
- * paused or stopped, and a failure is alerted: a human decides what happens to the position.
+ * simulation passes). The plan's status changes first, whatever happens to the redeem: a stop or
+ * a guardian pause holds even when the redeem cannot run now. A failure is alerted and a human
+ * decides what happens to the position.
  */
 export async function redeemPlanPosition(
   deps: CycleDeps,
   plan: PlanRow,
   outcome: { status: 'paused' | 'stopped'; reason: string },
-): Promise<'redeemed' | 'nothing_to_redeem' | 'users_wallet' | 'not_live' | 'failed'> {
+  /** `lockHeld`: the caller already holds the plan's lock (the operator's redeem). */
+  options: { lockHeld?: boolean } = {},
+): Promise<
+  'redeemed' | 'nothing_to_redeem' | 'users_wallet' | 'not_live' | 'locked' | 'pending' | 'failed'
+> {
+  await updatePlan(deps.db, plan.id, { status: outcome.status, pausedReason: outcome.reason });
   // Only house and judge plans hold a position in the house wallet. A skill plan's principal sits
   // in the user's own wallet (its vtoken_units come from the user's reports): the worker never
   // redeems it — that would take house funds — the user does, through the skill.
-  if (plan.ownerKind === 'skill') {
-    await updatePlan(deps.db, plan.id, { status: outcome.status, pausedReason: outcome.reason });
-    return 'users_wallet';
-  }
-  const vTokens = BigInt(plan.vtokenUnits);
-  if (plan.mode !== 'yield' || vTokens <= 1n) {
-    await updatePlan(deps.db, plan.id, { status: outcome.status, pausedReason: outcome.reason });
-    return 'nothing_to_redeem';
-  }
-  if (deps.mode !== 'live' || !deps.venus) {
-    await updatePlan(deps.db, plan.id, { status: outcome.status, pausedReason: outcome.reason });
-    return 'not_live';
-  }
-  const amountUsd = await wholePositionUsd(deps, deps.venus, vTokens);
-  const result = await redeemFromVenus(deps, {
-    planId: plan.id,
-    cycleId: null,
-    market: deps.venus,
-    amountUsd,
-    planVTokens: vTokens,
-  });
-  if (result.kind !== 'redeemed') {
-    await updatePlan(deps.db, plan.id, {
-      status: outcome.status,
-      pausedReason: `${outcome.reason}:redeem_${result.kind}`,
-    });
+  if (plan.ownerKind === 'skill') return 'users_wallet';
+  if (plan.mode !== 'yield' || BigInt(plan.vtokenUnits) <= 1n) return 'nothing_to_redeem';
+  if (deps.mode !== 'live' || !deps.venus) return 'not_live';
+  const held = async (kind: string, detail: string) => {
+    await updatePlan(deps.db, plan.id, { pausedReason: `${outcome.reason}:redeem_${kind}` });
     await deps.alerter?.send({
       key: `redeem-all:${plan.id}`,
       text:
-        `[ijaro] ${outcome.reason}: redeeming ${plan.id} did not complete (${result.kind}` +
-        `${'code' in result ? ` ${result.code}` : ''}). The plan is ${outcome.status}; a human must decide.`,
+        `[ijaro] ${outcome.reason}: redeeming ${plan.id} did not complete (${detail}). ` +
+        `The plan is ${outcome.status}; a human must decide.`,
     });
+  };
+  // One writer per plan: a cycle redeeming interest (cycle:once in another process, say) could
+  // otherwise burn vTokens this redeem is about to count as the plan's.
+  const lock = options.lockHeld
+    ? undefined
+    : await acquirePlanLock(deps.db, plan.id, deps.now(), LOCK_TTL_MS);
+  if (!options.lockHeld && !lock) {
+    await held('locked', 'a cycle of this plan holds its lock');
+    return 'locked';
+  }
+  try {
+    // A deposit or redeem of this plan still out on chain, or mined and not applied yet, leaves
+    // vtoken_units stale: redeeming now could burn other plans' vTokens from the shared position.
+    if ((await unfinishedTransactions(deps.db, plan.id)).length > 0) {
+      await held('pending', 'an earlier transaction of this plan is not settled yet');
+      return 'pending';
+    }
+    const fresh = (await getPlan(deps.db, plan.id)) ?? plan;
+    const vTokens = BigInt(fresh.vtokenUnits);
+    if (vTokens <= 1n) return 'nothing_to_redeem';
+    return await redeemWhole(deps, deps.venus, plan.id, vTokens, outcome, held);
+  } finally {
+    if (lock) await releasePlanLock(deps.db, plan.id, lock.lockUntil);
+  }
+}
+
+async function redeemWhole(
+  deps: CycleDeps,
+  market: VenusMarket,
+  planId: string,
+  vTokens: bigint,
+  outcome: { status: 'paused' | 'stopped'; reason: string },
+  held: (kind: string, detail: string) => Promise<void>,
+): Promise<'redeemed' | 'pending' | 'failed'> {
+  try {
+    const amountUsd = await wholePositionUsd(deps, market, vTokens);
+    const result = await redeemFromVenus(deps, {
+      planId,
+      cycleId: null,
+      market,
+      amountUsd,
+      planVTokens: vTokens,
+    });
+    if (result.kind !== 'redeemed') {
+      await held(result.kind, `${result.kind}${'code' in result ? ` ${result.code}` : ''}`);
+      return result.kind === 'pending' ? 'pending' : 'failed';
+    }
+    await applyPositionRedeem(
+      deps.db,
+      planId,
+      {
+        kind: 'redeem',
+        txHash: result.sent.txHash,
+        broadcastVia: result.sent.broadcastVia,
+        blockNumber: result.sent.receipt.blockNumber,
+        status: 'success',
+        simulatedAt: result.sent.simulatedAt,
+        amounts: { ...result.sent.amounts, reason: outcome.reason },
+      },
+      result,
+      { status: outcome.status, pausedReason: outcome.reason },
+    );
+    return 'redeemed';
+  } catch (error) {
+    deps.log(
+      `guardian: redeeming ${planId} threw — ${error instanceof Error ? error.message : String(error)}`,
+    );
+    await held('error', error instanceof Error ? error.name : 'error');
     return 'failed';
   }
-  await applyPositionRedeem(
-    deps.db,
-    plan.id,
-    {
-      kind: 'redeem',
-      txHash: result.sent.txHash,
-      broadcastVia: result.sent.broadcastVia,
-      blockNumber: result.sent.receipt.blockNumber,
-      status: 'success',
-      simulatedAt: result.sent.simulatedAt,
-      amounts: { ...result.sent.amounts, reason: outcome.reason },
-    },
-    result,
-    { status: outcome.status, pausedReason: outcome.reason },
-  );
-  return 'redeemed';
 }
 
 /**
@@ -214,15 +256,22 @@ export async function wholePositionUsd(
   return fromUnits(underlyingFromVTokens(vTokens - 1n, rate), 18);
 }
 
-/** Pauses every yield plan with a Venus position and, in live mode, redeems it all. */
+/**
+ * Pauses every yield plan with a Venus position and, in live mode, redeems it all — a stopped plan
+ * that still holds a position too (it stays stopped). One plan's failure never stops the rest.
+ */
 async function redeemAll(deps: CycleDeps, action: GuardianAction, report: GuardianReport) {
-  const plans = (await listPlans(deps.db)).filter(
-    (p) => p.mode === 'yield' && p.status !== 'stopped' && BigInt(p.vtokenUnits) > 0n,
+  const plans = (await listPlans(deps.db)).filter((p) =>
+    p.mode !== 'yield'
+      ? false
+      : p.status === 'stopped'
+        ? p.ownerKind !== 'skill' && BigInt(p.vtokenUnits) > 1n
+        : BigInt(p.vtokenUnits) > 0n,
   );
   for (const plan of plans) {
     if (!report.paused.includes(plan.id)) report.paused.push(plan.id);
     const done = await redeemPlanPosition(deps, plan, {
-      status: 'paused',
+      status: plan.status === 'stopped' ? 'stopped' : 'paused',
       reason: `guardian:${action.rule}`,
     });
     if (done === 'redeemed') report.redeemed.push(plan.id);

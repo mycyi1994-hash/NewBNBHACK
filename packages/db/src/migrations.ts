@@ -82,6 +82,8 @@ export async function rollbackMigration(db: Db, tag: string): Promise<void> {
     .map((statement) => statement.trim())
     .filter((statement) => statement !== '');
   await db.transaction(async (tx) => {
+    // The same lock as migrateDb: a worker booting mid-rollback waits instead of re-applying.
+    await tx.execute(sql`select pg_advisory_xact_lock(${MIGRATION_LOCK})`);
     for (const statement of statements) await tx.execute(sql.raw(statement));
     await tx.execute(
       sql`delete from drizzle.__drizzle_migrations where created_at = ${entry.when}`,

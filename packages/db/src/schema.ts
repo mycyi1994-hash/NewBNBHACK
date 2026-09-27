@@ -196,6 +196,8 @@ export const plans = pgTable(
       'plans_yield_principal_ck',
       sql`mode <> 'yield' or status <> 'active' or principal_usd > 0`,
     ),
+    // vToken units are a whole number of base units: a bad subtraction can never store "-5".
+    check('plans_vtokens_ck', sql`vtoken_units ~ '^[0-9]+$'`),
   ],
 );
 
@@ -273,6 +275,8 @@ export const receipts = pgTable(
     index('receipts_plan_idx').on(table.planId, table.createdAt),
     check('receipts_kind_ck', oneOf('kind', ['approve', 'swap', 'deposit', 'redeem'])),
     check('receipts_status_ck', oneOf('status', ['success', 'failed'])),
+    // One spelling per hash, so the unique index also catches a re-spelled replay.
+    check('receipts_tx_hash_ck', sql`tx_hash = lower(tx_hash)`),
   ],
 );
 
@@ -292,7 +296,10 @@ export const holdings = pgTable(
     costUsd: usd('cost_usd').notNull(),
     updatedAt: at('updated_at').notNull().defaultNow(),
   },
-  (table) => [primaryKey({ columns: [table.planId, table.instrumentId] })],
+  (table) => [
+    primaryKey({ columns: [table.planId, table.instrumentId] }),
+    check('holdings_tokens_ck', sql`tokens ~ '^[0-9]+$'`),
+  ],
 );
 
 /**

@@ -22,7 +22,6 @@ import {
   lastOutboxNonce,
   markOutbox,
   recordSigned,
-  requeueStaleJobs,
   unsettledOutbox,
 } from './index.js';
 
@@ -66,10 +65,9 @@ describe.skipIf(!url)('jobs and tx_outbox on Postgres', () => {
       error: 'quote 40401',
     });
 
-    // A worker died holding ids[2]: it goes back to the queue and is claimed again.
-    expect(await requeueStaleJobs(db, new Date(Date.now() + 60_000))).toBeGreaterThanOrEqual(1);
-    const retried = await claimJob(db, ['preview']);
-    expect(retried).toMatchObject({ id: ids[2], attempts: 2 });
+    // A finish for a job that is no longer running (closed at boot) changes nothing.
+    await finishJob(db, ids[1] ?? '', { status: 'done', result: {} });
+    expect(await getJob(db, ids[1] ?? '')).toMatchObject({ status: 'failed' });
   });
 
   it('claims only the kinds asked for, and refuses unknown kinds and plans', async () => {

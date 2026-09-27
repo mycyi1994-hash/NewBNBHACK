@@ -25,7 +25,7 @@ import {
 import type { CycleDeps } from './cycle.js';
 import { discoverVenusUsdt } from './executor/venus.js';
 import { refreshRegistry } from './registry.js';
-import { createRuntime, executorDeps } from './runtime.js';
+import { createRuntime, executorDeps, maskHouse } from './runtime.js';
 import { JOB_POLL_MS, processJobs, schedulerTick, TICK_MS } from './scheduler.js';
 import { msUntilNextSlot, sampleTape, tapeSlot } from './tape.js';
 
@@ -84,24 +84,39 @@ if (rt.houseAddress) {
 }
 
 let ticking = false;
+/** A tick that found the job poll running waits for it instead of being skipped for 5 minutes. */
+let tickWanted = false;
 async function tick() {
-  if (!cycleDeps || ticking) return;
+  if (!cycleDeps) return;
+  if (ticking) {
+    tickWanted = true;
+    return;
+  }
   ticking = true;
+  tickWanted = false;
   try {
     const report = await schedulerTick(cycleDeps.deps, cycleDeps.simulate);
     const cycles = report.cycles.map(
       (c) => `${c.planId}:${c.status}${'outcome' in c ? `:${c.outcome.kind}` : ''}`,
     );
-    if (cycles.length || report.jobs.length || report.completed.length || report.errors.length) {
-      console.log(
-        `tick: ${report.at} cycles [${cycles.join(', ')}] jobs ${report.jobs.length} completed ${report.completed.length}` +
+    // One line every tick, so a quiet log still shows the worker is alive (RUNBOOK §1).
+    console.log(
+      maskHouse(
+        `tick: ${report.at} ${cycleDeps.deps.mode} cycles [${cycles.join(', ')}] jobs ${report.jobs.length} completed ${report.completed.length}` +
           (report.errors.length ? ` errors: ${report.errors.join('; ')}` : ''),
-      );
-    }
+        rt.redact,
+      ),
+    );
   } catch (error) {
-    console.log(`tick: FAILED — ${error instanceof Error ? error.message : String(error)}`);
+    console.log(
+      maskHouse(
+        `tick: FAILED — ${error instanceof Error ? error.message : String(error)}`,
+        rt.redact,
+      ),
+    );
   } finally {
     ticking = false;
+    if (tickWanted) setTimeout(() => void tick(), 0);
   }
 }
 
@@ -113,14 +128,23 @@ async function jobsPoll() {
     const { jobs, errors } = await processJobs(cycleDeps.deps, cycleDeps.simulate);
     if (jobs.length) {
       console.log(
-        `jobs: ${jobs.map((j) => `${j.kind}:${j.status}`).join(', ')}` +
-          (errors.length ? ` errors: ${errors.join('; ')}` : ''),
+        maskHouse(
+          `jobs: ${jobs.map((j) => `${j.kind}:${j.status}`).join(', ')}` +
+            (errors.length ? ` errors: ${errors.join('; ')}` : ''),
+          rt.redact,
+        ),
       );
     }
   } catch (error) {
-    console.log(`jobs: FAILED — ${error instanceof Error ? error.message : String(error)}`);
+    console.log(
+      maskHouse(
+        `jobs: FAILED — ${error instanceof Error ? error.message : String(error)}`,
+        rt.redact,
+      ),
+    );
   } finally {
     ticking = false;
+    if (tickWanted) setTimeout(() => void tick(), 0);
   }
 }
 

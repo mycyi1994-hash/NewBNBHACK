@@ -9,7 +9,14 @@
 import { BinanceApiError, broadcastSigned } from '@ijaro/binance';
 import type { BinanceClient } from '@ijaro/binance';
 import { BSC_CHAIN_ID, signableTx } from '@ijaro/chain';
-import { lastOutboxNonce, markOutbox, recordSigned, unsettledOutbox, type Db } from '@ijaro/db';
+import {
+  isoTime,
+  lastOutboxNonce,
+  markOutbox,
+  recordSigned,
+  unsettledOutbox,
+  type Db,
+} from '@ijaro/db';
 import { keccak256, type Hex } from 'viem';
 import type { ChainPort, ReceiptLike } from './chain-port.js';
 import type { Signer } from './signer.js';
@@ -56,12 +63,26 @@ export class OutboxBusyError extends Error {
 
 /** The RPC answer for bytes the node already has: the first broadcast did go out. */
 const ALREADY_KNOWN = /already known|known transaction|nonce too low/i;
+/**
+ * RPC answers that reject the bytes themselves: no node would accept them, so they cannot have
+ * gone out through the Transaction API either. Any other failure (timeout, network) is unclear.
+ */
+const INVALID_TX =
+  /insufficient funds|intrinsic gas|underpriced|exceeds block gas limit|invalid sender|invalid signature|exceeds the configured cap/i;
+/**
+ * A used nonce with no receipt for ours, or swap bytes the node lost, is put to a human after this
+ * long (RUNBOOK §3.4). Until then it may be a node that has not indexed ours yet.
+ */
+export const HUMAN_CHECK_AFTER_MS = 30 * 60_000;
+/** Signed swap bytes are sent again only while their quote could still be current. */
+export const SWAP_REBROADCAST_MAX_MS = 10 * 60_000;
 
-async function broadcast(
-  deps: SendDeps,
-  raw: Hex,
-  txHash: Hex,
-): Promise<{ ok: true; via: string } | { ok: false; reason: string }> {
+type Broadcast =
+  | { ok: true; via: string }
+  /** `definite`: the bytes certainly did not go out; otherwise they may have (a timeout). */
+  | { ok: false; reason: string; definite: boolean };
+
+async function broadcast(deps: SendDeps, raw: Hex, txHash: Hex): Promise<Broadcast> {
   try {
     const res = await broadcastSigned(deps.client, {
       address: deps.signer.address,
@@ -81,6 +102,7 @@ async function broadcast(
       return {
         ok: false,
         reason: `Transaction API refused: ${error.code ?? error.kind} ${error.msg}`,
+        definite: true,
       };
     }
     deps.log(`send: Transaction API broadcast failed (${error.code ?? error.kind}); trying RPC`);
@@ -91,7 +113,11 @@ async function broadcast(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (ALREADY_KNOWN.test(message)) return { ok: true, via: 'transaction_api' };
-    return { ok: false, reason: `RPC refused: ${message.split('\n')[0] ?? message}` };
+    return {
+      ok: false,
+      reason: `RPC refused: ${message.split('\n')[0] ?? message}`,
+      definite: INVALID_TX.test(message),
+    };
   }
 }
 
@@ -134,10 +160,28 @@ export async function sendTransaction(deps: SendDeps, req: SendRequest): Promise
   });
   deps.log(`send: ${req.kind} signed, nonce ${nonce}, ${txHash}`);
 
-  const sent = await broadcast(deps, raw, txHash);
+  let sent: Broadcast;
+  try {
+    sent = await broadcast(deps, raw, txHash);
+  } catch (error) {
+    // Anything unexpected after signing (a response without a hash, a thrown RPC client) leaves
+    // it unclear whether the bytes went out: track them, never report "not sent".
+    const reason = error instanceof Error ? error.message : String(error);
+    sent = { ok: false, reason: `broadcast: ${reason.split('\n')[0] ?? reason}`, definite: false };
+  }
   if (!sent.ok) {
-    await markOutbox(deps.db, txHash, { status: 'FAILED', error: sent.reason, attempted: true });
-    return { state: 'not_sent', txHash, reason: sent.reason };
+    if (sent.definite) {
+      await markOutbox(deps.db, txHash, { status: 'FAILED', error: sent.reason, attempted: true });
+      return { state: 'not_sent', txHash, reason: sent.reason };
+    }
+    await markOutbox(deps.db, txHash, {
+      status: 'PENDING',
+      broadcastVia: 'unknown',
+      error: sent.reason,
+      attempted: true,
+    });
+    deps.log(`send: ${txHash} may or may not have gone out (${sent.reason}) — left PENDING`);
+    return { state: 'pending', txHash, broadcastVia: 'unknown' };
   }
   await markOutbox(deps.db, txHash, { status: 'PENDING', broadcastVia: sent.via, attempted: true });
   return settle(deps, txHash, sent.via, RECEIPT_TIMEOUT_MS);
@@ -150,7 +194,15 @@ export async function settle(
   broadcastVia: string,
   timeoutMs: number,
 ): Promise<SendResult> {
-  const receipt = await deps.chain.waitForReceipt(txHash, timeoutMs);
+  let receipt: ReceiptLike | undefined;
+  try {
+    receipt = await deps.chain.waitForReceipt(txHash, timeoutMs);
+  } catch (error) {
+    // An RPC error while waiting says nothing about the transaction: it stays PENDING.
+    const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    deps.log(`send: waiting for ${txHash} failed (${reason}) — left PENDING`);
+    return { state: 'pending', txHash, broadcastVia };
+  }
   if (!receipt) {
     deps.log(`send: ${txHash} not mined within ${timeoutMs / 1000} s — left PENDING`);
     return { state: 'pending', txHash, broadcastVia };
@@ -169,24 +221,34 @@ export interface Reconciliation {
   /** Still waiting: in the mempool, or sent again and not mined yet. */
   pending: string[];
   rebroadcast: string[];
+  /** Pending rows only a human can settle (RUNBOOK §3.4); they keep new signing blocked. */
+  needsHuman: { txHash: string; reason: string }[];
 }
 
 /**
  * Boot reconciliation (SPEC §5.8 v2): every SIGNED or PENDING row is settled against the chain
- * before a new cycle opens. A mined transaction gets its receipt's status; a nonce the chain
- * already used for something else means ours can never land; bytes the node does not know (a
- * crash before the broadcast, a dropped transaction) are sent again unchanged.
+ * before a new cycle opens. A mined transaction gets its receipt's status; bytes the node does not
+ * know (a crash before the broadcast, a dropped transaction) are sent again unchanged, except swap
+ * bytes whose quote went stale. A row is never marked FAILED on a guess: a nonce used with no
+ * receipt for ours, or a stale swap, stays PENDING and goes to a human (SPEC §5.8, RUNBOOK §3.4).
  */
 export async function reconcileOutbox(
   deps: Pick<SendDeps, 'chain' | 'db' | 'log'>,
   options: { from: string; waitMs?: number },
 ): Promise<Reconciliation> {
-  const result: Reconciliation = { confirmed: [], failed: [], pending: [], rebroadcast: [] };
+  const result: Reconciliation = {
+    confirmed: [],
+    failed: [],
+    pending: [],
+    rebroadcast: [],
+    needsHuman: [],
+  };
   const own = (await unsettledOutbox(deps.db)).filter(
     (row) => row.fromAddress.toLowerCase() === options.from.toLowerCase(),
   );
   for (const row of own) {
     const hash = row.txHash as Hex;
+    const age = Date.now() - Date.parse(isoTime(row.createdAt));
     const mined = await deps.chain.receipt(hash);
     if (mined) {
       const ok = mined.status === 'success';
@@ -199,14 +261,43 @@ export async function reconcileOutbox(
       continue;
     }
     if ((await deps.chain.minedNonce(row.fromAddress)) > row.nonce) {
-      await markOutbox(deps.db, hash, {
-        status: 'FAILED',
-        error: `nonce ${row.nonce} was used by another transaction`,
-      });
-      result.failed.push(hash);
+      // The nonce is used — by ours, mined between the two reads, or by another transaction.
+      const late = await deps.chain.receipt(hash);
+      if (late) {
+        const ok = late.status === 'success';
+        await markOutbox(
+          deps.db,
+          hash,
+          ok ? { status: 'CONFIRMED' } : { status: 'FAILED', error: 'receipt status 0 (reverted)' },
+        );
+        (ok ? result.confirmed : result.failed).push(hash);
+        continue;
+      }
+      // No receipt for ours: a node that has not indexed it yet, or a transaction signed with
+      // this key somewhere else. Calling ours failed on a guess could book a mined buy as never
+      // sent (and buy again), so it stays PENDING; after a while a human looks.
+      result.pending.push(hash);
+      if (age >= HUMAN_CHECK_AFTER_MS) {
+        result.needsHuman.push({
+          txHash: hash,
+          reason: `nonce ${row.nonce} is used on chain, but no receipt for this transaction`,
+        });
+      }
       continue;
     }
-    if ((await deps.chain.pendingNonce(row.fromAddress)) <= row.nonce) {
+    const unknownToNode = (await deps.chain.pendingNonce(row.fromAddress)) <= row.nonce;
+    if (unknownToNode && row.kind === 'swap' && age > SWAP_REBROADCAST_MAX_MS) {
+      // Swap bytes the node lost after their quote went stale are not sent again: a human decides
+      // (RUNBOOK §3.4). The row stays PENDING, so nothing new is signed meanwhile.
+      deps.log(`reconcile: ${hash} (swap) is no longer known to the node and too old to resend`);
+      result.pending.push(hash);
+      result.needsHuman.push({
+        txHash: hash,
+        reason: 'swap no longer known to the node; its quote is too old to send it again',
+      });
+      continue;
+    }
+    if (unknownToNode) {
       try {
         await deps.chain.sendRaw(row.rawTx as Hex);
       } catch (error) {

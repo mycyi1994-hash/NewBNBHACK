@@ -4,8 +4,7 @@
  * a late receipt is applied once from our own outbox, and a skill plan is never touched. Real
  * Postgres (the agent tests' database), fake API and chain, public test key.
  */
-import { decodeVenusCall } from '@ijaro/chain';
-import { toUnits, underlyingFromVTokens } from '@ijaro/core';
+import { toUnits } from '@ijaro/core';
 import {
   acquirePlanLock,
   createDb,
@@ -14,62 +13,16 @@ import {
   releasePlanLock,
   updatePlan,
 } from '@ijaro/db';
-import { encodeFunctionData, parseAbi, type Hex } from 'viem';
+import type { Hex } from 'viem';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';
-import { cleanup, HOUSE, transferLog } from '../test/harness.js';
-import { createWorld, testInstrument, testPlan, USDT, VUSDT, type World } from '../test/world.js';
+import { cleanup, HOUSE } from '../test/harness.js';
+import { createWorld, testInstrument, testPlan, withVenus } from '../test/world.js';
 import { reconcileOutbox } from './executor/send.js';
 import { operatorRedeem, previewOperatorRedeem, recordOperatorRedeem } from './operator.js';
 
 const url = agentTestUrl;
-/** The fake chain's vUSDT exchange rate: one USDT is 1e8 vTokens. */
-const RATE = 10n ** 28n;
 const REDEEM_SELECTOR = '0xdb006a75';
-const vTokenAbi = parseAbi(['function redeem(uint256 redeemTokens) returns (uint256)']);
-
-/** Adds Venus redeem to the world: the build burns what the amount is worth, like the recorded one. */
-function withVenus(w: World) {
-  const state = { simulation: { status: 'SUCCESS', failReason: '' } };
-  w.api.routes['/api/v1/defi/transaction/redeem'] = (_u, body) => {
-    const amount = toUnits((body as { token: { amount: string } }).token.amount, 18);
-    const vTokens = (amount * 10n ** 18n) / RATE;
-    return {
-      redeemDelayDays: [],
-      dataList: [
-        {
-          callDataType: 'REDEEM',
-          from: HOUSE,
-          to: VUSDT,
-          value: '0x0',
-          data: encodeFunctionData({ abi: vTokenAbi, functionName: 'redeem', args: [vTokens] }),
-          gasPrice: '64257210',
-          maxPriorityFeePerGas: '64257210',
-          maxFeePerGas: '64257210',
-        },
-      ],
-    };
-  };
-  w.api.routes['/api/v1/dex/pre-transaction/gas-limit'] = () => ({ gasLimit: '150000' });
-  const simulate = w.api.routes['/api/v1/dex/pre-transaction/simulate'];
-  w.api.routes['/api/v1/dex/pre-transaction/simulate'] = (u, body) =>
-    (body as { evmTx: { data: string } }).evmTx.data.startsWith(REDEEM_SELECTOR)
-      ? { ...state.simulation, balanceChanges: [], allowanceChanges: [] }
-      : simulate?.(u, body);
-  const mine = w.chain.onMine;
-  w.chain.onMine = (tx) => {
-    if (!tx.data.startsWith(REDEEM_SELECTOR)) return mine(tx);
-    const vTokens = decodeVenusCall(tx.data).amount;
-    return {
-      status: 'success',
-      logs: [
-        transferLog(VUSDT, HOUSE, VUSDT, vTokens),
-        transferLog(USDT, VUSDT, HOUSE, underlyingFromVTokens(vTokens, RATE)),
-      ],
-    };
-  };
-  return state;
-}
 
 describe.skipIf(!url)('operator redeem on Postgres', () => {
   const { db, close } = createDb(url ?? 'postgres://unused');
@@ -183,7 +136,7 @@ describe.skipIf(!url)('operator redeem on Postgres', () => {
   it('signs nothing when the simulation fails, and waits for a running cycle', async () => {
     const w = await createWorld(db, '2026-09-28T14:00:00.000Z');
     const venus = withVenus(w);
-    venus.simulation = { status: 'FAILED', failReason: 'execution reverted: math error' };
+    venus.redeemSimulation = { status: 'FAILED', failReason: 'execution reverted: math error' };
     const id = await yieldPlan();
     expect(await operatorRedeem(w.deps('live'), id)).toEqual({
       kind: 'failed',
@@ -196,11 +149,12 @@ describe.skipIf(!url)('operator redeem on Postgres', () => {
     expect(kept?.vtokenUnits).toBe('100050000');
     expect(toUnits(kept?.principalUsd ?? '', 18)).toBe(10n ** 18n);
 
-    venus.simulation = { status: 'SUCCESS', failReason: '' };
+    venus.redeemSimulation = { status: 'SUCCESS', failReason: '' };
     const now = new Date('2026-09-28T14:00:00.000Z');
-    expect(await acquirePlanLock(db, id, now, 60_000)).toBeTruthy();
+    const held = await acquirePlanLock(db, id, now, 60_000);
+    expect(held).toBeTruthy();
     expect(await operatorRedeem(w.deps('live'), id)).toEqual({ kind: 'refused', reason: 'locked' });
-    await releasePlanLock(db, id);
+    await releasePlanLock(db, id, held?.lockUntil ?? null);
     expect(w.chain.sent).toEqual([]);
   });
 
@@ -229,7 +183,7 @@ describe.skipIf(!url)('operator redeem on Postgres', () => {
     await w.chain.waitForReceipt(hash, 1);
     const deps = w.deps('live');
     await expect(recordOperatorRedeem(deps, other, hash)).rejects.toThrow(
-      'not a redeem our outbox',
+      'not a position redeem our outbox',
     );
     expect(await recordOperatorRedeem(deps, id, hash)).toBe('recorded');
     expect(await recordOperatorRedeem(deps, id, hash)).toBe('already_recorded');

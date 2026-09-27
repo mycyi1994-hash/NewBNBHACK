@@ -166,9 +166,20 @@ describe.skipIf(!url)('plans on Postgres', () => {
     ).toBeUndefined();
 
     // A holder that died: the lock expires and the next tick takes it.
+    const dead = holders.find((h) => h !== undefined);
     const afterExpiry = new Date(now.getTime() + 61_000);
-    expect(await acquirePlanLock(db, due.id, afterExpiry, 60_000)).toBeDefined();
-    await releasePlanLock(db, due.id, { nextDueAt: '2026-09-29T13:32:00.000Z' });
+    const next = await acquirePlanLock(db, due.id, afterExpiry, 60_000);
+    expect(next).toBeDefined();
+    // The dead holder's late release changes nothing: the lock is no longer its own.
+    expect(await releasePlanLock(db, due.id, dead?.lockUntil ?? null, { status: 'stopped' })).toBe(
+      false,
+    );
+    expect((await getPlan(db, due.id))?.status).toBe('active');
+    expect(
+      await releasePlanLock(db, due.id, next?.lockUntil ?? null, {
+        nextDueAt: '2026-09-29T13:32:00.000Z',
+      }),
+    ).toBe(true);
     const released = await getPlan(db, due.id);
     expect(released?.lockUntil).toBeNull();
     expect(released?.nextDueAt).toMatch(/^2026-09-29/);

@@ -272,6 +272,13 @@ export async function performSwap(
   const value = apiInt(tx.value ?? '0', 'swap value');
   if (value !== 0n)
     return fail('SWAP_CARRIES_BNB', `swap tx.value ${value} (USDT swaps carry no BNB)`);
+  // The swap must call the router we approved, nothing else (every recorded /swap does).
+  if (!isAddressEqual(tx.to as Hex, args.spender)) {
+    return fail(
+      'SWAP_TARGET_MISMATCH',
+      `swap calls ${tx.to}, not the approved router ${args.spender}`,
+    );
+  }
 
   const call = { from: deps.house, to: tx.to, value: '0', data: tx.data };
   let simulation: SimulationResult;

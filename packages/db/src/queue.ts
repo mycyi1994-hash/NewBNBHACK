@@ -54,7 +54,8 @@ export async function finishJob(
       ...(outcome.status === 'done' ? { result: outcome.result } : { error: outcome.error }),
       finishedAt: sql`now()`,
     })
-    .where(eq(jobs.id, id));
+    // Only a job this worker still holds: a job closed at boot (abandoned) stays closed.
+    .where(and(eq(jobs.id, id), eq(jobs.status, 'running')));
 }
 
 export async function getJob(db: Db, id: string): Promise<JobRow | undefined> {
@@ -76,16 +77,6 @@ export async function abandonRunningJobs(
     .update(jobs)
     .set({ status: 'failed', error: reason, finishedAt: sql`now()` })
     .where(and(eq(jobs.status, 'running'), sql`${jobs.startedAt} < ${startedBefore.toISOString()}`))
-    .returning({ id: jobs.id });
-  return rows.length;
-}
-
-/** Jobs left 'running' by a worker that died are queued again (their work is idempotent). */
-export async function requeueStaleJobs(db: Db, olderThan: Date): Promise<number> {
-  const rows = await db
-    .update(jobs)
-    .set({ status: 'queued' })
-    .where(and(eq(jobs.status, 'running'), sql`${jobs.startedAt} < ${olderThan.toISOString()}`))
     .returning({ id: jobs.id });
   return rows.length;
 }
@@ -117,8 +108,45 @@ export async function markOutbox(
 }
 
 export async function outboxByHash(db: Db, txHash: string): Promise<OutboxRow | undefined> {
-  const [row] = await db.select().from(txOutbox).where(eq(txOutbox.txHash, txHash)).limit(1);
+  const [row] = await db
+    .select()
+    .from(txOutbox)
+    .where(sql`lower(${txOutbox.txHash}) = lower(${txHash})`)
+    .limit(1);
   return row;
+}
+
+/** A cycle's signed transactions, oldest first. */
+export async function outboxOfCycle(db: Db, cycleId: number): Promise<OutboxRow[]> {
+  return db
+    .select()
+    .from(txOutbox)
+    .where(eq(txOutbox.cycleId, cycleId))
+    .orderBy(asc(txOutbox.nonce));
+}
+
+/**
+ * Transactions the worker has not finished with: still out on chain (SIGNED, PENDING), or mined
+ * (CONFIRMED) with no receipt yet — their effect on the plan is not applied. `planId` narrows it.
+ */
+export async function unfinishedTransactions(db: Db, planId?: string): Promise<OutboxRow[]> {
+  const rows = await db.execute<{ id: number }>(sql`
+    select o.id from tx_outbox o
+    left join receipts r on r.tx_hash = lower(o.tx_hash)
+    where (o.status in ('SIGNED', 'PENDING') or (o.status = 'CONFIRMED' and r.id is null))
+    ${planId === undefined ? sql`` : sql`and o.plan_id = ${planId}`}
+    order by o.nonce`);
+  if (rows.length === 0) return [];
+  return db
+    .select()
+    .from(txOutbox)
+    .where(
+      inArray(
+        txOutbox.id,
+        rows.map((r) => r.id),
+      ),
+    )
+    .orderBy(asc(txOutbox.nonce));
 }
 
 /** SIGNED or PENDING transactions: reconciled at boot before any new cycle opens. */

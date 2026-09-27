@@ -20,8 +20,9 @@ import {
   type PlanRow,
 } from '@ijaro/db';
 import type { Hex } from 'viem';
-import { LOCK_TTL_MS, type CycleDeps } from './cycle.js';
-import { reconcileOutbox } from './executor/send.js';
+import type { CycleDeps } from './cycle.js';
+import { LOCK_TTL_MS } from './plan-lock.js';
+import { settleOutbox } from './settlement.js';
 import { redeemFromVenus, type RedeemResult, type VenusMarket } from './executor/venus.js';
 import { redeemPlanPosition, wholePositionUsd } from './guardian.js';
 
@@ -98,23 +99,25 @@ export async function operatorRedeem(deps: CycleDeps, planId: string): Promise<R
   const first = refusalOf(await getPlan(deps.db, planId));
   if (first) return first;
   venusOf(deps);
-  // One signer for every plan: earlier transactions settle before this one may sign.
-  const outbox = await reconcileOutbox(deps, { from: deps.house });
+  // One signer for every plan: earlier transactions settle, and their effects are written down,
+  // before this one may sign.
+  const outbox = await settleOutbox(deps);
   if (outbox.pending.length > 0) {
     return { kind: 'refused', reason: 'outbox_busy', pending: outbox.pending };
   }
-  if (!(await acquirePlanLock(deps.db, planId, deps.now(), LOCK_TTL_MS))) {
-    return { kind: 'refused', reason: 'locked' };
-  }
+  const locked = await acquirePlanLock(deps.db, planId, deps.now(), LOCK_TTL_MS);
+  if (!locked) return { kind: 'refused', reason: 'locked' };
   try {
     // Read again under the lock: a cycle may have redeemed interest in between.
     const row = await getPlan(deps.db, planId);
     const refused = refusalOf(row);
     if (refused || !row) return refused ?? { kind: 'refused', reason: 'not_found' };
-    const done = await redeemPlanPosition(deps, row, {
-      status: row.status === 'stopped' ? 'stopped' : 'paused',
-      reason: OPERATOR_REDEEM,
-    });
+    const done = await redeemPlanPosition(
+      deps,
+      row,
+      { status: row.status === 'stopped' ? 'stopped' : 'paused', reason: OPERATOR_REDEEM },
+      { lockHeld: true },
+    );
     const after = await getPlan(deps.db, planId);
     if (done !== 'redeemed' || !after) {
       // A broadcast that was not mined in time stays in the outbox; --record applies it later.
@@ -127,7 +130,7 @@ export async function operatorRedeem(deps: CycleDeps, planId: string): Promise<R
     if (!receipt) throw new Error(`redeemed ${planId} but its receipt is missing`);
     return { kind: 'redeemed', txHash: receipt.txHash, amounts: receipt.amounts, plan: after };
   } finally {
-    await releasePlanLock(deps.db, planId);
+    await releasePlanLock(deps.db, planId, locked.lockUntil);
   }
 }
 
@@ -142,8 +145,9 @@ export async function recordOperatorRedeem(
 ): Promise<'recorded' | 'already_recorded'> {
   const market = venusOf(deps);
   const signed = await outboxByHash(deps.db, txHash);
-  if (!signed || signed.planId !== planId || signed.kind !== 'redeem') {
-    throw new Error(`${txHash} is not a redeem our outbox signed for ${planId}`);
+  // Only a whole-position redeem sent outside a cycle: a cycle's interest redeem is not one.
+  if (!signed || signed.planId !== planId || signed.kind !== 'redeem' || signed.cycleId !== null) {
+    throw new Error(`${txHash} is not a position redeem our outbox signed for ${planId}`);
   }
   const receipt = await deps.chain.receipt(txHash);
   if (!receipt || receipt.status !== 'success') {

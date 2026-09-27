@@ -57,11 +57,31 @@ function usageQuery(scope: SpendScope) {
       coalesce(sum(amount_usd) filter (where day = ${scope.day} and plan_id = ${scope.planId}), 0)::numeric as plan_day,
       ${
         judge
-          ? sql`coalesce(sum(amount_usd) filter (where plan_id in (select id from plans where owner_kind = 'judge' and owner_ref = ${scope.ownerRef})), 0)::numeric`
+          ? sql`coalesce(sum(amount_usd) filter (where plan_id in (select id from plans where owner_kind = 'judge' and owner_ref = ${scope.ownerRef})), 0)::numeric + ${judgePrincipal(scope.ownerRef ?? '')}`
           : sql`0::numeric`
       } as judge_total
     from spend_ledger
     where status in ('reserved', 'spent')`;
+}
+
+/** Principal a judge code has in Venus right now: it counts towards the code's total like spend. */
+function judgePrincipal(codeHash: string) {
+  return sql`(select coalesce(sum(principal_usd), 0) from plans where owner_kind = 'judge' and owner_ref = ${codeHash})::numeric`;
+}
+
+/**
+ * What one judge code has used of its total (SECURITY.md: one code = the sandbox cap in all):
+ * reserved and spent buys plus the principal its yield plans hold.
+ */
+export async function judgeExposureUsd(db: Db, codeHash: string): Promise<string> {
+  const rows = await db.execute<{ used: string }>(sql`
+    select (
+      coalesce((select sum(amount_usd) from spend_ledger
+        where status in ('reserved', 'spent')
+        and plan_id in (select id from plans where owner_kind = 'judge' and owner_ref = ${codeHash})), 0)
+      + ${judgePrincipal(codeHash)}
+    )::text as used`);
+  return rows[0]?.used ?? '0';
 }
 
 /** What `planId` has reserved or spent on `day` (the "오늘 사용" figure). */

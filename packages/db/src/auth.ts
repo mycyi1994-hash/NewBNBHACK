@@ -14,20 +14,33 @@ export function sha256Hex(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-/** Makes the table match the configured codes: new ones added, missing ones disabled. */
+/**
+ * Makes the table match the configured codes: new ones added, missing ones disabled. An empty
+ * list changes nothing: the worker and a laptop have no JUDGE_CODES, and seeding from there must
+ * not switch off every judge (RUNBOOK §2).
+ */
 export async function syncJudgeCodes(db: Db, codes: readonly string[]): Promise<number> {
   const hashes = [...new Set(codes.map((c) => c.trim()).filter((c) => c !== ''))].map(sha256Hex);
-  if (hashes.length > 0) {
-    await db
-      .insert(judgeCodes)
-      .values(hashes.map((codeHash) => ({ codeHash, label: codeHash.slice(0, 8) })))
-      .onConflictDoUpdate({ target: judgeCodes.codeHash, set: { disabled: false } });
-  }
+  if (hashes.length === 0) return 0;
+  await db
+    .insert(judgeCodes)
+    .values(hashes.map((codeHash) => ({ codeHash, label: codeHash.slice(0, 8) })))
+    .onConflictDoUpdate({ target: judgeCodes.codeHash, set: { disabled: false } });
   await db
     .update(judgeCodes)
     .set({ disabled: true })
-    .where(hashes.length > 0 ? not(inArray(judgeCodes.codeHash, hashes)) : sql`true`);
+    .where(not(inArray(judgeCodes.codeHash, hashes)));
   return hashes.length;
+}
+
+/** Whether a code (by hash) is still enabled: a session of a removed code must stop working. */
+export async function judgeCodeActive(db: Db, codeHash: string): Promise<boolean> {
+  const [row] = await db
+    .select({ codeHash: judgeCodes.codeHash })
+    .from(judgeCodes)
+    .where(and(eq(judgeCodes.codeHash, codeHash), eq(judgeCodes.disabled, false)))
+    .limit(1);
+  return row !== undefined;
 }
 
 export async function findJudgeCode(db: Db, code: string): Promise<JudgeCodeRow | undefined> {

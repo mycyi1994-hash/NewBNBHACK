@@ -4,7 +4,8 @@
  * set allowances and swaps deliver tokens. Guardian inputs (Venus TVL, USDT price) are settable.
  */
 import { randomUUID } from 'node:crypto';
-import { encodeApprove } from '@ijaro/chain';
+import { decodeVenusCall, encodeApprove } from '@ijaro/chain';
+import { toUnits, underlyingFromVTokens } from '@ijaro/core';
 import { parseConfig } from '@ijaro/config';
 import {
   insertPlan,
@@ -14,7 +15,7 @@ import {
   type InstrumentRow,
   type PlanInsert,
 } from '@ijaro/db';
-import type { Hex } from 'viem';
+import { encodeFunctionData, parseAbi, type Hex } from 'viem';
 import { createAlerter } from '../src/alerts.js';
 import type { CycleDeps } from '../src/cycle.js';
 import {
@@ -220,4 +221,93 @@ export async function createWorld(
       venus: { investmentId: 'venus-usdt', vToken: VUSDT },
     }),
   };
+}
+
+/** The fake chain's vUSDT exchange rate: one USDT is 1e8 vTokens. */
+export const VENUS_RATE = 10n ** 28n;
+const MINT_SELECTOR = '0xa0712d68';
+const REDEEM_SELECTOR = '0xdb006a75';
+const vTokenAbi = parseAbi([
+  'function mint(uint256 mintAmount) returns (uint256)',
+  'function redeem(uint256 redeemTokens) returns (uint256)',
+]);
+
+/**
+ * Adds Venus deposit and redeem to a world: the DeFi builds carry mint(amount) / redeem(vTokens
+ * the amount is worth) like the recorded ones, simulations pass (or fail when told to), and
+ * mining moves USDT and vTokens between the house and vUSDT.
+ */
+export function withVenus(w: World) {
+  const state = { redeemSimulation: { status: 'SUCCESS', failReason: '' } };
+  const item = (callDataType: string, data: Hex) => ({
+    callDataType,
+    from: HOUSE,
+    to: VUSDT,
+    value: '0x0',
+    data,
+    gasPrice: '64257210',
+    maxPriorityFeePerGas: '64257210',
+    maxFeePerGas: '64257210',
+  });
+  const amountOf = (body: unknown) =>
+    toUnits((body as { token: { amount: string } }).token.amount, 18);
+  w.api.routes['/api/v1/defi/transaction/deposit'] = (_u, body) => ({
+    dataList: [
+      item('APPROVE', encodeApprove(VUSDT, 2n ** 256n - 1n)),
+      item(
+        'DEPOSIT',
+        encodeFunctionData({ abi: vTokenAbi, functionName: 'mint', args: [amountOf(body)] }),
+      ),
+    ],
+  });
+  w.api.routes['/api/v1/defi/transaction/redeem'] = (_u, body) => ({
+    redeemDelayDays: [],
+    dataList: [
+      item(
+        'REDEEM',
+        encodeFunctionData({
+          abi: vTokenAbi,
+          functionName: 'redeem',
+          args: [(amountOf(body) * 10n ** 18n) / VENUS_RATE],
+        }),
+      ),
+    ],
+  });
+  w.api.routes['/api/v1/dex/pre-transaction/gas-limit'] = () => ({ gasLimit: '150000' });
+  const simulate = w.api.routes['/api/v1/dex/pre-transaction/simulate'];
+  w.api.routes['/api/v1/dex/pre-transaction/simulate'] = (u, body) => {
+    const data = (body as { evmTx: { data: string } }).evmTx.data;
+    if (data.startsWith(REDEEM_SELECTOR)) {
+      return { ...state.redeemSimulation, balanceChanges: [], allowanceChanges: [] };
+    }
+    if (data.startsWith(MINT_SELECTOR) || data.startsWith('0x095ea7b3')) {
+      return { status: 'SUCCESS', failReason: '', balanceChanges: [], allowanceChanges: [] };
+    }
+    return simulate?.(u, body);
+  };
+  const mine = w.chain.onMine;
+  w.chain.onMine = (tx) => {
+    if (tx.data.startsWith(REDEEM_SELECTOR)) {
+      const vTokens = decodeVenusCall(tx.data).amount;
+      return {
+        status: 'success',
+        logs: [
+          transferLog(VUSDT, HOUSE, VUSDT, vTokens),
+          transferLog(USDT, VUSDT, HOUSE, underlyingFromVTokens(vTokens, VENUS_RATE)),
+        ],
+      };
+    }
+    if (tx.data.startsWith(MINT_SELECTOR)) {
+      const usdt = decodeVenusCall(tx.data).amount;
+      return {
+        status: 'success',
+        logs: [
+          transferLog(USDT, HOUSE, VUSDT, usdt),
+          transferLog(VUSDT, VUSDT, HOUSE, (usdt * 10n ** 18n) / VENUS_RATE),
+        ],
+      };
+    }
+    return mine(tx);
+  };
+  return state;
 }

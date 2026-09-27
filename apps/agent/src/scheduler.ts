@@ -14,17 +14,28 @@ import {
   duePlans,
   finishJob,
   getPlan,
+  judgeCodeActive,
   planFromRow,
   updatePlan,
+  updatePlanIf,
   usdText,
   writeWorkerStatus,
   type JobRow,
+  type PlanRow,
 } from '@ijaro/db';
-import { completeAwaitingCycles } from './awaiting.js';
 import { runCycle, type CycleDeps, type CycleReport } from './cycle.js';
 import { startYieldPlan } from './deposit.js';
-import { reconcileOutbox, type Reconciliation } from './executor/send.js';
+import type { Reconciliation } from './executor/send.js';
 import { guardianTick, redeemPlanPosition, type GuardianReport } from './guardian.js';
+import { settleOutbox } from './settlement.js';
+
+/** A judge plan whose code was removed from JUDGE_CODES stops acting (RUNBOOK §2). */
+async function codeDisabled(deps: CycleDeps, plan: PlanRow): Promise<boolean> {
+  return (
+    plan.ownerKind === 'judge' &&
+    (plan.ownerRef === null || !(await judgeCodeActive(deps.db, plan.ownerRef)))
+  );
+}
 
 export const TICK_MS = 5 * 60_000;
 /**
@@ -60,9 +71,23 @@ export async function processJob(
   job: JobRow,
 ): Promise<Record<string, unknown>> {
   if (job.kind === 'run' || job.kind === 'preview') {
-    const owner = (await getPlan(deps.db, job.planId))?.ownerKind;
+    const row = await getPlan(deps.db, job.planId);
     // The worker signs only for the house wallet's plans; a skill plan is signed by its own wallet.
-    if (owner === 'skill') throw new Error('skill plans run in their own wallet (GET /next)');
+    if (row?.ownerKind === 'skill')
+      throw new Error('skill plans run in their own wallet (GET /next)');
+    if (row && (await codeDisabled(deps, row)))
+      throw new Error('this judge code is no longer active');
+    // A plan held by a person or the guardian (review, ops hold, a redeem) never buys on a web
+    // request; only a judge plan's first run starts it.
+    if (
+      job.kind === 'run' &&
+      row &&
+      (row.status === 'stopped' || (row.status === 'paused' && row.pausedReason !== 'awaiting_run'))
+    ) {
+      throw new Error(
+        `the plan is ${row.status}${row.pausedReason ? ` (${row.pausedReason})` : ''}`,
+      );
+    }
   }
   switch (job.kind) {
     case 'preview':
@@ -80,6 +105,7 @@ export async function processJob(
       const report = await runCycle(deps, job.planId, { manual: true });
       // A judge's first run starts the plan: it keeps running on its own until it expires (7 days)
       // or the code's cap is used up. A deferred first run starts at the time it was deferred to.
+      // Only a plan still waiting for that run: a review hold the cycle set, or a stop, stands.
       if (
         deps.mode === 'live' &&
         plan.status === 'paused' &&
@@ -90,9 +116,10 @@ export async function processJob(
             ? report.outcome.retryAt
             : undefined;
         const next = nextDue(planFromRow(plan).cadence, deps.now(), retryAt);
-        await updatePlan(
+        await updatePlanIf(
           deps.db,
           plan.id,
+          { status: 'paused', pausedReason: 'awaiting_run' },
           next.kind === 'stop'
             ? { status: 'stopped', pausedReason: 'done' }
             : { status: 'active', pausedReason: null, nextDueAt: next.nextDueAt },
@@ -159,13 +186,13 @@ export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promi
     }
   };
 
-  if (deps.mode === 'live') {
-    await guard('reconcile', async () => {
-      report.reconciled = await reconcileOutbox(deps, { from: deps.house, waitMs: 5_000 });
-    });
-  }
-  await guard('awaiting', async () => {
-    report.completed = await completeAwaitingCycles(deps);
+  // Every mode settles the outbox and writes down what settled: a live one-off command (cycle:once,
+  // yield:deposit, yield:redeem) may have left a transaction pending while the worker stays in
+  // simulate (docs/LIVE_TEST.md).
+  await guard('settle', async () => {
+    const settled = await settleOutbox(deps, { waitMs: 5_000 });
+    report.reconciled = settled;
+    report.completed = [...settled.completed, ...settled.applied];
   });
   await guard('guardian', async () => {
     report.guardian = await guardianTick(deps);
@@ -175,6 +202,10 @@ export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promi
   report.errors.push(...jobs.errors);
   for (const plan of await duePlans(deps.db, deps.now())) {
     if (plan.ownerKind === 'skill') continue; // decided by /next, signed by the owner
+    if (await codeDisabled(deps, plan)) {
+      await updatePlan(deps.db, plan.id, { status: 'paused', pausedReason: 'code_disabled' });
+      continue;
+    }
     await guard(`cycle ${plan.id}`, async () => {
       report.cycles.push(await runCycle(deps, plan.id));
     });

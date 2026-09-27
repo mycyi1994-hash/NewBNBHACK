@@ -86,9 +86,15 @@ export function viemChainPort(bsc: BscClient): ChainPort {
     sendRaw: (raw) => bsc.sendRawTransaction({ serializedTransaction: raw }),
     async waitForReceipt(hash, timeoutMs) {
       try {
-        return toLike(
-          await bsc.waitForTransactionReceipt({ hash, timeout: timeoutMs, pollingInterval: 1_000 }),
-        );
+        const receipt = await bsc.waitForTransactionReceipt({
+          hash,
+          timeout: timeoutMs,
+          pollingInterval: 1_000,
+        });
+        // viem follows a replacement (same nonce, other bytes) and returns its receipt: that is
+        // not ours. Report "not mined"; reconciliation then sees the nonce used by another tx.
+        if (receipt.transactionHash.toLowerCase() !== hash.toLowerCase()) return undefined;
+        return toLike(receipt);
       } catch (error) {
         if (error instanceof WaitForTransactionReceiptTimeoutError) return undefined;
         throw error;

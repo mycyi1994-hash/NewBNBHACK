@@ -20,8 +20,8 @@ import {
 import { inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';
-import { cleanup, ROUTER } from '../test/harness.js';
-import { createWorld, testInstrument, testPlan } from '../test/world.js';
+import { cleanup, HOUSE, ROUTER, transferLog } from '../test/harness.js';
+import { createWorld, testInstrument, testPlan, USDT } from '../test/world.js';
 import { processJobs, schedulerTick } from './scheduler.js';
 
 const url = agentTestUrl;
@@ -216,7 +216,8 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
 
     // A 30 % TVL drop in live mode pauses the skill plan but redeems nothing for it. (House yield
     // plans from earlier tests would rightly be redeemed; stop them so only the skill plan is left.)
-    for (const id of planIds) await updatePlan(db, id, { status: 'stopped' });
+    // A stopped house plan that still holds a position is redeemed too; these hold none.
+    for (const id of planIds) await updatePlan(db, id, { status: 'stopped', vtokenUnits: '0' });
     const held = await skill();
     await insertGuardianSample(db, {
       ts: '2026-09-27T14:00:00.000Z',
@@ -236,6 +237,28 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
     expect(w.chain.sent).toEqual([]);
   });
 
+  it('keeps a review hold that the first run itself set (never starts the plan over it)', async () => {
+    await calm();
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    const w = await createWorld(db, '2026-09-28T14:00:00.000Z');
+    // The swap confirms, USDT leaves, no tokens arrive: the cycle asks a human.
+    w.chain.onMine = (tx) =>
+      tx.to.toLowerCase() === ROUTER.toLowerCase()
+        ? { status: 'success', logs: [transferLog(USDT, HOUSE, ROUTER, 5n * 10n ** 18n)] }
+        : { status: 'success', logs: [] };
+    await enqueueJob(db, { id: `job-review-${id}`, kind: 'run', planId: id });
+    await processJobs(w.deps('live'), w.deps('simulate'));
+    expect(await getJob(db, `job-review-${id}`)).toMatchObject({
+      status: 'done',
+      result: { status: 'review' },
+    });
+    expect(await getPlan(db, id)).toMatchObject({ status: 'paused', pausedReason: 'needs_review' });
+    // Nothing runs it until a human has looked.
+    w.clock.advance(24 * 60 * MIN);
+    const tick = await schedulerTick(w.deps('live'), w.deps('simulate'));
+    expect(tick.cycles.filter((c) => c.planId === id)).toEqual([]);
+  });
+
   it('runs preview, run and stop jobs from the web; preview never signs', async () => {
     await calm();
     const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
@@ -249,6 +272,16 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
     });
     expect(w.chain.sent).toEqual([]);
 
+    // A plan held for any reason but its first run never buys on a web request.
+    await enqueueJob(db, { id: `job-held-${id}`, kind: 'run', planId: id });
+    await schedulerTick(w.deps('live'), w.deps('simulate'));
+    expect(await getJob(db, `job-held-${id}`)).toMatchObject({
+      status: 'failed',
+      error: 'the plan is paused (awaiting_funding)',
+    });
+    expect(w.chain.sent).toEqual([]);
+
+    await updatePlan(db, id, { pausedReason: 'awaiting_run' });
     await enqueueJob(db, { id: `job-r-${id}`, kind: 'run', planId: id });
     await enqueueJob(db, { id: `job-s-${id}`, kind: 'stop', planId: id });
     await schedulerTick(w.deps('live'), w.deps('simulate'));
