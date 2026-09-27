@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -71,6 +72,14 @@ function harness(
 }
 
 const SUPPORTED_CHAINS = { method: 'GET', path: '/api/v1/dex/market/supported/chain' } as const;
+
+/** Starts `server` on an ephemeral loopback port and returns its origin. */
+async function listen(server: Server): Promise<string> {
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('server has no port');
+  return `http://127.0.0.1:${address.port}`;
+}
 
 function rateLimited(retryAfter?: string): Response {
   return new Response(JSON.stringify({ code: 42900, msg: 'limited', data: null }), {
@@ -404,6 +413,38 @@ describe('BinanceClient.request', () => {
     });
     expect(response.clockSkewMs).toBe(3_000);
     expect(skews).toEqual([3_000]);
+  });
+
+  it('never follows a redirect: the key and signature stay with the configured origin', async () => {
+    const reached: string[] = [];
+    const elsewhere = createServer((req, res) => {
+      reached.push(`${req.method} ${req.url} key=${String(req.headers['x-oc-apikey'])}`);
+      res.writeHead(200, { 'content-type': 'application/json' }).end(OK('not ours'));
+    });
+    const elsewhereUrl = await listen(elsewhere);
+    const gateway = createServer((_req, res) => {
+      res.writeHead(302, { location: `${elsewhereUrl}/steal?userWalletAddress=${WALLET}` }).end();
+    });
+    const gatewayUrl = await listen(gateway);
+    try {
+      const { client, records } = harness([], { baseUrl: `${gatewayUrl}/build`, fetch });
+      const error = await client
+        .request('market', 'getSupportedChains', { ...SUPPORTED_CHAINS, retries: 2 })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BinanceApiError);
+      expect(error).toMatchObject({ kind: 'http', httpStatus: 302, code: null, retryable: false });
+      expect(reached).toEqual([]);
+      // Recorded once with its status, never retried, the Location masked.
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({ httpStatus: 302, code: null });
+      expect(records[0]!.msg).toContain('redirect not followed (HTTP 302 to http://127.0.0.1:');
+      expect(records[0]!.msg).toContain('userWalletAddress=0x1111…1111');
+    } finally {
+      for (const server of [elsewhere, gateway]) {
+        server.closeAllConnections();
+        server.close();
+      }
+    }
   });
 
   it('never sends a GET body', async () => {

@@ -10,7 +10,7 @@ import {
   type BinanceApiErrorInit,
   type ErrorKind,
 } from './errors.js';
-import { parseEnvelope } from './envelope.js';
+import { parseEnvelope, type EnvelopeResult } from './envelope.js';
 import type { FixtureRecorder } from './fixtures.js';
 import { stringifyJsonLossless } from './json.js';
 import { envelopeFlavour, rateLimitGroup, type ApiModule } from './modules.js';
@@ -115,6 +115,19 @@ function headerInt(headers: Headers, name: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/**
+ * The message for a redirect we did not follow (fetch runs with `redirect: 'manual'`), or
+ * undefined for any other response. The Location goes into api_calls.msg, masked by the caller.
+ */
+function refusedRedirect(response: Response): string | undefined {
+  const redirect =
+    response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
+  if (!redirect) return undefined;
+  const location = response.headers.get('location');
+  const to = location ? ` to ${location.slice(0, 200)}` : '';
+  return `redirect not followed (HTTP ${response.status}${to}): the API key and signature only go to the configured base URL`;
+}
+
 export class BinanceClient {
   private readonly fetchImpl: typeof fetch;
   private readonly clock: Clock;
@@ -210,6 +223,9 @@ export class BinanceClient {
           method: opts.method,
           headers,
           ...(bodyText === '' ? {} : { body: bodyText }),
+          // Following would resend X-OC-APIKEY and X-OC-SIGN to wherever the Location points
+          // and hand us that server's answer; a 3xx is reported as an HTTP error instead.
+          redirect: 'manual',
           signal: AbortSignal.timeout(this.options.timeoutMs ?? 15_000),
         });
         responseText = await response.text();
@@ -240,12 +256,11 @@ export class BinanceClient {
         throw fail(kind, msg);
       }
       const latencyMs = this.clock.now() - started;
-      const envelope = parseEnvelope(
-        response.status,
-        responseText,
-        envelopeFlavour(module),
-        response.headers,
-      );
+      const redirect = refusedRedirect(response);
+      const envelope: EnvelopeResult =
+        redirect === undefined
+          ? parseEnvelope(response.status, responseText, envelopeFlavour(module), response.headers)
+          : { ok: false, kind: 'http', code: null, msg: redirect, serverTime: null, body: null };
       const requestId = requestIdOf(response.headers);
 
       let fixturePath: string | null = null;
