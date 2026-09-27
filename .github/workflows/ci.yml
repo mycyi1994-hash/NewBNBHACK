@@ -1,4 +1,6 @@
-# Quality gates from CLAUDE.md rule 9: typecheck, lint, test. No secrets are used; deploys are manual.
+# Quality gates from CLAUDE.md rule 9: typecheck, lint, test; then the core coverage gate (SPEC §12:
+# 100%, as the README says) and the web production build. No secrets are used; deploys are manual.
+# Third-party actions are pinned to full commit SHAs (the comment names the tag each one resolved to).
 name: ci
 
 on:
@@ -34,9 +36,11 @@ jobs:
       IJARO_TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/ijaro_ci
       NEXT_TELEMETRY_DISABLED: 1
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -44,3 +48,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - run: pnpm coverage:core
+      # Builds without secrets or DATABASE_URL, like any fresh checkout.
+      - run: pnpm --filter @ijaro/web build

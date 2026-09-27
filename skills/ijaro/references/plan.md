@@ -16,9 +16,12 @@ All requests go to `$IJARO_URL`. Bodies are JSON. Amounts are decimal strings (`
      per-transaction cap, per day at least per buy. The server refuses anything else
      (`bad_limits`). Off-hours an `anytime` plan buys at half the per-buy limit; when half is under
      the minimum it waits for the regular session.
-4. Create it:
+4. Create it. The answer holds the plan's token, so it goes straight into a private file: the
+   `umask 077` comes first, and the file sits in `~/.config/ijaro` (mode 700), never in `/tmp`.
+   Each block sets the umask itself, because a shell does not keep it from one command to the next.
 
 ```bash
+umask 077 && mkdir -p ~/.config/ijaro && chmod 700 ~/.config/ijaro
 curl -sS -X POST "$IJARO_URL/api/plans" -H 'content-type: application/json' -d '{
   "owner": "skill",
   "walletAddress": "<address from step 2>",
@@ -29,20 +32,20 @@ curl -sS -X POST "$IJARO_URL/api/plans" -H 'content-type: application/json' -d '
   "window": "regular_session",
   "maxPerBuyUsd": "5",
   "maxDailyUsd": "5"
-}' > /tmp/ijaro-plan.json   # run with umask 077: the answer holds the token
+}' > ~/.config/ijaro/new-plan.json
 ```
 
 5. The answer (`201`) holds `plan.id` and `token` (`ijr_…`). **The token is shown once.** Save both
    without echoing the token:
 
 ```bash
-umask 077 && mkdir -p ~/.config/ijaro
+umask 077
 [ -f ~/.config/ijaro/config.json ] || echo '{}' > ~/.config/ijaro/config.json
-jq --slurpfile p /tmp/ijaro-plan.json --arg url "$IJARO_URL" \
+jq --slurpfile p ~/.config/ijaro/new-plan.json --arg url "$IJARO_URL" \
   '.url = $url | .plans[$p[0].plan.id] = {token: $p[0].token, ticker: $p[0].plan.target.ticker}' \
-  ~/.config/ijaro/config.json > /tmp/ijaro-config.json \
-  && mv /tmp/ijaro-config.json ~/.config/ijaro/config.json && chmod 600 ~/.config/ijaro/config.json \
-  && rm /tmp/ijaro-plan.json
+  ~/.config/ijaro/config.json > ~/.config/ijaro/config.json.new \
+  && mv ~/.config/ijaro/config.json.new ~/.config/ijaro/config.json \
+  && chmod 600 ~/.config/ijaro/config.json && rm ~/.config/ijaro/new-plan.json
 ```
 
    Tell the user the plan id and where the token is stored; never show the token.

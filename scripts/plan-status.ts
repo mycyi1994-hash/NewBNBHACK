@@ -1,30 +1,59 @@
 /**
- * pnpm plan:status                                   — list plans
- * pnpm plan:status --plan <id> --activate            — let the scheduler run it
- * pnpm plan:status --plan <id> --pause [--reason r]  — stop the scheduler from running it
+ * pnpm plan:status                                     — list plans
+ * pnpm plan:status --plan <id> --activate              — let the scheduler run it
+ * pnpm plan:status --plan <id> --pause [--reason <r>]  — stop the scheduler from running it
  *
- * Activating a plan while EXECUTION_MODE=live lets the worker spend for it on its own schedule
- * (within the caps), so it asks for a typed `y` first. A yield plan cannot be activated without
- * principal on record (the database refuses it). A due time in the past moves to the next regular
- * open + 2 minutes.
+ * Activating a plan lets a live worker spend for it on its own schedule (within the caps), so it
+ * asks for a typed `y` first when EXECUTION_MODE=live here or when the worker's last recorded tick
+ * ran live (worker_status 'tick': the worker's mode, not this shell's, decides what it signs). A
+ * yield plan cannot be activated without principal on record (the database refuses it). A due time
+ * in the past moves to the next regular open + 2 minutes. Any other mix of flags prints the usage
+ * line (exit 2).
  */
 import { loadConfig } from '@ijaro/config';
 import { nextRegularOpen, OPEN_SETTLE_MS } from '@ijaro/core';
-import { createDb, getPlan, listPlans, migrateDb, planFromRow, updatePlan } from '@ijaro/db';
+import {
+  createDb,
+  getPlan,
+  listPlans,
+  migrateDb,
+  planFromRow,
+  readWorkerStatus,
+  updatePlan,
+} from '@ijaro/db';
+import { parseFlags, type Flags } from './args.js';
 import { confirmSpend } from './confirm.js';
+import { liveActivationReasons } from './operator-rules.js';
 
-const args = process.argv.slice(2).filter((a) => a !== '--');
-const valueOf = (flag: string) => {
-  const i = args.indexOf(flag);
-  return i >= 0 ? args[i + 1] : undefined;
-};
-const planId = valueOf('--plan');
+/** A list, an activation or a pause; any other mix of flags is a usage error. */
+function misuse({ values, switches }: Flags<'plan' | 'reason', 'activate' | 'pause', never>) {
+  if (values.plan === undefined) {
+    return switches.activate || switches.pause || values.reason !== undefined
+      ? '--activate, --pause and --reason need --plan <id>'
+      : undefined;
+  }
+  if (switches.activate === switches.pause) return '--plan <id> takes --activate or --pause';
+  if (values.reason !== undefined && !switches.pause) return '--reason goes with --pause';
+  return undefined;
+}
+
+const flags = parseFlags(process.argv.slice(2), {
+  values: ['plan', 'reason'],
+  switches: ['activate', 'pause'],
+});
+const problem = flags.ok ? misuse(flags) : flags.error;
 const config = loadConfig();
 
-if (!config.databaseUrl) {
+if (!flags.ok || problem !== undefined) {
+  console.log(
+    `${problem}\nusage: pnpm plan:status [--plan <id> --activate | --plan <id> --pause [--reason <text>]]`,
+  );
+  process.exitCode = 2;
+} else if (!config.databaseUrl) {
   console.log('UNAVAILABLE: no DATABASE_URL');
   process.exitCode = 3;
 } else {
+  const { plan: planId, reason } = flags.values;
   const { db, close } = createDb(config.databaseUrl);
   try {
     await migrateDb(db);
@@ -40,7 +69,7 @@ if (!config.databaseUrl) {
       const row = await getPlan(db, planId);
       if (!row) throw new Error(`plan ${planId} not found`);
       const plan = planFromRow(row);
-      if (args.includes('--activate')) {
+      if (flags.switches.activate) {
         const now = new Date();
         const nextDueAt =
           Date.parse(plan.nextDueAt) < now.getTime()
@@ -50,10 +79,14 @@ if (!config.databaseUrl) {
           `${plan.id}: ${plan.mode} ${plan.target.type === 'ticker' ? plan.target.ticker : ''}, ` +
           `$${plan.contributionUsd} ${plan.cadence}, per buy ≤ $${plan.limits.maxPerBuyUsd}, per day ≤ $${plan.limits.maxDailyUsd}, ` +
           `principal $${plan.principalUsd}; first due ${nextDueAt}`;
+        const live = liveActivationReasons(
+          config.executionMode,
+          await readWorkerStatus(db, 'tick'),
+        );
         const ok =
-          config.executionMode !== 'live' ||
+          live.length === 0 ||
           (await confirmSpend(
-            `ACTIVATE with EXECUTION_MODE=live — the worker will spend on schedule: ${summary}.`,
+            `ACTIVATE (${live.join('; ')}) — a live worker spends on schedule: ${summary}.`,
           ));
         if (!ok) {
           console.log('not activated');
@@ -70,15 +103,12 @@ if (!config.databaseUrl) {
             process.exitCode = 1;
           }
         }
-      } else if (args.includes('--pause')) {
+      } else {
         await updatePlan(db, plan.id, {
           status: 'paused',
-          pausedReason: valueOf('--reason') ?? 'paused_by_operator',
+          pausedReason: reason ?? 'paused_by_operator',
         });
         console.log(`paused ${plan.id}`);
-      } else {
-        console.log('usage: pnpm plan:status [--plan <id> --activate | --pause [--reason text]]');
-        process.exitCode = 2;
       }
     }
   } finally {
