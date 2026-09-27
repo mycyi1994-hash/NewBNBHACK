@@ -1,7 +1,14 @@
 import { houseRedactions, type ChainPort, type CycleReport, type SimulatedBuy } from '@ijaro/agent';
 import { BSC_USDT } from '@ijaro/chain';
 import { describe, expect, it } from 'vitest';
-import { cycleReportText, liveActivationReasons, watchAllowances } from './operator-rules.js';
+import {
+  buyProblem,
+  cycleExitCode,
+  cycleReportText,
+  depositProblem,
+  liveActivationReasons,
+  watchAllowances,
+} from './operator-rules.js';
 
 const HOUSE = '0x00000000000000000000000000000000000a11ce';
 const REDACT = houseRedactions(HOUSE);
@@ -156,5 +163,89 @@ describe('cycleReportText (cycle:once)', () => {
     expect(cycleReportText({ status: 'locked', planId: 'H-SAFE' }, context)).toBe(
       'not started: locked',
     );
+  });
+});
+
+describe('exit codes and dry-run verdicts (audit S11)', () => {
+  const buy: SimulatedBuy = {
+    instrumentId: 'NVDA:bstocks',
+    spendUsd: '1',
+    expectedTokens: '4442430800471653',
+    expectedShares: '0.004442430800471653',
+    approval: 'simulated',
+    swapSimulation: { status: 'FAILED', failReason: 'transfer amount exceeds allowance' },
+    minReceive: '4420218646469295',
+  };
+  const planId = 'H-SAFE';
+  const done = (outcome: Extract<CycleReport, { status: 'done' }>['outcome']): CycleReport => ({
+    status: 'done',
+    planId,
+    cycleId: 1,
+    outcome,
+    why: { key: 'why.failed.simulation', params: {} },
+    txHashes: [],
+  });
+
+  it('passes a dry-run buy whose only failure is the approval a simulation cannot hold', () => {
+    expect(buyProblem(buy)).toBeUndefined();
+    expect(cycleExitCode({ status: 'simulated', planId, cycleId: 1, buy })).toBe(0);
+    const covered = {
+      ...buy,
+      approval: 'existing_allowance' as const,
+      swapSimulation: { status: 'SUCCESS', failReason: '' },
+    };
+    expect(buyProblem(covered)).toBeUndefined();
+  });
+
+  it('fails a dry-run buy the live run would stop at the same simulation', () => {
+    const covered = { ...buy, approval: 'existing_allowance' as const };
+    expect(buyProblem(covered)).toBe(
+      'the swap simulation is FAILED although the allowance already covers the spend',
+    );
+    expect(cycleExitCode({ status: 'simulated', planId, cycleId: 1, buy: covered })).toBe(1);
+    const redeem = { ...buy, redeem: { status: 'FAILED', failReason: 'x', vTokens: '1' } };
+    expect(buyProblem(redeem)).toBe('the redeem simulation is FAILED');
+  });
+
+  it('exits 1 on FAILED, review, outbox_busy, locked and stopped; 0 when it ran or chose not to buy', () => {
+    const failed = done({ kind: 'FAILED', code: 'SIM_SWAP', message: 'x', fundsMoved: 'none' });
+    expect(cycleExitCode(failed)).toBe(1);
+    expect(cycleExitCode({ status: 'review', planId, cycleId: 1, message: 'x' })).toBe(1);
+    expect(cycleExitCode({ status: 'outbox_busy', planId, pending: ['0x1'] })).toBe(1);
+    expect(cycleExitCode({ status: 'locked', planId })).toBe(1);
+    expect(cycleExitCode({ status: 'stopped', planId })).toBe(1);
+    expect(cycleExitCode(done({ kind: 'SKIPPED', reason: 'daily_cap' }))).toBe(0);
+    expect(
+      cycleExitCode(
+        done({ kind: 'DEFERRED', reason: 'market_closed', retryAt: '2026-09-28T13:32:00.000Z' }),
+      ),
+    ).toBe(0);
+    expect(cycleExitCode({ status: 'awaiting_tx', planId, cycleId: 1, txHash: '0x2' })).toBe(0);
+  });
+
+  it('fails a deposit dry run on a build or check failure, not on the expected mint FAILED', () => {
+    const sim = (status: 'SUCCESS' | 'FAILED') => ({
+      status,
+      failReason: '',
+      balanceChanges: [],
+      allowanceChanges: [],
+    });
+    expect(
+      depositProblem({
+        kind: 'failed',
+        code: 'DEFI_WRONG_AMOUNT',
+        message: 'DEPOSIT is mint(2)',
+        fundsMoved: 'none',
+      }),
+    ).toBe('DEFI_WRONG_AMOUNT: DEPOSIT is mint(2)');
+    expect(
+      depositProblem({ kind: 'simulated', approve: sim('SUCCESS'), deposit: sim('FAILED') }),
+    ).toBeUndefined();
+    expect(
+      depositProblem({ kind: 'simulated', approve: 'existing_allowance', deposit: sim('SUCCESS') }),
+    ).toBeUndefined();
+    expect(
+      depositProblem({ kind: 'simulated', approve: 'existing_allowance', deposit: sim('FAILED') }),
+    ).toBe('the deposit simulation is FAILED although the allowance already covers the amount');
   });
 });

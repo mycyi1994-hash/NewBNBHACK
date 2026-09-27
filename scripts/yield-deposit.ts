@@ -6,8 +6,9 @@
  *
  * The principal cap (config) bounds the plan's total principal. Without --live everything up to
  * the simulations is real and nothing is signed. --live needs EXECUTION_MODE=live, the house key
- * and a typed `y`. The plan's principal and vTokens are written from the confirmed receipt only,
- * once per transaction hash.
+ * and a typed `y`, and a dry run that did not fail (a FAILED mint simulation after a simulated
+ * approval is expected and does not count). The plan's principal and vTokens are written from the
+ * confirmed receipt only, once per transaction hash. Exit: 0 done · 1 failed or refused · 2 usage.
  */
 import {
   createRuntime,
@@ -25,6 +26,7 @@ import { applyDeposit, getPlan, migrateDb, openGuardianActions, planFromRow } fr
 import type { Hex } from 'viem';
 import { parseFlags, TX_HASH, type Flags } from './args.js';
 import { confirmSpend } from './confirm.js';
+import { depositProblem } from './operator-rules.js';
 
 /** A deposit (--usd, maybe --live) or a record (--record); any other mix is a usage error. */
 function misuse({ values }: Flags<'plan' | 'usd' | 'record', 'live', 'plan'>) {
@@ -136,8 +138,15 @@ if (!flags.ok || problem !== undefined) {
           '(expected: the exact approval is not on chain in a simulation, so mint() cannot pull USDT yet)',
         );
       }
+      const failure = depositProblem(dry);
+      if (failure) {
+        console.log(maskHouse(`dry run failed: ${failure}`, rt.redact));
+        process.exitCode = 1;
+      }
       if (live) {
-        if (config.executionMode !== 'live' || !config.houseWalletPrivateKey) {
+        if (failure) {
+          console.log('live: refused — the dry run failed; nothing signed');
+        } else if (config.executionMode !== 'live' || !config.houseWalletPrivateKey) {
           console.log('live: refused — needs EXECUTION_MODE=live and HOUSE_WALLET_PRIVATE_KEY');
           process.exitCode = 1;
         } else if (
@@ -173,7 +182,7 @@ if (!flags.ok || problem !== undefined) {
               `pending: ${result.txHash}; once mined run: pnpm yield:deposit --plan ${planId} --record ${result.txHash}`,
             );
           } else {
-            console.log(`not deposited: ${JSON.stringify(result)}`);
+            console.log(maskHouse(`not deposited: ${JSON.stringify(result)}`, rt.redact));
             process.exitCode = 1;
           }
         } else {

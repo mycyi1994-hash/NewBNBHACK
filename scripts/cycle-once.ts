@@ -7,13 +7,22 @@
  * registry, the USDT it pays with, the spender the exact approval names) and the simulation
  * results; then the run needs EXECUTION_MODE=live, the house key, and a typed `y`. The plan's
  * schedule is left alone either way (a manual run); caps and the spend ledger apply as always.
+ * A dry run whose simulation fails for a reason the live run would share asks for no `y`.
+ * Exit: 0 the cycle ran (bought, simulated, sent and awaiting its receipt, or chose not to buy) ·
+ * 1 FAILED, needs review, not started (outbox busy, locked, stopped) or refused · 2 usage.
  */
 import { createRuntime, discoverVenusUsdt, executorDeps, runCycle } from '@ijaro/agent';
 import { loadConfig } from '@ijaro/config';
 import { getPlan, instrumentFromRow, listInstruments, migrateDb, planFromRow } from '@ijaro/db';
 import { parseFlags } from './args.js';
 import { confirmSpend } from './confirm.js';
-import { cycleReportText, watchAllowances, type CycleContext } from './operator-rules.js';
+import {
+  buyProblem,
+  cycleExitCode,
+  cycleReportText,
+  watchAllowances,
+  type CycleContext,
+} from './operator-rules.js';
 
 const flags = parseFlags(process.argv.slice(2), {
   values: ['plan'],
@@ -55,10 +64,17 @@ if (!flags.ok) {
       redact: rt.redact,
     };
     console.log(cycleReportText(dry, context));
+    const problem = dry.status === 'simulated' ? buyProblem(dry.buy) : undefined;
+    if (problem) console.log(`dry run: ${problem}; a live run would stop at the same simulation`);
+    process.exitCode = cycleExitCode(dry);
 
     if (live) {
       if (dry.status !== 'simulated') {
         console.log('live: nothing to execute (the simulation did not reach a buy)');
+      } else if (problem) {
+        console.log(
+          'live: refused — the dry run does not pass the simulation gate; nothing signed',
+        );
       } else if (config.executionMode !== 'live' || !config.houseWalletPrivateKey) {
         console.log('live: refused — needs EXECUTION_MODE=live and HOUSE_WALLET_PRIVATE_KEY');
         process.exitCode = 1;
@@ -71,7 +87,9 @@ if (!flags.ok) {
       ) {
         const deps = executorDeps(rt, 'live');
         if (plan.mode === 'yield') deps.venus = simulate.venus;
-        console.log(cycleReportText(await runCycle(deps, plan.id, { manual: true }), context));
+        const report = await runCycle(deps, plan.id, { manual: true });
+        console.log(cycleReportText(report, context));
+        process.exitCode = cycleExitCode(report);
       } else {
         console.log('live: not confirmed — nothing signed');
       }

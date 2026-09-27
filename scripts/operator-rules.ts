@@ -2,7 +2,13 @@
  * The decisions the operator scripts print and exit on, as pure functions (operator-rules.test.ts).
  * The scripts do the I/O.
  */
-import { maskHouse, type ChainPort, type CycleReport } from '@ijaro/agent';
+import {
+  maskHouse,
+  type ChainPort,
+  type CycleReport,
+  type DepositResult,
+  type SimulatedBuy,
+} from '@ijaro/agent';
 import { BSC_USDT } from '@ijaro/chain';
 import { formatShares, toUnits, type Instrument } from '@ijaro/core';
 
@@ -123,4 +129,59 @@ export function cycleReportText(report: CycleReport, context: CycleContext): str
       lines = [`not started: ${report.status}`];
   }
   return maskHouse(lines.filter(Boolean).join('\n'), context.redact);
+}
+
+/**
+ * Why a dry-run buy would not pass the live run's simulation gate (audit S11), or undefined. A
+ * FAILED swap simulation after a simulated approval is expected (the approval is not on chain in
+ * a simulation, Q-05); after an allowance that already covers the spend it is not, and neither is
+ * a FAILED redeem. The live run would stop at the same simulation (after signing a yield plan's
+ * redeem, for a swap), so nothing is gained by asking for `y`.
+ */
+export function buyProblem(buy: SimulatedBuy): string | undefined {
+  if (buy.redeem && buy.redeem.status !== 'SUCCESS') {
+    return `the redeem simulation is ${buy.redeem.status}`;
+  }
+  if (buy.approval === 'existing_allowance' && buy.swapSimulation.status !== 'SUCCESS') {
+    return `the swap simulation is ${buy.swapSimulation.status} although the allowance already covers the spend`;
+  }
+  return undefined;
+}
+
+/**
+ * cycle:once's exit code (audit S11). 0: the cycle ran as asked — bought, simulated a buy that can
+ * pass, sent and waiting for its receipt (the worker completes it), or decided not to buy
+ * (SKIPPED, DEFERRED). 1: it FAILED, needs review, did not start (outbox busy, locked, stopped)
+ * or its dry run would not pass the simulation gate.
+ */
+export function cycleExitCode(report: CycleReport): 0 | 1 {
+  switch (report.status) {
+    case 'simulated':
+      return buyProblem(report.buy) === undefined ? 0 : 1;
+    case 'done':
+      return report.outcome.kind === 'FAILED' ? 1 : 0;
+    case 'awaiting_tx':
+      return 0;
+    default:
+      return 1;
+  }
+}
+
+/**
+ * Why a deposit dry run failed (audit S11), or undefined. A build or calldata check that refused
+ * (kind 'failed') fails it. A FAILED deposit simulation after a simulated approval is expected
+ * (mint() cannot pull USDT the simulation never approved); after an allowance that already covers
+ * the amount it is not — the live run refuses to sign it (SIM_DEPOSIT) and has no approval to send.
+ */
+export function depositProblem(dry: DepositResult): string | undefined {
+  switch (dry.kind) {
+    case 'failed':
+      return `${dry.code}: ${dry.message}`;
+    case 'simulated':
+      return dry.approve === 'existing_allowance' && dry.deposit.status !== 'SUCCESS'
+        ? `the deposit simulation is ${dry.deposit.status} although the allowance already covers the amount`
+        : undefined;
+    default:
+      return `a dry run came back ${dry.kind}`;
+  }
 }
