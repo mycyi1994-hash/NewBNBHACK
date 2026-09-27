@@ -1,11 +1,11 @@
 /**
  * Global header of the approved design: the Yieldvest mark and wordmark, "Built on" the BNB Chain
- * logo (a human decision, DECISIONS D-25), the four tabs and the KO/EN toggle. The market and data
- * states sit in each page's toolbar, next to the title they describe.
+ * logo (a human decision, DECISIONS D-25) and the four tabs. English only (D-26). The market and
+ * data states sit in each page's toolbar, next to the title they describe.
  */
 import Image from 'next/image';
 import Link from 'next/link';
-import type { Lang, T } from '../lib/i18n/translate';
+import type { T } from '../lib/i18n/translate';
 import { YieldvestMark } from './Icon';
 import { LocaleSync } from './LocaleSync';
 import { Nav, type TabId } from './Nav';
@@ -19,7 +19,7 @@ export function tabLabels(t: T): Record<TabId, string> {
   };
 }
 
-export function Header({ t, lang, tz }: { t: T; lang: Lang; tz: string }) {
+export function Header({ t, tz }: { t: T; tz: string }) {
   return (
     <header className="app-header">
       <Link className="brand-lockup" href="/" aria-label={t('brand.home')}>
@@ -42,7 +42,7 @@ export function Header({ t, lang, tz }: { t: T; lang: Lang; tz: string }) {
       </Link>
       <div className="header-end">
         <Nav labels={tabLabels(t)} ariaLabel={t('nav.main')} />
-        <LocaleSync lang={lang} tz={tz} label={t('lang.label')} />
+        <LocaleSync tz={tz} />
       </div>
     </header>
   );

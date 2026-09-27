@@ -2,6 +2,8 @@
 
 작성: 강민서. 규칙: 모든 UI 문자열은 이 문서의 키를 쓴다. 새 문구가 필요하면 여기에 먼저 추가한다. `pnpm lint:copy`가 §6 금지어를 검사한다.
 
+> **9/27 사람 결정(DECISIONS D-26): 웹 화면은 영어만 쓴다.** 형식(`키`: KR / EN)과 키는 그대로 두지만 화면에는 EN 열만 나온다. 한국어 열은 참고용이며 확정 대상이 아니다.
+
 ## 1. 원칙
 1. 크립토를 모르는 사람이 읽는다. 용어는 §2 치환표대로.
 2. 한 화면에 결정 하나. 버튼은 동사로.
@@ -316,7 +318,7 @@
 - `dx.session.holiday`: 휴장일 / Holiday
 
 ### 7.6 승인된 새 디자인 (frontend-preview → apps/web, DECISIONS D-25)
-> 작성: 코딩 에이전트(9/27). 사용자가 승인한 영어 디자인(`frontend-preview/`)을 실제 앱에 옮기며 추가한 키다. **영어는 승인된 미리보기 문구를 그대로 옮긴 것이 원칙**이다(탭 이름, "See where your interest goes.", "Small interest. Next investment.", "Every step, accounted for.", "Interest becomes ownership", 흐름도·영수증·진행 막대 라벨 등). 미리보기가 예시용으로만 쓴 문구("Illustrative demo", "Sample receipt" 등)는 실제 데이터용 문구로 바꿨고, 미리보기에 없던 상태(불러올 수 없음, 체험 한도, 실행 기록 단계)는 에이전트가 새로 썼다. **한국어는 전부 에이전트 초안**이다. 사람이 검토·수정해 확정할 때까지 초안이다.
+> 작성: 코딩 에이전트(9/27). 사용자가 승인한 영어 디자인(`frontend-preview/`)을 실제 앱에 옮기며 추가한 키다. **영어는 승인된 미리보기 문구를 그대로 옮긴 것이 원칙**이다(탭 이름, "See where your interest goes.", "Small interest. Next investment.", "Every step, accounted for.", "Interest becomes ownership", 흐름도·영수증·진행 막대 라벨 등). 미리보기가 예시용으로만 쓴 문구("Illustrative demo", "Sample receipt" 등)는 실제 데이터용 문구로 바꿨고, 미리보기에 없던 상태(불러올 수 없음, 체험 한도, 실행 기록 단계)는 에이전트가 새로 썼다. 한국어 열은 에이전트 초안이며, D-26(영어만)에 따라 화면에는 쓰지 않는다.
 
 - `brand.tagline`: 이자가 주식이 돼요 / Interest becomes ownership
 - `brand.home`: Yieldvest 홈 / Yieldvest overview · `brand.built_on`: 기반 체인 / Built on

@@ -65,7 +65,7 @@ skills/yieldvest    Wallet Skill (SKILL.md + references)
 - 정확 금액 승인만, 서명 전 calldata 해독·검증(스왑은 승인한 라우터만 호출), **시뮬레이션 SUCCESS 없이는 서명 없음**, 3분 안에 영수증이 없으면 아웃박스 PENDING으로 새 서명 차단. 체인에서 확정된 효과는 영수증과 한 트랜잭션으로 정확히 한 번 기록 — 결과가 불분명하면 추측하지 않고 사람에게 묻는다([DECISIONS D-23](docs/DECISIONS.md)).
 - 지킴이: Venus 일시정지·TVL 24시간 −30%·이용률 95%·USDT 0.99 30분 → 매수 중단/전액 상환(live에서 시뮬레이션 통과 시에만).
 - 모든 데이터 블록은 실시간 / n분 전 / 불러올 수 없음(이유) 중 하나. 없는 숫자를 만들지 않습니다.
-- CSP(요청마다 nonce), HSTS, 화면 375px 가로 스크롤 없음·KO/EN(`pnpm ui:check`).
+- CSP(요청마다 nonce), HSTS, 화면 375px 가로 스크롤 없음·영어만(D-26)(`pnpm ui:check`).
 
 ## 위험
 
@@ -95,7 +95,7 @@ pnpm smoke --url http://localhost:3000     # /api/judge/smoke
 | [`docs/TASKS.md`](docs/TASKS.md) | 티켓과 증거 |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | 잠긴 결정·열린 질문 |
 | [`docs/DX_PROTOCOL.md`](docs/DX_PROTOCOL.md) · [`dx/LOG.md`](dx/LOG.md) | 개발자 경험 증거 |
-| [`docs/UX_COPY.md`](docs/UX_COPY.md) | 화면 문구 KR/EN(§7은 사람 확정 전 초안) |
+| [`docs/UX_COPY.md`](docs/UX_COPY.md) | 화면 문구(화면은 EN 열만, D-26) |
 | [`docs/SECURITY.md`](docs/SECURITY.md) · [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | 보안 점검·운영 |
 | [`CLAUDE.md`](CLAUDE.md) · [`docs/GOALS.md`](docs/GOALS.md) | 코딩 에이전트 운영 규칙·골 |
 

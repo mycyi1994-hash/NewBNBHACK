@@ -34,7 +34,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             {t('common.skip')}
           </a>
           <div className="app-shell">
-            <Header t={t} lang={lang} tz={tz} />
+            <Header t={t} tz={tz} />
             <main id="main" tabIndex={-1}>
               <PageMotion>{children}</PageMotion>
             </main>

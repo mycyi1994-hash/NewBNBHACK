@@ -85,7 +85,7 @@
 
 - 워커: `fly deploy -a yieldvest-agent`(Dockerfile은 `.env*`가 있으면 빌드 실패). 배포 뒤 로그로 설정 검증 줄 확인.
 - 웹: Vercel(`apps/web`, 빌드 `pnpm --filter @yieldvest/web build`). env: `DATABASE_URL`, `SESSION_SECRET`(32자 이상), `JUDGE_CODES`, `NEXT_PUBLIC_APP_URL`. 웹에는 하우스 키·API 키를 두지 않는다.
-- 배포 뒤 반드시: `pnpm smoke --url https://<웹>`, `pnpm ui:check --url https://<웹>`(375/1440px, KO/EN, CSP 위반 없음).
+- 배포 뒤 반드시: `pnpm smoke --url https://<웹>`, `pnpm ui:check --url https://<웹>`(375/1440px, 영어만, CSP 위반 없음).
 - 10/9 이후: 핫픽스만.
 
 ## 6.1 이름 변경 이전 (D-24, 한 번만)
@@ -105,7 +105,7 @@
 | 명령 | 용도 |
 | --- | --- |
 | `pnpm smoke [--url] [--strict] [--alert]` | 심사 의존 항목 한 번에 확인 |
-| `pnpm ui:check [--url] [--out dir]` | 화면 7개 × KO/EN × 375/1440px, 가로 스크롤·페이지 오류·CSP 위반 |
+| `pnpm ui:check [--url] [--out dir]` | 화면 9개 × 한국어·미국 브라우저 × 375/1440px, 가로 스크롤·페이지 오류·CSP 위반·영어 아님(D-26) |
 | `pnpm plan:status [--plan id --activate/--pause]` | 플랜 목록·켜기·끄기 |
 | `pnpm plan:set --plan <id> [--contribution] [--per-buy] [--daily] [--cadence] [--window]` | 하우스 플랜 금액·주기를 캡 안에서 바꾼다(켜진 플랜은 `y`) |
 | `pnpm live:check [--usd 1]` | 실거래 전 점검(읽기 전용, Web3 API 호출 없음) → GO / NO-GO |

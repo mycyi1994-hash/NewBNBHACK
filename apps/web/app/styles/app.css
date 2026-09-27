@@ -39,39 +39,12 @@ code {
   white-space: nowrap;
 }
 
-/* Header: the tabs and the KO/EN toggle share the right side. */
+/* Header: the tabs on the right. */
 .header-end {
   display: flex;
   align-items: center;
   gap: 34px;
   height: 100%;
-}
-
-.lang-toggle {
-  display: inline-flex;
-  flex-shrink: 0;
-  overflow: hidden;
-  border: 1px solid #343b42;
-  border-radius: 99px;
-  background: #151a1f;
-}
-
-.lang-toggle button {
-  min-height: 30px;
-  padding: 4px 11px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 560;
-}
-
-.lang-toggle button[aria-pressed='true'] {
-  background: var(--yellow);
-  color: #111;
-}
-
-.lang-toggle button:hover:not([aria-pressed='true']) {
-  color: var(--text);
 }
 
 /* Toolbar: the title, then the market and data states, the motion control and the CTA. */
@@ -1345,28 +1318,6 @@ a.button {
 }
 
 @media (max-width: 450px) {
-  .app-header {
-    gap: 12px;
-  }
-
-  .header-end {
-    gap: 10px;
-  }
-
-  .lang-toggle button {
-    min-height: 28px;
-    padding: 3px 8px;
-    font-size: 11px;
-  }
-
-  .brand-lockup {
-    gap: 11px;
-  }
-
-  .chain-lockup img {
-    width: 92px;
-  }
-
   .flow-node.source {
     left: 13%;
   }
@@ -1378,12 +1329,6 @@ a.button {
   .flow-label strong small {
     display: block;
     font-size: 11px;
-  }
-}
-
-@media (max-width: 360px) {
-  .chain-lockup img {
-    width: 84px;
   }
 }
 
