@@ -23,10 +23,11 @@ BNB Hack: Tokenized Stocks Edition 출품작. 빌드 9/23 → 내부 제출 10/9
 
 | 모듈 | 이자로에서 쓰는 곳 | 상태 |
 | --- | --- | --- |
-| RWA Data API | 토큰 목록(주소·배수·상태 코드·다음 개장), RWA 가격, 미국 주가 — 레지스트리·테이프·결정 | 사용 중(프랑크푸르트 워커, 테이프 10분) |
+| RWA Data API | 토큰 목록(주소·배수·상태 코드·다음 개장), RWA 가격 — 레지스트리·테이프·결정 | 사용 중(프랑크푸르트 워커, 테이프 10분) |
+| 공개 bapi RWA Dynamic V2 (Web3 API 밖) | 미국 주가(`stockInfo.price`, 장외 null) — 괴리 계산·테이프. 키 없는 공개 엔드포인트, 문서는 Skills Hub `binance-tokenized-securities-info`뿐 | 사용 중(`apps/agent/src/stock-price.ts`) |
 | Market API | USDT 가격(디페그 지킴이) | 코드 완료 |
 | Trading API | 견적(가격영향·경로), 정확 금액 승인 calldata, 스왑 calldata | 견적 사용 중(테이프), 서명 경로는 live 대기 |
-| Transaction API | 모든 서명 전 시뮬레이션, 브로드캐스트(RPC 대체 경로), 상태 조회 | 코드 완료, live 대기 |
+| Transaction API | 모든 서명 전 시뮬레이션, 가스 한도 추정, 브로드캐스트(RPC 대체 경로) | 코드 완료, live 대기. 상태 조회(transaction-detail)는 쓰지 않음: 영수증은 BSC RPC로 확인 |
 | DeFi API | Venus USDT 투자·APY(`apyDisplay`), TVL·보안 점수(지킴이·위험 고지), 예치·상환 calldata | 코드 완료 |
 | Wallet API | — (하우스 잔고는 BSC RPC로 읽음) | 미사용 |
 | Agentic Wallet / Wallet Skills | `skills/ijaro`: 서버는 `/next`로 `baw` 명령만, 서명은 사용자 기기, `/report`는 체인 확인 | 코드·문서 완료, 실제 실행 데모는 사람(M2-09) |
