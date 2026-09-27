@@ -1,4 +1,6 @@
-# Yieldvest — Interest buys the stock. Principal stays.
+# Yieldvest — Interest becomes ownership.
+
+**프론트 디자인 / Frontend design:** 승인된 BNB 스타일 UI와 Yieldvest 로고는 [frontend-preview](frontend-preview/README.md)에 있습니다. Claude 및 다른 개발자는 먼저 [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md)를 읽으세요. 별도 React/Vite 미리보기이며 기존 apps/web과 아직 연결되지 않았습니다.
 
 > **EN, one line:** an agent that keeps your principal in a USDT savings pool (Venus on BNB Smart Chain) and buys tokenized US stocks (bStocks / Ondo) with the interest — or a fixed amount in safe mode — **only during the US regular session**, under hard caps, with an on-chain receipt and a one-sentence reason for every action.
 

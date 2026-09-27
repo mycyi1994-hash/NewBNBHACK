@@ -8,3 +8,5 @@ packages/db/drizzle/
 **/.next/
 **/next-env.d.ts
 .claude/worktrees/
+# Standalone Vite design preview is checked by its own build/test job.
+frontend-preview/
