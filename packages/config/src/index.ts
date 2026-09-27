@@ -118,6 +118,14 @@ export const envSchema = z
     if (env.MIN_BUY_USD > env.SANDBOX_MAX_PER_PLAN_USD) {
       fail('MIN_BUY_USD', 'must not exceed SANDBOX_MAX_PER_PLAN_USD (no sandbox buy could run)');
     }
+    // Judge plans are signed by the house wallet with the sandbox cap as their per-buy cap, so a
+    // sandbox cap above the house cap would let one house transaction exceed HOUSE_MAX_PER_TX_USD.
+    if (env.SANDBOX_MAX_PER_PLAN_USD > env.HOUSE_MAX_PER_TX_USD) {
+      fail(
+        'SANDBOX_MAX_PER_PLAN_USD',
+        'must not exceed HOUSE_MAX_PER_TX_USD (judge plans are signed by the house wallet)',
+      );
+    }
     if (env.HOUSE_MAX_PER_TX_USD > env.DAILY_SPEND_CAP_USD) {
       fail('HOUSE_MAX_PER_TX_USD', 'must not exceed DAILY_SPEND_CAP_USD');
     }

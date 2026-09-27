@@ -102,6 +102,23 @@ describe('caps', () => {
     );
   });
 
+  it('rejects a sandbox plan cap above the house per-transaction cap (the house signs judge buys)', () => {
+    const error = errorOf(() =>
+      parseConfig({ SANDBOX_MAX_PER_PLAN_USD: '30', HOUSE_MAX_PER_TX_USD: '25' }),
+    );
+    expect(error.issues).toEqual([
+      'SANDBOX_MAX_PER_PLAN_USD must not exceed HOUSE_MAX_PER_TX_USD (judge plans are signed by the house wallet)',
+    ]);
+    // Equal is fine: a judge buy may use the whole house per-transaction cap.
+    expect(
+      parseConfig({ SANDBOX_MAX_PER_PLAN_USD: '25', HOUSE_MAX_PER_TX_USD: '25' }).caps,
+    ).toMatchObject({ sandboxMaxPerPlanUsd: 25, houseMaxPerTxUsd: 25 });
+    // Lowering the house cap alone below the default sandbox cap ($5) is caught too.
+    expect(errorOf(() => parseConfig({ HOUSE_MAX_PER_TX_USD: '4' })).issues).toContain(
+      'SANDBOX_MAX_PER_PLAN_USD must not exceed HOUSE_MAX_PER_TX_USD (judge plans are signed by the house wallet)',
+    );
+  });
+
   it('rejects a per-transaction cap above the daily cap', () => {
     const error = errorOf(() => parseConfig({ HOUSE_MAX_PER_TX_USD: '60' }));
     expect(error.issues.join('\n')).toContain(
