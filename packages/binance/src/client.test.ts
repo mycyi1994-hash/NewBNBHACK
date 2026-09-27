@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BinanceClient } from './client.js';
+import { BinanceClient, describeFailure } from './client.js';
 import { broadcastSigned } from './endpoints.js';
 import { BinanceApiError } from './errors.js';
 import { createFixtureRecorder, type FixtureRecorder } from './fixtures.js';
@@ -101,6 +101,48 @@ function verifySignature(request: Sent) {
   );
   expect(request.headers['x-oc-sign']).toBe(expected);
 }
+
+describe('describeFailure', () => {
+  const failed = (cause?: unknown) =>
+    new TypeError('fetch failed', cause === undefined ? {} : { cause });
+  const coded = (message: string, code: string) => Object.assign(new Error(message), { code });
+
+  it('appends the cause of "fetch failed", with its code when the message lacks it', () => {
+    expect(
+      describeFailure(failed(coded('getaddrinfo ENOTFOUND web3.binance.com', 'ENOTFOUND'))),
+    ).toBe('fetch failed (getaddrinfo ENOTFOUND web3.binance.com)');
+    expect(describeFailure(failed(coded('certificate has expired', 'CERT_HAS_EXPIRED')))).toBe(
+      'fetch failed (CERT_HAS_EXPIRED: certificate has expired)',
+    );
+    expect(describeFailure(failed(new Error('unexpected redirect')))).toBe(
+      'fetch failed (unexpected redirect)',
+    );
+  });
+
+  it('lists the attempts of an AggregateError (IPv6 and IPv4 both refused)', () => {
+    const both = Object.assign(
+      new AggregateError(
+        [
+          new Error('connect ECONNREFUSED ::1:443'),
+          new Error('connect ECONNREFUSED 127.0.0.1:443'),
+        ],
+        '',
+      ),
+      { code: 'ECONNREFUSED' },
+    );
+    expect(describeFailure(failed(both))).toBe(
+      'fetch failed (connect ECONNREFUSED ::1:443; connect ECONNREFUSED 127.0.0.1:443)',
+    );
+    const bare = Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' });
+    expect(describeFailure(failed(bare))).toBe('fetch failed (ECONNREFUSED)');
+  });
+
+  it('keeps plain failures as they are', () => {
+    expect(describeFailure(failed())).toBe('fetch failed');
+    expect(describeFailure(failed('socket hang up\nat …'))).toBe('fetch failed (socket hang up)');
+    expect(describeFailure('boom')).toBe('boom');
+  });
+});
 
 describe('BinanceClient.request', () => {
   it('signs exactly the path and query that go on the wire, with /build', async () => {
@@ -387,6 +429,35 @@ describe('BinanceClient.request', () => {
       }),
     ).rejects.toMatchObject({ kind: 'network', retryable: true });
     expect(records[0]).toMatchObject({ httpStatus: null, code: null, msg: 'fetch failed' });
+  });
+
+  it('says why a request got no response, and keeps the cause on the error', async () => {
+    // A port that was just freed: nothing listens there, so the connection is refused.
+    const probe = createServer();
+    const origin = await listen(probe);
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    const { client, records } = harness([], { baseUrl: `${origin}/build`, fetch });
+    const error = await client
+      .request('market', 'getSupportedChains', SUPPORTED_CHAINS)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ kind: 'network', retryable: true });
+    expect((error as BinanceApiError).cause).toBeInstanceOf(TypeError);
+    expect(records[0]!.msg).toMatch(/^fetch failed \(connect ECONNREFUSED 127\.0\.0\.1:\d+\)$/);
+  });
+
+  it('masks secrets that appear in a network failure cause', async () => {
+    const cause = Object.assign(new Error(`proxy refused key ${KEY} for ${WALLET}`), {
+      code: 'EPROXY',
+    });
+    const { client, records } = harness([new TypeError('fetch failed', { cause })]);
+    await expect(
+      client.request('market', 'getSupportedChains', SUPPORTED_CHAINS),
+    ).rejects.toMatchObject({
+      msg: 'fetch failed (EPROXY: proxy refused key [redacted] for 0x1111…1111)',
+    });
+    expect(records[0]!.msg).toBe(
+      'fetch failed (EPROXY: proxy refused key [redacted] for 0x1111…1111)',
+    );
   });
 
   it('masks keys and wallet addresses in api_calls.msg', async () => {

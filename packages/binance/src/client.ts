@@ -124,6 +124,33 @@ function headerInt(headers: Headers, name: string): number | null {
 }
 
 /**
+ * One line for a request that got no response. fetch() only says "fetch failed"; the reason —
+ * ECONNREFUSED, ENOTFOUND, a TLS error, a socket closed mid-body — is in its `cause`.
+ * Unmasked: the caller masks it for api_calls.msg.
+ */
+export function describeFailure(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause: unknown = error.cause;
+  if (cause === undefined || cause === null) return error.message;
+  const code =
+    typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string'
+      ? cause.code
+      : undefined;
+  // Happy-eyeballs failures arrive as an AggregateError with an empty message.
+  const text =
+    cause instanceof AggregateError && cause.message === ''
+      ? cause.errors.map((e) => (e instanceof Error ? e.message : String(e))).join('; ')
+      : cause instanceof Error
+        ? cause.message
+        : typeof cause === 'string'
+          ? cause
+          : '';
+  const line = (text.split('\n')[0] ?? '').trim();
+  const detail = code && !line.includes(code) ? (line ? `${code}: ${line}` : code) : line;
+  return detail ? `${error.message} (${detail.slice(0, 300)})` : error.message;
+}
+
+/**
  * The message for a redirect we did not follow (fetch runs with `redirect: 'manual'`), or
  * undefined for any other response. The Location goes into api_calls.msg, masked by the caller.
  */
@@ -168,7 +195,7 @@ export class BinanceClient {
       kind: ErrorKind,
       msg: string,
       extra: Partial<
-        Pick<BinanceApiErrorInit, 'httpStatus' | 'code' | 'requestId' | 'retryAfterMs'>
+        Pick<BinanceApiErrorInit, 'httpStatus' | 'code' | 'requestId' | 'retryAfterMs' | 'cause'>
       > = {},
     ) =>
       new BinanceApiError({
@@ -186,6 +213,7 @@ export class BinanceClient {
         }),
         requestId: extra.requestId ?? null,
         ...(extra.retryAfterMs === undefined ? {} : { retryAfterMs: extra.retryAfterMs }),
+        ...(extra.cause === undefined ? {} : { cause: extra.cause }),
       });
 
     if (signed && !this.hasCredentials) throw fail('config', 'no API key/secret configured');
@@ -240,10 +268,7 @@ export class BinanceClient {
       } catch (error) {
         const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
         const kind: ErrorKind = timedOut ? 'timeout' : 'network';
-        const msg = maskSensitive(
-          error instanceof Error ? error.message : String(error),
-          this.secrets,
-        );
+        const msg = maskSensitive(describeFailure(error), this.secrets);
         await this.record({
           ts: timestamp,
           module,
@@ -261,7 +286,7 @@ export class BinanceClient {
           await this.clock.sleep(retryBackoffMs(attempt));
           continue;
         }
-        throw fail(kind, msg);
+        throw fail(kind, msg, { cause: error });
       }
       const latencyMs = this.clock.now() - started;
       const redirect = refusedRedirect(response);
