@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -228,6 +229,36 @@ describe('secrets and modes', () => {
     const config = loadConfig({ envFile: EXAMPLE_PATH, env: { MIN_BUY_USD: '3' } });
     expect(config.caps.minBuyUsd).toBe(3);
     expect(config.caps.houseMaxPerTxUsd).toBe(25);
+  });
+
+  it('loadConfig never lets a blank real cap hide the cap in the .env file', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ijaro-config-'));
+    try {
+      const envFile = path.join(dir, '.env');
+      writeFileSync(
+        envFile,
+        'DAILY_SPEND_CAP_USD=10\nHOUSE_MAX_PER_TX_USD=5\nBINANCE_WEB3_API_KEY=key-from-file\n',
+      );
+      for (const blank of ['', '   ']) {
+        // Before: the blank variable won, counted as unset, and the default daily cap (50) applied.
+        const { caps } = loadConfig({
+          envFile,
+          env: { DAILY_SPEND_CAP_USD: blank, HOUSE_MAX_PER_TX_USD: blank },
+        });
+        expect([caps.dailySpendCapUsd, caps.houseMaxPerTxUsd]).toEqual([10, 5]);
+      }
+      // A real value still wins over the file.
+      expect(loadConfig({ envFile, env: { DAILY_SPEND_CAP_USD: '8' } }).caps.dailySpendCapUsd).toBe(
+        8,
+      );
+      // Everything else keeps "blank = unset": that is its safe side, and the web tests use it
+      // to keep a developer's keys out of the test process.
+      expect(
+        loadConfig({ envFile, env: { BINANCE_WEB3_API_KEY: '' } }).binance.apiKey,
+      ).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

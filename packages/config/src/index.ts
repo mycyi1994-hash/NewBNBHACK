@@ -276,7 +276,10 @@ export function findWorkspaceRoot(from: string = process.cwd()): string | undefi
 export interface LoadOptions {
   /** Path of a .env file, or false to skip. Default: `<workspace root>/.env` when it exists. */
   envFile?: string | false;
-  /** Defaults to process.env. Real environment variables win over the file, like dotenv. */
+  /**
+   * Defaults to process.env. Real environment variables win over the file, like dotenv — except
+   * a blank cap, which never hides the file's cap (see loadConfig).
+   */
   env?: EnvInput;
 }
 
@@ -286,7 +289,16 @@ export function loadConfig(options: LoadOptions = {}): Config {
       ? undefined
       : (options.envFile ?? path.join(findWorkspaceRoot() ?? process.cwd(), '.env'));
   const fromFile = envFile && existsSync(envFile) ? parseEnv(readFileSync(envFile, 'utf8')) : {};
-  return parseConfig({ ...fromFile, ...(options.env ?? process.env) });
+  // A blank cap counts as unset and falls back to its default, which can be looser than the cap
+  // in the file (DAILY_SPEND_CAP_USD=10 in .env plus an exported empty variable gave 50), so blank
+  // caps are dropped from the real environment before merging. Other blank variables still
+  // override the file: unset is their safe side (no key, no database), and the web tests rely on
+  // that to keep a developer's .env keys and database out (apps/web/test/env.ts).
+  const caps: readonly string[] = CAP_KEYS;
+  const real = Object.entries(options.env ?? process.env).filter(
+    ([key, value]) => !caps.includes(key) || blankToUndefined(value) !== undefined,
+  );
+  return parseConfig({ ...fromFile, ...Object.fromEntries(real) });
 }
 
 /** A loggable view: secrets become booleans, the database URL loses its credentials. */
