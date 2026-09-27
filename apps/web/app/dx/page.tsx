@@ -23,9 +23,10 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('dx.title') };
 }
 
-function Table({ head, rows }: { head: ReactNode[]; rows: ReactNode[][] }) {
+/** Scrolls sideways on a phone, so it takes focus and a name: the keyboard can scroll it too. */
+function Table({ label, head, rows }: { label: string; head: ReactNode[]; rows: ReactNode[][] }) {
   return (
-    <div className="table-wrap">
+    <div className="table-wrap" role="region" aria-label={label} tabIndex={0}>
       <table className="data-table">
         <thead>
           <tr>
@@ -184,6 +185,7 @@ export default async function DxPage() {
         {metrics.ok ? (
           metrics.value.endpoints.length > 0 ? (
             <Table
+              label={t('dx.endpoints.title')}
               head={[t('dx.col.module'), t('dx.col.endpoint'), t('dx.col.calls'), 'p50', 'p95', t('dx.col.errors'), t('dx.col.codes')]}
               rows={[...metrics.value.endpoints]
                 .sort((a, b) => b.calls - a.calls)
@@ -216,6 +218,7 @@ export default async function DxPage() {
         <section className="page-block">
           <BlockTitle>{t('dx.regions.title')}</BlockTitle>
           <Table
+            label={t('dx.regions.title')}
             head={[t('dx.col.region'), t('dx.col.calls'), 'p50', 'p95', t('dx.col.errors')]}
             rows={metrics.value.regions.map((r) => [r.region, r.calls, r.p50Ms ?? '—', r.p95Ms ?? '—', r.errors])}
           />
@@ -261,6 +264,7 @@ export default async function DxPage() {
         <BlockTitle>{t('dx.tape.issuers.title')}</BlockTitle>
         {tape.ok && issuers(tape.value.rows).length > 0 ? (
           <Table
+            label={t('dx.tape.issuers.title')}
             head={[t('dx.col.issuer'), t('dx.col.quotes'), t('dx.col.quote_errors'), t('dx.col.gap')]}
             rows={issuers(tape.value.rows).map((i) => [
               i.issuer === 'bstocks' ? 'bStocks' : 'Ondo',
