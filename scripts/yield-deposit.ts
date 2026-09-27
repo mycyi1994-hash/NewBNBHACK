@@ -2,7 +2,9 @@
  * pnpm yield:deposit --plan <id> --usd <amount> [--live]   — puts a yield plan's principal into
  *                                                           Venus USDT (TASKS M1-05, SPEC §5.3)
  * pnpm yield:deposit --plan <id> --record <txHash>          — records a deposit whose receipt
- *                                                           arrived after the command gave up
+ *                                                           arrived after the command gave up:
+ *                                                           only a deposit our outbox signed for
+ *                                                           this plan
  *
  * The principal cap (config) bounds the plan's total principal. Without --live everything up to
  * the simulations is real and nothing is signed. --live needs EXECUTION_MODE=live, the house key
@@ -22,11 +24,18 @@ import {
 import { BSC_USDT, transferredFrom, transferredTo } from '@ijaro/chain';
 import { loadConfig } from '@ijaro/config';
 import { fromUnits, toUnits } from '@ijaro/core';
-import { applyDeposit, getPlan, migrateDb, openGuardianActions, planFromRow } from '@ijaro/db';
+import {
+  applyDeposit,
+  getPlan,
+  migrateDb,
+  openGuardianActions,
+  outboxByHash,
+  planFromRow,
+} from '@ijaro/db';
 import type { Hex } from 'viem';
 import { parseFlags, TX_HASH, type Flags } from './args.js';
 import { confirmSpend } from './confirm.js';
-import { depositProblem } from './operator-rules.js';
+import { depositProblem, depositRecordRefusal, pendingDepositHint } from './operator-rules.js';
 
 /** A deposit (--usd, maybe --live) or a record (--record); any other mix is a usage error. */
 function misuse({ values }: Flags<'plan' | 'usd' | 'record', 'live', 'plan'>) {
@@ -78,36 +87,49 @@ if (!flags.ok || problem !== undefined) {
     const plan = planFromRow(row);
     if (plan.mode !== 'yield') throw new Error(`${planId} is a ${plan.mode} plan, not yield`);
     const simulate = executorDeps(rt, 'simulate');
-    const market: VenusMarket = await discoverVenusUsdt(simulate);
-    console.log(
-      `yield:deposit ${planId}: Venus USDT investment ${market.investmentId}, vToken ${market.vToken}`,
-    );
+    const venus = async (): Promise<VenusMarket> => {
+      const market = await discoverVenusUsdt(simulate);
+      console.log(
+        `yield:deposit ${planId}: Venus USDT investment ${market.investmentId}, vToken ${market.vToken}`,
+      );
+      return market;
+    };
 
     if (recordHash) {
-      const receipt = await simulate.chain.receipt(recordHash);
-      if (!receipt || receipt.status !== 'success')
-        throw new Error(`${recordHash} is not a successful mined transaction`);
-      const vTokens = transferredTo(receipt.logs, market.vToken, simulate.house);
-      const usdt = transferredFrom(receipt.logs, BSC_USDT, simulate.house);
-      if (vTokens === 0n)
-        throw new Error(`${recordHash} minted no vTokens to [house]: not a deposit`);
-      const sent: SentTx = {
-        kind: 'deposit',
-        txHash: recordHash,
-        broadcastVia: 'unknown',
-        receipt,
-        simulatedAt: new Date().toISOString(),
-        amounts: { vTokensMinted: vTokens.toString(), usdtSpent: usdt.toString() },
-      };
-      const fresh = await applyDeposit(rt.database.db, planId, factsOf(sent), {
-        vTokens,
-        usdtSpent: usdt,
-      });
-      console.log(
-        fresh
-          ? `recorded: +${fromUnits(usdt, 18)} USDT principal, +${vTokens} vTokens`
-          : 'already recorded',
-      );
+      const signed = await outboxByHash(rt.database.db, recordHash);
+      const refusal = depositRecordRefusal(signed, planId, recordHash);
+      if (refusal || !signed) {
+        console.log(`refused: ${refusal}; --record books only a deposit it signed for ${planId}`);
+        process.exitCode = 1;
+      } else {
+        const market = await venus();
+        const receipt = await simulate.chain.receipt(recordHash);
+        if (!receipt || receipt.status !== 'success')
+          throw new Error(`${recordHash} is not a successful mined transaction`);
+        const vTokens = transferredTo(receipt.logs, market.vToken, simulate.house);
+        const usdt = transferredFrom(receipt.logs, BSC_USDT, simulate.house);
+        if (vTokens === 0n)
+          throw new Error(`${recordHash} minted no vTokens to [house]: not a deposit`);
+        const fresh = await applyDeposit(
+          rt.database.db,
+          planId,
+          {
+            kind: 'deposit',
+            txHash: recordHash,
+            broadcastVia: signed.broadcastVia ?? 'unknown',
+            blockNumber: receipt.blockNumber,
+            status: 'success',
+            simulatedAt: null,
+            amounts: { vTokensMinted: vTokens.toString(), usdtSpent: usdt.toString() },
+          },
+          { vTokens, usdtSpent: usdt },
+        );
+        console.log(
+          fresh
+            ? `recorded: +${fromUnits(usdt, 18)} USDT principal, +${vTokens} vTokens`
+            : 'already recorded',
+        );
+      }
     } else if (usd) {
       const blocking = (await openGuardianActions(rt.database.db, planId)).find((a) =>
         ['stop_deposits', 'redeem_all', 'pause_buys'].includes(a.action),
@@ -122,6 +144,7 @@ if (!flags.ok || problem !== undefined) {
           `principal would be ${fromUnits(after, 18)} USD; the principal cap is ${config.caps.maxPrincipalUsd}`,
         );
       }
+      const market = await venus();
       const dry = await depositPrincipal(simulate, { planId, market, amountUsd: usd });
       console.log(
         maskHouse(
@@ -178,8 +201,9 @@ if (!flags.ok || problem !== undefined) {
                 usdtSpent: 0n,
               });
             }
+            const pending = await outboxByHash(rt.database.db, result.txHash);
             console.log(
-              `pending: ${result.txHash}; once mined run: pnpm yield:deposit --plan ${planId} --record ${result.txHash}`,
+              pendingDepositHint({ planId, usd, txHash: result.txHash, kind: pending?.kind }),
             );
           } else {
             console.log(maskHouse(`not deposited: ${JSON.stringify(result)}`, rt.redact));

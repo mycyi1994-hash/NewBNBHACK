@@ -185,3 +185,50 @@ export function depositProblem(dry: DepositResult): string | undefined {
       return `a dry run came back ${dry.kind}`;
   }
 }
+
+/**
+ * Whether yield:deposit --record may book a transaction as this plan's deposit (audit S15): only a
+ * deposit our outbox signed for this plan, as yield:redeem --record requires of a redeem
+ * (recordOperatorRedeem). A mint to the house wallet alone proves nothing about whose it is.
+ */
+export function depositRecordRefusal(
+  signed: { planId: string; kind: string } | undefined,
+  planId: string,
+  txHash: string,
+): string | undefined {
+  if (!signed) return `${txHash} is not a transaction our outbox signed`;
+  if (signed.planId !== planId || signed.kind !== 'deposit') {
+    return `${txHash} is ${signed.planId}'s ${signed.kind}, not a deposit of ${planId}`;
+  }
+  return undefined;
+}
+
+/**
+ * What the operator does about a transaction a live deposit left unmined (audit S15). It may be
+ * the approval (then nothing was deposited, and --record would refuse it) or the deposit itself.
+ * `kind` is the outbox's; undefined when the outbox does not know the hash.
+ */
+export function pendingDepositHint(args: {
+  planId: string;
+  usd: string;
+  txHash: string;
+  kind: string | undefined;
+}): string {
+  const { planId, usd, txHash, kind } = args;
+  const link = `https://bscscan.com/tx/${txHash}`;
+  switch (kind) {
+    case 'deposit':
+      return (
+        `pending: deposit ${txHash} (${link}) is not mined yet; once it is, record it: ` +
+        `pnpm yield:deposit --plan ${planId} --record ${txHash}`
+      );
+    case 'approve':
+      return (
+        `pending: approve ${txHash} (${link}) is not mined yet and nothing was deposited; once it ` +
+        `is, run the deposit again (pnpm yield:deposit --plan ${planId} --usd ${usd} --live): ` +
+        'the allowance then covers it'
+      );
+    default:
+      return `pending: ${txHash} (${link}) is not mined yet and the outbox does not know it; look at it on BscScan first`;
+  }
+}

@@ -6,7 +6,9 @@ import {
   cycleExitCode,
   cycleReportText,
   depositProblem,
+  depositRecordRefusal,
   liveActivationReasons,
+  pendingDepositHint,
   watchAllowances,
 } from './operator-rules.js';
 
@@ -247,5 +249,36 @@ describe('exit codes and dry-run verdicts (audit S11)', () => {
     expect(
       depositProblem({ kind: 'simulated', approve: 'existing_allowance', deposit: sim('FAILED') }),
     ).toBe('the deposit simulation is FAILED although the allowance already covers the amount');
+  });
+});
+
+describe('yield:deposit --record and its pending hint (audit S15)', () => {
+  const HASH = `0x${'ab'.repeat(32)}`;
+
+  it('records only a deposit our outbox signed for this plan', () => {
+    expect(depositRecordRefusal({ planId: 'H-YIELD', kind: 'deposit' }, 'H-YIELD', HASH)).toBe(
+      undefined,
+    );
+    expect(depositRecordRefusal(undefined, 'H-YIELD', HASH)).toBe(
+      `${HASH} is not a transaction our outbox signed`,
+    );
+    expect(depositRecordRefusal({ planId: 'H-YIELD', kind: 'approve' }, 'H-YIELD', HASH)).toBe(
+      `${HASH} is H-YIELD's approve, not a deposit of H-YIELD`,
+    );
+    expect(depositRecordRefusal({ planId: 'J-1', kind: 'deposit' }, 'H-YIELD', HASH)).toBe(
+      `${HASH} is J-1's deposit, not a deposit of H-YIELD`,
+    );
+  });
+
+  it('suggests --record for a pending deposit only', () => {
+    const hint = (kind: string | undefined) =>
+      pendingDepositHint({ planId: 'H-YIELD', usd: '1', txHash: HASH, kind });
+    expect(hint('deposit')).toContain(`pending: deposit ${HASH}`);
+    expect(hint('deposit')).toContain(`pnpm yield:deposit --plan H-YIELD --record ${HASH}`);
+    expect(hint('approve')).toContain(`pending: approve ${HASH}`);
+    expect(hint('approve')).toContain('nothing was deposited');
+    expect(hint('approve')).toContain('pnpm yield:deposit --plan H-YIELD --usd 1 --live');
+    expect(hint('approve')).not.toContain('--record');
+    expect(hint(undefined)).not.toContain('--record');
   });
 });
