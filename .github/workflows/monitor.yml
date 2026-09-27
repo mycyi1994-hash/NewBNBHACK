@@ -1,6 +1,8 @@
 # M2-12 monitor: every 30 minutes, `pnpm smoke --alert` against the deployed web. Anything but
 # green goes to the ops Telegram chat. Off until the repository variable IJARO_APP_URL is set
 # (Settings → Secrets and variables → Actions); the bot token and chat id are repository secrets.
+# Actions are pinned to full commit SHAs, and the URL reaches the script as an environment variable,
+# never as an expression expanded inside it.
 name: monitor
 
 on:
@@ -24,11 +26,15 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_OPS_CHAT_ID: ${{ secrets.TELEGRAM_OPS_CHAT_ID }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm smoke --url "${{ vars.IJARO_APP_URL }}" --alert
+      - run: pnpm smoke --url "$IJARO_APP_URL" --alert
+        env:
+          IJARO_APP_URL: ${{ vars.IJARO_APP_URL }}
