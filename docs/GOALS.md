@@ -140,7 +140,7 @@ Yieldvest 웹 제품의 핵심 화면을 완성한다. CLAUDE.md, docs/PLAN.md �
 2) `/judge`: 코드 입력 → 종목/섹터 → 모드(안전 기본, 이자 토글 시 위험 고지 동의) → 금액 → 미리보기(Transaction API 시뮬레이션을 UX_COPY judge.preview.line으로) → 실행 진행 3단계 → 영수증 → [플랜 멈추기]가 동작한다. 코드별 캡, 7일 자동 stop, 리셋이 구현되어 있다. Playwright e2e `pnpm e2e`가 simulate 모드에서 이 흐름을 끝까지 통과한다(출력 인용).
 3) `/plans/[id]`: 타임라인, 한도 사용량, [멈추기]. 이자 모드 정지 시 전액 상환 단계가 시뮬레이션되어 표시된다.
 4) `/risk`: UX_COPY §5 전문(KR/EN). 이자 모드 토글은 동의 없이는 켜지지 않는다.
-5) 모든 문자열이 UX_COPY 키 기반이고 KR/EN 토글이 동작하며, `pnpm lint:copy`가 §6 금지어 0건을 출력한다. 375px 뷰포트 Playwright 스크린샷에서 가로 스크롤이 없다(document.scrollWidth<=375 assert 통과 인용).
+5) 모든 문자열이 UX_COPY 키 기반이고 화면은 영어만이며(9/27 D-26 — 예전 조건: KR/EN 토글), `pnpm lint:copy`가 §6 금지어 0건을 출력한다. 375px 뷰포트 Playwright 스크린샷에서 가로 스크롤이 없다(document.scrollWidth<=375 assert 통과 인용).
 6) `/api/judge/smoke`가 Web3 API 도달·RPC·DB·마지막 틱·하우스 잔고·마지막 영수증·테이프 최신 시각을 JSON으로 돌려주고 로컬에서 항목별 ok를 보여준다.
 7) `pnpm typecheck && pnpm lint && pnpm test && pnpm e2e` exit 0, TASKS M2-01~05 [x], 커밋, git status clean.
 제약: 목업 금지(e2e는 simulate 모드와 픽스처만), 첫 화면에 hex 주소·토큰 수량 노출 금지(주식 수와 달러로), 메타마스크류 지갑 연결 금지, 자금 이동 없음. 매 턴 끝에 GOAL STATUS 블록으로 조건 1~7을 PASS/FAIL과 증거로 보고. 40턴 안에 못 끝내면 남은 항목과 이유를 적고 멈춘다.

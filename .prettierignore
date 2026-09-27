@@ -8,3 +8,9 @@ packages/db/drizzle/
 **/.next/
 **/next-env.d.ts
 .claude/worktrees/
+# Standalone Vite design preview is checked by its own build/test job.
+frontend-preview/
+
+# Verbatim ports of the approved frontend-preview CSS (compare against frontend-preview/src).
+apps/web/app/styles/preview.css
+apps/web/app/styles/motion.css

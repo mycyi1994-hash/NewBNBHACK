@@ -53,6 +53,8 @@ export default defineConfig(
       'docs/vendor/**',
       'packages/db/drizzle/**',
       '.claude/worktrees/**',
+      // Independent Vite design preview, validated by the frontend-preview CI job.
+      'frontend-preview/**',
     ],
   },
   js.configs.recommended,

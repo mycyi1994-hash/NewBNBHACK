@@ -1,0 +1,1340 @@
+/*
+ * What the real app adds to the approved design (preview.css): Korean fallbacks, the language
+ * toggle, toolbar statuses, badges in every tone, unavailable states, forms for Judge Mode, the
+ * activity table's real columns, data tables and bars for /dx, and the chat for /skill.
+ * Colours come from the design's tokens; meaning never rests on colour alone (icon + text).
+ */
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family:
+    'Inter Variable',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Apple SD Gothic Neo',
+    'Noto Sans KR',
+    'Malgun Gothic',
+    'Segoe UI',
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+main:focus {
+  outline: none;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Header: the tabs on the right. */
+.header-end {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  height: 100%;
+}
+
+/* Toolbar: the title, then the market and data states, the motion control and the CTA. */
+.toolbar-title {
+  min-width: 0;
+}
+
+.toolbar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.status-pill {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.status-pill > span {
+  flex-shrink: 0;
+}
+
+.status-pill.ok > span {
+  background: var(--yellow);
+}
+
+.status-pill.wait > span {
+  background: #ff9f43;
+}
+
+.status-pill.fail > span {
+  background: #ff6b5e;
+}
+
+.status-pill.info > span {
+  background: #6ea8ff;
+}
+
+.page-intro {
+  max-width: 760px;
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* Summary strip: a note under a value (read time, or why it is missing), and tone dots. */
+.summary-note {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.summary-stat > strong small {
+  font-size: 0.62em;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.status.wait .status-dot {
+  background: #ff9f43;
+}
+
+.status.skip .status-dot,
+.status.neutral .status-dot {
+  background: #6b7580;
+}
+
+.status.fail .status-dot {
+  background: #ff6b5e;
+}
+
+.status.info .status-dot {
+  background: #6ea8ff;
+}
+
+/* Badges: icon + text in every tone, on the dark canvas and on the pale panels. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.pill svg {
+  flex-shrink: 0;
+}
+
+.pill.ok {
+  border-color: #f0b90b45;
+  background: #f0b90b1f;
+  color: #f8d33a;
+}
+
+.pill.wait {
+  border-color: #ff9f4345;
+  background: #ff9f431a;
+  color: #ffc27a;
+}
+
+.pill.skip {
+  border-color: #39434d;
+  background: #20262d;
+  color: #c2c9d0;
+}
+
+.pill.fail {
+  border-color: #ff5a4e45;
+  background: #ff5a4e1a;
+  color: #ffaaa2;
+}
+
+.pill.info {
+  border-color: #4d8dff45;
+  background: #4d8dff1a;
+  color: #a9c8ff;
+}
+
+.pill.neutral {
+  border-color: #343b42;
+  background: #151a1f;
+  color: #c4c8ce;
+}
+
+:is(.receipt-panel, .receipt-document) .pill.ok {
+  border-color: #efd27c;
+  background: #fbedc3;
+  color: #624700;
+}
+
+:is(.receipt-panel, .receipt-document) .pill.wait {
+  border-color: #f2c69a;
+  background: #fde9d4;
+  color: #843f00;
+}
+
+:is(.receipt-panel, .receipt-document) .pill.skip,
+:is(.receipt-panel, .receipt-document) .pill.neutral {
+  border-color: #d3d8de;
+  background: #eceef1;
+  color: #4a525e;
+}
+
+:is(.receipt-panel, .receipt-document) .pill.fail {
+  border-color: #f0b6b1;
+  background: #fbe3e1;
+  color: #8f1d15;
+}
+
+:is(.receipt-panel, .receipt-document) .pill.info {
+  border-color: #b8cbf2;
+  background: #e4ecfb;
+  color: #1c4598;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A value that cannot be shown says why. */
+.state-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.state-line svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+:is(.receipt-panel, .receipt-document) .state-line {
+  color: #5f6875;
+}
+
+.block-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 18px;
+}
+
+.block-title h2 {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+/* A dark block in the style of the progress and process strips. */
+.page-block {
+  min-width: 0;
+  margin-top: 24px;
+  padding: 24px 26px;
+  border: 1px solid #2e373f;
+  border-radius: 8px;
+  background: #13181d;
+}
+
+.page-block > p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.method-note {
+  margin-top: 14px;
+  color: #8a949e;
+  font-size: 11px;
+}
+
+/* Links in the design's voice. */
+.receipt-link {
+  font-size: 13px;
+  font-weight: 560;
+  text-decoration: underline;
+  text-decoration-color: var(--yellow);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.receipt-link:hover {
+  color: var(--yellow);
+}
+
+:is(.receipt-panel, .receipt-document) .receipt-link:hover {
+  color: #6b4e00;
+}
+
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.receipt-panel .link-row {
+  margin: 0 0 18px;
+}
+
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.text-link:hover {
+  color: var(--yellow);
+}
+
+:is(.receipt-panel, .receipt-document) .text-link {
+  color: var(--ink);
+}
+
+:is(.receipt-panel, .receipt-document) .text-link:hover {
+  color: #6b4e00;
+}
+
+a.button {
+  text-align: center;
+}
+
+.button.danger {
+  border: 1px solid #ff6b5e;
+  background: transparent;
+  color: #ffaaa2;
+}
+
+.button.danger:hover:not(:disabled) {
+  background: #ff5a4e1a;
+}
+
+.receipt-panel .button.danger {
+  border-color: #b3261e;
+  color: #9d1f17;
+}
+
+.receipt-panel .button.danger:hover:not(:disabled) {
+  background: #fbe3e1;
+}
+
+.receipt-panel .button.secondary {
+  border-color: #c1c5cb;
+  background: #fff;
+  color: var(--ink);
+}
+
+.receipt-panel .button.secondary:hover:not(:disabled) {
+  background: #eceef1;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.receipt-panel .panel-note:last-child {
+  margin-bottom: 0;
+}
+
+.panel-caption a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Money flow: a flow with nothing recorded yet keeps its shape and says so. */
+.money-flow.empty .flow-label strong {
+  color: #6f7a85;
+}
+
+.flow-caption {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Forms (Judge Mode). */
+.field-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.receipt-panel .field-label {
+  color: #626975;
+}
+
+.text-input {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid #3d4853;
+  border-radius: 8px;
+  background: #141a20;
+  color: #fff;
+  font-size: 16px;
+}
+
+.text-input:focus {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+.receipt-panel .text-input {
+  border-color: #c1c5cb;
+  background: #fff;
+  color: var(--ink);
+}
+
+.receipt-panel .text-input:focus {
+  outline-color: #111318;
+}
+
+.inline-form {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.inline-form .button {
+  flex-shrink: 0;
+}
+
+.form-block {
+  margin-top: 26px;
+}
+
+.form-block > h3 {
+  margin-bottom: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.form-block > p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip {
+  min-height: 38px;
+  padding: 7px 16px;
+  border: 1px solid #303a43;
+  border-radius: 99px;
+  background: transparent;
+  color: #c9d0d7;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip:hover {
+  background: #171c21;
+  color: #fff;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--yellow);
+  box-shadow: inset 0 0 0 1px var(--yellow);
+  color: #fff;
+}
+
+.amount-input.compact {
+  max-width: 220px;
+  padding: 6px 14px;
+}
+
+.amount-input.compact input {
+  font-size: 17px;
+}
+
+.radio-cards {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #303941;
+  border-radius: 11px;
+  cursor: pointer;
+}
+
+.radio-card:hover {
+  background: #151b20;
+}
+
+.radio-card:has(input:checked) {
+  border-color: var(--yellow);
+  box-shadow: inset 0 0 0 1px var(--yellow);
+}
+
+.radio-card input {
+  margin-top: 4px;
+  accent-color: var(--yellow);
+}
+
+.radio-card strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 560;
+}
+
+.radio-card small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 14px;
+  font-weight: 560;
+}
+
+.check-line input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--yellow);
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notice svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.notice.fail {
+  border: 1px solid #ff5a4e45;
+  background: #ff5a4e14;
+  color: #ffc9c3;
+}
+
+.notice.info {
+  border: 1px solid #343b42;
+  background: #151a1f;
+  color: #c4c8ce;
+}
+
+.notice.ok {
+  border: 1px solid #f0b90b45;
+  background: #f0b90b14;
+  color: #f7e2a1;
+}
+
+.receipt-panel .notice.fail {
+  border-color: #f0b6b1;
+  background: #fbe3e1;
+  color: #8f1d15;
+}
+
+.receipt-panel .notice.info {
+  border-color: #d3d8de;
+  background: #eceef1;
+  color: #4a525e;
+}
+
+/* Stocks: five real tickers from the registry, some not buyable within a judge code's limit. */
+.asset-options {
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+}
+
+.asset-option:disabled {
+  opacity: 0.45;
+}
+
+.asset-note {
+  margin-top: 12px;
+  color: #ffc27a;
+  font-size: 12px;
+}
+
+.issuer-line {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Process: the real steps of Judge Mode. */
+.process-step.current {
+  color: var(--yellow);
+  font-weight: 560;
+}
+
+.process-step.current .process-node {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px #f0b90b33;
+}
+
+/* Activity: time and plan under each event; amount and state on the right. */
+.activity-table-heading,
+.activity-row {
+  grid-template-columns: minmax(170px, 1fr) 118px 132px;
+}
+
+.event-label small {
+  white-space: normal;
+}
+
+.event-icon.skip {
+  color: #8b95a0;
+}
+
+.event-icon.fail {
+  color: #ff8a80;
+}
+
+.event-icon.info {
+  color: #8ab4ff;
+}
+
+.event-icon.earned {
+  color: var(--yellow);
+}
+
+.event-status {
+  font-size: 11px;
+}
+
+.event-status.skip {
+  color: #aeb6bf;
+}
+
+.event-status.skip svg {
+  color: #8b95a0;
+}
+
+.event-status.fail {
+  color: #ffaaa2;
+}
+
+.event-status.fail svg {
+  color: #ff8a80;
+}
+
+.event-status.info {
+  color: #a9c8ff;
+}
+
+.event-status.info svg {
+  color: #8ab4ff;
+}
+
+.event-status.wait {
+  color: var(--yellow);
+}
+
+.filter-group {
+  flex-wrap: wrap;
+}
+
+.activity-empty {
+  padding: 26px 10px;
+  border-top: 1px solid #303a43;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Receipt details: the real steps from the cycle's step log. */
+.check-badge.fail {
+  border: 2px solid #ff6b5e;
+  background: transparent;
+  color: #ff8a80;
+}
+
+.execution-trace li p {
+  overflow-wrap: anywhere;
+}
+
+.document-meta > span:last-child {
+  text-align: right;
+}
+
+.document-subtitle {
+  max-width: 640px;
+}
+
+.receipt-disclaimer.live {
+  background: #fbedc3;
+  color: #624700;
+}
+
+/* Tables (/dx, plan details). The page never scrolls sideways; a wide table scrolls in place. */
+.table-wrap {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.data-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table th {
+  padding: 0 10px 10px;
+  color: #aeb6bf;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.data-table td {
+  padding: 14px 10px;
+  border-top: 1px solid #303a43;
+  vertical-align: top;
+}
+
+.data-table code {
+  color: #d7dde3;
+  font-size: 12px;
+}
+
+.code-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+/* Bars (/dx): diverging from a middle line when a value can be negative. */
+.bars {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr) 7rem;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.bar-label {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 99px;
+  background: #30373e;
+}
+
+.bar-axis {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 1px;
+  background: #5b6570;
+}
+
+.bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 99px;
+  background: var(--yellow);
+}
+
+.bar-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 560;
+  text-align: right;
+}
+
+.bar-value small {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.two-blocks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.two-blocks > .page-block {
+  margin-top: 24px;
+}
+
+.findings {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.findings li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding-top: 10px;
+  border-top: 1px solid #303a43;
+}
+
+.findings li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* /skill: steps, the install line and an example conversation. */
+.code-box {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #2e373f;
+  border-radius: 8px;
+  background: #0f1418;
+  color: #e6eaee;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.bubble small {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.bubble.me {
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  background: var(--yellow);
+  color: #111;
+}
+
+.bubble.assistant {
+  align-self: flex-start;
+  border: 1px solid #2e373f;
+  border-bottom-left-radius: 4px;
+  background: #1b2229;
+}
+
+.check-list {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.check-list li {
+  display: flex;
+  gap: 12px;
+}
+
+.check-list svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.receipt-panel .check-list svg {
+  color: #8a6a00;
+}
+
+.demo-steps.page-steps {
+  gap: 26px;
+  margin: 26px 0 0;
+}
+
+.demo-steps.page-steps strong {
+  font-size: 15px;
+}
+
+/* /risk: the disclosure as a document. */
+.risk-document {
+  max-width: 860px;
+  margin-top: 26px;
+}
+
+.risk-text {
+  display: grid;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.risk-text ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.risk-text .agree {
+  font-weight: 600;
+}
+
+.demo-dialog .risk-text {
+  margin-top: 16px;
+  color: #d5dbe1;
+  font-size: 14px;
+}
+
+/* Footer: the approved three-part line, then the APIs used. */
+.footer-block {
+  padding: 28px 0 30px;
+}
+
+.footer-block .app-footer {
+  padding: 0;
+}
+
+.footer-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 16px;
+}
+
+.footer-links a:hover {
+  color: var(--text);
+}
+
+.footer-note {
+  margin-top: 12px;
+  color: #6f7a85;
+  font-size: 11px;
+}
+
+.empty-state .button {
+  margin-top: 4px;
+}
+
+@media (max-width: 1100px) {
+  .header-end {
+    gap: 22px;
+  }
+
+  .activity-table-heading,
+  .activity-row {
+    grid-template-columns: minmax(120px, 1fr) 96px;
+  }
+
+  .two-blocks {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+@media (max-width: 800px) {
+  .page-toolbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .toolbar-actions .demo-pill {
+    display: inline-flex;
+  }
+
+  .toolbar-actions .button {
+    margin-left: auto;
+  }
+
+  .footer-block {
+    padding: 24px 0 114px;
+  }
+
+  .footer-block .app-footer {
+    padding: 0;
+  }
+
+  .footer-links {
+    justify-content: flex-start;
+  }
+
+  .page-block {
+    padding: 20px;
+  }
+
+  .bar-row {
+    grid-template-columns: 6rem minmax(0, 1fr) 6rem;
+  }
+}
+
+@media (max-width: 450px) {
+  .inline-form {
+    flex-direction: column;
+  }
+
+  .process-step:not(.current) .process-label {
+    display: none;
+  }
+
+  .process-step.current {
+    flex: 3;
+  }
+
+  .activity-table-heading,
+  .activity-row {
+    grid-template-columns: minmax(0, 1fr) 84px;
+  }
+
+  .bar-row {
+    grid-template-columns: minmax(0, 1fr) 5.5rem;
+  }
+
+  .bar-row .bar-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .bubble {
+    max-width: 92%;
+  }
+}
+
+.panel-pills {
+  margin-top: 12px;
+}
+
+.receipt-panel > .ledger + .link-row,
+.receipt-panel > .ledger + .button {
+  margin-top: 20px;
+}
+
+.document-links {
+  gap: 6px 22px;
+  margin-top: 13px;
+}
+
+.document-links .document-back {
+  margin-top: 0;
+}
+
+.stop-plan,
+.stop-confirm {
+  display: grid;
+  gap: 12px;
+}
+
+.stop-confirm strong {
+  font-size: 14px;
+}
+
+.stop-plan .panel-note {
+  margin: 0;
+}
+
+.summary-small {
+  display: block;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  white-space: normal;
+}
+
+.limits-line {
+  font-variant-numeric: tabular-nums;
+}
+
+.page-block > .limits-line {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.limits-track {
+  margin-top: 14px;
+}
+
+.holdings,
+.metric-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.holdings li {
+  display: grid;
+  gap: 3px;
+}
+
+.holdings span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metric-list li {
+  padding-top: 10px;
+  border-top: 1px solid #303a43;
+}
+
+.metric-list li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.field-note {
+  margin: -8px 0 22px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.form-help {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form-help.field-error {
+  color: #ffb4a5;
+}
+
+.window-field {
+  min-width: 0;
+  margin-inline: 0;
+  padding: 0;
+  border: 0;
+}
+
+.window-field legend {
+  padding: 0;
+}
+
+.dialog-details {
+  margin: 0 0 18px;
+  font-size: 13px;
+}
+
+.dialog-details summary {
+  color: #c1cbd4;
+  cursor: pointer;
+}
+
+.dialog-details .ledger {
+  margin: 12px 0 0;
+}
+
+.dialog-links {
+  margin: 18px 0;
+}
+
+.dialog-symbol.wait {
+  background: #ff9f43;
+}
+
+.dialog-symbol.fail {
+  background: #ff6b5e;
+}
+
+.dialog-symbol.info {
+  background: #6ea8ff;
+}
+
+.button .spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.panel-link {
+  margin: 16px 0 14px;
+}
+
+.receipt-panel .stop-plan {
+  margin-top: 4px;
+}
+
+.summary-strip.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.summary-strip.four .summary-stat:last-child {
+  margin-right: 0;
+  padding-right: 0;
+  border-right: 0;
+}
+
+.empty-state h1 {
+  margin: 20px 0 22px;
+  font-size: 31px;
+  font-weight: 600;
+}
+
+.empty-state .state-line {
+  justify-content: center;
+}
+
+.risk-body {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #bdc4ca;
+}
+
+.risk-document .receipt-disclaimer {
+  margin-top: 22px;
+}
+
+@media (max-width: 1100px) {
+  .summary-strip.four .summary-stat:nth-child(3) {
+    margin-right: 28px;
+    padding-right: 25px;
+    border-right: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 800px) {
+  .summary-strip.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-strip.four .summary-stat:first-child {
+    grid-column: auto;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .summary-strip.four .summary-stat:nth-child(3) {
+    margin: 0;
+    padding: 0;
+    border-right: 1px solid var(--line);
+  }
+
+  .summary-strip.four .summary-stat:first-child > strong {
+    font-size: 23px;
+  }
+}
+
+.summary-stat {
+  align-self: start;
+}
+
+.amount-input > span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.demo-steps.page-steps {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.demo-steps li,
+.demo-steps li > div {
+  min-width: 0;
+}
+
+@media (max-width: 800px) {
+  .app-footer > span.footer-links {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 450px) {
+  .flow-node.source {
+    left: 13%;
+  }
+
+  .flow-label strong {
+    font-size: 15px;
+  }
+
+  .flow-label strong small {
+    display: block;
+    font-size: 11px;
+  }
+}
+
+/* On a phone the judge code comes first: nothing else on the page works without it. */
+@media (max-width: 800px) {
+  .invest-grid.needs-code > .receipt-panel {
+    order: -1;
+  }
+}

@@ -8,8 +8,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   displayParams,
+  fromBaseUnits,
+  grouped,
+  issuerName,
   money,
   money6,
+  moneyFine,
   sharesText,
   signedPct,
   bpsPct,
@@ -99,6 +103,33 @@ describe('format', () => {
     expect(money6('-0.5')).toBe('-0.500000');
     expect(money('-1.239')).toBe('-1.23');
     expect(sharesText('0.022194882471391432')).toBe('0.022194');
+  });
+
+  it('shows interest to the micro-dollar without trailing zeros, and groups thousands', () => {
+    expect(moneyFine('0.46')).toBe('0.46');
+    expect(moneyFine('0.1842139')).toBe('0.184213');
+    expect(moneyFine('5')).toBe('5.00');
+    expect(moneyFine('0.1')).toBe('0.10');
+    expect(moneyFine('12.3456')).toBe('12.3456');
+    expect(moneyFine(null)).toBeNull();
+    expect(grouped('1000.00')).toBe('1,000.00');
+    expect(grouped('185541887')).toBe('185,541,887');
+    expect(grouped('-1234.5')).toBe('-1,234.5');
+    expect(grouped('999.99')).toBe('999.99');
+    expect(grouped(null)).toBeNull();
+  });
+
+  it('reads 18-decimal base units exactly, and names issuers as they name themselves', () => {
+    expect(fromBaseUnits('1500000000000000000')).toBe('1.5');
+    expect(fromBaseUnits('280000000000000000')).toBe('0.28');
+    expect(fromBaseUnits('5000000000000000000')).toBe('5');
+    expect(fromBaseUnits('1')).toBe('0.000000000000000001');
+    expect(fromBaseUnits('-5')).toBeNull();
+    expect(fromBaseUnits('')).toBeNull();
+    expect(issuerName('NVDA:bstocks')).toBe('bStocks');
+    expect(issuerName('ondo')).toBe('Ondo');
+    expect(issuerName('XYZ:other')).toBe('other');
+    expect(issuerName(null)).toBeNull();
   });
 
   it('signs percentages with a real minus, never "-0.00"', () => {

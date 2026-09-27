@@ -35,6 +35,34 @@ export function money6(value: string | null | undefined): string | null {
   return negative ? `-${text}` : text;
 }
 
+/** Thousands separators for a decimal string: "1000.00" → "1,000.00" (display only). */
+export function grouped(text: string | null): string | null {
+  if (text === null) return null;
+  const [whole = '', frac] = text.split('.');
+  const sign = whole.startsWith('-') ? '-' : '';
+  const digits = sign ? whole.slice(1) : whole;
+  const withCommas = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${sign}${withCommas}${frac === undefined ? '' : `.${frac}`}`;
+}
+
+/**
+ * Interest to the micro-dollar without trailing zeros, never fewer than two places: "0.46" stays
+ * "0.46", "0.184213" stays as read. Truncated like money6, so a small amount is never rounded up.
+ */
+export function moneyFine(value: string | null | undefined): string | null {
+  const text = money6(value);
+  return text === null ? null : text.replace(/(\.\d\d\d*?)0+$/, '$1');
+}
+
+/** A whole number of 18-decimal base units ("1500000000000000000") as a decimal string ("1.5"). */
+export function fromBaseUnits(value: string | null | undefined): string | null {
+  if (!value || !/^\d+$/.test(value)) return null;
+  const units = BigInt(value);
+  const whole = units / 10n ** 18n;
+  const frac = (units % 10n ** 18n).toString().padStart(18, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : String(whole);
+}
+
 export function sharesText(value: string | null | undefined): string | null {
   const u = value === null || value === undefined ? null : units(value);
   return u === null ? null : formatShares(u);
@@ -96,6 +124,13 @@ export function displayParams(
     else out[name] = value;
   }
   return out;
+}
+
+/** An issuer id ("bstocks", or an instrument id "NVDA:bstocks") as the issuer calls itself. */
+export function issuerName(id: string | null | undefined): string | null {
+  if (!id) return null;
+  const issuer = id.includes(':') ? (id.split(':')[1] ?? '') : id;
+  return issuer === 'bstocks' ? 'bStocks' : issuer === 'ondo' ? 'Ondo' : issuer || null;
 }
 
 /** A 0x… address shortened for "자세히" views. */

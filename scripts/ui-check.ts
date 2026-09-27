@@ -1,9 +1,9 @@
 /// <reference lib="dom" />
 /**
  * pnpm ui:check [--url http://localhost:3000] [--out dir] — opens every page in Chromium at 375 px
- * (phone) and 1440 px (desktop) in Korean and English, and fails on a horizontal scroll (TASKS
- * M2-01: 375 px, no sideways scroll), a page error or a non-2xx page. Screenshots go to --out.
- * Chromium comes from PLAYWRIGHT_BROWSERS_PATH or --chromium.
+ * (phone) and 1440 px (desktop), and fails on a horizontal scroll (TASKS M2-01: 375 px, no
+ * sideways scroll), a page error or a non-2xx page. The web is English only (DECISIONS D-26).
+ * Screenshots go to --out. Chromium comes from PLAYWRIGHT_BROWSERS_PATH or --chromium.
  */
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -15,7 +15,10 @@ const { values } = parseArgs({
     url: { type: 'string', default: 'http://localhost:3000' },
     out: { type: 'string' },
     chromium: { type: 'string' },
-    pages: { type: 'string', default: '/,/judge,/skill,/risk,/dx,/plans/H-SAFE,/plans/H-YIELD' },
+    pages: {
+      type: 'string',
+      default: '/,/earn,/invest,/activity,/skill,/risk,/dx,/plans/H-SAFE,/plans/H-YIELD',
+    },
   },
 });
 const base = values.url.replace(/\/+$/, '');
@@ -25,6 +28,7 @@ if (values.out) mkdirSync(values.out, { recursive: true });
 const browser = await chromium.launch(values.chromium ? { executablePath: values.chromium } : {});
 const problems: string[] = [];
 try {
+  // A Korean browser in Seoul and an American one in New York: the page is English for both.
   for (const lang of ['ko', 'en'] as const) {
     for (const width of [375, 1440]) {
       const context = await browser.newContext({
@@ -32,7 +36,6 @@ try {
         locale: lang === 'ko' ? 'ko-KR' : 'en-US',
         timezoneId: lang === 'ko' ? 'Asia/Seoul' : 'America/New_York',
       });
-      await context.addCookies([{ name: 'yieldvest_lang', value: lang, url: base }]);
       const page = await context.newPage();
       page.on('pageerror', (error) =>
         problems.push(`${lang} ${width}px ${page.url()}: ${error.message}`),
@@ -46,14 +49,18 @@ try {
       for (const route of pages) {
         const response = await page.goto(`${base}${route}`, { waitUntil: 'networkidle' });
         const status = response?.status() ?? 0;
-        const { scroll, client } = await page.evaluate(() => ({
+        const { scroll, client, htmlLang, hangul } = await page.evaluate(() => ({
           scroll: document.documentElement.scrollWidth,
           client: document.documentElement.clientWidth,
+          htmlLang: document.documentElement.lang,
+          // English only (D-26): no Hangul anywhere in the visible text.
+          hangul: /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/.test(document.body.innerText),
         }));
-        const line = `${lang} ${String(width).padStart(4)}px ${route.padEnd(16)} HTTP ${status} scrollWidth ${scroll} / ${client}`;
+        const line = `${lang} ${String(width).padStart(4)}px ${route.padEnd(16)} HTTP ${status} scrollWidth ${scroll} / ${client} lang ${htmlLang}`;
         console.log(line);
         if (status < 200 || status >= 300) problems.push(`${line}: not 2xx`);
         if (scroll > client) problems.push(`${line}: horizontal scroll`);
+        if (htmlLang !== 'en' || hangul) problems.push(`${line}: not English only`);
         if (values.out) {
           const name = `${lang}-${width}${route === '/' ? '-home' : route.replaceAll('/', '-')}.png`;
           await page.screenshot({ path: path.join(values.out, name), fullPage: true });
