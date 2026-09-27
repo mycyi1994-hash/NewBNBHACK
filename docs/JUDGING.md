@@ -88,9 +88,15 @@ Score anchors. We play the judge and score our own submission. Any item under 7 
 
 | Date | Technical | Creativity | DX | UX | Total (weighted) | Top-priority item |
 | --- | --- | --- | --- | --- | --- | --- |
-| 9/27 | | | | | | |
+| 9/27 | 5 (draft) | 8 (draft) | 6 (draft) | 6 (draft) | 6.2 (draft) | Money decisions R1–R4 → fund the house wallet → $1 live test → first mainnet receipts; deploy the web |
 | 10/4 | | | | | | |
 | 10/8 | | | | | | |
+
+**9/27 row: an agent draft from the evidence below — a human confirms or changes it.**
+- Technical 5: RWA Data, Trading quotes and BSC are in live use (Frankfurt worker, tape every 10 min); Market, Transaction and DeFi are code-complete but have not run live; the known traps are handled in code (off-hours, quote expiry, exact approval, outbox and pending, order id ≠ fill). But there are **0 mainnet receipts** and the web is not deployed, and the 7 anchor needs live trades (README "What Yieldvest ran itself", TASKS M1-04, M1-05 and M1-09).
+- Creativity 8: not on the official ideas list, and none of the public competing entries does it (PLAN §2); regular-session window, corporate actions and the multiplier are handled in `decideCycle`; the tape measures off-hours gaps. It stays short of 10 until the interest → stock loop has run on mainnet.
+- DX 6: `dx/LOG.md` has doc line references, error codes, request timings and a rate-limit analysis, with fixtures. Missing: real use of the AI stack (`baw` and `bag`, M0-09 and M0-10), regular-session tape numbers (M0-06) and the human-written report (M4-01).
+- UX 6: the approved English design, no jargon (`pnpm lint:copy`), phone layout (`pnpm ui:check`), 0 axe violations and a working skip link and motion controls (`pnpm qa:check`, M3-02), the risk disclosure on screen. But the web is not deployed (deduction: "the deployment is down"), and the 3-second and 3-minute rehearsals have not happened (M2-01, M2-02).
 
 ## 5. Deduction factors (if even one is present, removing it is that week's top priority)
 

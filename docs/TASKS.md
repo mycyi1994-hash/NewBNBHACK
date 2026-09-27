@@ -349,6 +349,13 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 - Acceptance: fixture of the 402 → payment → 200 flow, recorded in the spending ledger
 
 ### M3-02 Mobile, accessibility, performance QA · Criterion: UX
+- [x] (9/27) `pnpm qa:check` (`scripts/qa-check.ts`, axe-core 4.13.0) on the production build (`next start`, local DB with visual fixtures), 9 screens:
+  - Accessibility: axe-core WCAG 2.1 A/AA + best practices at 375 and 1440px. First run: 28 serious findings — text contrast on the receipt panel (`.panel-note` 3.81, `.panel-caption` 3.95, `.panel-cycle` 4.09 on #f7f7f5) and in the footer (`.footer-note` 4.42 on #0b0e11), and the `/dx` tables scrolled sideways on a phone without keyboard access. **Fixed**: the same greys a few steps darker (lighter in the footer) in `app.css` — 4.61–4.66, preview.css untouched — and the `/dx` table wrapper is a named, focusable region. After: **0 violations** on all 18 page loads.
+  - Keyboard: on every screen the first Tab reaches "Skip to content" and Enter moves focus to `<main>`.
+  - Motion: the one looping animation (home) stops with the motion toggle (WCAG 2.2.2); with `prefers-reduced-motion: reduce`, 0 animations run on every screen.
+  - Performance, phone profile (375px, 4× slower CPU, 150 ms and 1.6 Mbps, cold cache; a local server, so a baseline and not the CDN): LCP 0.75–1.04 s, CLS 0.000–0.030, TBT 157–240 ms, JS 143–160 KB, HTML 6–8 KB per page. Fails would be LCP > 4 s, CLS > 0.25 or TBT > 600 ms.
+  - Output: `qa:check — 0 problems, 0 notes`; `pnpm ui:check` still 0 problems.
+  - [ ] [HUMAN] Run `pnpm qa:check --url https://<web>` on the deployed web (real network and CDN), and one pass with a real phone and a screen reader (VoiceOver or TalkBack).
 ### M3-03 README judge path · Criterion: All
 - [~] One sentence, links, video, Judge Mode, receipts table (auto-generation script), module matrix, DX link, how to run, risk disclosure, license
   - (9/26) `README.md`: one EN line, 60-second summary, 3-minute trial path, a slot for the receipts table + `pnpm receipts:table` (DB → Markdown, `scripts/receipts-table.ts`), module matrix (PLAN §6.1 with a status column based on the code — unused and unimplemented shown as they are), skill install, structure, safeguards, risks, how to run, docs map.
@@ -391,3 +398,5 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 ---
 
 ## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]
+- [~] 9/27: agent draft in JUDGING §4 with its evidence — Technical 5, Creativity 8, DX 6, UX 6, weighted 6.2. Top priority: the money decisions (R1–R4), then the $1 live test and a web deploy.
+  - [ ] [HUMAN] Confirm or change the 9/27 scores.

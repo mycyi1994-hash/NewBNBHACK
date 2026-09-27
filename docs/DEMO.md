@@ -1,6 +1,6 @@
 # DEMO.md — the 4-minute video and the judges' 15-minute path
 
-Author: Minseo Kang. Filming 10/6~10/7, editing 10/8. Screen recording + narration (English, with Korean subtitles). Live-trade scenes are filmed during the regular session (22:30~05:00 KST).
+Author: Minseo Kang. Filming 10/6~10/7, editing 10/8. Screen recording + narration (English, with English subtitles — 9/27, D-26/D-27). Live-trade scenes are filmed during the regular session (22:30~05:00 KST).
 
 ## 1. Video script (≤ 4:00)
 

@@ -981,8 +981,21 @@ a.button {
 
 .footer-note {
   margin-top: 12px;
-  color: #6f7a85;
+  color: #727d88;
   font-size: 11px;
+}
+
+/*
+ * WCAG AA text contrast (4.5:1, M3-02 `pnpm qa:check`). The preview's receipt-panel greys measure
+ * 3.8–4.1 on the #f7f7f5 panel; the same greys a few steps darker pass. preview.css stays verbatim.
+ */
+.panel-cycle,
+.panel-note {
+  color: #69707b;
+}
+
+.panel-caption {
+  color: #68717a;
 }
 
 .empty-state .button {

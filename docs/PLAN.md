@@ -172,7 +172,7 @@ Today is 2026-09-23 (Wed). 18 days left. Weekends to capture: 9/26~27, 10/3~4 (t
 | Buffer | 10/10~10/11 | Hotfixes only | |
 | Judging | 10/12~10/23 | Daily smoke, logs | Downtime 0 |
 
-**Cut line (decision on the evening of 10/4; the later an item appears, the sooner it is cut):** mode D → BNB staking → best execution across issuers → Telegram user alerts → x402 calls to the official agent → b402 paid endpoint → sector targets → Agent Studio runtime (identity registration stays).
+**Cut line (decision on the evening of 10/4; the earlier an item appears, the sooner it is cut — corrected 9/27: the list opens with mode D and BNB staking, which are cut by default, §4.1 and TASKS M3-07/M3-08):** mode D → BNB staking → best execution across issuers → Telegram user alerts → x402 calls to the official agent → b402 paid endpoint → sector targets → Agent Studio runtime (identity registration stays).
 
 **Never cut:** the house agent's live loop and receipts, Judge Mode, both modes (safe and yield), error handling and the 3-state display, KR/EN copy (9/27 D-26: by human decision the screens are English only), instrumentation, tape and /dx, the README path, the video, the human-written DX report.
 

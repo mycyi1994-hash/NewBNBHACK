@@ -37,6 +37,7 @@
     "copy:gen": "tsx apps/web/scripts/copy.ts gen",
     "lint:copy": "tsx apps/web/scripts/copy.ts lint",
     "ui:check": "tsx scripts/ui-check.ts",
+    "qa:check": "tsx scripts/qa-check.ts",
     "receipts:table": "tsx scripts/receipts-table.ts"
   },
   "devDependencies": {

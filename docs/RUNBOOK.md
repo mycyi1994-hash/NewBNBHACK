@@ -85,7 +85,7 @@ Execution mode: `EXECUTION_MODE=simulate` (the default) signs nothing. `live` si
 
 - Worker: `fly deploy -a yieldvest-agent` (the Dockerfile fails the build if `.env*` is present). After the deploy, check the config-validation line in the log.
 - Web: Vercel (`apps/web`, build `pnpm --filter @yieldvest/web build`). env: `DATABASE_URL`, `SESSION_SECRET` (32 characters or more), `JUDGE_CODES`, `NEXT_PUBLIC_APP_URL`. The web holds no house key and no API key.
-- Always after a deploy: `pnpm smoke --url https://<web>`, `pnpm ui:check --url https://<web>` (375/1440px, English only, no CSP violations).
+- Always after a deploy: `pnpm smoke --url https://<web>`, `pnpm ui:check --url https://<web>` (375/1440px, English only, no CSP violations), `pnpm qa:check --url https://<web>` (accessibility, keyboard, motion, phone performance).
 - After 10/9: hotfixes only.
 
 ## 6.1 Rename migration (D-24, once only)
@@ -106,6 +106,7 @@ The repo became Yieldvest on 9/27 (Fly app `ijaro-agent` → `yieldvest-agent`).
 | --- | --- |
 | `pnpm smoke [--url] [--strict] [--alert]` | Check everything judging depends on, in one go |
 | `pnpm ui:check [--url] [--out dir]` | 9 screens × Korean and US browsers × 375/1440px: horizontal scroll, page errors, CSP violations, non-English text (D-26) |
+| `pnpm qa:check [--url] [--only a11y,keyboard,motion,perf]` | 9 screens: axe-core WCAG 2.1 A/AA at 375/1440px (serious or critical fails), skip link by keyboard, looping motion pauses and reduced motion stops it, phone profile (4× CPU, 150 ms / 1.6 Mbps) LCP, CLS, TBT and JS size (M3-02) |
 | `pnpm plan:status [--plan id --activate/--pause]` | List plans, turn them on, turn them off |
 | `pnpm plan:set --plan <id> [--contribution] [--per-buy] [--daily] [--cadence] [--window]` | Change a house plan's amounts and cadence within the caps (an active plan needs `y`) |
 | `pnpm live:check [--usd 1]` | Check before a live trade (read-only, no Web3 API calls) → GO / NO-GO |
