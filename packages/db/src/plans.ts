@@ -93,6 +93,12 @@ export type PlanPatch = Partial<
     | 'principalUsd'
     | 'vtokenUnits'
     | 'expiresAt'
+    // Operator settings (pnpm plan:set), checked against the caps before they are written.
+    | 'contributionUsd'
+    | 'maxPerBuyUsd'
+    | 'maxDailyUsd'
+    | 'cadence'
+    | 'window'
   >
 >;
 

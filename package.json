@@ -26,6 +26,7 @@
     "cycle:once": "tsx scripts/cycle-once.ts",
     "yield:deposit": "tsx scripts/yield-deposit.ts",
     "plan:status": "tsx scripts/plan-status.ts",
+    "plan:set": "tsx scripts/plan-set.ts",
     "smoke": "tsx scripts/smoke.ts",
     "registry": "tsx scripts/registry.ts",
     "spike:quotes": "tsx scripts/spike-quotes.ts",
