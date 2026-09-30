@@ -87,6 +87,7 @@ packages/core   Domain: plan/cycle types, decideCycle(), guardian rules, amount 
 packages/binance  Binance Web3 API client: signing, per-endpoint rate limiter, envelope, logging hook
 packages/chain  viem: BSC reads/writes, Venus vToken, BEP-677 multiplier, ERC-20
 packages/db     Drizzle schema + migrations (Postgres)
+packages/rwa-lp Uniswap v4 hook + LP vault for tokenized stocks (Foundry, docs/RWA_LP.md) + TS reader
 skills/yieldvest    Wallet Skill (SKILL.md + references) for Claude Code / OpenClaw + baw
 scripts/        fetch-docs.sh, reach, dx:metrics, cycle:once
 fixtures/       recorded real API responses (redacted)
@@ -104,6 +105,8 @@ pnpm cycle:once --plan <id> [--live]   # run one agent cycle; --live requires hu
 pnpm dx:metrics     # regenerate dx/metrics.md from the api_calls table
 pnpm smoke          # hit /api/judge/smoke
 pnpm typecheck && pnpm lint && pnpm test
+pnpm lp:test        # forge tests of packages/rwa-lp (run before committing Solidity changes)
+pnpm lp:status      # read-only state of deployed RWA LP pools
 ```
 
 ## Git

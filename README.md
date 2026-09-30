@@ -47,6 +47,15 @@ export YIELDVEST_URL=<site URL>
 
 Then say "Start Yieldvest". Requires: the `binance-agentic-wallet` skill and `baw`. The server only decides (it stores no keys or sessions); every transaction is signed by the user's wallet after the user confirms. API contract: `/api/openapi` (OpenAPI 3.1).
 
+## RWA liquidity (Uniswap v4 hook)
+
+[`packages/rwa-lp`](packages/rwa-lp) lets tokenized stocks be supplied as liquidity without selling the overnight gap for free: a Uniswap v4 hook on BSC's deployed PoolManager charges each swap for the US session it happens in (0.05% regular, 0.30% pre/after-hours, 1.00% closed, a 30-minute ramp after the open), makes the swap that closes a gap to a fresh reference price pay half of that gap, and prices a scheduled bStocks multiplier change (dividend, split) as closed. The session comes from the same NYSE calendar the agent uses, checked on chain against 12,944 vectors. An ERC-20 vault holds the full-range position; withdrawals can never be blocked. Built, fork-tested on real NVDAB and NVDAon, not deployed: deploying and seeding are a human decision. Details: [`docs/RWA_LP.md`](docs/RWA_LP.md).
+
+```bash
+pnpm lp:test      # forge: 128 tests (BSC fork suite: BSC_FORK_URL=… pnpm lp:test)
+pnpm lp:status    # live state of deployed pools; UNAVAILABLE until one is deployed
+```
+
 ## Structure
 
 ```
@@ -56,6 +65,7 @@ packages/core   Decision rules (decideCycle), guardian rules, amount and share-c
 packages/binance  Web3 API client: HMAC signing, rate limit, error taxonomy (SPEC §11), call instrumentation (api_calls)
 packages/chain  viem: ERC-20, Venus, receipt logs
 packages/db     Drizzle schema, migrations (with rollback), spend ledger (advisory lock), outbox, jobs
+packages/rwa-lp Uniswap v4 hook, NYSE calendar, reference oracle and LP vault (Foundry) + a read-only TypeScript reader
 skills/yieldvest    Wallet Skill (SKILL.md + references)
 ```
 
@@ -97,6 +107,7 @@ Operating procedures: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 | [`docs/DX_PROTOCOL.md`](docs/DX_PROTOCOL.md) · [`dx/LOG.md`](dx/LOG.md) | Developer-experience evidence |
 | [`docs/UX_COPY.md`](docs/UX_COPY.md) | UI copy (English only, D-26 and D-27) |
 | [`docs/SECURITY.md`](docs/SECURITY.md) · [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Security review, operations |
+| [`docs/RWA_LP.md`](docs/RWA_LP.md) | RWA liquidity: the Uniswap v4 hook, vault, evidence and deploy runbook |
 | [`CLAUDE.md`](CLAUDE.md) · [`docs/GOALS.md`](docs/GOALS.md) | Operating rules and goals for the coding agent |
 
 ## License

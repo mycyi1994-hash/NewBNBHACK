@@ -60,6 +60,7 @@ Track rules (gist of the original):
 | /dx page: p50/p95 per endpoint, error codes, off-hours tape | | | ● | | | |
 | Error taxonomy table and LIVE/STALE/UNAVAILABLE states | ● | | ● | ● | | |
 | `/api/judge/smoke` checks every component in one call | ● | | | | | |
+| RWA liquidity: session-aware Uniswap v4 hook + LP vault for tokenized stocks (human request 9/30, DECISIONS D-29, `docs/RWA_LP.md`) | ● | ● | ● | | | |
 | KR/EN, mobile, crypto term substitution | | | | ● | | |
 
 ## 4. Self-assessment rubric (updated every Sunday: 9/27, 10/4, 10/8 final)

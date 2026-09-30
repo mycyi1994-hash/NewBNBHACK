@@ -405,6 +405,53 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 
 ---
 
+## LP RWA liquidity on Uniswap v4 (human request 9/30, DECISIONS D-29) — Goal: LPs are paid for the gap risk only tokenized stocks have
+
+Design and runbook: `docs/RWA_LP.md`. Package: `packages/rwa-lp`. Nothing here deploys, seeds or signs on mainnet; those are LP-08 and LP-09.
+
+### LP-01 Toolchain and package · Criterion: Technical
+- [x] `@yieldvest/rwa-lp` workspace package: Foundry project (`foundry.toml`, solc 0.8.26, Cancun) with Solidity dependencies from npm (`@uniswap/v4-core` 1.0.2 — the build running on BSC, U-01 — and `@openzeppelin/contracts` 5.6.1), TypeScript in `src/`. Root commands `pnpm lp:build`, `lp:test`, `lp:abi`, `lp:vectors`, `lp:status`.
+  - Evidence: `forge --version` 1.5.1-v1.5.1 (release tarball, sha256 `73640b01…fe88`); CI job `contracts` installs the same tarball by version and checksum, builds, runs `pnpm lp:test` and fails if `src/abi.ts` differs from the build.
+
+### LP-02 The agent's NYSE calendar on chain · Criteria: Technical, Creativity
+- [x] `NyseMarketCalendar` + `NyseTime`: New York time with US daylight-saving rules, weekends, the 2026–2027 holiday and early-close tables of `packages/core/src/session.ts`, an uncovered year is closed; the owner can add a closure or a year.
+  - Evidence: `vectors/nyse-sessions.json` (12,944 instants: every session boundary of every day 2025-12-24 → 2028-01-08, the DST switches, 1,000 seeded random instants) is generated from `session.ts`; vitest fails if it is stale, and `test_matchesTheAgentCalendarVectors` replays all of them against the contract with 0 mismatches.
+
+### LP-03 Session-aware hook · Criteria: Technical, Creativity
+- [x] `RwaSessionHook`: dynamic LP fee per swap (regular / extended / closed, opening ramp, reference-gap surcharge on the side that closes the gap, corporate-action window from the bStocks `effectiveAt`), guardian halt that never blocks withdrawals, owner-only pool creation (`beforeInitialize` rejects everyone else), liquidity gate.
+  - Evidence: `contracts/test/RwaSessionHook.t.sol`, 26 tests × 2 pool orientations, incl. a fuzz test (every time of the week, any reference price and direction: the fee stays in [0.05%, 3%] and the swap goes through) and failing references (reverting, gas-burning, malformed, future, zero, no code) that never block a swap. Hook overhead +33.4k gas per swap in its most expensive state (`test_swapGasOverheadIsBounded`).
+
+### LP-04 Reference oracle · Criterion: Technical
+- [x] `KeeperReferenceOracle`: reporters post share price + multiplier; bStocks reports must carry the on-chain `uiMultiplier`, and an observation stops counting when the multiplier changes (a pre-split price never meets the post-split multiplier); reports only move forward in time and must arrive within 5 minutes.
+  - Evidence: `contracts/test/KeeperReferenceOracle.t.sol`, 11 tests.
+
+### LP-05 Liquidity vault · Criteria: Technical, UX
+- [x] `RwaLiquidityVault`: ERC-20 shares over one full-range position; pro-rata deposits (rounded up) and withdrawals (rounded down) with maxima/minima and a deadline; fees collected before every entry and exit; 1,000 shares locked by the first deposit; operator-only compounding inside a price band; optional allowlist that never blocks leaving.
+  - Evidence: `contracts/test/RwaLiquidityVault.t.sol` (19 tests × 2 orientations, incl. a fuzz test that someone else's deposit and withdrawal at any price never shrinks an existing holder's claim) and `VaultInvariants.t.sol` (per-share liquidity and idle never shrink, shares add up, everyone can leave; stress run 32,768 calls, 0 reverts). Coverage of the production contracts: lines 100% (485/485), statements 99.58%, branches 96.84%, functions 100%.
+
+### LP-06 BSC fork proof, deploy script, rehearsal · Criteria: Technical, DX
+- [x] Fork tests on BSC mainnet state through the deployed PoolManager with real bStocks and Ondo tokens taken from the RWA registry fixture (no stock address in code, D-07).
+  - Evidence: `BSC_FORK_URL=https://bsc-dataseed.bnbchain.org BSC_FORK_BLOCK=124829943 pnpm lp:test` → `test_bStocksNvdaThroughTheDeployedPoolManager` and `test_ondoNvdaThroughTheDeployedPoolManager` pass (2026-09-30 02:38 UTC).
+- [x] `DeployRwaLp.s.sol` (CREATE2-mined hook address, `LP_OWNER` two-step handover, manifest only on broadcast) and its tests (`DeployRwaLp.t.sol`, 4 tests).
+  - Evidence: dry run against BSC state 2026-09-30 02:43 UTC, `RWA_TOKEN` = NVDAB from the fixture: "SIMULATION COMPLETE", estimated 13,542,268 gas = 0.0006771134 BNB at 0.05 gwei; nothing broadcast.
+- [x] Local rehearsal on an anvil fork of BSC block 124831596 (02:50 UTC; all transactions to the local node only): deploy broadcast, deposit of 151.05 shares with exact approvals (380,956 gas, 0 allowance left on both tokens), reference 225.99 USD posted, Uniswap's deployed V4Quoter quoting through the hook (sell 1 NVDAB → 206.416 USDT, gas estimate 127,947), and `pnpm lp:status` reading it: `LIVE … session regular · buy 0.05% (regular) · sell 0.5250% (reference_gap) · pool 228.14 USD per token · reference 225.99 USD, 0 s old (fresh)`.
+
+### LP-07 TypeScript reader and status · Criteria: Technical, DX
+- [x] `src/`: ABIs generated from the build, the Uniswap v4 BSC addresses (U-01, U-02), manifest validation, the hook's price math (equal to the contract's on shared vectors in `price.test.ts` and `PoolPriceMath.t.sol`), `readLpStatus` at one block. `pnpm lp:status`: LIVE per pool, or `UNAVAILABLE: no RWA LP deployment recorded …` and exit 3 while nothing is deployed.
+  - Evidence: 30 vitest tests in `@yieldvest/rwa-lp`; `pnpm typecheck && pnpm lint && pnpm test` green.
+
+### LP-08 [HUMAN] Mainnet deployment and seed · Criterion: Technical
+- [ ] Decide: deployer key (never the house key), owner multisig (`LP_OWNER`), guardian, fee schedule (D-29 defaults or other), first stock (NVDAB proposed) and seed amount. Deploying and seeding are new spend paths (CLAUDE.md rule 5).
+- Acceptance: a manifest in `packages/rwa-lp/deployments/`, the seed deposit's tx hash, `pnpm lp:status` LIVE on mainnet.
+
+### LP-09 [HUMAN+agent] Reference reporter · Criteria: Technical, Creativity
+- [ ] Decide who reports (DECISIONS Q-19). Then: a worker job that posts `stockInfo.price` (RWA Dynamic V2) × the multiplier during the regular session, simulated through the Transaction API before each broadcast (rule 5).
+
+### LP-10 LP page in the web app (after LP-08) · Criterion: UX
+- [ ] A read-only page from `readLpStatus`: fee each way and why, session, pool vs reference, vault holdings. Copy goes to UX_COPY §7 as an agent draft first (D-20).
+
+---
+
 ## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]
 - [~] 9/27: agent draft in JUDGING §4 with its evidence — Technical 5, Creativity 8, DX 6, UX 6, weighted 6.2. Top priority: the money decisions (R1–R4), then the $1 live test and a web deploy.
   - [ ] [HUMAN] Confirm or change the 9/27 scores.

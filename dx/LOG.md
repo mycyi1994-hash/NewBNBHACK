@@ -433,3 +433,43 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Workaround: the worker stays on our own runtime (Fly, Frankfurt). For an identity, a separate identity wallet can call `register(agentURI)` through `@bnbagent/sdk`, or through a minimal `bag init` project (DECISIONS D-28).
 - Ask: an identity-only command (register an existing agent's URI from a given keystore, without a seller project), and a documented pattern for scheduled or operator agents.
 - Evidence: the CLI output above (`@bnbagent/studio-cli@0.0.14`).
+
+## 2026-09-30 02:08 UTC — [chain][docs] The Uniswap v4 addresses on BSC: the docs page rate-limits a script on its first request; the contracts repo has them, and they check out on chain
+- Goal: find and verify the Uniswap v4 PoolManager on BSC for the RWA LP hook (DECISIONS D-29).
+- Expected: the "v4 Deployments" page of the Uniswap docs, fetched by a script.
+- Actual: `curl https://docs.uniswap.org/contracts/v4/deployments` → `HTTP 429`, body `error code: 1015` (a Cloudflare rate limit) on the first request from this host (02:07 UTC). `raw.githubusercontent.com/Uniswap/contracts/main/deployments/56.md` (sha256 `14a69437…85c4`) lists PoolManager `0x28e2…e9dF`, PositionManager `0x7a4a…f95b`, StateView `0xd13d…e0c4`, V4Quoter `0x9f75…37b0`, UniversalRouter `0xDc26…7C9f`. On chain at block 124825961: StateView, PositionManager and V4Quoter each answer `poolManager()` with the PoolManager; the PoolManager's runtime bytecode (24,009 bytes) equals the `@uniswap/v4-core@1.0.2` npm artifact once its one immutable is masked; PositionManager `nextTokenId()` 1,387,557.
+- Docs: docs.uniswap.org › Contracts › v4 › Deployments; github.com/Uniswap/contracts `deployments/56.md`.
+- Time lost: about 5 minutes.
+- Workaround: the deployment log in the contracts repository, then on-chain checks.
+- Ask: list the canonical v4 DEX contracts on BSC (Uniswap v4, PancakeSwap Infinity) in the BNB Chain developer docs with the other infrastructure addresses.
+- Evidence: DECISIONS §2.3 U-01–U-04; `packages/rwa-lp/src/addresses.ts`.
+
+## 2026-09-30 02:10 UTC — [chain][edge] Public BSC RPCs cannot list a contract's events over any useful range, and a fork of a pruned node dies within minutes
+- Goal: list the Uniswap v4 `Initialize` events whose currency is a tokenized stock (which stock pools exist on BSC).
+- Expected: `eth_getLogs` filtered by address and topic over a few million blocks.
+- Actual: `bsc-dataseed.bnbchain.org`: 200 blocks → `-32005 limit exceeded`. `bsc-rpc.publicnode.com`: 5,000,000 blocks → `HTTP 403 "Archive requests require a personal token"`; 100 blocks → 218 `Swap` logs. `bsc.drpc.org`: `"ranges over 10000 blocks are not supported on free plan"`. `rpc.ankr.com/bsc`: no answer. At about 0.75 s per block, 10,000 blocks is about 2 hours, so the ~100M blocks since v4 launched on BSC take ~10,000 requests on the best free endpoint. Separately (02:48 UTC): an `anvil` fork of `bsc-dataseed` started answering `missing trie node` for accounts it had not read yet about 2 minutes after forking (the node keeps recent state only).
+- Docs: —
+- Time lost: about 10 minutes.
+- Workaround: compute the pool ids of candidate keys (stock × USDT/USDC/WBNB/BNB × fee tiers, no hook) and read `StateView.getSlot0/getLiquidity` (next entry); fork runs read every account they need in their first seconds.
+- Ask: an event index (or a data API) for BSC v4 pools by currency, or a free archive tier with a larger log range.
+- Evidence: the JSON-RPC answers quoted above.
+
+## 2026-09-30 02:11 UTC — [chain][rwa][edge] Tokenized stocks already sit in hookless Uniswap v4 pools on BSC, 205–228 USD apart for the same NVIDIA exposure, and the three NVDAB pools have no active liquidity
+- Goal: see how tokenized stocks are pooled on BSC before designing the hook (D-29).
+- Expected: —
+- Actual: at block 124826328 (US overnight): NVDAB/USDT 0.01% 224.85 USD, liquidity 0; NVDAB/USDT 1% 205.48, 0; NVDAB/USDC 0.3% 221.97, 0; NVDAon/USDT 0.01% 228.30, 1.68e19; NVDAon/USDT 0.05% 212.03, 1.40e18; NVDAon/USDT 1% and NVDAon/BNB 1% at the price limits with 0 liquidity; QQQB/USDT 0.01% 722.32 and 0.3% 709.72. Every pool found is hookless with a static fee (the probe cannot see hooked pools: a pool key includes the hook address). At 02:11:39 the public RWA Dynamic V2 answered NVDAB `tokenInfo.price` 228.1474 and `stockInfo.price` null (market closed).
+- Docs: —
+- Time lost: 0.
+- Workaround: —
+- Ask: —
+- Evidence: pool ids and prices in docs/RWA_LP.md §1 (method: keccak of the pool key, `StateView.getSlot0`/`getLiquidity`, sqrt price → USD with `packages/rwa-lp/src/price.ts`).
+
+## 2026-09-30 02:38 UTC — [rwa][edge] bStocks and Ondo NVIDIA tokens move freely through the Uniswap v4 PoolManager, with no fee on transfer
+- Goal: check that tokenized stocks can be pooled at all (holder allowlists, fees on transfer) before building on it.
+- Expected: unknown — RWA tokens often restrict who may hold them.
+- Actual: on a fork of block 124829943, balances written to fresh addresses moved into the PoolManager (`settle`) and back out (`take`) for NVDAB and NVDAon, through the RwaSessionHook pool and vault. `settle` checks the amount received, so neither token takes a transfer fee. The live PoolManager already held 65.56 NVDAB and 6.87 NVDAon (02:10 UTC). NVDAB, TSLAB and QQQB `effectiveAt()` were 0 (nothing scheduled) at block 124833171.
+- Docs: —
+- Time lost: 0.
+- Workaround: —
+- Ask: state in the RWA docs, per issuer, whether a token may be held by contracts such as AMM pool managers, and how a scheduled multiplier change is announced on chain.
+- Evidence: `packages/rwa-lp/contracts/test/BscFork.t.sol`; DECISIONS U-05, U-06.
