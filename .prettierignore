@@ -14,3 +14,6 @@ frontend-preview/
 # Verbatim ports of the approved frontend-preview CSS (compare against frontend-preview/src).
 apps/web/app/styles/preview.css
 apps/web/app/styles/motion.css
+
+# Calendar vectors generated from packages/core/src/session.ts, kept on one line (pnpm lp:vectors).
+packages/rwa-lp/vectors/

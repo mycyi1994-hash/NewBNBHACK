@@ -1,5 +1,6 @@
 # Quality gates from CLAUDE.md rule 9: typecheck, lint, test; then the core coverage gate (SPEC §12:
-# 100%, as the README says) and the web production build. No secrets are used; deploys are manual.
+# 100%, as the README says) and the web production build. The contracts job builds and tests the
+# Uniswap v4 hook package (docs/RWA_LP.md). No secrets are used; deploys are manual.
 # Third-party actions are pinned to full commit SHAs (the comment names the tag each one resolved to).
 name: ci
 
@@ -69,3 +70,34 @@ jobs:
       - run: pnpm coverage:core
       # Builds without secrets or DATABASE_URL, like any fresh checkout.
       - run: pnpm --filter @yieldvest/web build
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Foundry from its release tarball, pinned by version and checksum (no install script).
+      FOUNDRY_VERSION: v1.5.1
+      FOUNDRY_SHA256: 73640b01bd9ed29fdb4965085099371f8cf0dbbec3e2086cf54564efc4dcfe88
+      FOUNDRY_PROFILE: ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      # Solidity dependencies (@uniswap/v4-core 1.0.2, OpenZeppelin) come from npm.
+      - run: pnpm install --frozen-lockfile
+      - name: Install Foundry
+        run: |
+          curl -fsSL -o foundry.tar.gz "https://github.com/foundry-rs/foundry/releases/download/${FOUNDRY_VERSION}/foundry_${FOUNDRY_VERSION}_linux_amd64.tar.gz"
+          echo "${FOUNDRY_SHA256}  foundry.tar.gz" | sha256sum --check
+          mkdir -p "$HOME/.foundry/bin"
+          tar -xzf foundry.tar.gz -C "$HOME/.foundry/bin" forge
+          echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
+      - run: pnpm lp:build
+      # Unit, fuzz, invariant and calendar-vector tests; the BSC fork suite skips without BSC_FORK_URL.
+      - run: pnpm lp:test
+      # The TypeScript ABIs must match the contracts just built.
+      - run: pnpm lp:abi && git diff --exit-code packages/rwa-lp/src/abi.ts

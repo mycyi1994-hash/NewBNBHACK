@@ -38,7 +38,12 @@
     "lint:copy": "tsx apps/web/scripts/copy.ts lint",
     "ui:check": "tsx scripts/ui-check.ts",
     "qa:check": "tsx scripts/qa-check.ts",
-    "receipts:table": "tsx scripts/receipts-table.ts"
+    "receipts:table": "tsx scripts/receipts-table.ts",
+    "lp:build": "pnpm --filter @yieldvest/rwa-lp build:contracts",
+    "lp:test": "pnpm --filter @yieldvest/rwa-lp test:contracts",
+    "lp:abi": "pnpm --filter @yieldvest/rwa-lp abi",
+    "lp:vectors": "pnpm --filter @yieldvest/rwa-lp vectors",
+    "lp:status": "tsx scripts/lp-status.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
