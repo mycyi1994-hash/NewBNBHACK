@@ -19,6 +19,15 @@ contract FullRangeLiquidityTest is Test {
         assertApproxEqAbs(FullRangeLiquidity.liquidityForAmounts(below, lower, upper, a0, 0), 1e18, 1);
     }
 
+    /// Regression: the CI fuzz profile found `liquidityForAmounts` dividing by zero here.
+    function test_exactlyAtTheLowerBoundOnlyToken0Counts() public view {
+        (uint256 a0, uint256 a1) = FullRangeLiquidity.amountsForLiquidity(lower, lower, upper, 6392, false);
+        assertEq(a1, 0);
+        assertEq(a0, SqrtPriceMath.getAmount0Delta(lower, upper, 6392, false));
+        assertLe(FullRangeLiquidity.liquidityForAmounts(lower, lower, upper, a0, a1), 6392);
+        assertEq(FullRangeLiquidity.liquidityForAmounts(lower, lower, upper, 0, 1e18), 0);
+    }
+
     function test_aboveTheRangeOnlyToken1Counts() public view {
         uint160 above = upper;
         (uint256 a0, uint256 a1) = FullRangeLiquidity.amountsForLiquidity(above, lower, upper, 1e18, false);

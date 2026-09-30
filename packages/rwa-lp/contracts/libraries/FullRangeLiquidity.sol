@@ -17,7 +17,10 @@ library FullRangeLiquidity {
         uint256 amount1
     ) internal pure returns (uint128) {
         uint256 liquidity;
-        if (sqrtPriceX96 < sqrtPriceLowerX96) {
+        // At exactly the lower bound only token0 is behind liquidity (and the in-range formula for
+        // token1 would divide by zero), so that price counts as below the range, as in Uniswap's
+        // LiquidityAmounts.
+        if (sqrtPriceX96 <= sqrtPriceLowerX96) {
             liquidity = _fromAmount0(sqrtPriceLowerX96, sqrtPriceUpperX96, amount0);
         } else if (sqrtPriceX96 < sqrtPriceUpperX96) {
             uint256 fromAmount0 = _fromAmount0(sqrtPriceX96, sqrtPriceUpperX96, amount0);
