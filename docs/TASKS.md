@@ -411,7 +411,7 @@ Design and runbook: `docs/RWA_LP.md`. Package: `packages/rwa-lp`. Nothing here d
 
 ### LP-01 Toolchain and package · Criterion: Technical
 - [x] `@yieldvest/rwa-lp` workspace package: Foundry project (`foundry.toml`, solc 0.8.26, Cancun) with Solidity dependencies from npm (`@uniswap/v4-core` 1.0.2 — the build running on BSC, U-01 — and `@openzeppelin/contracts` 5.6.1), TypeScript in `src/`. Root commands `pnpm lp:build`, `lp:test`, `lp:abi`, `lp:vectors`, `lp:status`.
-  - Evidence: `forge --version` 1.5.1-v1.5.1 (release tarball, sha256 `73640b01…fe88`); CI job `contracts` installs the same tarball by version and checksum, builds, runs `pnpm lp:test` and fails if `src/abi.ts` differs from the build.
+  - Evidence: `forge --version` 1.5.1-v1.5.1 (release tarball, sha256 `73640b01…fe88`); CI job `contracts` installs the same tarball by version and checksum, builds, runs `pnpm lp:test` and fails if `src/abi.ts` differs from the build. **CI green** for that job: GitHub Actions `ci` run #60 (https://github.com/mycyi1994-hash/NewBNBHACK/actions/runs/36663353717, commit `a12623f`, 2026-09-30 03:13 UTC) — Install Foundry, `lp:build`, `lp:test`, ABI check all success. Run #59 had failed it: the CI fuzz profile found the `liquidityForAmounts` division by zero fixed in `a12623f` (LP-05).
 
 ### LP-02 The agent's NYSE calendar on chain · Criteria: Technical, Creativity
 - [x] `NyseMarketCalendar` + `NyseTime`: New York time with US daylight-saving rules, weekends, the 2026–2027 holiday and early-close tables of `packages/core/src/session.ts`, an uncovered year is closed; the owner can add a closure or a year.
