@@ -81,7 +81,10 @@ const schemas: Record<string, Schema> = {
       kind: { enum: ['preview', 'run', 'stop'] },
       planId: str(),
       status: { enum: ['queued', 'running', 'done', 'failed'] },
-      result: { description: "The worker's report: a cycle outcome, a simulation or a stop." },
+      result: {
+        description:
+          "The worker's report: a cycle outcome, a simulation or a stop. A run's report also has `planStatus`, the plan's status once it is over (`active`: it now runs on its own).",
+      },
       error: nullable(str()),
       createdAt: str(),
       finishedAt: nullable(str()),

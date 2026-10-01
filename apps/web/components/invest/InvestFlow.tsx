@@ -69,6 +69,8 @@ interface JobResult {
     approval?: 'existing_allowance' | 'simulated';
   };
   depositedUsd?: string;
+  /** The plan's status once the run is over: `active` when it now runs on its own. */
+  planStatus?: string | null;
 }
 interface Job {
   status: 'queued' | 'running' | 'done' | 'failed';
@@ -180,6 +182,12 @@ export function InvestFlow({
   const [amount, setAmount] = useState(capUsd);
   const [window, setWindow] = useState<'regular_session' | 'anytime'>('regular_session');
   const [planId, setPlanId] = useState<string | null>(null);
+  // What the plan was created with: its runs use these, whatever the form shows since.
+  const [terms, setTerms] = useState<{
+    ticker: string;
+    mode: 'safe' | 'yield';
+    amount: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<JobResult | null>(null);
@@ -261,6 +269,7 @@ export function InvestFlow({
     if (res.status !== 201) return setError(problemText(res.status, res.body));
     const plan = res.body.plan as { id: string };
     setPlanId(plan.id);
+    setTerms({ ticker, mode, amount });
     setResult(null);
     setReview(true);
     setStage('previewed');
@@ -272,9 +281,10 @@ export function InvestFlow({
     setStage('running');
     setBusy(true);
     setError(null);
+    const plan = terms ?? { mode, amount };
     const res = await post(
       `/api/plans/${planId}/run`,
-      mode === 'yield' ? { depositUsd: amount } : undefined,
+      plan.mode === 'yield' ? { depositUsd: plan.amount } : undefined,
     );
     if (res.status !== 202) {
       setBusy(false);
@@ -302,10 +312,16 @@ export function InvestFlow({
   }
 
   // A deposit whose exact approval was still confirming goes on from it with the same plan: a new
-  // plan would leave this one waiting for its first run for good.
+  // plan would leave this one waiting for its first run for good. The form shows the plan's own
+  // terms again, so the dialog says what the run sends.
   const retry =
     !busy && result?.result?.status === 'approval_pending'
       ? () => {
+          if (terms) {
+            setTicker(terms.ticker);
+            setMode(terms.mode);
+            setAmount(terms.amount);
+          }
           setReview(true);
           void run();
         }
@@ -1038,7 +1054,9 @@ function DoneBody({
           {t('common.retry')}
         </button>
       ) : null}
-      <p className="dialog-caption">{t('judge.done.plan_note')}</p>
+      {job.result?.planStatus === 'active' ? (
+        <p className="dialog-caption">{t('judge.done.plan_note')}</p>
+      ) : null}
     </>
   );
 }
@@ -1102,7 +1120,9 @@ function DonePanel({
           <StopPlan planId={planId} lang={lang} yieldPlan={mode === 'yield'} />
         </>
       ) : null}
-      <p className="panel-caption">{t('judge.done.plan_note')}</p>
+      {job.result?.planStatus === 'active' ? (
+        <p className="panel-caption">{t('judge.done.plan_note')}</p>
+      ) : null}
     </aside>
   );
 }

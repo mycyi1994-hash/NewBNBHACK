@@ -1351,3 +1351,18 @@ a.button {
     order: -1;
   }
 }
+
+/*
+ * Ledger rows on a narrow screen. With body's overflow-wrap: anywhere and an unshrinkable label,
+ * a long label ("Amount to put in the interest account") squeezed the value until it broke
+ * mid-word ("5.00 USD" / "T"). The value keeps its natural width, up to 60 % of the row, and
+ * the label wraps at its words in what is left.
+ */
+.ledger dt {
+  flex-shrink: 1;
+}
+
+.ledger dd {
+  flex-shrink: 0;
+  max-width: 60%;
+}

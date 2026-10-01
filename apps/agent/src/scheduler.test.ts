@@ -329,12 +329,26 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
     await schedulerTick(w.deps('live'), w.deps('simulate'));
     expect(await getJob(db, `job-r-${id}`)).toMatchObject({
       status: 'done',
-      result: { status: 'done', outcome: { kind: 'BOUGHT' } },
+      // The first run started the plan: from now on it runs on its own.
+      result: { status: 'done', outcome: { kind: 'BOUGHT' }, planStatus: 'active' },
     });
     expect(await getJob(db, `job-s-${id}`)).toMatchObject({
       status: 'done',
       result: { status: 'stopped' },
     });
     expect((await getPlan(db, id))?.status).toBe('stopped');
+  });
+
+  it('says in a run’s report that a worker in simulate mode did not start the plan', async () => {
+    await calm();
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    const w = await createWorld(db, '2026-09-28T14:00:00.000Z');
+    await enqueueJob(db, { id: `job-sim-${id}`, kind: 'run', planId: id });
+    await processJobs(w.deps('simulate'), w.deps('simulate'));
+    expect(await getJob(db, `job-sim-${id}`)).toMatchObject({
+      status: 'done',
+      result: { status: 'simulated', planStatus: 'paused' },
+    });
+    expect(await getPlan(db, id)).toMatchObject({ status: 'paused', pausedReason: 'awaiting_run' });
   });
 });
