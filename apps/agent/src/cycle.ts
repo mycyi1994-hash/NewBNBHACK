@@ -90,6 +90,12 @@ export interface CycleDeps extends TradeDeps {
 export interface CycleOptions {
   /** cycle:once: run now even when not due or paused (never a stopped plan); keep the schedule. */
   manual?: boolean;
+  /**
+   * cycle:once --live: the buy a person confirmed after the dry run. The live run decides again from
+   * fresh data; it may buy that instrument for at most that amount, and fails before it signs or
+   * reserves anything if it would buy another one or spend more.
+   */
+  confirmed?: { instrumentId: string; maxSpendUsd: string };
 }
 
 export interface SimulatedBuy {
@@ -508,6 +514,22 @@ async function cycleBody(
       // EXECUTE — the decision is recorded before anything is signed, so a cycle interrupted
       // later can still be finished from the chain (recoverInterrupted).
       const spend = units(decision.spendUsd);
+      const { confirmed } = options;
+      if (
+        confirmed &&
+        (decision.instrumentId !== confirmed.instrumentId || spend > units(confirmed.maxSpendUsd))
+      ) {
+        return failed(
+          {
+            code: 'NOT_CONFIRMED',
+            message:
+              `the live decision (${decision.instrumentId}, $${decision.spendUsd}) is not the buy ` +
+              `that was confirmed (${confirmed.instrumentId}, at most $${confirmed.maxSpendUsd})`,
+            fundsMoved: 'none',
+          },
+          decision,
+        );
+      }
       await step({ step: 'EXECUTE', decision });
       if (deps.mode === 'live' && !reserved) {
         const reservation = await reserveSpend(deps.db, {

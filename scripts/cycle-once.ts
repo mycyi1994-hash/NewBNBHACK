@@ -78,6 +78,7 @@ if (!flags.ok) {
         console.log(
           'live: refused — the dry run does not pass the simulation gate; nothing signed',
         );
+        process.exitCode = 1;
       } else if (config.executionMode !== 'live' || !config.houseWalletPrivateKey) {
         console.log('live: refused — needs EXECUTION_MODE=live and HOUSE_WALLET_PRIVATE_KEY');
         process.exitCode = 1;
@@ -90,11 +91,17 @@ if (!flags.ok) {
       ) {
         const deps = executorDeps(rt, 'live');
         if (plan.mode === 'yield') deps.venus = simulate.venus;
-        const report = await runCycle(deps, plan.id, { manual: true });
+        // The live run decides again from fresh data, bound to what was just confirmed: the same
+        // token, at most the same amount — anything else fails before it signs.
+        const report = await runCycle(deps, plan.id, {
+          manual: true,
+          confirmed: { instrumentId: dry.buy.instrumentId, maxSpendUsd: dry.buy.spendUsd },
+        });
         console.log(cycleReportText(report, context));
         process.exitCode = cycleExitCode(report);
       } else {
         console.log('live: not confirmed — nothing signed');
+        process.exitCode = 1;
       }
     }
   } finally {

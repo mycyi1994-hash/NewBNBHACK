@@ -112,6 +112,7 @@ if (!flags.ok || (flags.values.record !== undefined && !TX_HASH.test(flags.value
             }
           } else {
             console.log('live: not confirmed — nothing signed');
+            process.exitCode = 1;
           }
         }
       }

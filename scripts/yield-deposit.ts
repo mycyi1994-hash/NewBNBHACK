@@ -269,6 +269,7 @@ if (!flags.ok || problem !== undefined) {
           await depositLive(market, usd);
         } else {
           console.log('live: not confirmed — nothing signed');
+          process.exitCode = 1;
         }
       }
     }

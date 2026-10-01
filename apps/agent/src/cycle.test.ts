@@ -131,6 +131,34 @@ describe.skipIf(!url)('runCycle on Postgres', () => {
     expect(w.alerts).toEqual([]);
   });
 
+  it('live, confirmed: a decision that is not the confirmed buy fails before anything is signed or reserved', async () => {
+    for (const confirmed of [
+      { instrumentId: 'OTHER:bstocks', maxSpendUsd: '5' },
+      { instrumentId, maxSpendUsd: '4.99' },
+    ]) {
+      const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
+      const w = await world(MON_1000);
+      const report = await runCycle(w.deps('live'), id, { manual: true, confirmed });
+      expect(report).toMatchObject({
+        status: 'done',
+        outcome: { kind: 'FAILED', code: 'NOT_CONFIRMED', fundsMoved: 'none' },
+      });
+      expect(w.chain.sent).toEqual([]);
+      expect(w.api.calls).not.toContain('/api/v1/dex/aggregator/approve-transaction');
+      expect(await db.select().from(txOutbox).where(eq(txOutbox.planId, id))).toEqual([]);
+      // A manual run leaves the plan as it was.
+      expect((await getPlan(db, id))?.status).toBe('paused');
+    }
+    // The confirmed buy itself goes through.
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
+    const w = await world(MON_1000);
+    const report = await runCycle(w.deps('live'), id, {
+      manual: true,
+      confirmed: { instrumentId, maxSpendUsd: '5' },
+    });
+    expect(report).toMatchObject({ status: 'done', outcome: { kind: 'BOUGHT', spendUsd: '5' } });
+  });
+
   it('live: a buy on top of a holding written at another multiplier logs the change and recomputes shares (M1-08)', async () => {
     const id = await plan();
     // 1 token held since the multiplier was 1.0 (e.g. before a dividend adjustment).
