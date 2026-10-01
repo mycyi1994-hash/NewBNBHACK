@@ -77,6 +77,9 @@ abstract contract RwaLpTestBase is Test {
     uint256 internal constant THANKSGIVING = 1_795_705_200; // Thu 26 Nov 2026 10:00 (EST)
 
     uint256 internal constant START_PRICE = 225e18; // USD per stock token
+    /// @dev Deposit bounds that accept any pool price (SeedPrice.t.sol tests real ones).
+    uint160 internal constant ANY_LOWEST = TickMath.MIN_SQRT_PRICE;
+    uint160 internal constant ANY_HIGHEST = TickMath.MAX_SQRT_PRICE;
 
     address internal owner = makeAddr("owner");
     address internal guardian = makeAddr("guardian");
@@ -235,7 +238,7 @@ abstract contract RwaLpTestBase is Test {
         _fund(who, need0, need1);
         vm.startPrank(who);
         _approve(need0, need1);
-        (amount0, amount1) = vault.deposit(shares, need0, need1, who, block.timestamp);
+        (amount0, amount1) = vault.deposit(shares, need0, need1, ANY_LOWEST, ANY_HIGHEST, who, block.timestamp);
         vm.stopPrank();
     }
 

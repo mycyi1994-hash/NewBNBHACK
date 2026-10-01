@@ -16,6 +16,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 
+import {IBStockMultiplier} from "../interfaces/IBStockMultiplier.sol";
 import {IMarketCalendar} from "../interfaces/IMarketCalendar.sol";
 import {IReferencePriceSource} from "../interfaces/IReferencePriceSource.sol";
 import {PoolPriceMath} from "../libraries/PoolPriceMath.sol";
@@ -208,6 +209,42 @@ contract RwaSessionHookTest is RwaLpTestBase {
         }
     }
 
+    /// The swap's gas when `target` answers `call` with `answer` (mocked, so the answer itself
+    /// costs nothing to produce), measured from the same state each time.
+    function _swapGasWhenAnswered(address target, bytes memory call, bytes memory answer)
+        internal
+        returns (uint256 used)
+    {
+        uint256 snapshot = vm.snapshotState();
+        vm.mockCall(target, call, answer);
+        fundSwap(false, 0.5e18);
+        uint256 gasBefore = gasleft();
+        rawSwap(false, 0.5e18);
+        used = gasBefore - gasleft();
+        vm.clearMockedCalls();
+        vm.revertToState(snapshot);
+    }
+
+    /// A reference source or a token that answers at length (a return-data bomb) costs the swap no
+    /// more than one that answers nothing: the hook copies at most two words of any answer.
+    function test_aLongAnswerCostsTheSwapNothingExtra() public {
+        // Coverage builds are unoptimized and instrumented; their gas says nothing about the hook.
+        if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
+        vm.warp(TUE_REGULAR);
+        swapExactIn(false, 0.5e18); // warm the pool and the tokens
+        bytes memory long = new bytes(150_000);
+        bytes memory askPrice = abi.encodeCall(IReferencePriceSource.referencePrice, (address(stock)));
+        bytes memory askEffectiveAt = abi.encodeCall(IBStockMultiplier.effectiveAt, ());
+        uint256 silentSource = _swapGasWhenAnswered(address(oracle), askPrice, "");
+        uint256 longSource = _swapGasWhenAnswered(address(oracle), askPrice, long);
+        uint256 silentToken = _swapGasWhenAnswered(address(stock), askEffectiveAt, "");
+        uint256 longToken = _swapGasWhenAnswered(address(stock), askEffectiveAt, long);
+        console2.log("swap gas, reference answer empty / 150 kB:", silentSource, longSource);
+        console2.log("swap gas, effectiveAt answer empty / 150 kB:", silentToken, longToken);
+        assertApproxEqAbs(longSource, silentSource, 1_000);
+        assertApproxEqAbs(longToken, silentToken, 1_000);
+    }
+
     // ---------------------------------------------------------------- corporate actions
 
     function test_aScheduledMultiplierChangeChargesTheClosedFee() public {
@@ -273,7 +310,7 @@ contract RwaSessionHookTest is RwaLpTestBase {
                 IHooks.beforeAddLiquidity.selector, abi.encodeWithSelector(RwaSessionHook.PoolHalted.selector, id)
             )
         );
-        vault.deposit(1e18, need0, need1, bob, block.timestamp);
+        vault.deposit(1e18, need0, need1, ANY_LOWEST, ANY_HIGHEST, bob, block.timestamp);
         vm.stopPrank();
 
         uint256 shares = vault.balanceOf(alice);

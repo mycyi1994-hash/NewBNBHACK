@@ -384,11 +384,10 @@ contract RwaSessionHook is IHooks, Ownable2Step {
     {
         IReferencePriceSource source = referenceSource;
         if (address(source) == address(0) || f.gapCaptureBps == 0) return 0;
-        (bool ok, bytes memory answer) = address(source).staticcall{gas: REFERENCE_CALL_GAS}(
-            abi.encodeCall(IReferencePriceSource.referencePrice, (p.rwaToken))
+        (bool ok, uint256 referenceE18, uint256 observedAt) = _staticcallWords(
+            address(source), REFERENCE_CALL_GAS, abi.encodeCall(IReferencePriceSource.referencePrice, (p.rwaToken)), 64
         );
-        if (!ok || answer.length != 64) return 0;
-        (uint256 referenceE18, uint256 observedAt) = abi.decode(answer, (uint256, uint256));
+        if (!ok) return 0;
         if (referenceE18 == 0 || observedAt > block.timestamp || block.timestamp - observedAt > f.maxReferenceAge) {
             return 0;
         }
@@ -403,16 +402,31 @@ contract RwaSessionHook is IHooks, Ownable2Step {
 
     function _inCorporateActionWindow(PoolConfig storage p, uint256 window) internal view returns (bool) {
         if (!p.bStockMultiplier || window == 0) return false;
-        (bool ok, bytes memory answer) =
-            p.rwaToken.staticcall{gas: MULTIPLIER_CALL_GAS}(abi.encodeCall(IBStockMultiplier.effectiveAt, ()));
+        (bool ok, uint256 effectiveAt,) =
+            _staticcallWords(p.rwaToken, MULTIPLIER_CALL_GAS, abi.encodeCall(IBStockMultiplier.effectiveAt, ()), 32);
         // The multiplier cannot be read: price as if a corporate action were under way.
-        if (!ok || answer.length != 32) return true;
-        uint256 effectiveAt = abi.decode(answer, (uint256));
+        if (!ok) return true;
         if (effectiveAt == 0) return false;
         // |now − effectiveAt| <= window, written so that no token answer can overflow it.
         return effectiveAt >= block.timestamp
             ? effectiveAt - block.timestamp <= window
             : block.timestamp - effectiveAt <= window;
+    }
+
+    /// @dev `target.staticcall(data)` with at most `gasLimit`; `ok` only if it succeeded and answered
+    /// exactly `size` bytes (32 or 64), returned as words. At most 64 bytes of the answer are copied,
+    /// so a long one costs the swap nothing beyond the gas cap (no return-data bomb).
+    function _staticcallWords(address target, uint256 gasLimit, bytes memory data, uint256 size)
+        internal
+        view
+        returns (bool ok, uint256 word0, uint256 word1)
+    {
+        assembly ("memory-safe") {
+            ok := staticcall(gasLimit, target, add(data, 0x20), mload(data), 0x00, 0x40)
+            ok := and(ok, eq(returndatasize(), size))
+            word0 := mload(0x00)
+            word1 := mload(0x20)
+        }
     }
 
     function _checkPoolManager() internal view {

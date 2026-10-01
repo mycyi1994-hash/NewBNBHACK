@@ -163,7 +163,10 @@ contract BscForkTest is Test {
         vm.startPrank(alice);
         IERC20Metadata(token0).approve(address(p.vault), need0); // exact-amount approvals only
         IERC20Metadata(token1).approve(address(p.vault), need1);
-        (amount0, amount1) = p.vault.deposit(shares, need0, need1, alice, block.timestamp);
+        // Any price: the fork tests exercise the pool, not the bounds (SeedPrice.t.sol does).
+        (amount0, amount1) = p.vault.deposit(
+            shares, need0, need1, TickMath.MIN_SQRT_PRICE, TickMath.MAX_SQRT_PRICE, alice, block.timestamp
+        );
         vm.stopPrank();
     }
 

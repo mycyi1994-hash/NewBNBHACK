@@ -125,21 +125,27 @@ contract RwaLiquidityVault is ERC20, Ownable2Step, ReentrancyGuardTransient, IUn
     // ---------------------------------------------------------------- deposits and withdrawals
 
     /// @notice Mints `shares` to `to` (the first deposit mints `shares - MINIMUM_SHARES`), paying at
-    /// most `amount0Max` / `amount1Max`. Approve this vault for exactly what `previewDeposit` returns
-    /// plus your slippage tolerance.
-    function deposit(uint256 shares, uint256 amount0Max, uint256 amount1Max, address to, uint256 deadline)
-        external
-        nonReentrant
-        checkDeadline(deadline)
-        returns (uint256 amount0, uint256 amount1)
-    {
+    /// most `amount0Max` / `amount1Max`, and only while the pool price is within
+    /// [`minSqrtPriceX96`, `maxSqrtPriceX96`]. Take those bounds from an independent price (the
+    /// reference oracle, Binance's price), never from the pool or `previewDeposit`: while the pool is
+    /// empty, or nearly so after everyone left, anyone can move its price for free, and previews and
+    /// maxima read from it follow the move (docs/RWA_LP.md §5). Approve this vault for exactly what
+    /// `previewDeposit` returns plus your slippage tolerance.
+    function deposit(
+        uint256 shares,
+        uint256 amount0Max,
+        uint256 amount1Max,
+        uint160 minSqrtPriceX96,
+        uint160 maxSqrtPriceX96,
+        address to,
+        uint256 deadline
+    ) external nonReentrant checkDeadline(deadline) returns (uint256 amount0, uint256 amount1) {
         if (shares == 0) revert ZeroShares();
         if (allowlistEnabled && !isAllowed[msg.sender]) revert NotAllowed(msg.sender);
         uint256 supply = totalSupply();
         if (supply == 0 && shares <= MINIMUM_SHARES) revert FirstDepositTooSmall(shares);
-        (amount0, amount1) = abi.decode(
-            poolManager.unlock(abi.encode(Action.Deposit, abi.encode(msg.sender, shares, supply))), (uint256, uint256)
-        );
+        bytes memory args = abi.encode(msg.sender, shares, supply, minSqrtPriceX96, maxSqrtPriceX96);
+        (amount0, amount1) = abi.decode(poolManager.unlock(abi.encode(Action.Deposit, args)), (uint256, uint256));
         if (amount0 > amount0Max || amount1 > amount1Max) revert SlippageExceeded(amount0, amount1);
         if (supply == 0) {
             _mint(DEAD, MINIMUM_SHARES);
@@ -185,7 +191,9 @@ contract RwaLiquidityVault is ERC20, Ownable2Step, ReentrancyGuardTransient, IUn
         (Action action, bytes memory args) = abi.decode(data, (Action, bytes));
         PoolKey memory key = poolKey();
         if (action == Action.Deposit) {
-            (address payer, uint256 shares, uint256 supply) = abi.decode(args, (address, uint256, uint256));
+            (address payer, uint256 shares, uint256 supply, uint160 lowest, uint160 highest) =
+                abi.decode(args, (address, uint256, uint256, uint160, uint160));
+            _sqrtPriceWithin(lowest, highest);
             (uint256 amount0, uint256 amount1) = _depositUnlocked(key, payer, shares, supply);
             return abi.encode(amount0, amount1);
         }
@@ -362,8 +370,7 @@ contract RwaLiquidityVault is ERC20, Ownable2Step, ReentrancyGuardTransient, IUn
         returns (uint128 liquidity, uint256 amount0, uint256 amount1)
     {
         _collectFees(key);
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
-        if (sqrtPriceX96 < minSqrtPriceX96 || sqrtPriceX96 > maxSqrtPriceX96) revert PriceOutOfBounds(sqrtPriceX96);
+        uint160 sqrtPriceX96 = _sqrtPriceWithin(minSqrtPriceX96, maxSqrtPriceX96);
         uint256 balance0 = currency0.balanceOfSelf();
         uint256 balance1 = currency1.balanceOfSelf();
         // One wei of each is held back so the rounded-up amounts owed stay within the balances.
@@ -380,6 +387,12 @@ contract RwaLiquidityVault is ERC20, Ownable2Step, ReentrancyGuardTransient, IUn
         amount1 = uint256(-int256(delta.amount1()));
         _settle(currency0, address(this), amount0);
         _settle(currency1, address(this), amount1);
+    }
+
+    /// @dev The pool's price, if it is within [lowest, highest]; reverts otherwise.
+    function _sqrtPriceWithin(uint160 lowest, uint160 highest) internal view returns (uint160 sqrtPriceX96) {
+        (sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+        if (sqrtPriceX96 < lowest || sqrtPriceX96 > highest) revert PriceOutOfBounds(sqrtPriceX96);
     }
 
     /// @dev Pokes the position so its fees move into the vault's idle balances; returns its liquidity.

@@ -8,6 +8,13 @@ import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {KeeperReferenceOracle} from "../KeeperReferenceOracle.sol";
 import {MockBStock} from "./utils/RwaLpTestBase.sol";
 
+/// A token with the multiplier getter but no `effectiveAt` (both are read by the oracle).
+contract MultiplierOnlyToken {
+    function uiMultiplier() external pure returns (uint256) {
+        return 1.5e18;
+    }
+}
+
 contract KeeperReferenceOracleTest is Test {
     KeeperReferenceOracle internal oracle;
     MockBStock internal bstock;
@@ -84,6 +91,44 @@ contract KeeperReferenceOracleTest is Test {
         _post(address(bstock), 18e18, 10.00778223752807865e18, block.timestamp);
         (price,) = oracle.referencePrice(address(bstock));
         assertEq(price, 18e18 * 10.00778223752807865e18 / 1e18);
+    }
+
+    /// The keeper reads the price, then the multiplier: across a split, each is right and the pair
+    /// is ten times off. The report is refused, whatever multiplier it carries.
+    function test_aPriceObservedBeforeAMultiplierChangeCannotBePostedAfterIt() public {
+        uint256 split = block.timestamp + 2 minutes;
+        bstock.schedule(10.00778223752807865e18, split); // a 10:1 split
+        uint256 observedBefore = block.timestamp;
+        vm.warp(split + 1 minutes); // still within the report delay
+        vm.prank(reporter);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                KeeperReferenceOracle.ObservedBeforeMultiplierChange.selector, address(bstock), observedBefore, split
+            )
+        );
+        oracle.post(_report(address(bstock), 180e18, 10.00778223752807865e18, observedBefore));
+        _post(address(bstock), 18e18, 10.00778223752807865e18, split); // observed when it took effect
+        (uint256 price,) = oracle.referencePrice(address(bstock));
+        assertEq(price, 18e18 * 10.00778223752807865e18 / 1e18);
+    }
+
+    function test_anObservationDiesWhenAChangeTakesEffectEvenToTheSameMultiplier() public {
+        _post(address(bstock), 180e18, 1.000778223752807865e18, block.timestamp);
+        bstock.schedule(1.000778223752807865e18, block.timestamp + 1 minutes);
+        (uint256 price,) = oracle.referencePrice(address(bstock));
+        assertGt(price, 0, "a change only scheduled ends nothing");
+        vm.warp(block.timestamp + 1 minutes);
+        (price,) = oracle.referencePrice(address(bstock));
+        assertEq(price, 0);
+    }
+
+    function test_anUnreadableEffectiveAtCountsAsNoChange() public {
+        address token = address(new MultiplierOnlyToken());
+        vm.prank(owner);
+        oracle.configureToken(token, KeeperReferenceOracle.MultiplierSource.BStockOnChain);
+        _post(token, 100e18, 1.5e18, block.timestamp);
+        (uint256 price,) = oracle.referencePrice(token);
+        assertEq(price, 150e18, "the multiplier check alone still holds");
     }
 
     function test_anUnreadableMultiplierInvalidatesTheObservation() public {

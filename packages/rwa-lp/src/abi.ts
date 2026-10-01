@@ -910,6 +910,8 @@ export const rwaLiquidityVaultAbi = [
       { name: 'shares', type: 'uint256', internalType: 'uint256' },
       { name: 'amount0Max', type: 'uint256', internalType: 'uint256' },
       { name: 'amount1Max', type: 'uint256', internalType: 'uint256' },
+      { name: 'minSqrtPriceX96', type: 'uint160', internalType: 'uint160' },
+      { name: 'maxSqrtPriceX96', type: 'uint160', internalType: 'uint160' },
       { name: 'to', type: 'address', internalType: 'address' },
       { name: 'deadline', type: 'uint256', internalType: 'uint256' },
     ],
@@ -1545,6 +1547,15 @@ export const keeperReferenceOracleAbi = [
     ],
   },
   { type: 'error', name: 'NotReporter', inputs: [] },
+  {
+    type: 'error',
+    name: 'ObservedBeforeMultiplierChange',
+    inputs: [
+      { name: 'token', type: 'address', internalType: 'address' },
+      { name: 'observedAt', type: 'uint256', internalType: 'uint256' },
+      { name: 'effectiveAt', type: 'uint256', internalType: 'uint256' },
+    ],
+  },
   {
     type: 'error',
     name: 'OwnableInvalidOwner',

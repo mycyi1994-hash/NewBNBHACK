@@ -11,8 +11,9 @@ import {IReferencePriceSource} from "./interfaces/IReferencePriceSource.sol";
 /// the shares-per-token multiplier it was converted with. The token's reference price is
 /// share price × multiplier.
 /// @dev For a bStocks token the multiplier is on-chain: a report must carry the token's current
-/// `uiMultiplier()`, and an observation stops being valid the moment the multiplier changes, so a
-/// share price from before a split or dividend is never combined with the multiplier after it.
+/// `uiMultiplier()`, an observation stops being valid the moment a multiplier change takes effect
+/// (`effectiveAt`), and a share price observed before a change cannot be posted after it, so a share
+/// price from before a split or dividend is never combined with the multiplier after it.
 contract KeeperReferenceOracle is IReferencePriceSource, Ownable2Step {
     enum MultiplierSource {
         Disabled,
@@ -51,6 +52,7 @@ contract KeeperReferenceOracle is IReferencePriceSource, Ownable2Step {
     error InvalidReport(address token);
     error StaleReport(address token, uint256 observedAt);
     error MultiplierMismatch(address token, uint256 reported, uint256 onChain);
+    error ObservedBeforeMultiplierChange(address token, uint256 observedAt, uint256 effectiveAt);
 
     constructor(address initialOwner, uint64 maxReportDelay_) Ownable(initialOwner) {
         maxReportDelay = maxReportDelay_;
@@ -79,7 +81,10 @@ contract KeeperReferenceOracle is IReferencePriceSource, Ownable2Step {
         MultiplierSource source = multiplierSource[token];
         Observation memory o = latest[token];
         if (source == MultiplierSource.Disabled || o.observedAt == 0) return (0, 0);
-        if (source == MultiplierSource.BStockOnChain && _onChainMultiplier(token) != o.multiplierE18) return (0, 0);
+        if (source == MultiplierSource.BStockOnChain) {
+            if (_onChainMultiplier(token) != o.multiplierE18) return (0, 0);
+            if (_changedSince(token, o.observedAt) != 0) return (0, 0);
+        }
         return (uint256(o.sharePriceE18) * o.multiplierE18 / 1e18, o.observedAt);
     }
 
@@ -95,6 +100,10 @@ contract KeeperReferenceOracle is IReferencePriceSource, Ownable2Step {
         if (source == MultiplierSource.BStockOnChain) {
             uint256 onChain = _onChainMultiplier(r.token);
             if (onChain != r.multiplierE18) revert MultiplierMismatch(r.token, r.multiplierE18, onChain);
+            // A price from before a split, posted after it with the new multiplier, would be off by
+            // the split ratio although each part was right when it was read.
+            uint256 changedAt = _changedSince(r.token, r.observedAt);
+            if (changedAt != 0) revert ObservedBeforeMultiplierChange(r.token, r.observedAt, changedAt);
         }
         latest[r.token] =
             Observation({sharePriceE18: r.sharePriceE18, observedAt: r.observedAt, multiplierE18: r.multiplierE18});
@@ -104,6 +113,16 @@ contract KeeperReferenceOracle is IReferencePriceSource, Ownable2Step {
     function _onChainMultiplier(address token) internal view returns (uint256) {
         try IBStockMultiplier(token).uiMultiplier() returns (uint256 multiplier) {
             return multiplier;
+        } catch {
+            return 0;
+        }
+    }
+
+    /// @dev When a multiplier change took effect after `observedAt` and by now, its `effectiveAt`;
+    /// otherwise 0. An unreadable `effectiveAt` counts as no change (the multiplier check still holds).
+    function _changedSince(address token, uint256 observedAt) internal view returns (uint256) {
+        try IBStockMultiplier(token).effectiveAt() returns (uint256 at) {
+            return observedAt < at && at <= block.timestamp ? at : 0;
         } catch {
             return 0;
         }

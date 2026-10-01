@@ -37,7 +37,7 @@ contract RwaLiquidityVaultTest is RwaLpTestBase {
         _approve(p0, p1);
         vm.expectEmit(address(vault));
         emit Deposit(alice, alice, 1e21 - 1000, p0, p1);
-        (uint256 a0, uint256 a1) = vault.deposit(1e21, p0, p1, alice, block.timestamp);
+        (uint256 a0, uint256 a1) = vault.deposit(1e21, p0, p1, ANY_LOWEST, ANY_HIGHEST, alice, block.timestamp);
         vm.stopPrank();
         assertEq(a0, p0);
         assertEq(a1, p1);
@@ -53,12 +53,12 @@ contract RwaLiquidityVaultTest is RwaLpTestBase {
 
     function test_theFirstDepositMustExceedTheLockedShares() public {
         vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.FirstDepositTooSmall.selector, 1000));
-        vault.deposit(1000, type(uint256).max, type(uint256).max, alice, block.timestamp);
+        vault.deposit(1000, type(uint256).max, type(uint256).max, ANY_LOWEST, ANY_HIGHEST, alice, block.timestamp);
     }
 
     function test_zeroSharesAreRejected() public {
         vm.expectRevert(RwaLiquidityVault.ZeroShares.selector);
-        vault.deposit(0, 0, 0, alice, block.timestamp);
+        vault.deposit(0, 0, 0, ANY_LOWEST, ANY_HIGHEST, alice, block.timestamp);
         vm.expectRevert(RwaLiquidityVault.ZeroShares.selector);
         vault.withdraw(0, 0, 0, alice, block.timestamp);
     }
@@ -89,7 +89,7 @@ contract RwaLiquidityVaultTest is RwaLpTestBase {
         _fund(alice, max0, max1);
         vm.startPrank(alice);
         _approve(max0, max1);
-        vault.deposit(first, max0, max1, alice, block.timestamp);
+        vault.deposit(first, max0, max1, ANY_LOWEST, ANY_HIGHEST, alice, block.timestamp);
         vm.stopPrank();
         assertEq(token0.allowance(alice, address(vault)), max0 - c0);
         assertEq(token1.allowance(alice, address(vault)), max1 - c1);
@@ -111,12 +111,12 @@ contract RwaLiquidityVaultTest is RwaLpTestBase {
         vm.startPrank(bob);
         _approve(need0, need1);
         vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.SlippageExceeded.selector, need0, need1));
-        vault.deposit(1e20, need0 - 1, need1, bob, block.timestamp);
+        vault.deposit(1e20, need0 - 1, need1, ANY_LOWEST, ANY_HIGHEST, bob, block.timestamp);
         vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.SlippageExceeded.selector, need0, need1));
-        vault.deposit(1e20, need0, need1 - 1, bob, block.timestamp);
+        vault.deposit(1e20, need0, need1 - 1, ANY_LOWEST, ANY_HIGHEST, bob, block.timestamp);
         vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.DeadlinePassed.selector, block.timestamp - 1));
-        vault.deposit(1e20, need0, need1, bob, block.timestamp - 1);
-        vault.deposit(1e20, need0, need1, bob, block.timestamp);
+        vault.deposit(1e20, need0, need1, ANY_LOWEST, ANY_HIGHEST, bob, block.timestamp - 1);
+        vault.deposit(1e20, need0, need1, ANY_LOWEST, ANY_HIGHEST, bob, block.timestamp);
 
         (uint256 out0, uint256 out1) = vault.previewWithdraw(1e20);
         vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.SlippageExceeded.selector, out0, out1));
@@ -126,6 +126,25 @@ contract RwaLiquidityVaultTest is RwaLpTestBase {
         vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.DeadlinePassed.selector, block.timestamp - 1));
         vault.withdraw(1e20, 0, 0, bob, block.timestamp - 1);
         vm.stopPrank();
+    }
+
+    /// The caller's price bounds hold for every deposit, inclusive at both ends (SeedPrice.t.sol
+    /// shows why the seed needs them).
+    function test_everyDepositChecksThePoolPriceAgainstTheCallersBounds() public {
+        depositAs(alice, 1e21);
+        _churn();
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(id);
+        (uint256 need0, uint256 need1) = vault.previewDeposit(1e20);
+        _fund(bob, need0, need1);
+        vm.startPrank(bob);
+        _approve(need0, need1);
+        vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.PriceOutOfBounds.selector, sqrtPriceX96));
+        vault.deposit(1e20, need0, need1, sqrtPriceX96 + 1, ANY_HIGHEST, bob, block.timestamp);
+        vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.PriceOutOfBounds.selector, sqrtPriceX96));
+        vault.deposit(1e20, need0, need1, ANY_LOWEST, sqrtPriceX96 - 1, bob, block.timestamp);
+        vault.deposit(1e20, need0, need1, sqrtPriceX96, sqrtPriceX96, bob, block.timestamp);
+        vm.stopPrank();
+        assertEq(vault.balanceOf(bob), 1e20);
     }
 
     // ---------------------------------------------------------------- withdrawals and fees
@@ -271,7 +290,7 @@ contract RwaLiquidityVaultTest is RwaLpTestBase {
         vm.startPrank(bob);
         _approve(need0, need1);
         vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.NotAllowed.selector, bob));
-        vault.deposit(1e20, need0, need1, bob, block.timestamp);
+        vault.deposit(1e20, need0, need1, ANY_LOWEST, ANY_HIGHEST, bob, block.timestamp);
         vm.stopPrank();
 
         vm.prank(alice);
@@ -287,8 +306,9 @@ contract RwaLiquidityVaultTest is RwaLpTestBase {
         vm.startPrank(alice);
         _approve(need0, need1);
         vm.expectRevert(abi.encodeWithSelector(RwaLiquidityVault.NotAllowed.selector, bob));
-        vault.deposit(1e20, need0, need1, bob, block.timestamp); // shares to an unlisted account
-        vault.deposit(1e20, need0, need1, alice, block.timestamp);
+        // shares to an unlisted account
+        vault.deposit(1e20, need0, need1, ANY_LOWEST, ANY_HIGHEST, bob, block.timestamp);
+        vault.deposit(1e20, need0, need1, ANY_LOWEST, ANY_HIGHEST, alice, block.timestamp);
         vm.stopPrank();
 
         vm.prank(owner);

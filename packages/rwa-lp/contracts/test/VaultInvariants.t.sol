@@ -55,7 +55,7 @@ contract VaultHandler is Test {
         vm.startPrank(actor);
         token0.approve(address(vault), need0);
         token1.approve(address(vault), need1);
-        vault.deposit(shares, need0, need1, actor, block.timestamp);
+        vault.deposit(shares, need0, need1, TickMath.MIN_SQRT_PRICE, TickMath.MAX_SQRT_PRICE, actor, block.timestamp);
         vm.stopPrank();
         _check();
     }
