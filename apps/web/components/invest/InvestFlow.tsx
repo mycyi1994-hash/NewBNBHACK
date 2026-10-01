@@ -301,6 +301,16 @@ export function InvestFlow({
     }
   }
 
+  // A deposit whose exact approval was still confirming goes on from it with the same plan: a new
+  // plan would leave this one waiting for its first run for good.
+  const retry =
+    !busy && result?.result?.status === 'approval_pending'
+      ? () => {
+          setReview(true);
+          void run();
+        }
+      : undefined;
+
   const amountValid = (() => {
     if (!/^\d+(\.\d{1,2})?$/.test(amount)) return false;
     const u = units(amount);
@@ -524,6 +534,7 @@ export function InvestFlow({
             ticker={ticker ?? ''}
             job={result}
             why={why}
+            onRetry={retry}
           />
         ) : hasSession ? (
           <Panel
@@ -614,7 +625,14 @@ export function InvestFlow({
           returnFocusId="invest-outcome"
         >
           {stage === 'done' && result ? (
-            <DoneBody t={t} titleId={reviewTitle} ticker={ticker ?? ''} job={result} why={why} />
+            <DoneBody
+              t={t}
+              titleId={reviewTitle}
+              ticker={ticker ?? ''}
+              job={result}
+              why={why}
+              onRetry={retry}
+            />
           ) : (
             <>
               <AssetBadge ticker={ticker ?? ''} />
@@ -976,12 +994,14 @@ function DoneBody({
   ticker,
   job,
   why,
+  onRetry,
 }: {
   t: (key: CopyKey, params?: Params) => string;
   titleId: string;
   ticker: string;
   job: Job;
   why: (w: Why | undefined) => string | null;
+  onRetry: (() => void) | undefined;
 }) {
   const done = doneText(t, ticker, job, why);
   // The receipt page shows cycles that reached the chain; a wait lives on the plan's page.
@@ -1013,6 +1033,11 @@ function DoneBody({
           <Icon name="arrow" size={18} />
         </Link>
       ) : null}
+      {onRetry ? (
+        <button type="button" className="button primary wide" onClick={onRetry}>
+          {t('common.retry')}
+        </button>
+      ) : null}
       <p className="dialog-caption">{t('judge.done.plan_note')}</p>
     </>
   );
@@ -1026,6 +1051,7 @@ function DonePanel({
   ticker,
   job,
   why,
+  onRetry,
 }: {
   t: (key: CopyKey, params?: Params) => string;
   lang: Lang;
@@ -1034,6 +1060,7 @@ function DonePanel({
   ticker: string;
   job: Job;
   why: (w: Why | undefined) => string | null;
+  onRetry: (() => void) | undefined;
 }) {
   const done = doneText(t, ticker, job, why);
   // The receipt page shows cycles that reached the chain; a wait lives on the plan's page.
@@ -1061,6 +1088,11 @@ function DonePanel({
           {t('receipt.inspect')}
           <Icon name="arrow" size={18} />
         </Link>
+      ) : null}
+      {onRetry ? (
+        <button type="button" className="button dark wide" onClick={onRetry}>
+          {t('common.retry')}
+        </button>
       ) : null}
       {planId ? (
         <>
