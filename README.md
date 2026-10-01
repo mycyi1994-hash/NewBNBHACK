@@ -32,7 +32,7 @@ The principal stays in a USDT interest account (Venus), and pieces of tokenized 
 | Transaction API | Simulation before every signature, gas limit estimation, broadcast (an alternative path to RPC) | Code done, waiting for live. Status lookup (transaction-detail) is not used: receipts are checked over BSC RPC |
 | DeFi API | Venus USDT investment and APY (`apyDisplay`), TVL and security score (guardian, risk disclosure), deposit and redeem calldata | Code done |
 | Wallet API | — (the house balance is read over BSC RPC) | Not used |
-| Agentic Wallet / Wallet Skills | `skills/yieldvest`: the server hands out only `baw` commands via `/next`, signing happens on the user's device, `/report` is checked on chain | Code and docs done; the real-run demo is done by a human (M2-09) |
+| Agentic Wallet / Wallet Skills | `skills/yieldvest`: the server hands out only `baw` commands via `/next` (and `/position` to take a stopped plan's own deposit out), signing happens on the user's device, `/report` is checked on chain. Every `baw` command and flag is tested against the real CLI's recorded help (`pnpm baw:help`, `baw` 1.10.0), and the quote check is in the shares `baw` prints | Code and docs done; the real-run demo is done by a human (M2-09) |
 | b402 Payments | — | Not built (M3-01, cut candidate) |
 | BNB Agent Studio | — | Not built (M2-10) |
 | BSC | viem reads and writes, amounts confirmed from the receipt's Transfer logs, Venus vToken | In use |
