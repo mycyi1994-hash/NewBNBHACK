@@ -54,3 +54,14 @@ export function ruleName(t: T, rule: string): string {
   const key = `guardian.rule.${rule}`;
   return isCopyKey(key) ? t(key) : rule;
 }
+
+/** Our NYSE session name (regular, pre, post, overnight, weekend, holiday) in words. */
+export function sessionText(t: T, session: string): string {
+  const key = `dx.session.${session}`;
+  return isCopyKey(key) ? t(key) : session;
+}
+
+export function windowText(t: T, window: string): string {
+  const key = `plan.window.${window}`;
+  return isCopyKey(key) ? t(key) : window;
+}

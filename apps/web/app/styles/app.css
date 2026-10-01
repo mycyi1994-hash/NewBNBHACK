@@ -1366,3 +1366,100 @@ a.button {
   flex-shrink: 0;
   max-width: 60%;
 }
+
+/* Pre-flight (/check), issuer comparison (/compare), the Earn calculator (DECISIONS D-31). */
+.page-links {
+  align-items: center;
+  margin-top: 18px;
+}
+
+.page-links .field-label {
+  margin: 0;
+}
+
+a.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip[aria-current='page'] {
+  border-color: var(--yellow);
+  box-shadow: inset 0 0 0 1px var(--yellow);
+  color: #fff;
+}
+
+.compare-head {
+  margin-top: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.compare-verdicts {
+  margin-top: 20px;
+}
+
+.page-block .ledger {
+  border-color: #2e373f;
+}
+
+.page-block .ledger dt {
+  color: var(--muted);
+}
+
+.address-full {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.check-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  align-items: end;
+  margin-top: 22px;
+}
+
+.check-form .button {
+  min-height: 46px;
+}
+
+.check-why {
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+
+.page-block > p.check-why {
+  color: var(--text);
+}
+
+.check-shared {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.calculator-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px 24px;
+}
+
+.calculator-inputs .text-input {
+  min-width: 140px;
+}
+
+.calculator-line {
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.mcp-label {
+  margin-top: 14px;
+}

@@ -9,6 +9,8 @@ import { Icon } from '../../components/Icon';
 import { Toolbar } from '../../components/Toolbar';
 import { BlockTitle, Panel, SectionHeading } from '../../components/ui';
 import { locale } from '../../lib/i18n/server';
+import { context } from '../../lib/server/context';
+import { TOOLS } from '../../lib/server/mcp';
 
 const INSTALL = `git clone --depth 1 ${REPO_URL} yieldvest-src && mkdir -p ~/.claude/skills && cp -r yieldvest-src/skills/yieldvest ~/.claude/skills/`;
 
@@ -19,6 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function SkillPage() {
   const { lang, tz, t } = await locale();
+  const appUrl = context().config.appUrl;
   const dialogue = [
     { who: 'me', key: 'skill.example.1' },
     { who: 'assistant', key: 'skill.example.2' },
@@ -50,6 +53,17 @@ export default async function SkillPage() {
               </li>
             ))}
           </ol>
+          <div className="page-block">
+            <BlockTitle>{t('mcp.title')}</BlockTitle>
+            <p>{t('mcp.body')}</p>
+            <p className="field-label mcp-label">{t('mcp.install.label')}</p>
+            <pre className="code-box">
+              <code>{`claude mcp add --transport http yieldvest ${new URL('/api/mcp', appUrl).href}`}</code>
+            </pre>
+            <p className="method-note">
+              {t('mcp.tools', { tools: TOOLS.map((tool) => tool.name).join(', ') })}
+            </p>
+          </div>
           <div className="page-block">
             <BlockTitle>{t('skill.example.title')}</BlockTitle>
             <div className="chat">

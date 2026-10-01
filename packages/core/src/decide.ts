@@ -23,15 +23,25 @@ export const MAX_PRICE_GAP_PCT = 2;
 export const OPEN_SETTLE_MS = 2 * 60_000;
 export const RETRY_LATER_MS = 30 * 60_000;
 
-/** RWA statusInfo reason codes (official skill binance-tokenized-securities-info, Reason Codes). */
-const CORPORATE_ACTION_CODES = new Set(['ASSET_PAUSED', 'ASSET_LIMITED']);
-const SESSION_CLOSED_CODES = new Set(['MARKET_CLOSED', 'MARKET_PAUSED', 'MARKET_MAINTENANCE']);
+/**
+ * RWA statusInfo reason codes (official skill binance-tokenized-securities-info, Reason Codes).
+ * Exported read-only so the pre-flight view (apps/web) names the same codes, never a copy of them.
+ */
+export const CORPORATE_ACTION_CODES: ReadonlySet<string> = new Set([
+  'ASSET_PAUSED',
+  'ASSET_LIMITED',
+]);
+export const SESSION_CLOSED_CODES: ReadonlySet<string> = new Set([
+  'MARKET_CLOSED',
+  'MARKET_PAUSED',
+  'MARKET_MAINTENANCE',
+]);
 /** Trading API codes: bStock / Ondo RFQ rejected outside the session; no liquidity; Ondo minimum. */
-const OFF_HOURS_QUOTE_CODES = new Set(['40369', '40367']);
+export const OFF_HOURS_QUOTE_CODES: ReadonlySet<string> = new Set(['40369', '40367']);
 /** What the agent and the web put in `reasonCode` when the RWA status call itself failed. */
-const STATUS_UNAVAILABLE = 'UNAVAILABLE';
-const NO_LIQUIDITY_CODE = '40374';
-const VENUE_MINIMUM_CODE = '40375';
+export const STATUS_UNAVAILABLE = 'UNAVAILABLE';
+export const NO_LIQUIDITY_CODE = '40374';
+export const VENUE_MINIMUM_CODE = '40375';
 
 /** RWA statusInfo of one token. The agent fails the cycle itself when the status call fails. */
 export interface TokenStatus {

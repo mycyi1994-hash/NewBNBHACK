@@ -11,12 +11,12 @@ import { webChain } from '../../../../lib/server/chain';
 import { context } from '../../../../lib/server/context';
 import { json } from '../../../../lib/server/http';
 import { tapeView } from '../../../../lib/server/market';
+import { TICK_FRESH_MS } from '../../../../lib/server/worker';
 
 export const dynamic = 'force-dynamic';
 
 type Check = { state: 'green' | 'degraded' | 'red'; detail: Record<string, unknown> };
 
-const TICK_FRESH_MS = 15 * 60_000;
 const API_FRESH_MS = 30 * 60_000;
 
 /** Integer units the worker wrote as a string; anything else reads as zero. */

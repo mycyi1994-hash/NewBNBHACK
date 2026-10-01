@@ -5,7 +5,16 @@
  */
 import { z } from 'zod';
 import { SESSION_COOKIE } from './session';
-import { JudgePlanBody, JudgeSessionBody, ReportRequest, RunBody, SkillPlanBody } from './schemas';
+import {
+  CompareQuery,
+  JudgePlanBody,
+  JudgeSessionBody,
+  PreflightQuery,
+  ProjectionQuery,
+  ReportRequest,
+  RunBody,
+  SkillPlanBody,
+} from './schemas';
 
 type Schema = Record<string, unknown>;
 
@@ -250,6 +259,24 @@ const open = (summary: string, description = 'OK') => ({
   get: { summary, responses: { 200: json({ type: 'object' }, description), 503: unavailable } },
 });
 const days = { name: 'days', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 30 } };
+
+/** Query parameters from the zod object the route parses its query with. */
+function queryParams(schema: z.ZodObject) {
+  const json = fromZod(schema) as {
+    properties?: Record<string, Schema & { description?: string }>;
+    required?: string[];
+  };
+  return Object.entries(json.properties ?? {}).map(([name, property]) => {
+    const { description, ...rest } = property;
+    return {
+      name,
+      in: 'query',
+      required: (json.required ?? []).includes(name),
+      ...(description ? { description } : {}),
+      schema: rest,
+    };
+  });
+}
 
 export function openApiDocument(serverUrl: string) {
   return {
@@ -514,6 +541,69 @@ export function openApiDocument(serverUrl: string) {
           summary: 'Tape aggregates for /dx: session gap, price impact by size, issuers',
           parameters: [days],
           responses: { 200: json({ type: 'object' }, 'Aggregates'), 503: unavailable },
+        },
+      },
+      '/api/compare': {
+        get: {
+          summary: 'bStocks against Ondo for one stock, from the latest tape run',
+          description:
+            'Per issuer: status, on-chain price per share, US price and gap, venue minimum, full address, and for each tape quote size the shares it was worth, the price per share in it and its price impact (or the code it was refused with). Per size: which quote was worth more shares. Without `ticker`: the tickers and the issuers that sell each. Facts with their data state; never a pick.',
+          parameters: queryParams(CompareQuery),
+          responses: {
+            200: json({ type: 'object' }, 'The comparison, or { tickers } without a ticker'),
+            400: problem('bad_request'),
+            404: problem('unknown_ticker'),
+            503: unavailable,
+          },
+        },
+      },
+      '/api/preflight': {
+        get: {
+          summary: 'Would Yieldvest buy this right now? decideCycle on the latest tape, read-only',
+          description:
+            'Runs the agent’s engine for a fixed-amount plan that does not exist yet, once per issuer — the answer GET /api/plans/{id}/next would give such a skill plan — and lists every rule’s input against its limit with its read time: data age (seconds), guardian, session, amount vs minimum (USD), token status, price gap (%), price impact (%). A buy needs a guardian check within 15 minutes. Creates nothing and returns no command.',
+          parameters: queryParams(PreflightQuery),
+          responses: {
+            200: json({ type: 'object' }, 'Verdict per issuer and the rules it read'),
+            400: problem('bad_request or bad_amount'),
+            404: problem('unknown_ticker'),
+            503: unavailable,
+          },
+        },
+      },
+      '/api/projection': {
+        get: {
+          summary: 'What a deposit would earn if today’s listed Venus APY held',
+          description:
+            'Interest per day, week, month (30 days) and year, compounded daily at the listed APY; the days until it reaches the minimum buy; about how many shares a month of it buys at the latest on-chain price. Each input carries its data state; no rate means no projection. The rate changes daily: a projection, not a promise.',
+          parameters: queryParams(ProjectionQuery),
+          responses: {
+            200: json({ type: 'object' }, 'Inputs with their state, and the projection'),
+            400: problem('bad_request or bad_amount'),
+            404: problem('unknown_ticker'),
+            503: unavailable,
+          },
+        },
+      },
+      '/api/mcp': {
+        post: {
+          summary: 'Read-only MCP server (Streamable HTTP, JSON-RPC 2.0)',
+          description:
+            'One JSON-RPC message per POST, one JSON answer; no session and no stream (GET and DELETE answer 405). Methods: initialize, ping, tools/list, tools/call. Tools: market_status, compare_issuers, preflight, interest_projection, plan_status, recent_receipts — all read-only. `claude mcp add --transport http yieldvest <server>/api/mcp`.',
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { type: 'object' } } },
+          },
+          responses: {
+            200: json({ type: 'object' }, 'A JSON-RPC result or error'),
+            202: { description: 'A notification or a response: accepted, no body' },
+            400: json(
+              { type: 'object' },
+              'Not a JSON-RPC message, or an unsupported protocol version',
+            ),
+            403: json({ type: 'object' }, 'A browser origin other than this site'),
+            429: json({ type: 'object' }, '120 requests a minute per address'),
+          },
         },
       },
       '/api/openapi': open('This document'),
