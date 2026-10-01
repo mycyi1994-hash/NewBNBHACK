@@ -66,3 +66,33 @@ The skill runs when the user asks. To keep a schedule, the user can ask their as
 `/next` at the plan's cadence during the US regular session; each run still asks before signing.
 A recorded swap moves the plan to its next due time, so asking again sooner answers `wait`
 (`not_due`) with that time in `retryAt`.
+
+## Example conversations
+
+Values in backticks come from the answers; nothing here is a real amount or hash.
+
+Outside the regular session:
+
+> **User:** Run my Yieldvest plan.
+>
+> **Assistant:** _(preflight: `baw cli-check`, `baw wallet status` → `CONNECTED`; `GET /next` →
+> `decision: "wait"`, `why.deferred.market_closed`)_ Nothing to buy now: the US market is closed.
+> Yieldvest retries at `retryAt` (shown in your time zone). Shall I check again then?
+
+A safe-mode buy during the session:
+
+> **User:** What should Yieldvest do now?
+>
+> **Assistant:** _(`GET /next` → `decision: "buy"`)_ Yieldvest wants to buy $`spendUsd` of
+> `instrument.symbol` (`instrument.address`), about `estimate.shares` shares by its recordings.
+> _(`baw wallet left-quota` ≥ `spendUsd`; `quote`; `toCoinAmount` ≥ `acceptMinToCoinAmount`; the
+> token check in safety.md passes)_ Your wallet quotes `toCoinAmount` shares. Swap $`spendUsd` USDT
+> for `instrument.symbol`, slippage 0.5 %?
+>
+> **User:** Yes.
+>
+> **Assistant:** _(`swap` → `data.orderId`; `market-order list` until `FINISHED`; `POST /report` →
+> `200 recorded` with `why.bought.regular`)_ Bought `shares` shares of `ticker` ($`usd`) during
+> regular hours. Transaction: `txHash`.
+
+If the user says no, nothing is signed and nothing is reported; `/next` answers again later.

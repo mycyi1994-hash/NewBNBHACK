@@ -510,3 +510,5 @@ Design and runbook: `docs/RWA_LP.md`. Package: `packages/rwa-lp`. Nothing here d
 ## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]
 - [~] 9/27: agent draft in JUDGING §4 with its evidence — Technical 5, Creativity 8, DX 6, UX 6, weighted 6.2. Top priority: the money decisions (R1–R4), then the $1 live test and a web deploy.
   - [ ] [HUMAN] Confirm or change the 9/27 scores.
+- [~] 10/1 (asked for in the conversation): the official page rechecked — no change in criteria, weights, prizes, dates or rules; its "Ideas to Build" list, module list and the "scored on how well they are built rather than on the PnL" line are now quoted in JUDGING §1. Agent draft: Technical 5, Creativity 7 (corrected: Judge Mode's default flow is "Auto-DCA" / "Buy your first stock on-chain" on that list), DX 6, UX 6, weighted 6.0 against the REPLAN §10 target of 6.8 for 10/4.
+  - [ ] [HUMAN] Confirm or change the 10/1 scores.

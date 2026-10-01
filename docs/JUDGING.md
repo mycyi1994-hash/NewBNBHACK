@@ -5,7 +5,7 @@ This document sits above every feature decision. If we cannot write down which r
 
 ## 1. Official scoring criteria (verbatim)
 
-Rechecked against the [organizers' official page](https://www.bnbchain.org/en/hackathons/tokenized-stocks) on 2026-09-27. Our own targets below (7 modules, 3-minute run-through, etc.) are kept separate from the official minimum requirements. Agentic Wallet / Wallet Skills and Agent Studio are optional.
+Rechecked against the [organizers' official page](https://www.bnbchain.org/en/hackathons/tokenized-stocks) on 2026-09-27 and again on 2026-10-01: the criteria, weights, prizes, dates and rules are unchanged. Our own targets below (7 modules, 3-minute run-through, etc.) are kept separate from the official minimum requirements. Agentic Wallet / Wallet Skills and Agent Studio are optional.
 
 > Scores are pooled after each judge has worked through every project on their own.
 
@@ -21,6 +21,13 @@ Special prizes (can be won on top of a main prize; no separate application):
 - **Best Use of BNB Agent Studio** — $2,000 — "agent identity, autonomous runtime, and self-funding via x402".
 
 Main prizes: 1st $6,000, 2nd $4,000, 3rd $3,000, 4th $2,000, 5th $1,000.
+
+Also on the official page (quoted 2026-10-01):
+- "Agents are welcome and expected, and are scored on how well they are built rather than on the PnL they could print, we don't track it for this edition."
+- On the DX report: "Most hackathons do not ask for one. This one does, and it is worth a quarter of your score." and "Perfunctory or AI-generated reports are not accepted."
+- Modules, as the page lists them: RWA Data API, Market API, Trading API, Transaction API, Wallet API, DeFi API, b402 Payments, Agentic Wallet / Wallet Skills, BNB Agent Studio.
+- "Ideas to Build", verbatim: Natural-language strategy agent · Market-hours arbitrage · Cross-protocol arbitrage · On-chain vs reference price monitor · Auto-DCA and rebalancing · Earnings-calendar agent · TradFi-crypto portfolio agent · "Buy your first stock on-chain" · One-tap thematic baskets · MCP server or SDK wrapper. Judge Mode's default flow (a fixed $5 contribution) is "Auto-DCA" and "Buy your first stock on-chain"; what is not on the list is interest buying the stock, the session-window and corporate-action handling, and the session-aware LP hook (§4, Creativity).
+- Dates (UTC): build from 16 Sep 12:00; **submissions lock Sun 11 Oct 12:00**; judging 12–23 Oct; winners the week of 26 Oct. Submission form, DX report template and registration are Google Forms linked from the page.
 
 Track rules (gist of the original):
 - Of bStocks, Ondo and xStocks, **at least one must be at the center of the submission**.
@@ -90,6 +97,7 @@ Score anchors. We play the judge and score our own submission. Any item under 7 
 | Date | Technical | Creativity | DX | UX | Total (weighted) | Top-priority item |
 | --- | --- | --- | --- | --- | --- | --- |
 | 9/27 | 5 (draft) | 8 (draft) | 6 (draft) | 6 (draft) | 6.2 (draft) | Money decisions R1–R4 → fund the house wallet → $1 live test → first mainnet receipts; deploy the web |
+| 10/1 | 5 (draft) | 7 (draft) | 6 (draft) | 6 (draft) | 6.0 (draft) | Unchanged and now late against REPLAN §10 (10/4 target 6.8): R1–R4 → live test → receipts, the web deploy, R9 (real skill use was planned from 10/1), the human DX draft |
 | 10/4 | | | | | | |
 | 10/8 | | | | | | |
 
@@ -98,6 +106,12 @@ Score anchors. We play the judge and score our own submission. Any item under 7 
 - Creativity 8: not on the official ideas list, and none of the public competing entries does it (PLAN §2); regular-session window, corporate actions and the multiplier are handled in `decideCycle`; the tape measures off-hours gaps. It stays short of 10 until the interest → stock loop has run on mainnet.
 - DX 6: `dx/LOG.md` has doc line references, error codes, request timings and a rate-limit analysis, with fixtures. Missing: real use of the AI stack (`baw` and `bag`, M0-09 and M0-10), regular-session tape numbers (M0-06) and the human-written report (M4-01).
 - UX 6: the approved English design, no jargon (`pnpm lint:copy`), phone layout (`pnpm ui:check`), 0 axe violations and a working skip link and motion controls (`pnpm qa:check`, M3-02), the risk disclosure on screen. But the web is not deployed (deduction: "the deployment is down"), and the 3-second and 3-minute rehearsals have not happened (M2-01, M2-02).
+
+**10/1 row: an agent draft, asked for by a human in the conversation ("look at the judging criteria"); a human confirms or changes it.**
+- Technical 5: much harder to break than on 9/27 — three review rounds with every finding fixed under a test, a Judge Mode e2e in CI at 375 and 1280 px, 656 vitest tests and 144 Foundry tests green, the plan-lock lease and outbox reconciliation. Still **0 mainnet receipts** and no deployed web, and the track rule is "demo with small live amounts"; the 7 anchor needs live trades.
+- Creativity 7 (9/27 said 8): a correction, not a regression. The 9/27 note said "not on the official ideas list", but Judge Mode's default flow — a fixed $5 contribution — is "Auto-DCA" and "Buy your first stock on-chain" on that list. What is not on it, interest buying the stock, has not run on mainnet; the session-aware Uniswap v4 hook has no deployed pool and no page. On our side: the session window, corporate-action holds and share counts show in Judge Mode, and the server-decides/user-signs Wallet Skill is an unusual use of the AI execution layer.
+- DX 6: 44 timestamped entries with error codes, timings, fixtures and asks. Two are on `baw` (10/1), one from reading its bundle and one from running it signed out; there is no signed-in run yet (M0-09, R9). Missing: `dx/metrics.md` and a tape summary (both need the production database, R12: PC), doc citations still given as line numbers of the 9/23 `llms-full.txt` snapshot instead of URL + text, and the human report draft (`dx/REPORT_DRAFT.md` does not exist; REPLAN §7 planned a first draft on 9/27).
+- UX 6: the e2e now walks the judge's flow at phone and desktop width with no sideways scroll and no split amounts, and every Judge Mode outcome reads as a sentence. Still no deployed web (deduction: "the deployment is down") and no 3-second or 3-minute rehearsal.
 
 ## 5. Deduction factors (if even one is present, removing it is that week's top priority)
 

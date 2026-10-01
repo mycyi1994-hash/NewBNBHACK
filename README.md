@@ -1,7 +1,5 @@
 # Yieldvest — Interest becomes ownership.
 
-**Frontend design:** The approved BNB-style UI and the Yieldvest logo (source: [frontend-preview](frontend-preview/README.md), handoff: [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md)) have been moved into the real web app, `apps/web` (DECISIONS D-25). All 4 tabs — Overview, Earn, Invest (= the judge trial) and Activity — show only real values from the server and the chain. `frontend-preview/` remains as the original design, running on example data.
-
 > **In one line:** an agent that keeps your principal in a USDT savings pool (Venus on BNB Smart Chain) and buys tokenized US stocks (bStocks / Ondo) with the interest — or a fixed amount in safe mode — **only during the US regular session**, under hard caps, with an on-chain receipt and a one-sentence reason for every action.
 
 An entry for BNB Hack: Tokenized Stocks Edition. Build 9/23 → internal submission 10/9 → deadline 10/11 12:00 UTC.
@@ -11,6 +9,15 @@ An entry for BNB Hack: Tokenized Stocks Edition. Build 9/23 → internal submiss
 ## 60-second summary
 
 The principal stays in a USDT interest account (Venus), and pieces of tokenized US stocks are bought **only with the interest (or a set contribution)** and **only during the US regular session**. Safe mode (contribution only) is the default. Decisions are made by decision rules (`packages/core` `decideCycle`, 100% coverage), not by a model, and every buy is signed **only after a dry run through the Binance Web3 Transaction API**. Every cycle leaves a receipt (BscScan) and a one-line reason (`why.*`), and the reasons it cannot buy (market closed, price gap, limits, guardian) are shown as they are, too.
+
+## Not on the organizers' ideas list
+
+The official "Ideas to Build" include "Auto-DCA and rebalancing" and "Buy your first stock on-chain" ([JUDGING §1](docs/JUDGING.md)); Judge Mode's default, a fixed $5 contribution, is exactly that. What Yieldvest adds:
+
+- **Interest buys the stock.** The DeFi API and the Trading API in one cycle: a yield plan takes the interest its Venus deposit has earned out of Venus and buys the stock with it (`apps/agent/src/cycle.ts`).
+- **Tokenized-stock rules in the engine.** Buys only in the NYSE regular session (holidays, early closes, daylight saving); the RWA Data API's `ASSET_PAUSED` / `ASSET_LIMITED` codes hold a buy around earnings, dividends and splits; amounts are shown in shares, tokens × the bStocks multiplier read on chain. Each hold is a sentence the user sees (`packages/core`).
+- **The server decides, the user's AI assistant signs.** The Wallet Skill gets exact `baw` commands from `/next`, runs them in the user's Agentic Wallet after the user says yes, and reports back; the server checks every report on chain and holds no key or session (`skills/yieldvest`).
+- **A Uniswap v4 hook priced by the NYSE session**, so LPs of tokenized stocks are paid for the overnight gap risk only these assets carry (`packages/rwa-lp`, tested on a BSC fork, not deployed).
 
 ## 3-minute trial (Judge Mode, `/invest` — the old address `/judge` also leads here)
 
@@ -58,6 +65,8 @@ pnpm lp:status    # live state of deployed pools; UNAVAILABLE until one is deplo
 ```
 
 ## Structure
+
+**Frontend design:** The approved BNB-style UI and the Yieldvest logo (source: [frontend-preview](frontend-preview/README.md), handoff: [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md)) have been moved into the real web app, `apps/web` (DECISIONS D-25). All 4 tabs — Overview, Earn, Invest (= the judge trial) and Activity — show only real values from the server and the chain. `frontend-preview/` remains as the original design, running on example data.
 
 ```
 apps/web        Next.js: screens (Overview, Earn, Invest (trial), Activity, Plan, Assistant, Data, Risk) and API. Does not sign and does not call the Web3 API
