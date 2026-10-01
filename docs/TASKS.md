@@ -328,6 +328,13 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 - [ ] [HUMAN+agent] Real run in Claude Code: 1 safe-mode $5 buy, 1 yield-mode deposit → `docs/skill-demo.md` (masked)
 - Acceptance: install on a clean machine → first run ≤ 10 minutes, impressions and blockers in dx/LOG.md
 
+- [x] (10/1) Checked against the official Skills Hub `binance-agentic-wallet` skill (commit `9960c67`) and the Agentic Wallet docs by a read-only reviewer; each point was verified against those sources and `baw` 1.10.0 before anything changed (`8c5ee7b`).
+  - HIGH: the user approved the server's numbers, not the command signed. Every step's argv is now checked against the plan saved at creation (USDT in, the verified token out, chain 56, `spendUsd` within `maxPerBuyUsd`), and the question shows the wallet's own quote with a DYOR line.
+  - `baw wallet tx-lock` must say `UNLOCKED` before any transaction; an order waiting in the Binance App, or still `PENDING`, is kept (`openOrders`) and reported on the next run, so the plan's limits see every fill.
+  - The read-only checks (lock, quota, BNB for gas, quote, token check, `query-token-audit`) run before the interest is taken out.
+  - Skill plans need an `issuer` the user chose; the server had set bStocks-then-Ondo and switched silently (official: "do not default to Ondo. Ask the user which provider they mean").
+  - Deposits: the investment list filtered by USDT, `investable`, the DeFi quota, the preview's contract must be vUSDT, every warning shown. The disclosure is read for every plan and quotes the official tokenized-securities risks.
+  - Evidence: `apps/web/test/skill.test.ts` (issuer required; only that issuer stored), `baw-contract.test.ts` (`wallet tx-lock` and `wallet balance` help recorded from `baw` 1.10.0), all 666 tests green.
 ### M2-10 Agent Studio · Criterion: Studio special prize
 - [ ] Register the house agent identity (ERC-8004), runtime/MCP if possible, identity link on the site
   - (9/27) Per D-28: identity only, no runtime. Registering costs about $0.006 of gas or nothing (sponsored). It needs the deployed web URL for the agent URI, a fresh identity wallet (not the house key) and a [HUMAN] yes for the transaction (CLAUDE.md rule 5).
@@ -439,8 +446,11 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
 ## M4 Submission (10/8 ~ 10/9)
 
 ### M4-01 [HUMAN] Write the DX report — DX_PROTOCOL §5 structure, quote `dx/metrics.md`, `dx/LOG.md` and the tape, submit the official form
+- [x] (10/1, agent evidence for the people writing it) `pnpm dx:repro` re-runs each finding against the platform: 4 of 4 keyless findings reproduced at 16:52 UTC; 6 need a key. `dx/findings/` (9 findings, one file each), `dx/EVIDENCE_INDEX.md` (facts and links per template section). LOG 10/1 16:40: the 19 documentation entries re-checked on the live pages, 13 still present; 4 new documentation problems (40314, 40102, "v1.1", Developer Mode). Commits `5c46f2e`, `8c5ee7b`.
+  - [ ] [PC] `pnpm dx:repro` with the API key, `pnpm dx:metrics` (p50/p95) and the tape summary, from the production database.
 ### M4-02 [HUMAN] Edit the video to ≤ 4 minutes, upload (not a private link)
 ### M4-03 Submission — repo public, license (MIT recommended), release tag v1.0, submission form, confirm registration
+- [x] (10/1) Judge-followable without our deploy: `docker compose up --build`, simulate mode, no wallet key (checked in a sandbox: setup seeded the plans and the judge code, the pages answered 200, smoke showed the RPC and the database green) — `0ff5d06`. README: "Not on the organizers' ideas list", "Verify it yourself" (commands with today's results) and a one-cycle diagram (parsed and rendered with mermaid 11).
 ### M4-04 Freeze and operations mode — RUNBOOK daily checklist (10/12~10/23), no deploys
 
 ---

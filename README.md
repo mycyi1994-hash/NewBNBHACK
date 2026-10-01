@@ -28,6 +28,41 @@ The official "Ideas to Build" include "Auto-DCA and rebalancing" and "Buy your f
 
 `pnpm receipts:table` builds this table from the DB (time · plan · action · outcome/reason · receipt). **Currently 0 receipts** — topping up the house wallet and switching to live are waiting on the humans' money decisions (REPLAN R1–R4). They get pasted here as they come in.
 
+## Verify it yourself
+
+| Command | What it shows | Result on 10/1 |
+| --- | --- | --- |
+| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 66 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 666 passed, 10 skipped |
+| `pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e` | Judge Mode end to end in Chromium at 375 and 1280 px, in simulate mode over a test world (no network) | green in CI on every push |
+| `pnpm lp:test` | the Uniswap v4 hook, the reference oracle and the LP vault | 144 Foundry tests; `BSC_FORK_URL=…` adds 2 on BSC mainnet state |
+| `pnpm dx:repro` | each DX finding ([`dx/findings`](dx/findings/README.md)) against the platform as it is now | 4 of 4 keyless findings reproduced; 6 need a key |
+| `docker compose up --build` | the app on your machine, simulate mode | see [Run](#run) |
+
+GitHub Actions (`.github/workflows/ci.yml`) runs the first three on every push.
+
+## One cycle across the modules
+
+```mermaid
+flowchart LR
+  subgraph decide ["Decide: packages/core, rules, no model"]
+    R["RWA Data API<br/>status, multiplier, next open"] --> D{"decideCycle"}
+    P["Public RWA price<br/>independent stock price"] --> D
+    V["BSC: Venus vUSDT<br/>interest earned"] --> D
+    G["DeFi API, Market API<br/>guardian: TVL, APY, USDT peg"] --> D
+  end
+  subgraph execute ["Execute: apps/agent, the only signer"]
+    X["DeFi API<br/>redeem calldata, interest only"] --> T1["Transaction API<br/>simulate, then sign and send"]
+    T1 --> Q["Trading API<br/>fresh quote, exact approval, swap calldata"]
+    Q --> T2["Transaction API<br/>simulate, then sign and send"]
+    T2 --> C["BSC receipt<br/>Transfer logs to shares"]
+  end
+  D -- "buy" --> X
+  D -- "wait or skip" --> W["Receipt and a one-line why"]
+  C --> W
+```
+
+In safe mode the cycle skips the redeem. In the Wallet Skill the same decision comes from `/next` and the user's own Agentic Wallet signs each step.
+
 ## Module matrix (PLAN §6.1 + status as of the code)
 
 | Module | Where Yieldvest uses it | Status |
