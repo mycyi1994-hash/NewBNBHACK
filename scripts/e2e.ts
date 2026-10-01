@@ -11,7 +11,9 @@
  * phone's 375 px and at 1280 px, with no sideways scroll at any step (dialogs open included).
  * The database name must contain "e2e"; it is created and migrated when missing. Build the web
  * first: pnpm --filter @yieldvest/web build. --shots <dir> keeps a screenshot of every step (and
- * of the one that failed). Exit: 0 pass · 1 fail · 2 usage.
+ * of the one that failed). Then the read-only views of DECISIONS D-31 on the same stock: the
+ * pre-flight check, the issuer comparison, the Earn calculator and the MCP block on /skill.
+ * Exit: 0 pass · 1 fail · 2 usage.
  */
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -20,7 +22,15 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { processJobs } from '@yieldvest/agent';
-import { createDb, getPlan, migrateDb } from '@yieldvest/db';
+import {
+  createDb,
+  getPlan,
+  insertTapeSamples,
+  migrateDb,
+  readWorkerStatus,
+  writeWorkerStatus,
+  type Db,
+} from '@yieldvest/db';
 import postgres from 'postgres';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { cleanup } from '../apps/agent/test/harness.js';
@@ -213,6 +223,108 @@ async function yieldFlow(run: Run, venus: ReturnType<typeof withVenus>) {
   }
 }
 
+/** About $225.10 a token: what a $1 quote receives, in base units. */
+const TOKENS_PER_USD = 4_442_430_800_471_653n;
+
+/**
+ * What the read-only views of DECISIONS D-31 read, written as the worker writes it — a tape run of
+ * the test stock now and a listed Venus rate — and removed afterwards, so the Judge Mode flows of
+ * the next width see the state they always saw.
+ */
+async function withFeatureData<T>(
+  db: Db,
+  database: string,
+  instrumentId: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const now = new Date().toISOString();
+  const before = await readWorkerStatus(db, 'venus');
+  await insertTapeSamples(
+    db,
+    [5, 50, 500].map((sizeUsd) => ({
+      sampledAt: now,
+      slotAt: now,
+      instrumentId,
+      session: 'regular',
+      openState: true,
+      marketStatus: null,
+      reasonCode: 'TRADING',
+      reasonMsg: null,
+      nextOpenTime: null,
+      tokenPrice: '225.175',
+      referencePrice: '225.1',
+      stockPrice: '225',
+      priceUpdatedAt: now,
+      sizeUsd,
+      expectedOut: (TOKENS_PER_USD * BigInt(sizeUsd)).toString(),
+      priceImpactPct: '0.05',
+      vendor: 'e2e',
+      executionMode: 'SWAP',
+      route: null,
+      errorCode: null,
+      errorMsg: null,
+      latencyMs: 100,
+    })),
+  );
+  await writeWorkerStatus(db, 'venus', {
+    ...(before?.value ?? {}),
+    apyDisplay: '3.16%',
+    verifiedAt: now,
+  });
+  const sql = postgres(database, { max: 1, onnotice: () => {} });
+  try {
+    return await run();
+  } finally {
+    await sql`delete from tape_samples where instrument_id = ${instrumentId}`;
+    if (before) await writeWorkerStatus(db, 'venus', before.value);
+    else await sql`delete from worker_status where key = 'venus'`;
+    await sql.end();
+  }
+}
+
+/**
+ * The read-only views (DECISIONS D-31): /check runs the agent's engine on a plan that does not
+ * exist and lists the rules it read; /compare shows the token's quotes side by side; the Earn
+ * calculator answers as the amount changes and refuses what is not an amount; /skill names the
+ * MCP endpoint. The verdict depends on the clock (the US session), so any of the engine's answers
+ * passes, as long as it is one of them and its rules are listed.
+ */
+async function featureFlow(run: Run, ticker: string) {
+  const { page, base, log, check } = run;
+  await page.goto(`${base}/check?ticker=${ticker}&usd=5`, { waitUntil: 'networkidle' });
+  const verdict = page.locator('.check-verdict').first();
+  await verdict.waitFor({ timeout: STEP_MS });
+  const head = (await verdict.locator('.block-title .pill').innerText()).trim();
+  if (!/^Would (buy about|wait|skip|stop)/.test(head)) {
+    throw new Error(`/check answers "${head}", not one of the engine's verdicts`);
+  }
+  const rules = await verdict.locator('tbody tr').count();
+  if (rules !== 4) throw new Error(`/check lists ${rules} rules for the token, not 4`);
+  await check('pre-flight check');
+  log(`pre-flight: "${head}", with the token's four rules and the shared three`);
+
+  await page.goto(`${base}/compare?ticker=${ticker}`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'bStocks or Ondo?' }).first().waitFor();
+  const sizes = await page.locator('.compare-side tbody tr').count();
+  if (sizes !== 3) throw new Error(`/compare shows ${sizes} quote sizes, not 3`);
+  await check('issuer comparison');
+  log("compare: the token's $5, $50 and $500 quotes with shares and price per share");
+
+  await page.goto(`${base}/earn`, { waitUntil: 'networkidle' });
+  const deposit = page.getByRole('textbox', { name: 'If I put in (USDT)' });
+  await deposit.fill('1000');
+  await page.getByText('31.60 USDT', { exact: true }).waitFor({ timeout: STEP_MS });
+  await check('interest calculator');
+  await deposit.fill('abc');
+  await page.getByText('Enter an amount above 0, with up to two decimals.').waitFor();
+  log('earn: $1,000 at the listed 3.16 % projects 31.60 USDT a year; "abc" is refused');
+
+  await page.goto(`${base}/skill`, { waitUntil: 'networkidle' });
+  await page.getByText(`claude mcp add --transport http yieldvest ${base}/api/mcp`).waitFor();
+  await check('mcp block');
+  log('skill: the read-only MCP endpoint and its tools are named');
+}
+
 const flags = parseFlags(process.argv.slice(2), {
   values: ['database', 'chromium', 'port', 'shots'],
   required: ['database'],
@@ -351,6 +463,7 @@ if (!flags.ok || problem !== null) {
       };
       const safe = await judgeFlow(run, codes[index] ?? '', ticker);
       const deposits = await yieldFlow(run, venus);
+      await withFeatureData(db, database, instrumentId, () => featureFlow(run, ticker));
       // What the pages said, from the database: the first plan is stopped; the yield plans still
       // wait for their first run, with no principal (a dry run deposits nothing).
       const stopped = await getPlan(db, safe);
@@ -393,6 +506,7 @@ if (!flags.ok || problem !== null) {
     process.exitCode = 1;
   } else {
     log('PASS: Judge Mode end to end in simulate mode, at 375 and 1280 px');
+    log('      and the pre-flight check, issuer comparison, calculator and MCP block');
     log('      0 page or console errors, 0 sideways scrolls');
   }
 }
