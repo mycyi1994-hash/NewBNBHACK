@@ -227,7 +227,13 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
           heading={
             <SectionHeading
               title={t('plan.timeline.title')}
-              sub={[paused, v.plan.mode === 'yield' ? `${t('home.house.next')}: ${next}` : null]
+              sub={[
+                paused,
+                // The next buy is news only for a running plan; otherwise it repeats the reason.
+                v.plan.mode === 'yield' && v.plan.status === 'active'
+                  ? `${t('home.house.next')}: ${next}`
+                  : null,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             />

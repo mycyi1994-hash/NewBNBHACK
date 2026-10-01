@@ -257,6 +257,14 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `judge.done.confirming`: Waiting for the blockchain record. It shows in the plan history once confirmed.
 - `judge.done.approval_pending`: The exact approval is still being confirmed, so nothing was put in yet. Try again in a minute.
 - `judge.preview.approval_first`: Dry-run on-chain · the exact approval passes. The buy is dry-run again right after it, before anything is signed.
+- `judge.done.not_started`: This plan has not started, so it will not try again by itself.
+- `judge.done.deposit_simulated`: Dry-run on-chain · the exact approval and the deposit pass. The server is in simulation mode, so nothing was put in.
+- `judge.done.deposit_approval_first`: Dry-run on-chain · the exact approval passes. The deposit is dry-run again right after it, before anything is signed. The server is in simulation mode, so nothing was put in.
+- `judge.done.outbox_busy`: An earlier transaction is still settling, so nothing was signed. Try again in a few minutes.
+- `judge.done.locked`: This plan is busy with another run, so nothing was signed. Try again in a minute.
+- `judge.done.review`: A person has to check this plan's last transaction before anything else runs. The plan is paused until then.
+- `judge.done.stopped`: This plan is stopped. Nothing was bought.
+- `judge.job.still_queued`: The worker has not finished this yet. It may still run: check the plan history in a few minutes.
 - `judge.summary.title`: Summary
 - `judge.summary.window`: When
 - `judge.plan.link`: View plan history →

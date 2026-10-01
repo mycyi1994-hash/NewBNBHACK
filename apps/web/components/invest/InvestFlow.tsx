@@ -8,7 +8,14 @@
  */
 import Link from 'next/link';
 import { useId, useState } from 'react';
-import { displayParams, issuerName, money, sharesText, timeText } from '../../lib/format';
+import {
+  displayParams,
+  fromBaseUnits,
+  issuerName,
+  money,
+  sharesText,
+  timeText,
+} from '../../lib/format';
 import {
   isCopyKey,
   translate,
@@ -21,6 +28,7 @@ import { Icon } from '../Icon';
 import { AnimatedText } from '../motion';
 import { StopPlan } from '../plan/StopPlan';
 import { RiskText } from '../RiskText';
+import { doneText, retryable, type Job, type JobResult, type Why } from './outcome';
 import { CheckBadge, Ledger, Panel, SectionHeading, Status } from '../ui';
 
 export interface Venue {
@@ -39,44 +47,6 @@ interface Market {
   nextRegularOpen: string;
 }
 
-interface Why {
-  key: string;
-  params: Record<string, string>;
-}
-interface Outcome {
-  kind: 'BOUGHT' | 'DEFERRED' | 'SKIPPED' | 'FAILED';
-  spendUsd?: string;
-  shares?: string;
-  interestUsd?: string | null;
-  code?: string;
-  message?: string;
-}
-interface JobResult {
-  status: string;
-  cycleId?: number;
-  outcome?: Outcome;
-  why?: Why;
-  txHashes?: string[];
-  txHash?: string;
-  buy?: {
-    spendUsd: string;
-    expectedShares: string | null;
-    expectedTokens: string | null;
-    minReceive: string | null;
-    instrumentId: string;
-    swapSimulation: { status: string; failReason: string };
-    /** How the dry run got its allowance: already on chain, or only simulated. */
-    approval?: 'existing_allowance' | 'simulated';
-  };
-  depositedUsd?: string;
-  /** The plan's status once the run is over: `active` when it now runs on its own. */
-  planStatus?: string | null;
-}
-interface Job {
-  status: 'queued' | 'running' | 'done' | 'failed';
-  result: JobResult | null;
-  error: string | null;
-}
 interface Problem {
   error?: { code: string; message: string };
   reason?: string;
@@ -122,20 +92,24 @@ async function post(
 
 /**
  * Polls a job until it is done or failed (four minutes at most). A poll that fails on the way — a
- * dropped connection, a gateway page instead of JSON — is tried again; the job keeps running.
+ * dropped connection, a gateway page instead of JSON — is tried again; the job keeps running. When
+ * the page stops waiting, the job as last seen comes back (queued or running): it may still run,
+ * and is never reported as failed.
  */
 async function waitForJob(jobId: string): Promise<Job> {
+  let last: Job = { status: 'queued', result: null, error: null };
   for (let i = 0; i < 120; i++) {
     try {
       const res = await fetch(`/api/jobs/${jobId}`, { cache: 'no-store' });
       const job = (await res.json()) as Job;
       if (job.status === 'done' || job.status === 'failed') return job;
+      last = job;
     } catch {
       // Transient: ask again on the next tick.
     }
     await new Promise((r) => setTimeout(r, 2000));
   }
-  return { status: 'failed', result: null, error: 'timeout' };
+  return last;
 }
 
 export function InvestFlow({
@@ -182,6 +156,8 @@ export function InvestFlow({
   const [amount, setAmount] = useState(capUsd);
   const [window, setWindow] = useState<'regular_session' | 'anytime'>('regular_session');
   const [planId, setPlanId] = useState<string | null>(null);
+  // A plan the judge stopped from the done panel: it is never run again from here.
+  const [stoppedPlan, setStoppedPlan] = useState<string | null>(null);
   // What the plan was created with: its runs use these, whatever the form shows since.
   const [terms, setTerms] = useState<{
     ticker: string;
@@ -249,6 +225,9 @@ export function InvestFlow({
     const job = await waitForJob(String(res.body.jobId));
     setBusy(false);
     setStage('previewed');
+    if (job.status === 'queued' || job.status === 'running') {
+      return setError(t('judge.job.still_queued'));
+    }
     if (job.status === 'failed' || !job.result) {
       return setError(t('judge.job.failed', { reason: job.error ?? '' }));
     }
@@ -315,7 +294,7 @@ export function InvestFlow({
   // plan would leave this one waiting for its first run for good. The form shows the plan's own
   // terms again, so the dialog says what the run sends.
   const retry =
-    !busy && result?.result?.status === 'approval_pending'
+    !busy && result && retryable(result) && stoppedPlan !== planId
       ? () => {
           if (terms) {
             setTicker(terms.ticker);
@@ -546,11 +525,12 @@ export function InvestFlow({
             t={t}
             lang={lang}
             planId={planId}
-            mode={mode}
-            ticker={ticker ?? ''}
+            mode={terms?.mode ?? mode}
+            ticker={terms?.ticker ?? ticker ?? ''}
             job={result}
             why={why}
             onRetry={retry}
+            onStopped={() => setStoppedPlan(planId)}
           />
         ) : hasSession ? (
           <Panel
@@ -694,7 +674,7 @@ export function InvestFlow({
                   <Ledger
                     rows={[
                       [t('judge.details.issuer'), issuerName(preview.buy.instrumentId) ?? '—'],
-                      [t('judge.details.pieces'), preview.buy.expectedTokens ?? '—'],
+                      [t('judge.details.pieces'), fromBaseUnits(preview.buy.expectedTokens) ?? '—'],
                       [t('judge.details.min'), preview.buy.minReceive ?? '—'],
                     ]}
                   />
@@ -921,89 +901,6 @@ function receiptLinks(t: (key: CopyKey, params?: Params) => string, job: Job) {
   ));
 }
 
-/** What the run came back with, in words: bought, deposited, waiting, dry run or failed. */
-function doneText(
-  t: (key: CopyKey, params?: Params) => string,
-  ticker: string,
-  job: Job,
-  why: (w: Why | undefined) => string | null,
-): {
-  title: string;
-  lead: string | null;
-  tone: 'ok' | 'wait' | 'fail' | 'info';
-  note: string | null;
-} {
-  const r = job.result;
-  if (job.status === 'failed' || !r) {
-    return {
-      title: t('outcome.FAILED'),
-      lead: t('judge.job.failed', { reason: job.error ?? '' }),
-      tone: 'fail',
-      note: null,
-    };
-  }
-  if (r.status === 'done' && r.outcome?.kind === 'BOUGHT') {
-    return {
-      title: t('judge.done.title'),
-      // The reason line says what was bought and when; without one, the done line does (it ends
-      // in "· View receipt", which is the receipt link below).
-      lead:
-        why(r.why) ??
-        t('judge.done.line', {
-          ticker,
-          shares: sharesText(r.outcome.shares),
-          usd: money(r.outcome.spendUsd),
-        }).split(' · ')[0] ??
-        null,
-      tone: 'ok',
-      note: null,
-    };
-  }
-  if (r.status === 'done' && r.outcome) {
-    return {
-      title: t(`outcome.${r.outcome.kind}`),
-      lead: why(r.why),
-      tone: r.outcome.kind === 'DEFERRED' ? 'wait' : r.outcome.kind === 'FAILED' ? 'fail' : 'info',
-      note: r.outcome.kind === 'DEFERRED' ? t('judge.done.deferred_note') : null,
-    };
-  }
-  if (r.status === 'deposited') {
-    return {
-      title: t('judge.done.title'),
-      lead: t('judge.done.deposited', { usd: money(r.depositedUsd) }),
-      tone: 'ok',
-      note: t('judge.yield.note'),
-    };
-  }
-  if (r.status === 'simulated')
-    return {
-      title: t('outcome.simulated'),
-      lead: t('judge.done.simulated'),
-      tone: 'info',
-      note: null,
-    };
-  if (r.status === 'awaiting_tx')
-    return {
-      title: t('outcome.running'),
-      lead: t('judge.done.confirming'),
-      tone: 'wait',
-      note: null,
-    };
-  if (r.status === 'approval_pending')
-    return {
-      title: t('outcome.running'),
-      lead: t('judge.done.approval_pending'),
-      tone: 'wait',
-      note: null,
-    };
-  return {
-    title: t('outcome.FAILED'),
-    lead: t('judge.job.failed', { reason: r.status }),
-    tone: 'fail',
-    note: null,
-  };
-}
-
 function DoneBody({
   t,
   titleId,
@@ -1070,6 +967,7 @@ function DonePanel({
   job,
   why,
   onRetry,
+  onStopped,
 }: {
   t: (key: CopyKey, params?: Params) => string;
   lang: Lang;
@@ -1079,6 +977,7 @@ function DonePanel({
   job: Job;
   why: (w: Why | undefined) => string | null;
   onRetry: (() => void) | undefined;
+  onStopped: () => void;
 }) {
   const done = doneText(t, ticker, job, why);
   // The receipt page shows cycles that reached the chain; a wait lives on the plan's page.
@@ -1117,7 +1016,12 @@ function DonePanel({
           <Link className="text-link panel-link" href={`/plans/${planId}`}>
             {t('judge.plan.link')}
           </Link>
-          <StopPlan planId={planId} lang={lang} yieldPlan={mode === 'yield'} />
+          <StopPlan
+            planId={planId}
+            lang={lang}
+            yieldPlan={mode === 'yield'}
+            onStopped={onStopped}
+          />
         </>
       ) : null}
       {job.result?.planStatus === 'active' ? (
