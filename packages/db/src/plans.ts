@@ -309,6 +309,11 @@ export async function cyclesAwaitingTx(db: Db): Promise<CycleRow[]> {
   return db.select().from(cycles).where(eq(cycles.state, 'awaiting_tx')).orderBy(asc(cycles.id));
 }
 
+/** Every plan's cycles still marked 'running' (a live one holds its plan's lock; a dead one does not). */
+export async function cyclesRunning(db: Db): Promise<CycleRow[]> {
+  return db.select().from(cycles).where(eq(cycles.state, 'running')).orderBy(asc(cycles.id));
+}
+
 export async function getHolding(
   db: Db,
   planId: string,

@@ -301,9 +301,20 @@ export function loadConfig(options: LoadOptions = {}): Config {
   return parseConfig({ ...fromFile, ...Object.fromEntries(real) });
 }
 
-/** A loggable view: secrets become booleans, the database URL loses its credentials. */
+/**
+ * A loggable view: secrets become booleans, the database URL loses its credentials, and an RPC
+ * URL is reduced to its host — providers often keep the API key in the path (as packages/chain's
+ * error messages already do).
+ */
 export function describeConfig(config: Config): Record<string, unknown> {
   const db = config.databaseUrl ? new URL(config.databaseUrl) : undefined;
+  const host = (url: string) => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return 'invalid';
+    }
+  };
   return {
     executionMode: config.executionMode,
     regionTag: config.regionTag ?? 'unset',
@@ -313,7 +324,7 @@ export function describeConfig(config: Config): Record<string, unknown> {
       apiKey: config.binance.apiKey !== undefined,
       apiSecret: config.binance.apiSecret !== undefined,
     },
-    bsc: config.bsc,
+    bsc: { rpc: host(config.bsc.rpcUrl), rpcFallback: host(config.bsc.rpcUrlFallback) },
     database: db ? `${db.protocol}//${db.host}${db.pathname}` : 'unset',
     houseWalletKey: config.houseWalletPrivateKey !== undefined,
     judgeCodes: config.judgeCodes.length,

@@ -70,7 +70,11 @@ export async function startYieldPlan(
     case 'simulated':
       return { status: 'simulated', approve: result.approve, deposit: result.deposit };
     case 'pending':
-      return { status: 'awaiting_tx', txHash: result.txHash };
+      // A pending deposit is finished from the chain. A pending approval means nothing was put in
+      // yet: the judge is asked to run it again once it is mined, never told it is "confirming".
+      return result.step === 'approve'
+        ? { status: 'approval_pending', txHash: result.txHash }
+        : { status: 'awaiting_tx', txHash: result.txHash };
     case 'failed':
       // The code is for the caller; the message (API and RPC text) is for the log.
       deps.log(`deposit: ${plan.id} failed — ${result.code}: ${result.message}`);

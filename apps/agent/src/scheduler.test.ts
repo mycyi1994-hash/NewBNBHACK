@@ -5,6 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import {
+  acquirePlanLock,
   createDb,
   enqueueJob,
   getJob,
@@ -14,8 +15,10 @@ import {
   insertGuardianSample,
   listCycles,
   listGuardianEvents,
+  releasePlanLock,
   resolveGuardianEvents,
   updatePlan,
+  usdText,
 } from '@yieldvest/db';
 import { inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -143,10 +146,12 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
     const report = await schedulerTick(w.deps('simulate'), w.deps('simulate'));
     expect(report.guardian?.actions).toMatchObject([{ rule: 'tvl_drop', action: 'redeem_all' }]);
     expect(report.guardian?.paused).toContain(id);
+    // A simulate worker signs nothing: the position stays in Venus, and a person is told so.
     expect(await getPlan(db, id)).toMatchObject({
       status: 'paused',
-      pausedReason: 'guardian:tvl_drop',
+      pausedReason: 'guardian:tvl_drop:redeem_not_live',
     });
+    expect(w.alerts.join('\n')).toContain('pnpm yield:redeem');
   });
 
   it('finishes a cycle whose swap confirmed after the runner stopped waiting', async () => {
@@ -167,7 +172,11 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
       state: 'done',
       outcomeKind: 'BOUGHT',
       whyKey: 'why.bought.regular',
+      // The columns the activity totals sum, as a buy finished inside its cycle writes them.
+      instrumentId: expect.stringMatching(/:bstocks$/) as unknown,
+      interestUsd: null,
     });
+    expect(usdText(cycle?.spendUsd ?? '')).toBe('5');
   });
 
   it('picks up web jobs between ticks without running due plans', async () => {
@@ -257,6 +266,23 @@ describe.skipIf(!url)('schedulerTick on Postgres', () => {
     w.clock.advance(24 * 60 * MIN);
     const tick = await schedulerTick(w.deps('live'), w.deps('simulate'));
     expect(tick.cycles.filter((c) => c.planId === id)).toEqual([]);
+  });
+
+  it('keeps a judge plan waiting for its first run when that run could not open a cycle', async () => {
+    await calm();
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    const w = await createWorld(db, '2026-09-28T14:00:00.000Z');
+    // Another process holds the plan (an operator's cycle): the run opens nothing.
+    const held = await acquirePlanLock(db, id, new Date('2026-09-28T14:00:00.000Z'), 60_000);
+    await enqueueJob(db, { id: `job-locked-${id}`, kind: 'run', planId: id });
+    await processJobs(w.deps('live'), w.deps('simulate'));
+    expect(await getJob(db, `job-locked-${id}`)).toMatchObject({
+      status: 'done',
+      result: { status: 'locked' },
+    });
+    // Not started behind the judge's back: still waiting for "Buy now".
+    expect(await getPlan(db, id)).toMatchObject({ status: 'paused', pausedReason: 'awaiting_run' });
+    await releasePlanLock(db, id, held?.lockUntil ?? null);
   });
 
   it('shows a failed job only a refusal written for its caller, never an internal message', async () => {

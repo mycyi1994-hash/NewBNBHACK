@@ -161,8 +161,7 @@ export async function redeemPlanPosition(
   // in the user's own wallet (its vtoken_units come from the user's reports): the worker never
   // redeems it — that would take house funds — the user does, through the skill.
   if (plan.ownerKind === 'skill') return 'users_wallet';
-  if (plan.mode !== 'yield' || BigInt(plan.vtokenUnits) <= 1n) return 'nothing_to_redeem';
-  if (deps.mode !== 'live' || !deps.venus) return 'not_live';
+  if (plan.mode !== 'yield') return 'nothing_to_redeem';
   const held = async (kind: string, detail: string) => {
     await updatePlan(deps.db, plan.id, { pausedReason: `${outcome.reason}:redeem_${kind}` });
     await deps.alerter?.send({
@@ -172,6 +171,16 @@ export async function redeemPlanPosition(
         `The plan is ${outcome.status}; a human must decide.`,
     });
   };
+  // vtoken_units can be stale while a deposit or redeem of the plan is still out on chain: "nothing
+  // to redeem" is only true with none of those (a deposit mined later would be stranded).
+  const unsettled = (await unfinishedTransactions(deps.db, plan.id)).length > 0;
+  if (BigInt(plan.vtokenUnits) <= 1n && !unsettled) return 'nothing_to_redeem';
+  if (deps.mode !== 'live' || !deps.venus) {
+    // This process signs nothing (a dry run, a simulate-mode worker): the position is left for a
+    // person, who is told — never stopped in silence with the money still in Venus.
+    await held('not_live', 'this process does not sign; run pnpm yield:redeem');
+    return 'not_live';
+  }
   // One writer per plan: a cycle redeeming interest (cycle:once in another process, say) could
   // otherwise burn vTokens this redeem is about to count as the plan's.
   const lock = options.lockHeld

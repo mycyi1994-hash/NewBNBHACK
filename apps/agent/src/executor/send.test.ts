@@ -94,6 +94,36 @@ describe.skipIf(!url)('sending and reconciling on Postgres', () => {
     expect(await lastOutboxNonce(db, 56, HOUSE)).toBe(before);
   });
 
+  it('calls "underpriced" final only when the Transaction API itself answered', async () => {
+    const w = await createWorld(db, MON_1000);
+    const accept = w.chain.sendRaw.bind(w.chain);
+    // The API never answers (it may have relayed the bytes), and the node already holds a
+    // transaction with this nonce — very likely ours: tracked, not released.
+    w.api.routes['/api/v1/dex/pre-transaction/broadcast-transaction'] = () => {
+      throw new Error('socket hang up');
+    };
+    w.chain.sendRaw = () => Promise.reject(new Error('replacement transaction underpriced'));
+    // Bytes of their own (an earlier test's released nonce must not make the same hash).
+    const unclear = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 7n),
+    });
+    expect(unclear).toMatchObject({ state: 'pending', broadcastVia: 'unknown' });
+    expect(await rowOf(unclear.txHash)).toMatchObject({ status: 'PENDING' });
+    w.chain.sendRaw = accept;
+    expect(await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 })).toMatchObject({
+      confirmed: [unclear.txHash],
+    });
+    // The API answered with a refusal of its own: the node's "underpriced" settles it.
+    failBroadcast(w, 'transaction underpriced');
+    const refused = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 8n),
+    });
+    expect(refused).toMatchObject({ state: 'not_sent' });
+    expect(await rowOf(refused.txHash)).toMatchObject({ status: 'FAILED', broadcastVia: null });
+  });
+
   it('never sends again swap bytes the node lost after their quote went stale', async () => {
     const w = await createWorld(db, MON_1000);
     const accept = w.chain.sendRaw.bind(w.chain);

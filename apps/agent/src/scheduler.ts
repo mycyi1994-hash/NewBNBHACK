@@ -107,7 +107,11 @@ export async function processJob(
       // A judge's first run starts the plan: it keeps running on its own until it expires (7 days)
       // or the code's cap is used up. A deferred first run starts at the time it was deferred to.
       // Only a plan still waiting for that run: a review hold the cycle set, or a stop, stands.
+      // A run that never opened a cycle (the outbox busy, the plan locked) did not start anything:
+      // the plan keeps waiting for its first run, and the judge can press "Buy now" again.
+      const ran = report.status === 'done' || report.status === 'awaiting_tx';
       if (
+        ran &&
         deps.mode === 'live' &&
         plan.status === 'paused' &&
         plan.pausedReason === 'awaiting_run'

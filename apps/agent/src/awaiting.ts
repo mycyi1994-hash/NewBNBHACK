@@ -212,6 +212,12 @@ export async function completeAwaitingCycles(deps: CycleDeps): Promise<string[]>
     const at = deps.now();
     let outcome: CycleOutcome;
     let why: Why;
+    // A buy writes the columns a buy finished inside its cycle writes (activity totals sum them).
+    let boughtColumns: Partial<{
+      instrumentId: string;
+      spendUsd: string;
+      interestUsd: string | null;
+    }> = {};
 
     if (last.status === 'CONFIRMED' && last.kind === 'swap') {
       const instrumentRow = (await listInstruments(deps.db)).find(
@@ -239,6 +245,11 @@ export async function completeAwaitingCycles(deps: CycleDeps): Promise<string[]>
       );
       outcome = bought.outcome;
       why = bought.why;
+      boughtColumns = {
+        instrumentId: pending.decision.instrumentId,
+        spendUsd: pending.decision.spendUsd,
+        interestUsd: pending.decision.interestUsd,
+      };
     } else if (last.status === 'CONFIRMED') {
       // The approval or redemption landed; the swap never followed. Gas was spent.
       await settleSpend(deps.db, cycle.id, 'released');
@@ -273,6 +284,7 @@ export async function completeAwaitingCycles(deps: CycleDeps): Promise<string[]>
       whyKey: why.key,
       whyParams: why.params,
       finishedAt: at.toISOString(),
+      ...boughtColumns,
     });
     // Only the scheduled cycle moves the schedule; a manual one (cycle:once, a web job) never does.
     if (Date.parse(planRow.nextDueAt) === Date.parse(cycle.dueAt)) {

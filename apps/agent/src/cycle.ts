@@ -23,6 +23,7 @@ import {
   fromUnits,
   guardianVerdict,
   nextDue,
+  RETRY_LATER_MS,
   sharesFromTokens,
   toUnits,
   type CycleInput,
@@ -49,6 +50,7 @@ import {
   reserveSpend,
   settleSpend,
   recordReceiptFacts,
+  unfinishedTransactions,
   updateCycle,
   updatePlan,
   usdText,
@@ -188,8 +190,16 @@ export async function runCycle(
   }
   const expiresAt = first.expiresAt === null ? undefined : Date.parse(first.expiresAt);
   if (expiresAt !== undefined && !(expiresAt > now.getTime())) {
-    // Judge plans stop after seven days (SPEC §8.2); a deposit goes back to the house wallet.
-    await redeemPlanPosition(deps, first, { status: 'stopped', reason: 'expired' });
+    // Judge plans stop after seven days (SPEC §8.2); a deposit goes back to the house wallet. A dry
+    // run (a preview job, cycle:once without --live) never stops a plan that still holds a
+    // position: only a live run can redeem it, and a stopped plan is never looked at again.
+    const holds =
+      first.mode === 'yield' &&
+      (BigInt(first.vtokenUnits) > 1n ||
+        (await unfinishedTransactions(deps.db, first.id)).length > 0);
+    if (deps.mode === 'live' || !holds) {
+      await redeemPlanPosition(deps, first, { status: 'stopped', reason: 'expired' });
+    }
     return { status: 'stopped', planId };
   }
   if (!options.manual) {
@@ -469,6 +479,20 @@ async function cycleBody(
   }
 
   async function rounds(): Promise<CycleReport> {
+    if (plan.mode === 'yield' && !deps.venus) {
+      // The Venus market was not found at start-up (a DeFi API blip): the plan waits for it, like
+      // any data that is not there — it does not lose its slot to a failure.
+      await step({ step: 'VENUS', unavailable: 'the Venus market is not known yet' });
+      return finish(
+        {
+          kind: 'DEFERRED',
+          reason: 'data_unavailable',
+          retryAt: new Date(deps.now().getTime() + RETRY_LATER_MS).toISOString(),
+          detail: 'venus market unknown',
+        },
+        { key: 'why.data.unavailable', params: {} },
+      );
+    }
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const input: CycleInput = {
         now: deps.now(),

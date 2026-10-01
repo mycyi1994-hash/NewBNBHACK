@@ -159,6 +159,28 @@ describe.skipIf(!url)('runCycle on Postgres', () => {
     expect(report).toMatchObject({ status: 'done', outcome: { kind: 'BOUGHT', spendUsd: '5' } });
   });
 
+  it('a yield plan waits for an unknown Venus market instead of failing and losing its slot', async () => {
+    const id = await plan({
+      mode: 'yield',
+      contributionUsd: '0',
+      cadence: 'weekly',
+      principalUsd: '100',
+      vtokenUnits: '10600000000',
+    });
+    const w = await world(MON_1000);
+    // Discovery failed at start-up: the worker has no Venus market.
+    const { venus: _unknown, ...deps } = w.deps('live');
+    const report = await runCycle(deps, id);
+    expect(report).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'DEFERRED', reason: 'data_unavailable' },
+      why: { key: 'why.data.unavailable' },
+    });
+    expect(w.chain.sent).toEqual([]);
+    // Back in 30 minutes, not next week.
+    expect((await getPlan(db, id))?.nextDueAt).toMatch(/^2026-09-28 14:30/);
+  });
+
   it('live: a buy on top of a holding written at another multiplier logs the change and recomputes shares (M1-08)', async () => {
     const id = await plan();
     // 1 token held since the multiplier was 1.0 (e.g. before a dividend adjustment).

@@ -945,6 +945,13 @@ function doneText(
       tone: 'wait',
       note: null,
     };
+  if (r.status === 'approval_pending')
+    return {
+      title: t('outcome.running'),
+      lead: t('judge.done.approval_pending'),
+      tone: 'wait',
+      note: null,
+    };
   return {
     title: t('outcome.FAILED'),
     lead: t('judge.job.failed', { reason: r.status }),

@@ -187,7 +187,12 @@ export type DepositResult =
       deposit: SimulationResult;
     }
   | { kind: 'deposited'; vTokensMinted: bigint; usdtSpent: bigint; sent: SentTx[] }
-  | { kind: 'pending'; txHash: Hex; sent: SentTx[] }
+  /**
+   * Not mined yet. `step` says which: a pending deposit is finished from the chain by the
+   * awaiting path; a pending approval means the deposit itself was never sent — ask again once
+   * the approval is mined (the exact allowance it leaves is used then).
+   */
+  | { kind: 'pending'; step: 'approve' | 'deposit'; txHash: Hex; sent: SentTx[] }
   | Failure;
 
 /** Deposits `amountUsd` USDT of the plan's principal into Venus. */
@@ -256,7 +261,7 @@ export async function depositPrincipal(
         amount: amount.toString(),
       });
       if (!('receipt' in outcome))
-        return outcome.kind === 'pending' ? { ...outcome, sent } : outcome;
+        return outcome.kind === 'pending' ? { ...outcome, step: 'approve', sent } : outcome;
       sent.push(outcome);
     }
   }
@@ -284,7 +289,8 @@ export async function depositPrincipal(
   const outcome = outcomeOf(result, 'deposit', deps.now().toISOString(), {
     amountUsd: args.amountUsd,
   });
-  if (!('receipt' in outcome)) return outcome.kind === 'pending' ? { ...outcome, sent } : outcome;
+  if (!('receipt' in outcome))
+    return outcome.kind === 'pending' ? { ...outcome, step: 'deposit', sent } : outcome;
   const vTokensMinted = transferredTo(outcome.receipt.logs, args.market.vToken, deps.house);
   const usdtSpent = transferredFrom(outcome.receipt.logs, BSC_USDT, deps.house);
   outcome.amounts = {

@@ -220,6 +220,8 @@ export const COPY = {
       'The server is in simulation mode, so nothing was bought. Only the dry-run was recorded.',
     'judge.done.confirming':
       'Waiting for the blockchain record. It shows in the plan history once confirmed.',
+    'judge.done.approval_pending':
+      'The exact approval is still being confirmed, so nothing was put in yet. Try again in a minute.',
     'judge.summary.title': 'Summary',
     'judge.summary.window': 'When',
     'judge.plan.link': 'View plan history →',

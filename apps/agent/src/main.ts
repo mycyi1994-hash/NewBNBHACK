@@ -99,6 +99,9 @@ async function tick() {
   ticking = true;
   tickWanted = false;
   try {
+    // Not found at start-up (or at the last 6-hourly refresh): ask again every tick until it is,
+    // so yield plans wait minutes for it, not hours.
+    if (!cycleDeps.deps.venus) await venusTick(cycleDeps.deps, cycleDeps.simulate);
     const report = await schedulerTick(cycleDeps.deps, cycleDeps.simulate);
     const cycles = report.cycles.map(
       (c) => `${c.planId}:${c.status}${'outcome' in c ? `:${c.outcome.kind}` : ''}`,

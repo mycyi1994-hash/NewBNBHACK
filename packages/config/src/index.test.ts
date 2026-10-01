@@ -224,13 +224,16 @@ describe('secrets and modes', () => {
           BINANCE_WEB3_API_SECRET: 'secret-value',
           HOUSE_WALLET_PRIVATE_KEY: key,
           DATABASE_URL: 'postgres://yieldvest:hunter2@db.example:5432/yieldvest',
+          BSC_RPC_URL: 'https://bsc-mainnet.nodereal.io/v1/rpc-key-in-path',
+          BSC_RPC_URL_FALLBACK: 'https://bsc.example/?apikey=rpc-key-in-query',
         }),
       ),
     );
-    for (const leaked of ['key-value', 'secret-value', key, 'hunter2']) {
+    for (const leaked of ['key-value', 'secret-value', key, 'hunter2', 'rpc-key-in']) {
       expect(described).not.toContain(leaked);
     }
     expect(described).toContain('postgres://db.example:5432/yieldvest');
+    expect(described).toContain('bsc-mainnet.nodereal.io');
   });
 
   it('loadConfig lets real environment variables win over the .env file', () => {

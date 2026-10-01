@@ -68,7 +68,14 @@ const ALREADY_KNOWN = /already known|known transaction|nonce too low/i;
  * gone out through the Transaction API either. Any other failure (timeout, network) is unclear.
  */
 const INVALID_TX =
-  /insufficient funds|intrinsic gas|underpriced|exceeds block gas limit|invalid sender|invalid signature|exceeds the configured cap/i;
+  /insufficient funds|intrinsic gas|exceeds block gas limit|invalid sender|invalid signature/i;
+/**
+ * RPC answers about this node's own policy (its minimum gas price, its fee cap) or about a
+ * transaction it already holds with the same nonce ("replacement transaction underpriced" — very
+ * likely ours, relayed by the Transaction API). Definite only when the Transaction API itself
+ * answered: after its timeout or gateway error the bytes may well have gone out there.
+ */
+const NODE_POLICY = /underpriced|exceeds the configured cap/i;
 /**
  * A used nonce with no receipt for ours, or swap bytes the node lost, is put to a human after this
  * long (RUNBOOK §3.4). Until then it may be a node that has not indexed ours yet.
@@ -106,7 +113,13 @@ async function broadcast(deps: SendDeps, raw: Hex, txHash: Hex): Promise<Broadca
       };
     }
     deps.log(`send: Transaction API broadcast failed (${error.code ?? error.kind}); trying RPC`);
+    // Whether the Transaction API answered at all (an error envelope) — or may have relayed the
+    // bytes before failing (no response, a gateway page).
+    return broadcastByRpc(deps, raw, error.kind === 'api');
   }
+}
+
+async function broadcastByRpc(deps: SendDeps, raw: Hex, apiAnswered: boolean): Promise<Broadcast> {
   try {
     await deps.chain.sendRaw(raw);
     return { ok: true, via: 'rpc' };
@@ -116,7 +129,7 @@ async function broadcast(deps: SendDeps, raw: Hex, txHash: Hex): Promise<Broadca
     return {
       ok: false,
       reason: `RPC refused: ${message.split('\n')[0] ?? message}`,
-      definite: INVALID_TX.test(message),
+      definite: INVALID_TX.test(message) || (apiAnswered && NODE_POLICY.test(message)),
     };
   }
 }
