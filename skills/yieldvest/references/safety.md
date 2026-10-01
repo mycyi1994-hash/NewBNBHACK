@@ -22,8 +22,9 @@ mode (a fixed amount, no interest account) is the default.
 
 When the user asks what a deposit would earn, use
 `curl -sS "$YIELDVEST_URL/api/projection?depositUsd=1000&ticker=NVDA"`: interest per day, week,
-month and year if today's listed APY held, the days until it reaches the minimum buy, and about how
-many shares a month buys. Say it the way the answer's `assumption` does — today's rate held
+month and year if today's listed APY held, the days until it reaches the first buy (`firstBuyUsd`:
+the minimum buy, or the token's venue minimum — Ondo's $5.01), and about how many shares a month
+buys at a live price. Say it the way the answer's `assumption` does — today's rate held
 constant; the rate changes daily — and give `apy.at`. Never call it a return the user will get.
 
 ## Token check before every swap

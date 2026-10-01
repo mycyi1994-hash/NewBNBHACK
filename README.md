@@ -33,7 +33,7 @@ Read-only, from the worker's latest market recording, each with its data state (
 | --- | --- |
 | `/check` · `GET /api/preflight?ticker=NVDA&usd=5` | **Would it buy right now?** `decideCycle` — the code the agent and a skill plan's `/next` run — on a plan you have not made, once per token: buy (about how many shares), wait (until when) or skip, with the agent's own one-line reason, and every rule's input against its limit: data age, guardian, US session, amount vs the venue minimum, token status, price vs the US stock, price impact. A buy needs a guardian check in the last 15 minutes. |
 | `/compare` · `GET /api/compare?ticker=NVDA` | **bStocks or Ondo?** The same share from two issuers: shares each $5 / $50 / $500 quote was worth, price per share, price impact or the code it was refused with (Ondo refuses exactly $5), status, minimum order, full addresses. Facts with their time; a plan never switches issuer. |
-| Earn · `GET /api/projection?depositUsd=1000&ticker=NVDA` | **What would a deposit earn?** At today's listed Venus APY, compounded daily: per day, week, month and year, the days until the interest reaches the minimum buy, and about how many shares a month buys. Labeled a projection at today's rate, never a promise. |
+| Earn · `GET /api/projection?depositUsd=1000&ticker=NVDA` | **What would a deposit earn?** At today's listed Venus APY, compounded daily: per day, week, month and year, the days until the interest reaches the first buy (the minimum buy, or the token's venue minimum — Ondo's $5.01), and about how many shares a month buys at a live price. Labeled a projection at today's rate, never a promise. |
 | `POST /api/mcp` | The same answers, plus market status, plan records and receipts, as a **read-only MCP server** (Streamable HTTP; checked with the official MCP SDK client): `claude mcp add --transport http yieldvest <site URL>/api/mcp` |
 
 ## What Yieldvest ran itself
@@ -44,7 +44,7 @@ Read-only, from the worker's latest market recording, each with its data state (
 
 | Command | What it shows | Result on 10/1 |
 | --- | --- | --- |
-| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 68 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 697 passed, 10 skipped |
+| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 68 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 703 passed, 10 skipped |
 | `pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e` | Judge Mode end to end in Chromium at 375 and 1280 px, in simulate mode over a test world (no network), then `/check`, `/compare`, the Earn calculator and the MCP block | green in CI on every push |
 | `pnpm lp:test` | the Uniswap v4 hook, the reference oracle and the LP vault | 144 Foundry tests; `BSC_FORK_URL=…` adds 2 on BSC mainnet state |
 | `pnpm dx:repro` | each DX finding ([`dx/findings`](dx/findings/README.md)) against the platform as it is now | 4 of 4 keyless findings reproduced; 6 need a key |
