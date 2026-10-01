@@ -1,0 +1,67 @@
+# Yieldvest on your own machine, in simulate mode: nothing is signed and no wallet key is used.
+#
+#   docker compose up --build          then open http://localhost:3000 (judge code: LOCAL-JUDGE)
+#   docker compose down -v             stops it and deletes the local database
+#
+# Without a Binance Web3 API key every screen says what it cannot show and why (UNAVAILABLE).
+# With your own key in the environment (BINANCE_WEB3_API_KEY, BINANCE_WEB3_API_SECRET) the worker
+# records live quotes and market status every 10 minutes. Never put a funded wallet's key here:
+# this file has no HOUSE_WALLET_PRIVATE_KEY on purpose, and EXECUTION_MODE is fixed to simulate.
+name: yieldvest
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://yieldvest:yieldvest@db:5432/yieldvest
+  EXECUTION_MODE: simulate
+  BINANCE_WEB3_API_KEY: ${BINANCE_WEB3_API_KEY:-}
+  BINANCE_WEB3_API_SECRET: ${BINANCE_WEB3_API_SECRET:-}
+  JUDGE_CODES: ${JUDGE_CODES:-LOCAL-JUDGE}
+  # Signs the Judge Mode session cookie on this machine only.
+  SESSION_SECRET: ${SESSION_SECRET:-yieldvest-local-only-session-secret-change-me}
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: yieldvest
+      POSTGRES_PASSWORD: yieldvest
+      POSTGRES_DB: yieldvest
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U yieldvest -d yieldvest']
+      interval: 2s
+      retries: 30
+    volumes:
+      - db:/var/lib/postgresql/data
+
+  # Migrates, then seeds the house plans (paused) and the judge codes. Runs once.
+  setup:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    image: yieldvest-local
+    command: ['pnpm', 'db:seed']
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: yieldvest-local
+    environment: *app-env
+    ports:
+      - '3000:3000'
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+  worker:
+    image: yieldvest-local
+    command: ['pnpm', '--filter', '@yieldvest/agent', 'start']
+    environment: *app-env
+    restart: unless-stopped
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+volumes:
+  db:

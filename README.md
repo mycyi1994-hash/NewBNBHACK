@@ -93,6 +93,17 @@ skills/yieldvest    Wallet Skill (SKILL.md + references)
 
 ## Run
 
+**With Docker, nothing else to install** (simulate mode: nothing is signed, no wallet key is used):
+
+```bash
+docker compose up --build    # http://localhost:3000 · judge code LOCAL-JUDGE
+docker compose down -v       # stop and delete the local database
+```
+
+Postgres, migrations and seed, the web app and the worker start together (`compose.yaml`, `Dockerfile.local`). Without a Binance Web3 API key every screen says what it cannot show and why, and `/api/judge/smoke` shows the RPC and the database green and the rest red with its reason (checked 10/1). With `BINANCE_WEB3_API_KEY` and `BINANCE_WEB3_API_SECRET` in your environment the worker records live quotes and market status every 10 minutes. Judge Mode's dry runs also need a house wallet, which this setup leaves out on purpose; the whole Judge Mode flow runs in `pnpm e2e` (below) and on the live site.
+
+**With pnpm:**
+
 ```bash
 pnpm i
 cp .env.example .env          # EXECUTION_MODE=simulate (the default) signs nothing. The web starts without keys;
