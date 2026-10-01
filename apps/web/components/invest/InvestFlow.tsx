@@ -96,25 +96,39 @@ const units = (value: string) => {
   return BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
 };
 
+/** Never throws: a dropped connection is an answer (status 0) the flow shows, not a stuck spinner. */
 async function post(
   url: string,
   body?: unknown,
 ): Promise<{ status: number; body: Record<string, unknown> & Problem }> {
-  const res = await fetch(url, {
-    method: 'POST',
-    ...(body === undefined
-      ? {}
-      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown> & Problem;
-  return { status: res.status, body: json };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      ...(body === undefined
+        ? {}
+        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown> & Problem;
+    return { status: res.status, body: json };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'network error';
+    return { status: 0, body: { error: { code: 'network', message } } };
+  }
 }
 
+/**
+ * Polls a job until it is done or failed (four minutes at most). A poll that fails on the way — a
+ * dropped connection, a gateway page instead of JSON — is tried again; the job keeps running.
+ */
 async function waitForJob(jobId: string): Promise<Job> {
   for (let i = 0; i < 120; i++) {
-    const res = await fetch(`/api/jobs/${jobId}`, { cache: 'no-store' });
-    const job = (await res.json()) as Job;
-    if (job.status === 'done' || job.status === 'failed') return job;
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, { cache: 'no-store' });
+      const job = (await res.json()) as Job;
+      if (job.status === 'done' || job.status === 'failed') return job;
+    } catch {
+      // Transient: ask again on the next tick.
+    }
     await new Promise((r) => setTimeout(r, 2000));
   }
   return { status: 'failed', result: null, error: 'timeout' };
@@ -174,11 +188,16 @@ export function InvestFlow({
   const riskTitle = useId();
 
   const closed = market.session !== 'regular';
+  // Yield mode hides the window choice and runs in regular hours: never a hidden "anytime".
+  const planWindow = mode === 'yield' ? 'regular_session' : window;
   const problemText = (status: number, body: Problem): string => {
     const codeName = body.error?.code;
     if (status === 429) return t('judge.error.rate_limited');
     if (codeName === 'bad_code') return t('judge.code.error.bad');
     if (codeName === 'code_exhausted') return t('judge.code.error.exhausted');
+    if (codeName === 'daily_cap') {
+      return t('judge.error.daily_cap', { remaining: money(remaining ?? capUsd) ?? '' });
+    }
     if (status === 503) return t('judge.error.unavailable', { reason: body.reason ?? '' });
     return t('judge.error.generic', { reason: body.error?.message ?? `HTTP ${status}` });
   };
@@ -199,6 +218,12 @@ export function InvestFlow({
     if (res.status !== 200) return setError(problemText(res.status, res.body));
     if (res.body.exhausted === true) return setError(t('judge.code.error.exhausted'));
     setRemaining(String(res.body.remainingUsd));
+    // The code is fine, but today's house-wide cap is spent: say so now, not after the form.
+    if (res.body.dailyCapReached === true) {
+      setError(
+        t('judge.error.daily_cap', { remaining: money(String(res.body.remainingUsd)) ?? '' }),
+      );
+    }
   }
 
   async function runPreview(id: string) {
@@ -225,7 +250,7 @@ export function InvestFlow({
     setBusy(true);
     setError(null);
     setPreview(null);
-    const res = await post('/api/plans', { ticker, mode, amountUsd: amount, window });
+    const res = await post('/api/plans', { ticker, mode, amountUsd: amount, window: planWindow });
     setBusy(false);
     if (res.status === 401) {
       setRemaining(null);
@@ -258,9 +283,12 @@ export function InvestFlow({
     setBusy(false);
     setResult(job);
     setStage('done');
-    // What the code has left: the server's figure less the buy the worker reports (a buy is what
-    // the spend ledger counts against the code).
-    const spent = job.result?.outcome?.kind === 'BOUGHT' ? job.result.outcome.spendUsd : undefined;
+    // What the code has left: the server's figure less what the worker reports — a buy (the spend
+    // ledger) or a deposit (principal counts towards the code's cap too).
+    const spent =
+      job.result?.outcome?.kind === 'BOUGHT'
+        ? job.result.outcome.spendUsd
+        : job.result?.depositedUsd;
     if (spent && /^\d+(\.\d+)?$/.test(spent)) {
       setRemaining((left) => {
         if (left === null) return left;
@@ -285,7 +313,7 @@ export function InvestFlow({
   const hasSession = remaining !== null;
   const funding = mode === 'safe' ? t('invest.funding.contribution') : t('invest.funding.interest');
   const windowText = t(
-    window === 'regular_session' ? 'plan.window.regular_session' : 'plan.window.anytime',
+    planWindow === 'regular_session' ? 'plan.window.regular_session' : 'plan.window.anytime',
   );
   const step = !hasSession
     ? 0

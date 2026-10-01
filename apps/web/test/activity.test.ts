@@ -175,6 +175,8 @@ describe.skipIf(!webTestUrl)('activity reads', () => {
       whyParams: { open: '2026-09-28T13:32:00.000Z' },
       finishedAt: new Date().toISOString(),
     });
+    // A deposit's exact approval goes just before it, outside any cycle: one entry, not two.
+    await receipt(house, null, 'approve');
     await receipt(house, null, 'deposit', { amountUsd: '10', usdtSpent: `10${E18}` });
 
     const judge = await plan({ ownerKind: 'judge', ownerRef: `code-${randomUUID()}` });
@@ -217,6 +219,10 @@ describe.skipIf(!webTestUrl)('activity reads', () => {
     expect(houseBuy?.receipts[1]?.explorerUrl).toMatch(/^https:\/\/bscscan\.com\/tx\/0x/);
     expect(wait).toMatchObject({ kind: 'DEFERRED', spendUsd: null, receipts: [] });
     expect(deposit).toMatchObject({ kind: 'deposit', cycleId: null, spendUsd: '10' });
+    expect(deposit?.receipts.map((r) => [r.kind, r.usd])).toEqual([
+      ['approve', null],
+      ['deposit', '10'],
+    ]);
     expect(judgeRow).toMatchObject({ kind: 'BOUGHT', spendUsd: '2.5', plan: { owner: 'judge' } });
     // A judge's dry run reached nothing on chain: it is not in the public feed.
     expect(feed.some((item) => item.cycleId === dryRun.id)).toBe(false);
@@ -227,6 +233,10 @@ describe.skipIf(!webTestUrl)('activity reads', () => {
       ['BOUGHT', '0.022194'],
       ['SIMULATED', '0.0222'],
     ]);
+    // An approval whose deposit never came stays its own entry, as what it is.
+    await receipt(judge, null, 'approve');
+    const after = await planActivity(db, await getRow(judge));
+    expect(after.map((item) => item.kind)).toEqual(['approve', 'BOUGHT', 'SIMULATED']);
   });
 
   async function getRow(id: string) {

@@ -57,8 +57,8 @@ curl -sS -X POST -H "$AUTH" -H 'content-type: application/json' \
   plan is paused. Tell the user; do not continue until they decide.
 - `202 pending` — not mined yet; report again in ~15 s.
 - `422 rejected` — the chain does not show what was reported (reverted, another sender, no tokens
-  received, older than the plan, a transaction of Yieldvest's own house wallet). Relay the reason
-  verbatim.
+  received, older than the plan, a transaction of Yieldvest's own house wallet), or the transaction
+  is already recorded on another plan. Relay the reason verbatim.
 
 ## Scheduling
 

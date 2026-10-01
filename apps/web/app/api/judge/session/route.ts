@@ -34,7 +34,12 @@ async function handlePOST(request: Request): Promise<Response> {
   if (!judge) return problem(401, 'bad_code', 'the code does not match');
 
   const now = Date.now();
-  const { capUsd, remainingUsd } = await judgeRemaining(db, config, judge.codeHash, new Date(now));
+  const { capUsd, remainingUsd, todayUsd, dailyCapUsd } = await judgeRemaining(
+    db,
+    config,
+    judge.codeHash,
+    new Date(now),
+  );
   const expiresAt = now + SESSION_TTL_MS;
   // Behind a TLS-terminating proxy the request itself may be plain http.
   const secure =
@@ -46,7 +51,11 @@ async function handlePOST(request: Request): Promise<Response> {
       ok: true,
       capUsd,
       remainingUsd,
+      // What today's house-wide cap still lets this code spend (≤ remainingUsd).
+      todayUsd,
+      dailyCapUsd,
       exhausted: Number(remainingUsd) <= 0,
+      dailyCapReached: Number(remainingUsd) > 0 && Number(todayUsd) <= 0,
       expiresAt: new Date(expiresAt).toISOString(),
     },
     200,

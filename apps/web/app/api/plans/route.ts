@@ -13,12 +13,11 @@ import {
   listInstruments,
   planFromRow,
   readWorkerStatus,
-  remainingSpend,
   usdText,
-  utcDay,
 } from '@yieldvest/db';
 import { getAddress, isAddressEqual } from 'viem';
 import { activeJudgeOf } from '../../../lib/server/auth';
+import { judgeRemaining } from '../../../lib/server/judge';
 import { AWAITING_DEPOSIT } from '../../../lib/server/report';
 import { JudgePlanBody, SkillPlanBody } from '../../../lib/server/schemas';
 import { context } from '../../../lib/server/context';
@@ -136,19 +135,22 @@ async function handlePOST(request: Request): Promise<Response> {
       `${body.ticker} is only sold above $${issuers.map((i) => VENUE_MIN_USD[i]).join('/')}`,
     );
   }
-  const remaining = await remainingSpend(db, {
-    planId: '',
-    ownerKind: 'judge',
-    ownerRef: judge.codeHash,
-    day: utcDay(now),
-    caps: {
-      globalDailyUsd: String(config.caps.dailySpendCapUsd),
-      planDailyUsd: cap,
-      judgeTotalUsd: cap,
-    },
-  });
+  const { remainingUsd: remaining, todayUsd } = await judgeRemaining(
+    db,
+    config,
+    judge.codeHash,
+    now,
+  );
   if (body.mode === 'safe' && units(remaining) < amount) {
     return problem(409, 'code_exhausted', `this code has $${fromUnits(units(remaining), 18)} left`);
+  }
+  if (body.mode === 'safe' && units(todayUsd) < amount) {
+    // The code has it; today's house-wide cap (house plans and every code together) does not.
+    return problem(
+      409,
+      'daily_cap',
+      `today's limit across all codes ($${config.caps.dailySpendCapUsd}) leaves $${fromUnits(units(todayUsd), 18)}; this code still has $${fromUnits(units(remaining), 18)}`,
+    );
   }
   if (body.mode === 'yield') {
     // The deposit counts towards the code's total like spend (SECURITY.md: one code, one cap).

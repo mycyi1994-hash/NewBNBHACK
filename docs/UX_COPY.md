@@ -143,6 +143,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `outcome.running`: In progress
 - `outcome.deposit`: Put in the interest account
 - `outcome.redeem`: Taken out of the interest account
+- `outcome.approve`: Exact approval for the interest account
 - `why.data.stale`: The data is old, so we wait. Checking again at {time}.
 - `why.data.unavailable`: The data is unavailable, so we wait.
 - `why.skipped.guardian.hold`: The guardian paused buying: {rule}. Principal stays where it is.
@@ -224,6 +225,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `judge.step.done`: Receipt
 - `judge.code.error.bad`: That code doesn't match
 - `judge.code.error.exhausted`: This code has used its limit
+- `judge.error.daily_cap`: Today's limit across all codes is reached — your code still has ${remaining}. Try again after 00:00 UTC.
 - `judge.code.remaining`: ${remaining} left on this code
 - `judge.pick.venue_min`: Only on Ondo with a ${min} minimum, above this code's ${cap} limit
 - `judge.window.regular.closed`: Buys automatically at the next open, {open}

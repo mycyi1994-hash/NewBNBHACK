@@ -65,6 +65,8 @@ interface Answer {
   txHash?: string;
   decision?: string;
   retryAt?: string;
+  outcome?: { kind: string; spendUsd?: string; interestUsd?: string | null };
+  why?: { key: string };
 }
 
 describe.skipIf(!webTestUrl)('web audit fixes', () => {
@@ -184,6 +186,12 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
       'recorded',
     ]);
     expect(first.body.txHash).toBe(hash);
+    // Another plan of the same wallet cannot claim it, nor be told it is already its own.
+    const other = await skillPlan({ ticker: instrument.ticker }, wallet);
+    expect(await report(other.id, other.token, { kind: 'swap', txHash: hash })).toMatchObject({
+      status: 422,
+      body: { status: 'rejected', reason: 'the transaction is recorded on another plan' },
+    });
     // The plan is daily: the next buy waits for tomorrow's open.
     const plan = await getPlan(db, id);
     expect(plan?.nextDueAt).toMatch(/^2026-09-29 13:32/);
@@ -244,7 +252,12 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
       from: wallet,
       logs: swapLogs(wallet, 3n * E18, 3n * TOKENS_PER_USD),
     });
-    expect((await report(id, token, { kind: 'swap', txHash: swap })).body.status).toBe('recorded');
+    // Paid with that interest, and labelled so — not as a contribution.
+    expect((await report(id, token, { kind: 'swap', txHash: swap })).body).toMatchObject({
+      status: 'recorded',
+      outcome: { kind: 'BOUGHT', spendUsd: '3', interestUsd: '3' },
+      why: { key: 'why.bought.interest' },
+    });
     row = await getPlan(db, id);
     expect(usdText(row?.harvestedUnspentUsd ?? '')).toBe('0');
     // Everything out: interest is only what came back above the principal; the plan pauses.

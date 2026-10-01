@@ -1,4 +1,8 @@
-/** What a judge code may still spend (sandbox cap across its plans; house daily cap). */
+/**
+ * What a judge code may still spend: its own allowance (the sandbox cap across its plans), and
+ * what of that the house-wide daily cap lets it spend today. They differ when the house and the
+ * other codes used up today's cap: the code is not used up, today is.
+ */
 import type { Config } from '@yieldvest/config';
 import { remainingSpend, syncJudgeCodes, usdText, utcDay, type Db } from '@yieldvest/db';
 
@@ -7,20 +11,24 @@ export async function judgeRemaining(
   config: Config,
   codeHash: string,
   now: Date,
-): Promise<{ capUsd: string; remainingUsd: string }> {
+): Promise<{ capUsd: string; remainingUsd: string; todayUsd: string; dailyCapUsd: string }> {
   const cap = String(config.caps.sandboxMaxPerPlanUsd);
-  const remaining = await remainingSpend(db, {
-    planId: '',
-    ownerKind: 'judge',
-    ownerRef: codeHash,
-    day: utcDay(now),
-    caps: {
-      globalDailyUsd: String(config.caps.dailySpendCapUsd),
-      planDailyUsd: cap,
-      judgeTotalUsd: cap,
-    },
-  });
-  return { capUsd: cap, remainingUsd: usdText(remaining) };
+  const dailyCapUsd = String(config.caps.dailySpendCapUsd);
+  const scope = (globalDailyUsd: string) =>
+    remainingSpend(db, {
+      planId: '',
+      ownerKind: 'judge',
+      ownerRef: codeHash,
+      day: utcDay(now),
+      caps: { globalDailyUsd, planDailyUsd: cap, judgeTotalUsd: cap },
+    });
+  const [own, today] = await Promise.all([scope('Infinity'), scope(dailyCapUsd)]);
+  return {
+    capUsd: cap,
+    remainingUsd: usdText(own),
+    todayUsd: usdText(today),
+    dailyCapUsd,
+  };
 }
 
 let synced: Promise<number> | undefined;

@@ -20,6 +20,7 @@ const ROW_ICON: Record<string, { icon: IconName; className: string }> = {
   SIMULATED: { icon: 'info', className: 'info' },
   deposit: { icon: 'plus', className: 'earned' },
   redeem: { icon: 'back', className: 'earned' },
+  approve: { icon: 'check', className: 'info' },
 };
 
 export function eventTitle(t: T, item: ActivityItem): string {
@@ -39,18 +40,23 @@ export function eventTitle(t: T, item: ActivityItem): string {
       return t('outcome.deposit');
     case 'redeem':
       return t('outcome.redeem');
+    case 'approve':
+      return t('outcome.approve');
     default:
       return t('activity.event.running', { ticker });
   }
 }
 
+/** A transaction outside any cycle: recorded once it is on chain, never "in progress". */
+const LONE = new Set(['deposit', 'redeem', 'approve']);
+
 export function eventTone(item: ActivityItem): Tone {
-  if (item.kind === 'deposit' || item.kind === 'redeem') return 'ok';
+  if (LONE.has(item.kind)) return 'ok';
   return OUTCOME_TONE[item.kind] ?? 'info';
 }
 
 function statusText(t: T, item: ActivityItem): string {
-  if (item.kind === 'deposit' || item.kind === 'redeem') return t('activity.status.recorded');
+  if (LONE.has(item.kind)) return t('activity.status.recorded');
   return outcomeText(t, item.kind);
 }
 
@@ -170,7 +176,7 @@ export function ReceiptPanel({
     <Panel
       eyebrow={item.receipts.length > 0 ? eyebrow : t('receipt.eyebrow.record')}
       title={eventTitle(t, item)}
-      waiting={!bought && item.kind !== 'deposit' && item.kind !== 'redeem'}
+      waiting={!bought && !LONE.has(item.kind)}
     >
       <p className="panel-cycle">{timeText(item.at, lang, tz)}</p>
       {item.executionMode === 'simulate' || item.kind === 'SIMULATED' ? (

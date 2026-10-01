@@ -25,6 +25,7 @@ import {
   receiptByHash,
   recordSkillSwap,
   updatePlanIf,
+  usdText,
   utcDay,
   type Db,
   type PlanRow,
@@ -112,7 +113,15 @@ export async function recordReport(args: {
   if (args.houseAddress && isAddressEqual(getAddress(wallet), getAddress(args.houseAddress))) {
     return { status: 'rejected', reason: 'the plan wallet is the house wallet' };
   }
-  if (await receiptByHash(db, txHash)) return { status: 'already_recorded', txHash };
+  // A transaction is recorded once, on one plan. Another plan of the same wallet reporting it
+  // again is told so — never "already recorded", which would let it skip its own limits.
+  const once = async (): Promise<ReportResult> => {
+    const known = await receiptByHash(db, txHash);
+    return known && known.planId !== plan.id
+      ? { status: 'rejected', reason: 'the transaction is recorded on another plan' }
+      : { status: 'already_recorded', txHash };
+  };
+  if (await receiptByHash(db, txHash)) return once();
   // What the house wallet signed is the worker's to record, never a report's.
   if (await outboxByHash(db, txHash)) {
     return { status: 'rejected', reason: 'the transaction was sent by the house wallet' };
@@ -150,7 +159,7 @@ export async function recordReport(args: {
         facts({ vTokens: vTokens.toString(), usdt: usdt.toString() }),
         { vTokens, usdtSpent: usdt },
       );
-      if (!fresh) return { status: 'already_recorded', txHash };
+      if (!fresh) return once();
       // A skill yield plan waits for its deposit; with the principal on record it starts running
       // (unless it was stopped meanwhile).
       await updatePlanIf(
@@ -172,7 +181,7 @@ export async function recordReport(args: {
       facts({ usdtReceived: received.toString(), vTokensBurned: burned.toString() }),
       { usdtReceived: received, vTokensBurned: burned },
     );
-    if (!fresh) return { status: 'already_recorded', txHash };
+    if (!fresh) return once();
     return { status: 'recorded', kind: body.kind, txHash };
   }
 
@@ -191,6 +200,11 @@ export async function recordReport(args: {
   const spent = transferredFrom(tx.logs, BSC_USDT, wallet);
   if (spent === 0n) return { status: 'rejected', reason: 'no USDT left the wallet' };
   const spentUsd = fromUnits(spent, 18);
+  // A yield plan pays with the interest it redeemed first (recordSkillSwap takes it from there):
+  // that part of the buy is interest, as the engine labels the worker's buys.
+  const harvested = toUnits(usdText(row.harvestedUnspentUsd), 18);
+  const interestUnits = plan.mode === 'yield' ? (harvested < spent ? harvested : spent) : 0n;
+  const interestUsd = interestUnits > 0n ? fromUnits(interestUnits, 18) : null;
 
   const result = boughtOutcome(
     {
@@ -203,7 +217,7 @@ export async function recordReport(args: {
         receivedAt: minedAt.toISOString(),
       },
       redeemUsd: '0',
-      interestUsd: null,
+      interestUsd,
       offHours: usSession(minedAt) !== 'regular',
       refGapPct: null,
     },
@@ -228,11 +242,12 @@ export async function recordReport(args: {
       outcome: result.outcome,
       whyKey: result.why.key,
       whyParams: result.why.params,
+      interestUsd,
       finishedAt: now.toISOString(),
     },
     planPatch: next.kind === 'due' ? { nextDueAt: next.nextDueAt } : {},
   });
-  if (!written) return { status: 'already_recorded', txHash };
+  if (!written) return once();
 
   // The plan's own limits bound what its wallet may spend (1 % for rounding); going past them
   // pauses the plan.

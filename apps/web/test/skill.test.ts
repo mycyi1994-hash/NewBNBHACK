@@ -271,6 +271,14 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
         decision: 'skip',
         why: { key: 'why.skipped.guardian.hold', params: { rule: 'usdt_depeg' } },
       });
+      // The plan's page shows the global hold that stops it, not an empty guardian list.
+      const view = await call<{ guardian: { rule: string; resolvedAt: string | null }[] }>(
+        planRoute,
+        { path: `/api/plans/${id}`, id },
+      );
+      expect(view.body.guardian).toContainEqual(
+        expect.objectContaining({ rule: 'usdt_depeg', resolvedAt: null }),
+      );
     } finally {
       await resolveGuardianEvents(db, 'usdt_depeg', new Date());
     }
@@ -377,6 +385,16 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
       body: { kind: 'swap', txHash: '0x1234' },
     });
     expect([bad.status, bad.body.error.code]).toEqual([400, 'bad_request']);
+  });
+
+  it('counts a skill plan’s day against its own daily limit, not the house wallet’s', async () => {
+    // $100 a day from the user's own wallet, above the house-wide $50.
+    const { id } = await skillPlan({ maxPerBuyUsd: '25', maxDailyUsd: '100' });
+    const view = await call<{ limits: { perDayUsd: string; remainingTodayUsd: string } }>(
+      planRoute,
+      { path: `/api/plans/${id}`, id },
+    );
+    expect(view.body.limits).toMatchObject({ perDayUsd: '100', remainingTodayUsd: '100' });
   });
 
   it('starts a skill yield plan from its reported deposit and redeems only interest', async () => {

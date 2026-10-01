@@ -2,7 +2,7 @@
  * Plans, cycles, holdings, receipts and guardian events (SPEC §4–§6). The scheduler's lock is a
  * conditional UPDATE on `lock_until`, so two workers can never run the same plan at once.
  */
-import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { newSkillToken } from './auth.js';
 import type { Db } from './index.js';
 import { cycles, guardianEvents, holdings, plans, receipts, skillTokens } from './schema.js';
@@ -389,14 +389,30 @@ export async function insertGuardianEvent(
 
 export async function listGuardianEvents(
   db: Db,
-  filter: { planId?: string; openOnly?: boolean; limit?: number } = {},
+  filter: {
+    planId?: string;
+    /** With planId: also the global events still open or raised since this time (ISO). */
+    globalSince?: string;
+    openOnly?: boolean;
+    limit?: number;
+  } = {},
 ): Promise<GuardianEventRow[]> {
   return db
     .select()
     .from(guardianEvents)
     .where(
       and(
-        filter.planId === undefined ? undefined : eq(guardianEvents.planId, filter.planId),
+        filter.planId === undefined
+          ? undefined
+          : filter.globalSince === undefined
+            ? eq(guardianEvents.planId, filter.planId)
+            : or(
+                eq(guardianEvents.planId, filter.planId),
+                and(
+                  isNull(guardianEvents.planId),
+                  or(isNull(guardianEvents.resolvedAt), gte(guardianEvents.ts, filter.globalSince)),
+                ),
+              ),
         filter.openOnly ? isNull(guardianEvents.resolvedAt) : undefined,
       ),
     )
