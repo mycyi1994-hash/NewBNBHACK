@@ -29,6 +29,7 @@
     "plan:status": "tsx scripts/plan-status.ts",
     "plan:set": "tsx scripts/plan-set.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "e2e": "tsx scripts/e2e.ts",
     "live:check": "tsx scripts/live-check.ts",
     "registry": "tsx scripts/registry.ts",
     "spike:quotes": "tsx scripts/spike-quotes.ts",

@@ -91,6 +91,8 @@ cp .env.example .env          # EXECUTION_MODE=simulate (the default) signs noth
 pnpm db:migrate && pnpm db:seed   # needs DATABASE_URL (Postgres)
 pnpm dev                      # web + worker. With no data, the screens honestly show "Unavailable (reason)"
 pnpm typecheck && pnpm lint && pnpm test   # test DB: YIELDVEST_TEST_DATABASE_URL
+pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e
+                              # Judge Mode in Chromium, simulate mode, no network; the DB name must contain e2e
 pnpm smoke --url http://localhost:3000     # /api/judge/smoke
 ```
 

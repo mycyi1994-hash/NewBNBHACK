@@ -3,7 +3,7 @@
  * Binance Web3 API answering with fixture-shaped data, and an in-memory chain on which approvals
  * set allowances and swaps deliver tokens. Guardian inputs (Venus TVL, USDT price) are settable.
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { decodeVenusCall, encodeApprove } from '@yieldvest/chain';
 import { toUnits, underlyingFromVTokens } from '@yieldvest/core';
 import { parseConfig } from '@yieldvest/config';
@@ -48,7 +48,8 @@ export interface World {
 
 /** Registers a fresh test instrument (its own ticker, so tests never share one). */
 export async function testInstrument(db: Db): Promise<{ ticker: string; instrumentId: string }> {
-  const ticker = `T${randomUUID().slice(0, 6).toUpperCase()}`;
+  // Letters only, like every ticker the web accepts (apps/web/lib/server/schemas.ts): T + five.
+  const ticker = `T${Array.from(randomBytes(5), (b) => String.fromCharCode(65 + (b % 26))).join('')}`;
   const row: InstrumentRow = {
     id: `${ticker}:bstocks`,
     ticker,

@@ -1,6 +1,7 @@
 # Quality gates from CLAUDE.md rule 9: typecheck, lint, test; then the core coverage gate (SPEC §12:
-# 100%, as the README says) and the web production build. The contracts job builds and tests the
-# Uniswap v4 hook package (docs/RWA_LP.md). No secrets are used; deploys are manual.
+# 100%, as the README says), the web production build and the Judge Mode e2e on it. The contracts
+# job builds and tests the Uniswap v4 hook package (docs/RWA_LP.md). No secrets are used; deploys
+# are manual.
 # Third-party actions are pinned to full commit SHAs (the comment names the tag each one resolved to).
 name: ci
 
@@ -70,6 +71,9 @@ jobs:
       - run: pnpm coverage:core
       # Builds without secrets or DATABASE_URL, like any fresh checkout.
       - run: pnpm --filter @yieldvest/web build
+      # Judge Mode end to end in Chrome (GOALS G6-2): that build in simulate mode on its own scratch
+      # database, the worker over fixture-shaped answers and an in-memory chain — no network.
+      - run: pnpm e2e --database postgres://postgres:ci@localhost:5432/yieldvest_e2e --chromium /usr/bin/google-chrome
   contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 15
