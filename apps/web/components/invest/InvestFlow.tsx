@@ -65,6 +65,8 @@ interface JobResult {
     minReceive: string | null;
     instrumentId: string;
     swapSimulation: { status: string; failReason: string };
+    /** How the dry run got its allowance: already on chain, or only simulated. */
+    approval?: 'existing_allowance' | 'simulated';
   };
   depositedUsd?: string;
 }
@@ -820,10 +822,16 @@ function PreviewState({
     );
   }
   if (preview.status === 'simulated' && preview.buy) {
-    const ok = preview.buy.swapSimulation.status === 'SUCCESS';
+    const { swapSimulation, approval } = preview.buy;
+    const ok = swapSimulation.status === 'SUCCESS';
+    // A first buy's exact approval is only simulated, so the swap's own dry run stops at the
+    // missing allowance — the expected answer, not a failure (scripts/operator-rules.ts
+    // buyProblem): the live run dry-runs the swap again once the approval is on chain.
+    const approvalFirst =
+      !ok && approval === 'simulated' && /exceeds allowance/i.test(swapSimulation.failReason);
     return (
       <>
-        <Icon name={ok ? 'check' : 'x'} />
+        <Icon name={ok || approvalFirst ? 'check' : 'x'} />
         <span>
           {t('judge.preview.line', {
             usd: money(preview.buy.spendUsd),
@@ -832,7 +840,9 @@ function PreviewState({
           })}{' '}
           {ok
             ? t('judge.preview.simulated')
-            : t('judge.preview.failed', { reason: preview.buy.swapSimulation.failReason })}
+            : approvalFirst
+              ? t('judge.preview.approval_first')
+              : t('judge.preview.failed', { reason: swapSimulation.failReason })}
         </span>
       </>
     );

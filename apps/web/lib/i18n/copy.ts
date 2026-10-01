@@ -222,6 +222,8 @@ export const COPY = {
       'Waiting for the blockchain record. It shows in the plan history once confirmed.',
     'judge.done.approval_pending':
       'The exact approval is still being confirmed, so nothing was put in yet. Try again in a minute.',
+    'judge.preview.approval_first':
+      'Dry-run on-chain · the exact approval passes. The buy is dry-run again right after it, before anything is signed.',
     'judge.summary.title': 'Summary',
     'judge.summary.window': 'When',
     'judge.plan.link': 'View plan history →',
