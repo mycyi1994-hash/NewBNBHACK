@@ -162,9 +162,11 @@ describe(`baw ${BAW_VERSION} contract`, () => {
         'market-order-swap',
         'root',
         'wallet-address',
+        'wallet-balance',
         'wallet-left-quota',
         'wallet-settings',
         'wallet-status',
+        'wallet-tx-lock',
       ].sort(),
     );
     expect(globals.get('json')).toBe(false);

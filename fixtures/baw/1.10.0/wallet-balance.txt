@@ -1,0 +1,19 @@
+Usage: baw wallet balance [options]
+
+Query wallet token balances with USD value. Only shows tokens with non-zero
+balance
+
+Options:
+  --symbol <symbol>                  Filter by token symbol (e.g., BNB, USDC)
+  --tokenAddress <tokenAddress>      Filter by token contract address
+  --binanceChainId <binanceChainId>  Filter by Binance chain ID
+  -h, --help                         display help for command
+
+Examples:
+  baw wallet balance
+  baw wallet balance --symbol BNB
+  baw wallet balance --binanceChainId 56
+  baw wallet balance --tokenAddress 0x55d398326f99059fF775485246999027B3197955
+  baw wallet balance --json
+
+

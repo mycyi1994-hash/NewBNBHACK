@@ -569,3 +569,13 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Ask: put the renumbering in the changelog with its date.
 - Evidence: the quotes above (16:52–16:54 UTC).
 
+## 2026-10-01 17:15 UTC — [baw][docs] Developer Mode: the docs say `--unsignedTx` is base58 and `contract-call` takes no gas limit; `baw` 1.10.0 and the Skills Hub say base64 and offer `--gasLimit`
+- Goal: check whether an exact-amount `approve` plus `mint` through Developer Mode could replace the unlimited approval of `defi deposit` (DECISIONS Q-16), for the Wallet Skill review.
+- Expected: one description of `contract-call`'s parameters.
+- Actual: `/en/dev-docs/products/agentic-wallet/use-cases/developer-mode.md`: "Base58-encoded unsigned transaction, used instead of `--to` / `--inputData`" and "Do not pass gas settings. `contract-call` accepts no gas limit, gas price or gas option." `baw contract-call preview --help` (1.10.0): `--unsignedTx <base64>` "Solana unsigned transaction, base64 encoded", `--gasLimit <n>` "EVM custom gas limit, 21000-15000000". Skills Hub `binance-agentic-wallet/references/external-sign.md` (commit `9960c67`): `--unsignedTx` "base64 encoded"; `--gasLimit` "Custom EVM gas limit, an integer from 21000 to 15000000".
+- Docs: the three sources above.
+- Time lost: 0 (found in the review; Yieldvest does not use `contract-call`).
+- Workaround: none needed yet; the CLI's own help is the one to follow.
+- Ask: make the Developer Mode page match the CLI (base64, `--gasLimit` as an advanced fallback).
+- Evidence: the quotes above (2026-10-01 17:15 UTC); `baw` 1.10.0 from npm.
+

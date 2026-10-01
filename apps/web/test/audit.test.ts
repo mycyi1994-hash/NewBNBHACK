@@ -104,6 +104,7 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
         owner: 'skill',
         walletAddress: wallet,
         ticker: instrument.ticker,
+        issuer: instrument.issuer,
         contributionUsd: '5',
         cadence: 'daily',
         maxPerBuyUsd: '5',

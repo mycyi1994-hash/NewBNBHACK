@@ -20,6 +20,8 @@ export const BAW_COMMANDS: readonly (readonly string[])[] = [
   ['wallet', 'address'],
   ['wallet', 'settings'],
   ['wallet', 'left-quota'],
+  ['wallet', 'tx-lock'],
+  ['wallet', 'balance'],
   ['market-order', 'quote'],
   ['market-order', 'swap'],
   ['market-order', 'list'],

@@ -104,6 +104,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
         owner: 'skill',
         walletAddress: wallet.toLowerCase(),
         ticker: instrument.ticker,
+        issuer: instrument.issuer,
         contributionUsd: '5',
         cadence: 'weekly',
         maxPerBuyUsd: '5',
@@ -132,6 +133,10 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
       [{ maxPerBuyUsd: '5', maxDailyUsd: '4' }, 'bad_limits'],
       [{ maxPerBuyUsd: '0.2', maxDailyUsd: '1' }, 'bad_limits'],
       [{ ticker: 'ZZZZZZ' }, 'unknown_ticker'],
+      // The user chooses the issuer, and only one the registry has for the ticker.
+      [{ issuer: undefined }, 'bad_request'],
+      [{ issuer: 'xstocks' }, 'bad_request'],
+      [{ issuer: 'ondo' }, 'unknown_ticker'],
     ];
     for (const [override, errorCode] of bad) {
       const res = await call<Problem>(createPlan, {
@@ -140,6 +145,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
           owner: 'skill',
           walletAddress: randomAddress(),
           ticker: instrument.ticker,
+          issuer: instrument.issuer,
           contributionUsd: '5',
           maxPerBuyUsd: '5',
           maxDailyUsd: '10',
@@ -156,6 +162,8 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
     expect(stored).toMatchObject({ tokenHash: sha256Hex(token), walletAddress: wallet });
     expect(JSON.stringify(stored)).not.toContain(token);
     expect((await getPlan(db, id))?.walletAddress).toBe(wallet);
+    // Only the chosen issuer: no silent switch to the other token for the same ticker.
+    expect((await getPlan(db, id))?.issuerPreference).toEqual([instrument.issuer]);
   });
 
   it('answers /next with baw commands in the regular session — no calldata, no signing', async () => {

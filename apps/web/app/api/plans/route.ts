@@ -56,6 +56,14 @@ async function handlePOST(request: Request): Promise<Response> {
     if (body instanceof Response) return body;
     if (issuersOf(body.ticker).length === 0)
       return problem(400, 'unknown_ticker', `${body.ticker} is not in the registry`);
+    // The user picks the issuer; the plan never falls back to the other one (the official
+    // Agentic Wallet skill: "do not default to Ondo. Ask the user which provider they mean").
+    if (!issuersOf(body.ticker).includes(body.issuer))
+      return problem(
+        400,
+        'unknown_ticker',
+        `${body.ticker} has no ${body.issuer} token in the registry`,
+      );
     // A per-buy limit under the minimum buy could never run (decideCycle refuses it).
     const min = units(String(config.caps.minBuyUsd));
     const cap = units(String(config.caps.houseMaxPerTxUsd));
@@ -83,7 +91,7 @@ async function handlePOST(request: Request): Promise<Response> {
         walletAddress: wallet,
         mode: body.mode,
         ticker: body.ticker,
-        issuerPreference: ['bstocks', 'ondo'],
+        issuerPreference: [body.issuer],
         contributionUsd: body.contributionUsd,
         cadence: body.cadence,
         window: body.window,

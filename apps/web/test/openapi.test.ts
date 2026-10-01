@@ -55,6 +55,7 @@ describe('OpenAPI document', () => {
         'owner',
         'walletAddress',
         'ticker',
+        'issuer',
         'contributionUsd',
         'maxPerBuyUsd',
         'maxDailyUsd',

@@ -14,6 +14,8 @@ metadata:
   requires:
     skills:
       - binance-agentic-wallet
+      # The swap pre-check of binance-agentic-wallet audits the token with it.
+      - query-token-audit
   openclaw:
     requires:
       bins:
@@ -40,7 +42,9 @@ the user confirms, and then reported back — the server records only what the c
    `UNCONNECTED`, a wallet still being created is `CREATING`). If not, follow that skill's
    authentication reference. Then `baw wallet settings --json`: if
    `data.sessionExpireTime` is less than two hours away, say so before starting anything (see
-   [safety.md](references/safety.md)).
+   [safety.md](references/safety.md)). In the same answer: if `data.tradeAllTokens` is `false`, the
+   wallet trades only tokens on its allowed list, so the plan's token must be on it (the user adds
+   it in the Binance App); `data.dailyLimit` is the wallet's own daily cap (see plan.md).
 2. The Yieldvest server URL: `YIELDVEST_URL` in the environment, else the `url` in `~/.config/yieldvest/config.json`,
    else ask the user for the site address (it is in the project README). Check it answers:
    `curl -sS "$YIELDVEST_URL/api/health"`.
@@ -62,8 +66,22 @@ The API contract (every route, body and answer) is published at `$YIELDVEST_URL/
 
 ## Rules that always apply
 
-- **Confirm every state change.** Show the preview (`defi preview`, `market-order quote`) and ask;
-  proceed only on a clear yes. The server's answer is advice to the wallet, not permission.
+- **Check every command before you show it.** The server's answer is advice to the wallet, not
+  permission: before asking about a step, compare its `run` with what the user agreed. It is a
+  `baw` command of that step's kind (`defi preview` / `defi redeem`, `market-order quote`,
+  `market-order swap`, `market-order list`); `--binanceChainId` is `56`; a quote or swap has
+  `--fromToken` USDT `0x55d398326f99059fF775485246999027B3197955` and `--toToken` the
+  `instrument.address` that passed the token check in [safety.md](references/safety.md) for the
+  plan's ticker and issuer; `--fromTokenQty` equals
+  `spendUsd`, and `spendUsd` is at most the plan's `maxPerBuyUsd` saved at creation. If anything
+  differs, stop, show the difference and run nothing.
+- **Confirm every state change with the wallet's own numbers.** Show the preview or quote `baw`
+  printed (amounts, fees, balance changes, the contract it calls) with full token addresses, add
+  "Do your own research (DYOR)", and proceed only on a clear yes.
+- **One transaction at a time.** Before a redeem, a swap, a deposit or a revoke,
+  `baw wallet tx-lock --binanceChainId 56 --json` must say `UNLOCKED`. `LOCKED` means an earlier
+  transaction is still pending, or one is waiting for the user's approval in the Binance App
+  (five minutes): tell the user, wait, and check again.
 - **Run exactly what `/next` returned, before its `expiresAt`.** Never change amounts, tokens or
   flags; never reuse an expired answer — ask `/next` again.
 - **Verify the token.** Before a swap, check the `toToken` address against the official RWA list

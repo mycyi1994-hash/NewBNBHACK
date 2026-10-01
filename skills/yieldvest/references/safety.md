@@ -1,6 +1,6 @@
 # Safety
 
-## Risk disclosure (read before creating a yield plan, and whenever asked)
+## Risk disclosure (read before creating any plan, and whenever asked)
 
 Yieldvest is not a bank. The interest account is a lending service on BSC (Venus); the interest is paid
 by people who borrow there.
@@ -10,6 +10,12 @@ by people who borrow there.
 4. You can withdraw any time, but if the service pauses it may take longer.
 5. Yieldvest's guardian stops buying on warning signs, but cannot prevent every incident. In skill
    plans the principal is in the user's own wallet: only the user can move it.
+6. From the Binance Agentic Wallet docs (Tokenized Securities): "Tokenized securities are not
+   covered by securities insurance, may be restricted in your jurisdiction, and can be halted for
+   corporate actions. On-chain trading also carries slippage and smart-contract risk."
+
+Items 1, 2 and 4 are about the interest account (yield plans); the rest apply to every plan. Do your
+own research (DYOR): Yieldvest and the skills give information and execute, never advice.
 
 Get a clear "I understand, I will only use money I can afford to lose" before a yield plan. Safe
 mode (a fixed amount, no interest account) is the default.
@@ -20,7 +26,8 @@ The server's `instrument.address` must be the official token for that ticker and
 
 ```bash
 # The list for instrument.issuer — bstocks: type=3 (symbols end in B) · ondo: type=1 (symbols end in "on")
-curl -sS 'https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/stock/detail/list/ai?type=3'
+curl -sS -H 'User-Agent: binance-web3/1.1 (Skill)' \
+  'https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/stock/detail/list/ai?type=3'
 ```
 
 Each ticker is listed once per chain: take the entry whose `ticker` is the plan's and whose
@@ -41,7 +48,7 @@ swap) should not be left behind — finish or report what happened.
 - The plan's `maxPerBuyUsd` and `maxDailyUsd` are the most a cycle may spend; `/next` never asks for
   more. A report that shows more pauses the plan.
 - The wallet's own daily trading limit applies as well: `baw wallet left-quota --json` gives
-  `data.quotaLeft` (USD, today in UTC). If it is under `spendUsd`, the wallet would refuse the
+  `data.quotaLeft` (USD, for the day in `data.quotaDate`). If it is under `spendUsd`, the wallet would refuse the
   swap — stop before the redeem and tell the user, rather than leave interest half-spent.
 
 ## Never

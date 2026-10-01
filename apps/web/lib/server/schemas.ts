@@ -55,6 +55,11 @@ export const SkillPlanBody = z.object({
     .refine((v) => isAddress(v), 'an EVM address')
     .describe('The user’s own wallet (Binance Agentic Wallet); it signs, we never do'),
   ticker,
+  issuer: z
+    .enum(['bstocks', 'ondo'])
+    .describe(
+      'The issuer the user chose for the ticker: bstocks (…B) or ondo (…on). The plan buys only that token, never the other one in its place',
+    ),
   mode: z
     .enum(['safe', 'yield'])
     .default('safe')

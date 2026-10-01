@@ -52,7 +52,7 @@ git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK yieldvest-src \
 export YIELDVEST_URL=<site URL>
 ```
 
-Then say "Start Yieldvest". Requires: the `binance-agentic-wallet` skill and `baw`. The server only decides (it stores no keys or sessions); every transaction is signed by the user's wallet after the user confirms. API contract: `/api/openapi` (OpenAPI 3.1).
+Then say "Start Yieldvest". Requires: `baw` 1.10.0 (`npm i -g @binance/agentic-wallet@1.10.0`), the `binance-agentic-wallet` and `query-token-audit` skills (`npx skills add binance/binance-skills-hub/skills/binance-web3/<skill>`), USDT to buy and a little BNB for gas. Before each signature the skill checks the command against the plan the user agreed (token, chain, amount within the plan's per-buy limit), that the wallet is not locked by a pending transaction, and the token against the official list; the user confirms with the wallet's own quote in front of them. The server only decides (it stores no keys or sessions); every transaction is signed by the user's wallet after the user confirms. API contract: `/api/openapi` (OpenAPI 3.1).
 
 ## RWA liquidity (Uniswap v4 hook)
 
