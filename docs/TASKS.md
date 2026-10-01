@@ -246,6 +246,7 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
   - Cap: total per code = sandbox cap (`judgeTotalUsd`, ledger), remaining limit shown. 7 days: plan `expiresAt` → `runCycle` sets stopped(expired). Reset (clearing a code's usage) was not built — once an ops procedure is set → [HUMAN] decision.
 - Acceptance: 3 rehearsal runs in a row completed within 3 minutes, failure path copy (market closed, over the cap) checked
   - [x] Failure path copy: market closed (Scheduled), code error, limit used up (`judge.code.error.exhausted`, `code_exhausted` 409 — `apps/web/test/judge.test.ts`), preview failed (`judge.preview.failed`).
+  - [x] (10/1) Two more: today's house-wide cap spent while the code still has money (`judge.error.daily_cap`, `daily_cap` 409 — before, the code was called used up), and an approval still confirming so the deposit was not sent yet (`judge.done.approval_pending`). Both copy keys are UX_COPY §7 agent drafts.
   - [ ] [HUMAN] 3 runs within 3 minutes with the web deployed + the worker running (after the money decisions R1–R4).
 
 ### M2-03 Plan detail, stop, full redeem · Criteria: UX, Technical
