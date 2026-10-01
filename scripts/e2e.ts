@@ -4,7 +4,8 @@
  * database, and a worker loop runs the web's jobs over the agent tests' world: fixture-shaped
  * Binance answers and an in-memory chain, so nothing reaches a network and nothing is signed.
  * A judge enters a code, picks the test stock, dry-runs a $5 buy, presses "Buy now" (the server
- * answers that it only simulates), opens the plan and stops it.
+ * answers that it only simulates), opens the plan and stops it. Then "Buy with interest": the risk
+ * disclosure must be agreed to before it turns on, and the $5 deposit is dry-run.
  * The database name must contain "e2e"; it is created and migrated when missing. Build the web
  * first: pnpm --filter @yieldvest/web build. Exit: 0 pass · 1 fail · 2 usage.
  */
@@ -19,7 +20,7 @@ import { createDb, getPlan, migrateDb } from '@yieldvest/db';
 import postgres from 'postgres';
 import { chromium, type Page } from 'playwright-core';
 import { cleanup } from '../apps/agent/test/harness.js';
-import { createWorld, testInstrument } from '../apps/agent/test/world.js';
+import { createWorld, testInstrument, withVenus } from '../apps/agent/test/world.js';
 import { parseFlags } from './args.js';
 
 const usage =
@@ -62,11 +63,32 @@ async function waitForWeb(base: string, exited: () => string | null): Promise<vo
   throw new Error(`${base}/api/health did not answer within ${STEP_MS / 1000} s`);
 }
 
+/** The POST /api/plans the next click sends: the plan it created, kept for the cleanup. */
+async function planCreatedBy(
+  page: Page,
+  base: string,
+  click: () => Promise<void>,
+  planIds: string[],
+): Promise<string> {
+  const created = page.waitForResponse(
+    (r) => r.url() === `${base}/api/plans` && r.request().method() === 'POST',
+  );
+  await click();
+  const answer = await created;
+  if (answer.status() !== 201) {
+    throw new Error(`POST /api/plans answered ${answer.status()}: ${await answer.text()}`);
+  }
+  const { plan } = (await answer.json()) as { plan: { id: string } };
+  planIds.push(plan.id);
+  return plan.id;
+}
+
 async function judgeFlow(
   page: Page,
   base: string,
   code: string,
   ticker: string,
+  planIds: string[],
   log: (step: string) => void,
 ) {
   await page.goto(`${base}/invest`, { waitUntil: 'networkidle' });
@@ -76,16 +98,13 @@ async function judgeFlow(
   log('code accepted, the sandbox limit is shown');
 
   await page.getByRole('button', { name: ticker }).first().click();
-  const created = page.waitForResponse(
-    (r) => r.url() === `${base}/api/plans` && r.request().method() === 'POST',
+  const planId = await planCreatedBy(
+    page,
+    base,
+    () => page.getByRole('button', { name: 'Dry-run it' }).click(),
+    planIds,
   );
-  await page.getByRole('button', { name: 'Dry-run it' }).click();
-  const answer = await created;
-  if (answer.status() !== 201) {
-    throw new Error(`POST /api/plans answered ${answer.status()}: ${await answer.text()}`);
-  }
-  const { plan } = (await answer.json()) as { plan: { id: string } };
-  log(`plan ${plan.id} created for ${ticker}`);
+  log(`plan ${planId} created for ${ticker}`);
 
   const dialog = page.getByRole('dialog');
   await dialog.getByText('the exact approval passes').waitFor({ timeout: STEP_MS });
@@ -95,7 +114,7 @@ async function judgeFlow(
   await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
   log('buy now: the worker ran the cycle, the server says it only simulates');
 
-  await page.goto(`${base}/plans/${plan.id}`, { waitUntil: 'networkidle' });
+  await page.goto(`${base}/plans/${planId}`, { waitUntil: 'networkidle' });
   await page.getByText('Stopped · Judge trial').waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Stop this plan' }).click();
   await page.getByText('Stop this plan?').waitFor();
@@ -103,7 +122,41 @@ async function judgeFlow(
   // The worker stops it; the page refreshes to the plan's new state (no stop button any more).
   await page.getByText('Stopped · Judge trial').waitFor({ timeout: STEP_MS });
   log('plan page: stop asked, confirmed, and the plan reads "Stopped"');
-  return plan.id;
+  return planId;
+}
+
+/** "Buy with interest" turns on only after the risk disclosure is agreed to; the deposit is dry-run. */
+async function yieldFlow(page: Page, base: string, planIds: string[], log: (step: string) => void) {
+  await page.goto(`${base}/invest`, { waitUntil: 'networkidle' });
+  const yieldMode = page.getByRole('button', { name: 'Buy with interest' });
+  const agree = page.getByRole('button', { name: 'Agree and turn on' });
+  await yieldMode.click();
+  if (!(await agree.isDisabled())) {
+    throw new Error('yield mode could be turned on before "I understand" was checked');
+  }
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).first().click();
+  if ((await yieldMode.getAttribute('aria-pressed')) !== 'false') {
+    throw new Error('closing the risk disclosure turned yield mode on');
+  }
+  await yieldMode.click();
+  await page.getByRole('checkbox', { name: 'I understand' }).check();
+  await agree.click();
+  if ((await yieldMode.getAttribute('aria-pressed')) !== 'true') {
+    throw new Error('yield mode stayed off after "Agree and turn on"');
+  }
+  log('yield mode: stays off until "I understand" is checked, on after "Agree and turn on"');
+
+  const planId = await planCreatedBy(
+    page,
+    base,
+    () => page.getByRole('button', { name: 'Continue' }).click(),
+    planIds,
+  );
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Put it in the interest account' }).click();
+  await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
+  log(`deposit of plan ${planId}: exact approval and Venus deposit dry-run, nothing signed`);
+  return planId;
 }
 
 const flags = parseFlags(process.argv.slice(2), {
@@ -136,6 +189,7 @@ if (!flags.ok || problem !== null) {
   await migrateDb(db);
   const { ticker, instrumentId } = await testInstrument(db);
   const world = await createWorld(db, WORLD_START);
+  withVenus(world);
   const code = `e2e-${randomUUID()}`;
   const base = `http://127.0.0.1:${port}`;
   log(`database migrated; test stock ${ticker}; web on ${base}`);
@@ -181,7 +235,7 @@ if (!flags.ok || problem !== null) {
     flags.values.chromium ? { executablePath: flags.values.chromium } : {},
   );
   const problems: string[] = [];
-  let planId: string | undefined;
+  const planIds: string[] = [];
   try {
     await waitForWeb(base, () => exit);
     log('web answers /api/health');
@@ -192,11 +246,15 @@ if (!flags.ok || problem !== null) {
       if (message.type() === 'error')
         problems.push(`console error at ${page.url()}: ${message.text()}`);
     });
-    planId = await judgeFlow(page, base, code, ticker, log);
-    // What the page said, from the database: the plan is stopped, and nothing was bought.
-    const row = await getPlan(db, planId);
-    if (row?.status !== 'stopped')
-      problems.push(`plan ${planId} is ${row?.status ?? 'missing'}, not stopped`);
+    const safe = await judgeFlow(page, base, code, ticker, planIds, log);
+    const interest = await yieldFlow(page, base, planIds, log);
+    // What the pages said, from the database: the first plan is stopped; the second still waits
+    // for its first run, with no principal (a dry run deposits nothing).
+    const [stopped, waiting] = [await getPlan(db, safe), await getPlan(db, interest)];
+    if (stopped?.status !== 'stopped')
+      problems.push(`plan ${safe} is ${stopped?.status ?? 'missing'}, not stopped`);
+    if (waiting?.pausedReason !== 'awaiting_run' || Number(waiting.principalUsd) !== 0)
+      problems.push(`plan ${interest} is ${waiting?.pausedReason ?? 'missing'} with principal`);
     problems.push(...jobErrors.map((e) => `worker: ${e}`));
   } catch (error) {
     problems.push(
@@ -209,7 +267,7 @@ if (!flags.ok || problem !== null) {
     web.kill('SIGTERM');
     await Promise.race([new Promise((resolve) => web.once('exit', resolve)), sleep(5_000)]);
     if (exit === null) web.kill('SIGKILL');
-    await cleanup(db, planId === undefined ? [] : [planId], [instrumentId]);
+    await cleanup(db, planIds, [instrumentId]);
     await close();
   }
   for (const p of problems) console.log(`e2e — FAIL: ${p}`);
