@@ -161,6 +161,37 @@ describe.skipIf(!url)('sending and reconciling on Postgres', () => {
       .where(eq(txOutbox.txHash, hash));
   });
 
+  it('tells a human about bytes the node holds but nobody mines half an hour after signing', async () => {
+    const w = await createWorld(db, MON_1000);
+    // Broadcast and held in the mempool, under the validators' gas floor: never mined.
+    w.chain.mines = false;
+    const result = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 10n),
+    });
+    expect(result).toMatchObject({ state: 'pending' });
+    const hash = result.txHash;
+    expect(await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 })).toMatchObject({
+      pending: [hash],
+      needsHuman: [],
+    });
+    await db
+      .update(txOutbox)
+      .set({ createdAt: new Date(Date.now() - 31 * 60_000).toISOString() })
+      .where(eq(txOutbox.txHash, hash));
+    const late = await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 });
+    expect(late.rebroadcast).toEqual([]);
+    expect(late.needsHuman).toEqual([
+      { txHash: hash, reason: 'approve held by the node but not mined 31 min after signing' },
+    ]);
+    // A human replaces or drops it (RUNBOOK §3.4); until then it stays PENDING.
+    expect(await rowOf(hash)).toMatchObject({ status: 'PENDING' });
+    await db
+      .update(txOutbox)
+      .set({ status: 'FAILED', broadcastVia: null, error: 'replaced (human)' })
+      .where(eq(txOutbox.txHash, hash));
+  });
+
   it('never sends again swap bytes the node lost after their quote went stale', async () => {
     const w = await createWorld(db, MON_1000);
     const accept = w.chain.sendRaw.bind(w.chain);

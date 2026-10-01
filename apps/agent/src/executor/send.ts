@@ -339,15 +339,18 @@ export async function reconcileOutbox(
     else if (settled.state === 'reverted') result.failed.push(hash);
     else {
       result.pending.push(hash);
-      // Bytes the node still does not hold after all this time — refused at every resend (a node
-      // with a higher minimum gas price) or dropped every time — will not settle by themselves.
-      // The row stays PENDING, so nothing new is signed, and a human is told (RUNBOOK §3.4).
-      if (unknownToNode && age >= HUMAN_CHECK_AFTER_MS) {
+      // Still not mined after all this time — the node does not hold the bytes (refused at every
+      // resend: a node with a higher minimum gas price; or dropped every time), or holds them and
+      // validators never take them (under their gas floor). Neither settles by itself: the row
+      // stays PENDING, so nothing new is signed, and a human is told (RUNBOOK §3.4).
+      if (age >= HUMAN_CHECK_AFTER_MS) {
+        const minutes = Math.floor(age / 60_000);
         result.needsHuman.push({
           txHash: hash,
-          reason:
-            `${row.kind} not held by the node ${Math.floor(age / 60_000)} min after signing` +
-            (refusal === undefined ? '' : `; the resend was refused (${refusal})`),
+          reason: unknownToNode
+            ? `${row.kind} not held by the node ${minutes} min after signing` +
+              (refusal === undefined ? '' : `; the resend was refused (${refusal})`)
+            : `${row.kind} held by the node but not mined ${minutes} min after signing`,
         });
       }
     }

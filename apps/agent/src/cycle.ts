@@ -476,6 +476,8 @@ async function cycleBody(
   };
 
   const awaiting = async (txHash: string, kind: string, decision: ExecuteDecision) => {
+    // As finish: a cycle another holder took over (and may have closed) is not reopened.
+    await lease.hold();
     await step({ step: 'AWAITING', kind, txHash, decision });
     await updateCycle(deps.db, cycle.id, {
       state: 'awaiting_tx',

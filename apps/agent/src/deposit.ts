@@ -58,9 +58,15 @@ export async function startYieldPlan(
       ? await listPlans(deps.db, { ownerKind: 'judge', ownerRef: row.ownerRef })
       : [row];
   for (const sibling of siblings) {
-    if ((await unfinishedTransactions(deps.db, sibling.id)).length > 0) {
-      throw new PublicError('an earlier transaction of this plan is still settling');
+    const unfinished = await unfinishedTransactions(deps.db, sibling.id);
+    if (unfinished.length === 0) continue;
+    // Only this plan's own exact approval, still confirming: the judge who tries again is told
+    // so again (and can try once more), never handed a failure that ends the retry.
+    const approving = unfinished.at(-1);
+    if (sibling.id === plan.id && approving && unfinished.every((tx) => tx.kind === 'approve')) {
+      return { status: 'approval_pending', txHash: approving.txHash };
     }
+    throw new PublicError('an earlier transaction of this plan is still settling');
   }
   if (plan.owner.kind === 'judge' && row.ownerRef !== null) {
     const used = toUnits(usdText(await judgeExposureUsd(deps.db, row.ownerRef)), 18);

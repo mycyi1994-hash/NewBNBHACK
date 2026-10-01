@@ -357,6 +357,9 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
     const first = await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1');
     expect(first).toMatchObject({ status: 'approval_pending' });
     expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3']);
+    // Tried again too early, while it still confirms: the same answer, nothing new signed.
+    expect(await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1')).toEqual(first);
+    expect(w.chain.sent).toHaveLength(1);
     // Once it is mined, asking again settles it and deposits with the allowance it left — no tick
     // in between.
     w.chain.mines = true;
