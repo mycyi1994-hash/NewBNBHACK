@@ -48,7 +48,8 @@ swap) should not be left behind — finish or report what happened.
 
 - Never print, paste or send the plan token anywhere but the `Authorization` header to `$YIELDVEST_URL`.
 - Never send a swap or a redeem the server did not return, or change its amounts, tokens or flags
-  (the other `baw` commands here only read, except a deposit the user asks for in plan.md). Never
+  (the other `baw` commands here only read, except two transactions the user asks for in plan.md:
+  a deposit, and revoking an approval the deposit left unlimited). Never
   redeem with `--ratio 1`: the wallet's Venus USDT is not all this plan's.
 - Never treat an `orderId` as a finished trade.
 - Never retry a swap from an old `/next` answer; ask again.
