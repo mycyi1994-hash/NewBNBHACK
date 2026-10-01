@@ -244,7 +244,11 @@ const vTokenAbi = parseAbi([
  * mining moves USDT and vTokens between the house and vUSDT.
  */
 export function withVenus(w: World) {
-  const state = { redeemSimulation: { status: 'SUCCESS', failReason: '' } };
+  const state: {
+    redeemSimulation: { status: string; failReason: string };
+    /** Set: every mint simulation fails with this reason (a paused market, say). */
+    mintFailure?: string;
+  } = { redeemSimulation: { status: 'SUCCESS', failReason: '' } };
   const item = (callDataType: string, data: Hex) => ({
     callDataType,
     from: HOUSE,
@@ -286,8 +290,20 @@ export function withVenus(w: World) {
     if (data.startsWith(REDEEM_SELECTOR)) {
       return { ...state.redeemSimulation, balanceChanges: [], allowanceChanges: [] };
     }
-    if (data.startsWith(MINT_SELECTOR) || data.startsWith('0x095ea7b3')) {
-      return { status: 'SUCCESS', failReason: '', balanceChanges: [], allowanceChanges: [] };
+    const ok = { status: 'SUCCESS', failReason: '', balanceChanges: [], allowanceChanges: [] };
+    if (data.startsWith('0x095ea7b3')) return ok;
+    if (data.startsWith(MINT_SELECTOR)) {
+      if (state.mintFailure) return { ...ok, status: 'FAILED', failReason: state.mintFailure };
+      // A mint pulls its USDT through the allowance: one that was only simulated is not there,
+      // as on BSC (the Transaction API simulates one transaction at a time, DECISIONS Q-05).
+      const allowed = w.chain.allowances.get(`${USDT}:${HOUSE}:${VUSDT}`.toLowerCase()) ?? 0n;
+      return allowed >= decodeVenusCall(data).amount
+        ? ok
+        : {
+            ...ok,
+            status: 'FAILED',
+            failReason: 'execution reverted: BEP20: transfer amount exceeds allowance',
+          };
     }
     return simulate?.(u, body);
   };

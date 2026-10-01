@@ -6,7 +6,8 @@
  * Binance answers and an in-memory chain, so nothing reaches a network and nothing is signed.
  * A judge enters a code, picks the test stock, dry-runs a $5 buy, presses "Buy now" (the server
  * answers that it only simulates), opens the plan and stops it. Then "Buy with interest": the risk
- * disclosure must be agreed to before it turns on, and the $5 deposit is dry-run. All of it at a
+ * disclosure must be agreed to before it turns on, the $5 deposit's dry run shows what its
+ * simulation found, and a deposit whose simulation fails is shown failing. All of it at a
  * phone's 375 px and at 1280 px, with no sideways scroll at any step (dialogs open included).
  * The database name must contain "e2e"; it is created and migrated when missing. Build the web
  * first: pnpm --filter @yieldvest/web build. --shots <dir> keeps a screenshot of every step (and
@@ -134,7 +135,36 @@ async function judgeFlow(run: Run, code: string, ticker: string) {
 }
 
 /** "Buy with interest" turns on only after the risk disclosure is agreed to; the deposit is dry-run. */
-async function yieldFlow(run: Run) {
+/** Turns "Buy with interest" on through its risk disclosure (agreeing at once). */
+async function turnOnYield(page: Page) {
+  await page.getByRole('button', { name: 'Buy with interest' }).click();
+  await page.getByRole('checkbox', { name: 'I understand' }).check();
+  await page.getByRole('button', { name: 'Agree and turn on' }).click();
+}
+
+/** Creates a yield plan from the panel and dry-runs its deposit; waits for `outcome` on screen. */
+async function depositDryRun(run: Run, outcome: string, where: string): Promise<string> {
+  const { page, check } = run;
+  const planId = await planCreatedBy(run, () =>
+    page.getByRole('button', { name: 'Continue' }).click(),
+  );
+  const deposit = page.getByRole('dialog').getByRole('button', {
+    name: 'Put it in the interest account',
+  });
+  await deposit.waitFor({ timeout: STEP_MS });
+  await check(`${where} dialog`);
+  await deposit.click();
+  await page.getByRole('dialog').getByText(outcome).waitFor({ timeout: STEP_MS });
+  await check(`${where} done`);
+  return planId;
+}
+
+/**
+ * "Buy with interest" turns on only after the risk disclosure is agreed to; the deposit's dry run
+ * says what its simulation found — the exact approval passing, the deposit checked again after it
+ * — and a deposit whose simulation fails says so.
+ */
+async function yieldFlow(run: Run, venus: ReturnType<typeof withVenus>) {
   const { page, base, log, check } = run;
   await page.goto(`${base}/invest`, { waitUntil: 'networkidle' });
   const yieldMode = page.getByRole('button', { name: 'Buy with interest' });
@@ -157,20 +187,30 @@ async function yieldFlow(run: Run) {
   log('yield mode: stays off until "I understand" is checked, on after "Agree and turn on"');
   await check('yield plan panel');
 
-  const planId = await planCreatedBy(run, () =>
-    page.getByRole('button', { name: 'Continue' }).click(),
+  const planId = await depositDryRun(
+    run,
+    'The deposit is dry-run again right after it, before anything is signed',
+    'deposit',
   );
-  const deposit = page.getByRole('dialog').getByRole('button', {
-    name: 'Put it in the interest account',
-  });
-  await deposit.waitFor({ timeout: STEP_MS });
-  await check('deposit dialog');
-  await deposit.click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
-  await check('deposit done');
-  log(`deposit of plan ${planId}: exact approval and Venus deposit dry-run, nothing signed`);
-  return planId;
+  log(
+    `deposit of plan ${planId}: the exact approval passes on-chain, the deposit is checked after it`,
+  );
+
+  // A deposit whose simulation fails (a paused market): the judge is told, nothing is said to pass.
+  venus.mintFailure = 'execution reverted: mint is paused';
+  try {
+    await page.goto(`${base}/invest`, { waitUntil: 'networkidle' });
+    await turnOnYield(page);
+    const failed = await depositDryRun(
+      run,
+      'The dry-run failed: execution reverted: mint is paused',
+      'failed deposit',
+    );
+    log(`deposit of plan ${failed}: its failing dry run is shown as a failure`);
+    return [planId, failed];
+  } finally {
+    venus.mintFailure = undefined;
+  }
 }
 
 const flags = parseFlags(process.argv.slice(2), {
@@ -203,8 +243,9 @@ if (!flags.ok || problem !== null) {
   await migrateDb(db);
   const { ticker, instrumentId } = await testInstrument(db);
   const world = await createWorld(db, WORLD_START);
-  withVenus(world);
-  const code = `e2e-${randomUUID()}`;
+  const venus = withVenus(world);
+  // A code per browser run: each is a judge of its own, within the per-code plan limit.
+  const codes = [`e2e-${randomUUID()}`, `e2e-${randomUUID()}`];
   const base = `http://127.0.0.1:${port}`;
   log(`database migrated; test stock ${ticker}; web on ${base}`);
 
@@ -218,7 +259,7 @@ if (!flags.ok || problem !== null) {
       PATH: path.dirname(process.execPath),
       DATABASE_URL: database,
       EXECUTION_MODE: 'simulate',
-      JUDGE_CODES: code,
+      JUDGE_CODES: codes.join(','),
       SESSION_SECRET: randomBytes(32).toString('hex'),
       NEXT_PUBLIC_APP_URL: base,
       BSC_RPC_URL: 'http://127.0.0.1:9',
@@ -257,7 +298,7 @@ if (!flags.ok || problem !== null) {
     await waitForWeb(base, () => exit);
     log('web answers /api/health');
     // A phone first, then a desktop: each a judge of its own (a fresh session cookie).
-    for (const width of [375, 1280]) {
+    for (const [index, width] of [375, 1280].entries()) {
       let shot = 0;
       // Reduced motion: every step is checked and pictured at rest, not halfway through a fade.
       const context = await browser.newContext({
@@ -308,15 +349,18 @@ if (!flags.ok || problem !== null) {
           }
         },
       };
-      const safe = await judgeFlow(run, code, ticker);
-      const interest = await yieldFlow(run);
-      // What the pages said, from the database: the first plan is stopped; the second still
-      // waits for its first run, with no principal (a dry run deposits nothing).
-      const [stopped, waiting] = [await getPlan(db, safe), await getPlan(db, interest)];
+      const safe = await judgeFlow(run, codes[index] ?? '', ticker);
+      const deposits = await yieldFlow(run, venus);
+      // What the pages said, from the database: the first plan is stopped; the yield plans still
+      // wait for their first run, with no principal (a dry run deposits nothing).
+      const stopped = await getPlan(db, safe);
       if (stopped?.status !== 'stopped')
         problems.push(`${at} plan ${safe} is ${stopped?.status ?? 'missing'}, not stopped`);
-      if (waiting?.pausedReason !== 'awaiting_run' || Number(waiting.principalUsd) !== 0)
-        problems.push(`${at} plan ${interest} is ${waiting?.pausedReason ?? 'missing'}`);
+      for (const id of deposits) {
+        const waiting = await getPlan(db, id);
+        if (waiting?.pausedReason !== 'awaiting_run' || Number(waiting.principalUsd) !== 0)
+          problems.push(`${at} plan ${id} is ${waiting?.pausedReason ?? 'missing'}`);
+      }
       await context.close();
     }
     problems.push(...jobErrors.map((e) => `worker: ${e}`));
