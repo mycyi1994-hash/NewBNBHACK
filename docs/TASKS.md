@@ -399,6 +399,13 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
   - R4 "Try again in a minute" after `approval_pending` was refused until the next tick, and the only retry in the UI created a new plan. Now a live deposit settles first, and "Try again" runs the same plan.
   - R5 a global hold raised before a plan and lifted after it was missing from that plan's history. It is now listed (`plans.test.ts`).
   - R6 an expired yield plan was stopped and handed to a human while the live worker had not yet found the Venus market. The plan now stays due until the market is known.
+- [x] (10/1) Second regression review, of R1–R6 and `pnpm e2e`. A read-only reviewer reproduced each finding on its own scratch database. It found nothing reachable in the plan-lock lease, one MEDIUM finding and three LOW ones; all four are fixed, each with a test.
+  - MEDIUM: "Try again" worked once only. A retry while the approval was still confirming failed the job ("still settling"), the button went away, and the plan was stranded. Now the plan's own pending approval answers `approval_pending` again (`settlement.test.ts`).
+  - The retry sent the form's current amount and mode, not the plan's: a $2.50 chip clicked in between would deposit $2.50 into a $5 plan. Runs now use the terms the plan was created with, and the retry puts them back on the form.
+  - Bytes the node holds but no validator mines stayed PENDING for good, with no alert (a sibling of R3). Every row still pending 30 minutes after signing now goes to a human (`send.test.ts`, RUNBOOK §3.4).
+  - `pnpm e2e` left `next start` running when the browser would not start, and accepted mixed-case database names, which Postgres folds to lower case. Both are fixed.
+  - Also, from the e2e's own screenshots at 375 px: a dry run's done dialog promised "This plan keeps running for 7 days" although nothing had started. A run's report now carries `planStatus`, and the note shows only when the plan is active (`scheduler.test.ts`; the e2e checks it is absent). And a long ledger label broke the amount mid-word ("5.00 USD" / "T"); `app.css` now keeps the value whole and wraps the label.
+  - A residual lease gap needs a process to stall for about 9 minutes; it is described in `docs/SECURITY.md` "Remaining risks".
   - [ ] [HUMAN] Decide whether to use Q-17 skill wallet ownership proof (EIP-712 `baw sign-message`, needs Developer Mode).
   - [ ] [HUMAN] Before deploy, check that the Fly and Vercel cap values pass the new format validation (RUNBOOK §4).
 ### M3-06 Incident rehearsal · Criterion: Technical — API down, RPC down, worker restart, DB recovery, check the 3 UI states, write the RUNBOOK

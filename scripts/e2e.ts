@@ -9,7 +9,8 @@
  * disclosure must be agreed to before it turns on, and the $5 deposit is dry-run. All of it at a
  * phone's 375 px and at 1280 px, with no sideways scroll at any step (dialogs open included).
  * The database name must contain "e2e"; it is created and migrated when missing. Build the web
- * first: pnpm --filter @yieldvest/web build. Exit: 0 pass · 1 fail · 2 usage.
+ * first: pnpm --filter @yieldvest/web build. --shots <dir> keeps a screenshot of every step (and
+ * of the one that failed). Exit: 0 pass · 1 fail · 2 usage.
  */
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -20,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { processJobs } from '@yieldvest/agent';
 import { createDb, getPlan, migrateDb } from '@yieldvest/db';
 import postgres from 'postgres';
-import { chromium, type Page } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import { cleanup } from '../apps/agent/test/harness.js';
 import { createWorld, testInstrument, withVenus } from '../apps/agent/test/world.js';
 import { parseFlags } from './args.js';
@@ -113,6 +114,10 @@ async function judgeFlow(run: Run, code: string, ticker: string) {
   await dialog.getByRole('button', { name: 'Buy now' }).click();
   await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
   await check('done dialog');
+  // A dry run starts nothing: the dialog must not promise seven days of buying.
+  if ((await dialog.getByText('keeps running for 7 days').count()) > 0) {
+    throw new Error('the done dialog says the plan keeps running after a dry run');
+  }
   log('buy now: the worker ran the cycle, the server says it only simulates');
 
   await page.goto(`${base}/plans/${planId}`, { waitUntil: 'networkidle' });
@@ -150,13 +155,18 @@ async function yieldFlow(run: Run) {
     throw new Error('yield mode stayed off after "Agree and turn on"');
   }
   log('yield mode: stays off until "I understand" is checked, on after "Agree and turn on"');
+  await check('yield plan panel');
 
   const planId = await planCreatedBy(run, () =>
     page.getByRole('button', { name: 'Continue' }).click(),
   );
-  const dialog = page.getByRole('dialog');
+  const deposit = page.getByRole('dialog').getByRole('button', {
+    name: 'Put it in the interest account',
+  });
+  await deposit.waitFor({ timeout: STEP_MS });
   await check('deposit dialog');
-  await dialog.getByRole('button', { name: 'Put it in the interest account' }).click();
+  await deposit.click();
+  const dialog = page.getByRole('dialog');
   await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
   await check('deposit done');
   log(`deposit of plan ${planId}: exact approval and Venus deposit dry-run, nothing signed`);
@@ -173,8 +183,8 @@ const problem = !flags.ok
   ? flags.error
   : !URL.canParse(database) || !/^postgres(ql)?:$/.test(new URL(database).protocol)
     ? 'the database must be a postgres:// URL'
-    : !/^[a-z0-9_]*e2e[a-z0-9_]*$/i.test(new URL(database).pathname.slice(1))
-      ? 'the database name must contain "e2e" (the run writes plans, codes and an instrument)'
+    : !/^[a-z0-9_]*e2e[a-z0-9_]*$/.test(new URL(database).pathname.slice(1))
+      ? 'the database name must be lower case and contain "e2e" (the run writes plans, codes and an instrument)'
       : !Number.isInteger(port) || port < 1024 || port > 65_535
         ? 'the port must be an integer in [1024, 65535]'
         : !existsSync(path.join(WEB, '.next/BUILD_ID'))
@@ -235,18 +245,25 @@ if (!flags.ok || problem !== null) {
     }
   })();
 
-  const browser = await chromium.launch(
-    flags.values.chromium ? { executablePath: flags.values.chromium } : {},
-  );
+  let browser: Browser | undefined;
   const problems: string[] = [];
   const planIds: string[] = [];
   let current: Page | undefined;
   try {
+    // Inside the try: a browser that will not start still stops the web process (finally).
+    browser = await chromium.launch(
+      flags.values.chromium ? { executablePath: flags.values.chromium } : {},
+    );
     await waitForWeb(base, () => exit);
     log('web answers /api/health');
     // A phone first, then a desktop: each a judge of its own (a fresh session cookie).
     for (const width of [375, 1280]) {
-      const context = await browser.newContext({ viewport: { width, height: 900 } });
+      let shot = 0;
+      // Reduced motion: every step is checked and pictured at rest, not halfway through a fade.
+      const context = await browser.newContext({
+        viewport: { width, height: 900 },
+        reducedMotion: 'reduce',
+      });
       const page = await context.newPage();
       current = page;
       const at = `${width}px`;
@@ -268,6 +285,13 @@ if (!flags.ok || problem !== null) {
             client: document.documentElement.clientWidth,
           }));
           if (scroll > client) problems.push(`${at} ${where}: scrollWidth ${scroll} > ${client}`);
+          // --shots: what the judge saw at each step, for the demo and the UX review.
+          if (flags.values.shots) {
+            shot += 1;
+            const name = `${width}-${String(shot).padStart(2, '0')}-${where.replace(/\W+/g, '-')}.png`;
+            mkdirSync(flags.values.shots, { recursive: true });
+            await page.screenshot({ path: path.join(flags.values.shots, name) });
+          }
         },
       };
       const safe = await judgeFlow(run, code, ticker);
@@ -289,14 +313,14 @@ if (!flags.ok || problem !== null) {
     // Where it stopped, for whoever reads the failure (--shots).
     if (current && flags.values.shots) {
       mkdirSync(flags.values.shots, { recursive: true });
-      const shot = path.join(flags.values.shots, 'e2e-failure.png');
-      await current.screenshot({ path: shot, fullPage: true }).catch(() => undefined);
-      problems.push(`stopped at ${current.url()}; screenshot ${shot}`);
+      const failure = path.join(flags.values.shots, 'e2e-failure.png');
+      await current.screenshot({ path: failure, fullPage: true }).catch(() => undefined);
+      problems.push(`stopped at ${current.url()}; screenshot ${failure}`);
     }
   } finally {
     working = false;
     await worker.catch((error: unknown) => problems.push(`worker: ${String(error)}`));
-    await browser.close();
+    await browser?.close();
     web.kill('SIGTERM');
     await Promise.race([new Promise((resolve) => web.once('exit', resolve)), sleep(5_000)]);
     if (exit === null) web.kill('SIGKILL');
