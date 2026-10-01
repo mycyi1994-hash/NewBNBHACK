@@ -7,6 +7,7 @@
 import { fromUnits, nextDue, toUnits } from '@yieldvest/core';
 import {
   applyDeposit,
+  getPlan,
   judgeExposureUsd,
   listPlans,
   openGuardianActions,
@@ -67,6 +68,20 @@ export async function startYieldPlan(
       return { status: 'approval_pending', txHash: approving.txHash };
     }
     throw new PublicError('an earlier transaction of this plan is still settling');
+  }
+  // Read again after the settle: it may just have written down this plan's own first deposit,
+  // mined late (the job that sent it stopped waiting). Asked again — the documented API, or a
+  // judge pressing the button once more — the plan is not sent a second deposit.
+  const fresh = (await getPlan(deps.db, plan.id)) ?? row;
+  const principal = toUnits(usdText(fresh.principalUsd), 18);
+  if (principal > 0n) {
+    return {
+      status: 'deposited',
+      depositedUsd: fromUnits(principal, 18),
+      vTokens: fresh.vtokenUnits,
+      txHashes: [],
+      alreadyRecorded: true,
+    };
   }
   if (plan.owner.kind === 'judge' && row.ownerRef !== null) {
     const used = toUnits(usdText(await judgeExposureUsd(deps.db, row.ownerRef)), 18);

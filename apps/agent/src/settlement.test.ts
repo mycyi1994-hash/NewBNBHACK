@@ -18,6 +18,7 @@ import {
   listReceipts,
   markOutbox,
   openCycle,
+  plans,
   recordSigned,
   releasePlanLock,
   reserveSpend,
@@ -26,15 +27,16 @@ import {
   usdText,
 } from '@yieldvest/db';
 import { eq } from 'drizzle-orm';
-import type { Hex } from 'viem';
+import { parseTransaction, type Hex } from 'viem';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';
-import { cleanup } from '../test/harness.js';
+import { cleanup, HOUSE, ROUTER, transferLog } from '../test/harness.js';
 import {
   createWorld,
   RECEIVED,
   testInstrument,
   testPlan,
+  USDT,
   withVenus,
   type World,
 } from '../test/world.js';
@@ -371,6 +373,121 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
     expect(await getPlan(db, id)).toMatchObject({ status: 'active', vtokenUnits: '100000000' });
   });
 
+  it('never sends a plan a second deposit when its first one is written down late', async () => {
+    const w = await createWorld(db, MON_1000);
+    withVenus(w);
+    const id = await yieldPlan({
+      ownerKind: 'judge',
+      ownerRef: `code-twice-${Date.now()}`,
+      status: 'paused',
+      pausedReason: 'awaiting_run',
+      principalUsd: '0',
+      vtokenUnits: '0',
+    });
+    // The first deposit is not mined before the job stops waiting.
+    w.chain.mines = (tx) => !tx.data.startsWith(MINT_SELECTOR);
+    const stale = (await getPlan(db, id))!;
+    expect(await startYieldPlan(w.deps('live'), stale, '1')).toMatchObject({
+      status: 'awaiting_tx',
+    });
+    // It is mined; the judge asks again with the plan as it was read before (no principal yet).
+    w.chain.mines = true;
+    expect(await startYieldPlan(w.deps('live'), stale, '1')).toMatchObject({
+      status: 'deposited',
+      depositedUsd: '1',
+      alreadyRecorded: true,
+    });
+    // One deposit only, written down once.
+    expect(w.chain.sent.filter((tx) => tx.data.startsWith(MINT_SELECTOR))).toHaveLength(1);
+    const after = await getPlan(db, id);
+    expect(usdText(after?.principalUsd ?? '')).toBe('1');
+    expect(after).toMatchObject({ status: 'active', vtokenUnits: '100000000' });
+  });
+
+  it('stops a plan whose deposit only got as far as its approval: nothing to take out, nobody paged', async () => {
+    const w = await createWorld(db, MON_1000);
+    withVenus(w);
+    const id = await yieldPlan({
+      ownerKind: 'judge',
+      ownerRef: `code-stop-approval-${Date.now()}`,
+      status: 'paused',
+      pausedReason: 'awaiting_run',
+      principalUsd: '0',
+      vtokenUnits: '0',
+    });
+    w.chain.mines = false;
+    expect(await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1')).toMatchObject({
+      status: 'approval_pending',
+    });
+    const outcome = await redeemPlanPosition(w.deps('live'), (await getPlan(db, id))!, {
+      status: 'stopped',
+      reason: 'stopped_by_owner',
+    });
+    expect(outcome).toBe('nothing_to_redeem');
+    expect(await getPlan(db, id)).toMatchObject({
+      status: 'stopped',
+      pausedReason: 'stopped_by_owner',
+    });
+    expect(w.alerts).toEqual([]);
+    // The approval is settled later like any other transaction.
+    w.chain.mines = true;
+    await settleOutbox(w.deps('live'));
+  });
+
+  it('records no transaction for a cycle whose lock was taken over while it signed', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    // The approval goes out; the swap's nonce lookup stalls 13 minutes, and another process's
+    // settle takes the plan over meanwhile (it closes the cycle from what it had signed).
+    const pendingNonce = w.chain.pendingNonce.bind(w.chain);
+    let lookups = 0;
+    w.chain.pendingNonce = async (address) => {
+      lookups += 1;
+      if (lookups === 2) {
+        w.clock.advance(13 * 60_000);
+        await settleOutbox(w.deps('live'));
+      }
+      return pendingNonce(address);
+    };
+    await expect(runCycle(w.deps('live'), id, { manual: true })).rejects.toThrow(LockLostError);
+    // The swap was never written down or sent: only the approval went out.
+    const outbox = await db.select().from(txOutbox).where(eq(txOutbox.planId, id));
+    expect(outbox.map((row) => row.kind)).toEqual(['approve']);
+    expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3']);
+  });
+
+  it('pauses for review a swap with no tokens even when its lease was taken over meanwhile', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan();
+    // The swap confirms, USDT leaves, no tokens arrive.
+    w.chain.onMine = (tx) =>
+      tx.to.toLowerCase() === ROUTER.toLowerCase()
+        ? { status: 'success', logs: [transferLog(USDT, HOUSE, ROUTER, 5n * 10n ** 18n)] }
+        : { status: 'success', logs: [] };
+    // While the swap's receipt is awaited, another holder takes the plan's lock over.
+    let swapHash: string | undefined;
+    const accept = w.chain.accept.bind(w.chain);
+    w.chain.accept = (raw) => {
+      const hash = accept(raw);
+      if (parseTransaction(raw).to?.toLowerCase() === ROUTER.toLowerCase()) swapHash = hash;
+      return hash;
+    };
+    const wait = w.chain.waitForReceipt.bind(w.chain);
+    w.chain.waitForReceipt = async (hash, ms) => {
+      if (hash === swapHash) {
+        await db
+          .update(plans)
+          .set({ lockUntil: '2026-09-28T15:00:00.000Z' })
+          .where(eq(plans.id, id));
+      }
+      return wait(hash, ms);
+    };
+    expect(await runCycle(w.deps('live'), id)).toMatchObject({ status: 'review' });
+    // The hold stands although this cycle could not release the lock with its changes.
+    expect(await getPlan(db, id)).toMatchObject({ status: 'paused', pausedReason: 'needs_review' });
+    expect(w.alerts.some((line) => line.includes('needs review'))).toBe(true);
+  });
+
   it('never activates a plan a stop reached while its deposit was out', async () => {
     const w = await createWorld(db, MON_1000);
     withVenus(w);
@@ -449,7 +566,12 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
 
     // A deposit of this plan still out on chain: its vTokens are not known yet.
     w.chain.mines = (tx) => !tx.data.startsWith(MINT_SELECTOR);
-    const other = await yieldPlan({ principalUsd: '1', vtokenUnits: '100000000' });
+    const other = await yieldPlan({
+      status: 'paused',
+      pausedReason: 'awaiting_run',
+      principalUsd: '0',
+      vtokenUnits: '0',
+    });
     expect(await startYieldPlan(w.deps('live'), (await getPlan(db, other))!, '1')).toMatchObject({
       status: 'awaiting_tx',
     });

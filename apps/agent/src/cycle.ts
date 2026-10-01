@@ -50,7 +50,6 @@ import {
   reserveSpend,
   settleSpend,
   recordReceiptFacts,
-  unfinishedTransactions,
   updateCycle,
   updatePlan,
   usdText,
@@ -71,7 +70,7 @@ import {
   type TradeDeps,
 } from './executor/trade.js';
 import { redeemFromVenus, vTokensToUsd, type VenusMarket } from './executor/venus.js';
-import { redeemPlanPosition } from './guardian.js';
+import { positionInFlight, redeemPlanPosition } from './guardian.js';
 import { marketSnapshot, observeQuote } from './market.js';
 import { LOCK_TTL_MS, LockLostError, planLease, type PlanLease } from './plan-lock.js';
 import { settleOutbox } from './settlement.js';
@@ -197,8 +196,7 @@ export async function runCycle(
     // every tick) leaves the plan due, and redeems it once it has.
     const holds =
       first.mode === 'yield' &&
-      (BigInt(first.vtokenUnits) > 1n ||
-        (await unfinishedTransactions(deps.db, first.id)).length > 0);
+      (BigInt(first.vtokenUnits) > 1n || (await positionInFlight(deps.db, first.id)));
     if ((deps.mode === 'live' && deps.venus) || !holds) {
       await redeemPlanPosition(deps, first, { status: 'stopped', reason: 'expired' });
     } else if (deps.mode === 'live') {
@@ -758,7 +756,10 @@ async function cycleBody(
           await recordReceipt(deps, plan.id, cycle.id, swap.sent);
           await step({ step: 'ANOMALY', message: swap.message, txHash: swap.sent.txHash });
           await updateCycle(deps.db, cycle.id, { state: 'awaiting_tx' });
-          setPlan({ status: 'paused', pausedReason: 'needs_review' });
+          // A safety hold, written at once as the awaiting path writes it (awaiting.ts): it only
+          // ever stops buying, so it needs no lock, and it must not ride on the lock's release,
+          // which a cycle whose lease was taken over skips.
+          await updatePlan(deps.db, plan.id, { status: 'paused', pausedReason: 'needs_review' });
           await deps.alerter?.send({
             key: `anomaly:${plan.id}:${cycle.id}`,
             text: `[yieldvest] ${plan.id} cycle #${cycle.id} needs review: ${swap.message}. The plan is paused.`,

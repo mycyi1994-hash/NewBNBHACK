@@ -165,6 +165,10 @@ export async function sendTransaction(deps: SendDeps, req: SendRequest): Promise
     }),
   );
   const txHash = keccak256(raw);
+  // Again right before the bytes are written down: a stall in the nonce lookup or the signer
+  // must not let a cycle that lost its plan meanwhile record (and then broadcast) a transaction
+  // for a cycle the new holder has already closed.
+  await deps.beforeSign?.();
   await recordSigned(deps.db, {
     planId: req.planId,
     cycleId: req.cycleId,

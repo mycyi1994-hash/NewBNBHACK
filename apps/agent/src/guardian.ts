@@ -35,6 +35,7 @@ import {
   unfinishedTransactions,
   updatePlan,
   getPlan,
+  type Db,
   type PlanRow,
 } from '@yieldvest/db';
 import type { CycleDeps } from './cycle.js';
@@ -142,6 +143,17 @@ async function readInputs(deps: CycleDeps, unavailable: string[]): Promise<Guard
 }
 
 /**
+ * A deposit or redeem of the plan still out on chain, or mined and not applied yet: its
+ * vtoken_units may be stale until it is. An approval alone moves no principal (a judge who stops
+ * a plan while its deposit's approval confirms has nothing in Venus).
+ */
+export async function positionInFlight(db: Db, planId: string): Promise<boolean> {
+  return (await unfinishedTransactions(db, planId)).some(
+    (tx) => tx.kind === 'deposit' || tx.kind === 'redeem',
+  );
+}
+
+/**
  * Takes one yield plan's whole Venus position out (live mode only, and only after the redeem
  * simulation passes). The plan's status changes first, whatever happens to the redeem: a stop or
  * a guardian pause holds even when the redeem cannot run now. A failure is alerted and a human
@@ -173,7 +185,7 @@ export async function redeemPlanPosition(
   };
   // vtoken_units can be stale while a deposit or redeem of the plan is still out on chain: "nothing
   // to redeem" is only true with none of those (a deposit mined later would be stranded).
-  const unsettled = (await unfinishedTransactions(deps.db, plan.id)).length > 0;
+  const unsettled = await positionInFlight(deps.db, plan.id);
   if (BigInt(plan.vtokenUnits) <= 1n && !unsettled) return 'nothing_to_redeem';
   if (deps.mode !== 'live' || !deps.venus) {
     // This process signs nothing (a dry run, a simulate-mode worker): the position is left for a
@@ -193,7 +205,7 @@ export async function redeemPlanPosition(
   try {
     // A deposit or redeem of this plan still out on chain, or mined and not applied yet, leaves
     // vtoken_units stale: redeeming now could burn other plans' vTokens from the shared position.
-    if ((await unfinishedTransactions(deps.db, plan.id)).length > 0) {
+    if (await positionInFlight(deps.db, plan.id)) {
       await held('pending', 'an earlier transaction of this plan is not settled yet');
       return 'pending';
     }
