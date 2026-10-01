@@ -493,3 +493,13 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Workaround: `skills/yieldvest/references/safety.md` takes the list for `instrument.issuer` and the entry with `chainId "56"`, and compares the address, the symbol and the quote's `toCoinSymbol`.
 - Ask: a `chainId` filter on the list endpoint, and one sentence in the skill docs that tickers repeat per chain.
 - Evidence: the counts above (re-measured at 06:04:06 UTC); `skills/yieldvest/references/safety.md`.
+
+## 2026-10-01 06:19 UTC — [baw][auth] `baw wallet status --json` answers `success: true` when signed out; the status is in `data.status`
+- Goal: the Wallet Skill's preflight must tell a signed-in `baw` from a signed-out one before it plans anything.
+- Expected: a signed-out wallet makes `wallet status` fail, as every other command does.
+- Actual: `@binance/agentic-wallet@1.10.0`, fresh `HOME` (never signed in): `baw wallet status --json` → exit 0, `{"success": true, "data": {"status": "UNCONNECTED"}}`. `baw market-order quote … --json` → `{"success": false, "error": {"code": 10003000, "name": "NOT_LOGGED_IN", "message": "Not logged in"}}`. From the bundle, `data.status` is `UNCONNECTED` unless connected, then `CREATING` until the wallet exists, then `CONNECTED`. An agent that checks `success` — the field every other command uses for the outcome — believes it is signed in and fails one step later.
+- Docs: the Skills Hub `binance-agentic-wallet/references/wallet-view.md` lists the three values (`UNCONNECTED` not signed in, `CREATING`, `CONNECTED`); it does not say that `success` stays `true` when signed out, while every other command reports its failure in `success`.
+- Time lost: about 5 minutes.
+- Workaround: `skills/yieldvest/SKILL.md` preflight requires `data.status` = `CONNECTED`.
+- Ask: make `wallet status` exit non-zero (or `success: false`) when the session is not usable, or document that `success` only means the call ran.
+- Evidence: the two outputs above (06:19:48 UTC, `baw` 1.10.0 from a scratch install, no account).
