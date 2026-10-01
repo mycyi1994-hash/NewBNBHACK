@@ -18,11 +18,23 @@ The official "Ideas to Build" include "Auto-DCA and rebalancing" and "Buy your f
 - **Tokenized-stock rules in the engine.** Buys only in the NYSE regular session (holidays, early closes, daylight saving); the RWA Data API's `ASSET_PAUSED` / `ASSET_LIMITED` codes hold a buy around earnings, dividends and splits; amounts are shown in shares, tokens × the bStocks multiplier read on chain. Each hold is a sentence the user sees (`packages/core`).
 - **The server decides, the user's AI assistant signs.** The Wallet Skill gets exact `baw` commands from `/next`, runs them in the user's Agentic Wallet after the user says yes, and reports back; the server checks every report on chain and holds no key or session (`skills/yieldvest`).
 - **A Uniswap v4 hook priced by the NYSE session**, so LPs of tokenized stocks are paid for the overnight gap risk only these assets carry (`packages/rwa-lp`, tested on a BSC fork, not deployed).
+- **Check before money moves.** `/check` runs the agent's own engine on a plan that does not exist yet and shows each rule it read against its limit; `/compare` puts the two tokens of one US share — bStocks and Ondo — side by side, in shares per dollar. Both are MCP tools too, so any assistant can ask ([below](#before-you-buy-check-compare-project)).
 
 ## 3-minute trial (Judge Mode, `/invest` — the old address `/judge` also leads here)
 
 **Try it** or the Invest tab → code → stock (NVDA, etc.) → Contribution only · $5 · regular session → **Dry-run it** (the worker simulates it on-chain) → **Buy now** → a receipt or "Waiting" (if the market is closed, it buys automatically at the next open +2 min) → **Stop this plan**.
 1 code = up to $5, and the money comes from Yieldvest's house wallet. The plan ends automatically after 7 days.
+
+## Before you buy: check, compare, project
+
+Read-only, from the worker's latest market recording, each with its data state (live, minutes old, or unavailable with the reason). None of them can create a plan or move funds ([DECISIONS D-31](docs/DECISIONS.md)).
+
+| Where | What it answers |
+| --- | --- |
+| `/check` · `GET /api/preflight?ticker=NVDA&usd=5` | **Would it buy right now?** `decideCycle` — the code the agent and a skill plan's `/next` run — on a plan you have not made, once per token: buy (about how many shares), wait (until when) or skip, with the agent's own one-line reason, and every rule's input against its limit: data age, guardian, US session, amount vs the venue minimum, token status, price vs the US stock, price impact. A buy needs a guardian check in the last 15 minutes. |
+| `/compare` · `GET /api/compare?ticker=NVDA` | **bStocks or Ondo?** The same share from two issuers: shares each $5 / $50 / $500 quote was worth, price per share, price impact or the code it was refused with (Ondo refuses exactly $5), status, minimum order, full addresses. Facts with their time; a plan never switches issuer. |
+| Earn · `GET /api/projection?depositUsd=1000&ticker=NVDA` | **What would a deposit earn?** At today's listed Venus APY, compounded daily: per day, week, month and year, the days until the interest reaches the minimum buy, and about how many shares a month buys. Labeled a projection at today's rate, never a promise. |
+| `POST /api/mcp` | The same answers, plus market status, plan records and receipts, as a **read-only MCP server** (Streamable HTTP; checked with the official MCP SDK client): `claude mcp add --transport http yieldvest <site URL>/api/mcp` |
 
 ## What Yieldvest ran itself
 
@@ -32,8 +44,8 @@ The official "Ideas to Build" include "Auto-DCA and rebalancing" and "Buy your f
 
 | Command | What it shows | Result on 10/1 |
 | --- | --- | --- |
-| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 66 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 666 passed, 10 skipped |
-| `pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e` | Judge Mode end to end in Chromium at 375 and 1280 px, in simulate mode over a test world (no network) | green in CI on every push |
+| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 68 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 697 passed, 10 skipped |
+| `pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e` | Judge Mode end to end in Chromium at 375 and 1280 px, in simulate mode over a test world (no network), then `/check`, `/compare`, the Earn calculator and the MCP block | green in CI on every push |
 | `pnpm lp:test` | the Uniswap v4 hook, the reference oracle and the LP vault | 144 Foundry tests; `BSC_FORK_URL=…` adds 2 on BSC mainnet state |
 | `pnpm dx:repro` | each DX finding ([`dx/findings`](dx/findings/README.md)) against the platform as it is now | 4 of 4 keyless findings reproduced; 6 need a key |
 | `docker compose up --build` | the app on your machine, simulate mode | see [Run](#run) |
@@ -87,7 +99,7 @@ git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK yieldvest-src \
 export YIELDVEST_URL=<site URL>
 ```
 
-Then say "Start Yieldvest". Requires: `baw` 1.10.0 (`npm i -g @binance/agentic-wallet@1.10.0`), the `binance-agentic-wallet` and `query-token-audit` skills (`npx skills add binance/binance-skills-hub/skills/binance-web3/<skill>`), USDT to buy and a little BNB for gas. Before each signature the skill checks the command against the plan the user agreed (token, chain, amount within the plan's per-buy limit), that the wallet is not locked by a pending transaction, and the token against the official list; the user confirms with the wallet's own quote in front of them. The server only decides (it stores no keys or sessions); every transaction is signed by the user's wallet after the user confirms. API contract: `/api/openapi` (OpenAPI 3.1).
+Then say "Start Yieldvest". Requires: `baw` 1.10.0 (`npm i -g @binance/agentic-wallet@1.10.0`), the `binance-agentic-wallet` and `query-token-audit` skills (`npx skills add binance/binance-skills-hub/skills/binance-web3/<skill>`), USDT to buy and a little BNB for gas. Before each signature the skill checks the command against the plan the user agreed (token, chain, amount within the plan's per-buy limit), that the wallet is not locked by a pending transaction, and the token against the official list; the user confirms with the wallet's own quote in front of them. The server only decides (it stores no keys or sessions); every transaction is signed by the user's wallet after the user confirms. API contract: `/api/openapi` (OpenAPI 3.1). Before a plan exists, the skill can show the user `/api/compare` (to choose a token) and `/api/preflight` (what the rules would do now); an assistant without the skill can ask the same through the read-only MCP server at `/api/mcp`.
 
 ## RWA liquidity (Uniswap v4 hook)
 

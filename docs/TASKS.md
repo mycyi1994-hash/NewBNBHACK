@@ -517,6 +517,32 @@ Design and runbook: `docs/RWA_LP.md`. Package: `packages/rwa-lp`. Nothing here d
 
 ---
 
+## RO Read-only views (human request 10/1, DECISIONS D-31) — Goal: a person can check what the agent would do, and why, before any money moves
+
+None of these can create a plan, sign or move funds (CLAUDE.md rule 5); every number carries its data state (rule 4). Copy: UX_COPY §7.7 (agent drafts).
+
+### RO-01 Pre-flight: "Would it buy right now?" · Criteria: Technical, UX, AW special prize
+- [x] `GET /api/preflight` and `/check`: `nextFor` — `decideCycle` on the worker's latest tape, the code behind a skill plan's `/next` — for a fixed-amount plan that does not exist, once per issuer; buy (spend, about how many shares), wait (`retryAt`) or skip, with the engine's own reason. Each rule's input against its limit: data age, guardian, session, amount vs minimum (incl. the off-hours half of an anytime plan), token status, price gap (regular session only), price impact (tape quote, refusal codes). A buy needs a guardian check within 15 minutes (the worker's tick, `lib/server/worker.ts`, shared with `/api/judge/smoke`), else it waits (`guardian_unchecked`). Amount bounds as a skill plan's per-buy limit. No `baw` command in the answer. The rule codes come from `packages/core` (exported, not copied).
+  - Evidence: `apps/web/test/features.test.ts` (13 pre-flight tests: regular-session buy, Ondo's $5.00 refused by its $5.01 minimum, one issuer, after hours on a regular-hours plan, the off-hours half and its minimum, guardian hold, a warn-only rule, an unchecked guardian, a corporate action, a 2 % premium, a 1.8 % impact, quote refusals, stale and missing data, the bounds); `features-db.test.ts` through the route on Postgres (no tick → wait; fresh tick → both buy; a 16-minute-old tick → wait; an open `usdt_depeg` → skip; bad amounts and tickers refused). Mutation: removing the unchecked-guardian wait fails one unit and one route test.
+
+### RO-02 Issuer comparison: "bStocks or Ondo?" · Criteria: Technical, Creativity, DX, UX
+- [x] `GET /api/compare` and `/compare`: for one stock, per issuer the shares each tape quote ($5 / $50 / $500) was worth (tokens × multiplier), price per share in it (rounded down), price impact or refusal code, status, on-chain vs US price, minimum order, full address; per size the issuer whose quote was worth more shares, only when both quoted and differ. Without a ticker: the tickers and their issuers. The Wallet Skill shows it when the user chooses a token (`references/plan.md`); a plan still never switches issuer. The read-only half of the parked "best execution across issuers".
+  - Evidence: 4 unit tests (side by side, a refused $5 Ondo quote, equal shares name nobody, no tape → UNAVAILABLE) and the route test on Postgres.
+
+### RO-03 Interest calculator on Earn · Criterion: UX
+- [x] `lib/projection.ts` (pure, runs in the browser and on the server): a deposit at today's listed Venus APY compounded daily — per day, week, month (30 days), year — the first day the interest reaches the minimum buy, and shares a month at the on-chain price (from a LIVE tape only). `GET /api/projection` gives each input with its state (`apy.state` LIVE within 12 h of the worker's read, else STALE; none → no projection). Every view says it is a projection at today's rate.
+  - Evidence: 3 unit tests ($1,000 at 3.16 % → 31.60 a year, first buy on day 3 at a $0.25 minimum; rounding down; 0 % and bad inputs) and the route test (no rate → `projection: null`; 30 minutes old → LIVE; 13 hours → STALE).
+
+### RO-04 Read-only MCP server · Criteria: Technical, Creativity, AW special prize
+- [x] `POST /api/mcp` (`lib/server/mcp.ts`): stateless Streamable HTTP, JSON-RPC 2.0 — `initialize` (protocol versions 2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05), `ping`, `tools/list`, `tools/call`; notifications and responses 202; GET and DELETE 405 (Next, unexported). Tools `market_status`, `compare_issuers`, `preflight`, `interest_projection`, `plan_status`, `recent_receipts`, each `readOnlyHint`, through the same functions as the GET routes; argument problems are tool errors the model can correct, unknown tools protocol errors. Origin checked (403), unsupported `MCP-Protocol-Version` 400, 120 requests a minute per address. `/skill` shows the `claude mcp add` line.
+  - Evidence: 5 unit tests and `features-db.test.ts`, where the official `@modelcontextprotocol/sdk` 1.31.0 client connects, lists the six tools, calls four and gets tool errors and a protocol error where expected. Mutation: answering `initialize` with an unknown version fails the SDK client's connect and the unit test. Built app: `GET /api/mcp` → 405, `DELETE` → 405, `tools/call compare_issuers` → its comparison.
+
+### RO-05 Checked in a browser · Criterion: UX
+- [x] `pnpm e2e` now also opens `/check` (an engine verdict and its four token rules), `/compare` (three quote sizes), the Earn calculator ($1,000 → 31.60 USDT a year; "abc" refused) and the MCP block on `/skill`, at 375 and 1280 px; `pnpm ui:check` covers `/check` and `/compare`.
+  - Evidence (10/1, local, simulate mode): `pnpm e2e … PASS … and the pre-flight check, issuer comparison, calculator and MCP block · 0 page or console errors, 0 sideways scrolls`. `pnpm ui:check` on a seeded scratch database (two issuers, tick, rate): `/check?ticker=…&usd=6`, `/compare?ticker=…`, `/earn`, `/skill`, `/check`, `/compare`, `/invest` at 375 and 1440 px in two locales — HTTP 200, no sideways scroll, English only, `0 problems`. `pnpm typecheck && pnpm lint && pnpm test`: 68 test files, 697 passed, 10 skipped.
+
+---
+
 ## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]
 - [~] 9/27: agent draft in JUDGING §4 with its evidence — Technical 5, Creativity 8, DX 6, UX 6, weighted 6.2. Top priority: the money decisions (R1–R4), then the $1 live test and a web deploy.
   - [ ] [HUMAN] Confirm or change the 9/27 scores.

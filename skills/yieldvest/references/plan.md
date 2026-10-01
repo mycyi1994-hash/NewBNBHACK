@@ -12,7 +12,11 @@ All requests go to `$YIELDVEST_URL`. Bodies are JSON. Amounts are decimal string
      `curl -sS "$YIELDVEST_URL/api/instruments"` (each entry has `ticker`, `issuer`, `symbol` and the
      full `address`). When the ticker has both a bStocks token (`…B`) and an Ondo one (`…on`), show
      both with full addresses and ask which one — never pick for the user. The plan buys only that
-     token and never switches to the other.
+     token and never switches to the other. To help them choose, show the recorded facts side by
+     side: `curl -sS "$YIELDVEST_URL/api/compare?ticker=NVDA"` gives, per token, the shares each
+     $5 / $50 / $500 quote was worth, the price per share in it, price impact or the code it was
+     refused with (`40375` is Ondo's minimum), status and minimum order, with `data.sampledAt`.
+     Say when it was recorded; `sizes[].moreShares` is a fact about that quote, not advice.
    - `mode` — `safe` (a fixed amount per buy, default) or `yield` (interest of a Venus USDT deposit).
    - `contributionUsd` — per buy in safe mode; `"0"` for yield mode (interest only).
    - `cadence` — `daily` or `weekly` (default `weekly`).
@@ -21,6 +25,11 @@ All requests go to `$YIELDVEST_URL`. Bodies are JSON. Amounts are decimal string
      per-transaction cap, per day at least per buy. The server refuses anything else
      (`bad_limits`). Off-hours an `anytime` plan buys at half the per-buy limit; when half is under
      the minimum it waits for the regular session.
+   Before creating it, the user can see what the rules would do right now with these settings:
+   `curl -sS "$YIELDVEST_URL/api/preflight?ticker=NVDA&issuer=bstocks&usd=5&window=regular_session"`
+   — per token a `decision` (`buy` with about how many shares, `wait` with `retryAt`, `skip`) with
+   its reason, and `checks` (each rule's input against its limit). It creates nothing and returns
+   no command; a plan is still decided by its own `/next`.
 4. Create it. The answer holds the plan's token, so it goes straight into a private file: the
    `umask 077` comes first, and the file sits in `~/.config/yieldvest` (mode 700), never in `/tmp`.
    Each block sets the umask itself, because a shell does not keep it from one command to the next.

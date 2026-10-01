@@ -60,9 +60,14 @@ the user confirms, and then reported back — the server records only what the c
 | Run the plan / "what now?" | `GET /api/plans/{id}/next` → run its `steps` in order, confirming each | [run.md](references/run.md) |
 | Status / history | `GET /api/plans/{id}` (public view: limits, history, receipts, holdings) | [plan.md](references/plan.md) |
 | Stop the plan | `POST /api/plans/{id}/stop`; in yield mode, `GET /api/plans/{id}/position` → its redeem step, with the user | [plan.md](references/plan.md) |
+| "bStocks or Ondo?" | `GET /api/compare?ticker=…`: both tokens' recorded quotes side by side — facts, the user chooses | [plan.md](references/plan.md) |
+| "Would it buy now?" before a plan exists | `GET /api/preflight?ticker=…&usd=…`: the engine's verdict and each rule it read; creates nothing | [plan.md](references/plan.md) |
+| "What would my deposit earn?" | `GET /api/projection?depositUsd=…&ticker=…`: at today's listed rate — a projection, never a promise | [safety.md](references/safety.md) |
 | Anything about risks | Read the disclosure; never promise returns | [safety.md](references/safety.md) |
 
-The API contract (every route, body and answer) is published at `$YIELDVEST_URL/api/openapi`.
+The API contract (every route, body and answer) is published at `$YIELDVEST_URL/api/openapi`. The
+same read-only answers (market status, the comparison, the pre-flight check, the projection, plan
+records) are also an MCP server at `$YIELDVEST_URL/api/mcp`; nothing there can move funds.
 
 ## Rules that always apply
 

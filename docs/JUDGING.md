@@ -68,6 +68,10 @@ Track rules (gist of the original):
 | Error taxonomy table and LIVE/STALE/UNAVAILABLE states | ● | | ● | ● | | |
 | `/api/judge/smoke` checks every component in one call | ● | | | | | |
 | RWA liquidity: session-aware Uniswap v4 hook + LP vault for tokenized stocks (human request 9/30, DECISIONS D-29, `docs/RWA_LP.md`) | ● | ● | ● | | | |
+| Pre-flight `/check`: the agent's engine run on a plan before it exists, every rule against its limit (human request 10/1, DECISIONS D-31) | ● | ● | | ● | ● | |
+| Issuer comparison `/compare`: bStocks vs Ondo for one share, shares per quote size (D-31) | ● | ● | ● | ● | | |
+| Interest calculator on Earn: today's listed APY → days to the first buy, shares a month (D-31) | | | | ● | | |
+| Read-only MCP server `/api/mcp`, checked with the official MCP SDK client (D-31) | ● | ● | ● | | ● | |
 | KR/EN, mobile, crypto term substitution | | | | ● | | |
 
 ## 4. Self-assessment rubric (updated every Sunday: 9/27, 10/4, 10/8 final)
@@ -107,7 +111,7 @@ Score anchors. We play the judge and score our own submission. Any item under 7 
 - DX 6: `dx/LOG.md` has doc line references, error codes, request timings and a rate-limit analysis, with fixtures. Missing: real use of the AI stack (`baw` and `bag`, M0-09 and M0-10), regular-session tape numbers (M0-06) and the human-written report (M4-01).
 - UX 6: the approved English design, no jargon (`pnpm lint:copy`), phone layout (`pnpm ui:check`), 0 axe violations and a working skip link and motion controls (`pnpm qa:check`, M3-02), the risk disclosure on screen. But the web is not deployed (deduction: "the deployment is down"), and the 3-second and 3-minute rehearsals have not happened (M2-01, M2-02).
 
-**10/1 row: an agent draft, asked for by a human in the conversation ("look at the judging criteria"); a human confirms or changes it.**
+**10/1 row: an agent draft, asked for by a human in the conversation ("look at the judging criteria"); a human confirms or changes it.** Added later the same day at a human's request (DECISIONS D-31, TASKS RO-01–RO-05): the pre-flight check, the issuer comparison, the interest calculator and a read-only MCP server — all read-only. The scores stay as drafted: what holds Technical and Creativity back is still live trades, which these do not change.
 - Technical 5: much harder to break than on 9/27 — three review rounds with every finding fixed under a test, a Judge Mode e2e in CI at 375 and 1280 px, 656 vitest tests and 144 Foundry tests green, the plan-lock lease and outbox reconciliation. Still **0 mainnet receipts** and no deployed web, and the track rule is "demo with small live amounts"; the 7 anchor needs live trades.
 - Creativity 7 (9/27 said 8): a correction, not a regression. The 9/27 note said "not on the official ideas list", but Judge Mode's default flow — a fixed $5 contribution — is "Auto-DCA" and "Buy your first stock on-chain" on that list. What is not on it, interest buying the stock, has not run on mainnet; the session-aware Uniswap v4 hook has no deployed pool and no page. On our side: the session window, corporate-action holds and share counts show in Judge Mode, and the server-decides/user-signs Wallet Skill is an unusual use of the AI execution layer.
 - DX 6: 44 timestamped entries with error codes, timings, fixtures and asks. Two are on `baw` (10/1), one from reading its bundle and one from running it signed out; there is no signed-in run yet (M0-09, R9). Missing: `dx/metrics.md` and a tape summary (both need the production database, R12: PC), doc citations still given as line numbers of the 9/23 `llms-full.txt` snapshot instead of URL + text, and the human report draft (`dx/REPORT_DRAFT.md` does not exist; REPLAN §7 planned a first draft on 9/27).
