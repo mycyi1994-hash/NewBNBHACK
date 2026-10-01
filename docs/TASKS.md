@@ -286,7 +286,7 @@ Status marks: `[ ]` waiting · `[~]` in progress · `[x]` done · `[-]` cut
   - Evidence:
     - `guardian.test.ts` (core, boundary values).
     - `packages/db/src/guardian.test.ts` (the sample from 24h before, the moment the peg broke).
-    - `scheduler.test.ts`: USDT 0.985 for 35 minutes → opened, alert, buy SKIPPED, 0 signatures → cleared on recovery. TVL −33% → yield plan paused(`guardian:tvl_drop`).
+    - `scheduler.test.ts`: USDT 0.985 for 35 minutes → opened, alert, buy SKIPPED, 0 signatures → cleared on recovery. TVL −33% → yield plan paused; a simulate worker cannot redeem, so since 10/1 it is `guardian:tvl_drop:redeem_not_live` with an alert naming `pnpm yield:redeem` (before, it said nothing while the position stayed in Venus).
   - [x] Web display (9/26): guardian panel on plan detail (open verdict, what it watches, last check), guardian status in the home "Why you can check us".
 - Acceptance: tests per rule, UI display checked with a manual trigger
 
