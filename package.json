@@ -20,6 +20,7 @@
     "db:seed": "tsx scripts/db-seed.ts",
     "dx:metrics": "tsx scripts/dx-metrics.ts",
     "dx:events": "tsx scripts/dx-events.ts",
+    "dx:repro": "tsx scripts/dx-repro.ts",
     "alert:test": "tsx scripts/alert-test.ts",
     "db:count": "tsx scripts/db-count.ts",
     "tape:once": "tsx scripts/tape-once.ts",

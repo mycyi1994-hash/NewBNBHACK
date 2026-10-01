@@ -503,3 +503,69 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Workaround: `skills/yieldvest/SKILL.md` preflight requires `data.status` = `CONNECTED`.
 - Ask: make `wallet status` exit non-zero (or `success: false`) when the session is not usable, or document that `success` only means the call ran.
 - Evidence: the two outputs above (06:19:48 UTC, `baw` 1.10.0 from a scratch install, no account).
+
+## 2026-10-01 16:40 UTC — [web3api][docs] The 9/23–9/26 documentation findings re-checked against the live docs: 13 still present, 4 found, 2 changed
+- Goal: give each documentation finding a public URL and the current text, and say whether it still holds (REPLAN §7: citations as URL + original text instead of `llms-full.txt` line numbers).
+- Expected: the problems logged from the 9/23 `llms-full.txt` snapshot still read the same on the live pages.
+- Actual (pages fetched 16:40–16:49 UTC; raw Markdown at `<page>.md` where the site serves it, the HTML API reference otherwise):
+
+| Entry | Page § section | Status | Current text |
+| --- | --- | --- | --- |
+| 09-23 17:51 market price body | `/en/dev-docs/catalog/web3-wallet/api/rest-api/general-data` § Get Token Price › Request Body | found\* | an array of `binanceChainId` (string, required) and `tokenContractAddress` (string, required) |
+| 09-23 17:51 header names | `/en/dev-docs/authentication` § Step 2 | still present | `X-OC-RECV-WINDOW`, `X-OC-NONCE`; no `recvWindow` / `nonce` alias |
+| 09-23 17:53 simulate parameters | `…/rest-api/transaction-api` § Simulate Transactions | found\* | "Provide `evmTx` for EVM chains, `solTx` for Solana, or `tronTx` for Tron — exactly one must be present." |
+| 09-23 17:53 GET body signed | `/en/dev-docs/authentication` § 3.1 | still present | `body`: "empty string `""`" for `GET`/`HEAD` (the connector was not re-checked) |
+| 09-23 17:55 signing examples | `/en/dev-docs/authentication` § 3.1 examples | still present | `requestPath = "/build/api/v1/dex/market/price?chainId=1&symbol=ETH%20USDT"`, `"/build/api/v1/dex/swap"` |
+| 09-23 17:58 HTTP status of errors | `/en/dev-docs/products/market-api/error-codes` vs `/products/defi-api/error-codes` § Response Format | still present | "All Market API responses — including errors — return **HTTP 200**." vs "gateway-layer errors are **not** returned as HTTP 200 — authentication failures return **401**, and rate-limit violations return **429**" |
+| 09-23 17:58 rate-limit header table | `/en/dev-docs/authentication` § Rate Limits | still present | "Per Endpoint \| 5 RPS (default) \| 1 s \| `X-OC-Used-Weight`" |
+| 09-23 18:00 B402 envelope | `/en/dev-docs/introduction` § Unified Response Format vs `/products/b402-api/integration-guide` | still present | "All endpoints return the `OCResult<T>` format:" vs "A successful response has envelope code `000000000`." |
+| 09-23 18:00 DeFi example values | `/products/defi-api/integration-flow` § Step 2 | changed | the DeFi API now covers 10 EVM chains (changelog 2026-09-30), so the Ethereum USDT address is on a supported chain; the DEPOSIT `"data": "0xa9059cbb..."` and APPROVE `to` = token are unchanged |
+| 09-23 18:00 unlimited APPROVE | `/products/defi-api/integration-flow` § Calldata Validity & Approvals | still present | "**APPROVE is an unlimited allowance (EVM only)**"; the build body has no approval-amount field |
+| 09-23 18:00 40470 in two modules | `/products/defi-api/error-codes` § DeFi Data Query Errors | fixed | "v1.0 returned `40470` for the same condition — v1.1 renumbers it to `40490`" (see the entry below) |
+| 09-23 18:01 units by module | `/products/defi-api/introduction` § Data Format Conventions vs `…/rest-api/trading-api` § Get Aggregated Quote | still present | "Human-readable decimal strings … **not** the token's smallest unit" vs "Sell-token amount in the token's smallest unit" |
+| 09-23 18:01 broadcast body | `/products/transaction-api/error-codes` § Parameter Errors | still present | "Broadcast request is missing both `evmTx` and `solTx` (one is required)"; the reference body is `binanceChainId`, `signedTransaction`, `address`, `enableMevProtection` |
+| 09-23 18:02 Ondo suffix in a bStock example | `/products/trading-api/introduction` § Equity Token Trading (RWA) | still present | "**BStock tokens** (type=3): … (e.g. PALLon/Palladium, TSLAB/Tesla)" |
+| 09-23 18:03 RWA field descriptions | `…/rest-api/rwa-data` § Get RWA Token List › Response | found\* | `referencePrice`: "A per-share converted price derived from the on-chain token price, not an official quote from the traditional stock market." |
+| 09-23 18:12 JS signing helper | `/en/dev-docs/authentication` § Step 4 | still present | the helper is unchanged; the 40102 it predicts is still not measured |
+| 09-23 18:20 connector timeout | `/en/dev-docs/sdks-tools/connectors/javascript` § Key features | still present | "Configurable timeouts, retries, and proxy support"; no default given |
+| 09-24 05:21 statusInfo lists, stock price | `…/rest-api/rwa-data` § statusInfo.marketStatus, § Get RWA Underlying Market Data | changed\* | the value lists are in the API reference ("… or pause (trading halt/circuit breaker)"; live answers say `paused`); `marketData` has no independent stock price |
+| 09-26 17:59 error messages, no RWA page | `/products/trading-api/error-codes` § Quote | still present | 40401 "Quote expired. Please request a new quote"; no error-code page for RWA Data |
+
+- \* = on the HTML API reference (`/en/dev-docs/catalog/web3-wallet/api/rest-api/…`), which the 9/23 entries did not read (they read `llms-full.txt` and the connector). Whether that text existed on 9/23 cannot be told, so these are not changes Binance made.
+- Docs: the pages above. `llms.txt` lists the API reference endpoints without URLs; the reference pages are reached from the site's navigation.
+- Time lost: 0 (agent re-check).
+- Workaround: not applicable.
+- Ask: the entries' own asks, for the rows still present.
+- Evidence: the quotes above, fetched 16:40–16:49 UTC; three spot-checked again at 16:52–16:54 UTC (the 40470/40490 sentence, both 40102 messages, the 40314 row).
+- Own mistakes and open measurements among the entries: 2026-09-30 02:10 put 10,000 blocks at "about 2 hours" from an assumed 0.75 s block; at the 0.45 s measured on 09-24 02:11 it is about 75 minutes (corrected in `dx/findings/bsc-public-rpc-log-range.md`). Not measured yet: 09-23 17:53 (does the gateway reject a signed GET body?), 09-23 18:12 (does the docs' helper fail with 40102 on a `'`?), 09-23 18:20 (the connector's timeout under real latency).
+
+## 2026-10-01 16:52 UTC — [tx][docs] 40314 says to resubmit "with the user's explicit confirmation flag"; the Broadcast body has no such field
+- Goal: know how to answer a medium-risk (KYT) refusal on broadcast.
+- Expected: the field that carries the user's confirmation, named on the Broadcast Transactions reference.
+- Actual: `/en/dev-docs/products/transaction-api/error-codes.md` § Troubleshooting Guide: "KYT medium-risk prompt \| `40314` \| Display a risk warning to the end user and resubmit with the user's explicit confirmation flag"; the code table: "the client must display a confirmation prompt and resubmit with the user's explicit acknowledgement". The Broadcast Transactions reference body has `binanceChainId`, `signedTransaction`, `address`, `enableMevProtection` and nothing else.
+- Docs: the two pages above.
+- Time lost: 0 (found in the re-check; Yieldvest has not met 40314).
+- Workaround: none known; a 40314 would stop a cycle as a failure.
+- Ask: name the confirmation field (and its value) in the Broadcast Transactions reference, or describe the resubmission.
+- Evidence: the quotes above (16:52–16:54 UTC).
+
+## 2026-10-01 16:52 UTC — [web3api][docs] 40102 is "Invalid signature" on the Authentication page and "Signature error" in every module's table
+- Goal: match signature errors by message as well as code.
+- Expected: one message per code.
+- Actual: `/en/dev-docs/authentication.md` § Error Codes example: `"msg": "Invalid signature"`; the Trading integration flow's Common Pitfalls: "`40102 Invalid signature`"; the Market, Trading, Transaction, Wallet and DeFi error tables: "\| `40102` \| `Signature error` \|".
+- Docs: the pages above.
+- Time lost: 0.
+- Workaround: match by code only (as `packages/binance` does).
+- Ask: one message, the one the gateway sends.
+- Evidence: the quotes above (16:52–16:54 UTC).
+
+## 2026-10-01 16:52 UTC — [defi][docs] The DeFi error page cites a "v1.1" renumbering (40470 → 40490); the changelog has no v1.1
+- Goal: know since when DeFi "not found" is 40490 (09-23 18:00 logged 40470 for it).
+- Expected: the version in the changelog.
+- Actual: `/en/dev-docs/products/defi-api/error-codes.md`: "v1.0 returned `40470` for the same condition — v1.1 renumbers it to `40490`; update any branching on the old code." `/en/dev-docs/products/others/changelog.md` has dated entries (2026-06-01 … 2026-09-30) and one version label, "v1.0.0 — Initial Release"; `llms.txt` calls the reference "Binance Web3 API (1.0.0)".
+- Docs: the pages above.
+- Time lost: 0.
+- Workaround: `packages/binance/src/taxonomy.ts` knew only 40470 for DeFi "not found", so a 40490 would have been filed as an unknown code; it now knows both (`taxonomy.test.ts`).
+- Ask: put the renumbering in the changelog with its date.
+- Evidence: the quotes above (16:52–16:54 UTC).
+

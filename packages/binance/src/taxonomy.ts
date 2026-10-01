@@ -203,6 +203,9 @@ const DEFI: Record<string, Rule> = {
   '40459': rule('defi', 'fail', true, 'err.trade', 'DeFi build failed (see msg)'),
   '40460': rule('defi', 'fail', false, 'why.failed.simulation', 'DeFi simulation reverted'),
   '40470': ourBug('DeFi resource not found (protocol or investment id)'),
+  // The DeFi error page (10/1): "v1.0 returned 40470 for the same condition — v1.1 renumbers it to
+  // 40490" (dx/LOG.md 2026-10-01 16:52). Both mean the same until 40470 is gone.
+  '40490': ourBug('DeFi resource not found (protocol or investment id)'),
   '40480': rule('defi', 'fail', false, 'why.failed.simulation', 'insufficient balance'),
   '40481': rule('defi', 'defer', false, 'err.trade', 'DeFi action temporarily unavailable'),
   '40482': rule('server', 'retry', false, 'err.internal', 'blockchain RPC error'),
