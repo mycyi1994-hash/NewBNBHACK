@@ -53,6 +53,7 @@ Then say "Start Yieldvest". Requires: the `binance-agentic-wallet` skill and `ba
 
 ```bash
 pnpm lp:test      # forge: 129 tests (BSC fork suite: BSC_FORK_URL=… pnpm lp:test)
+pnpm lp:market    # the tokenized-stock pools already on Uniswap v4 on BSC, live, vs Binance's price
 pnpm lp:status    # live state of deployed pools; UNAVAILABLE until one is deployed
 ```
 

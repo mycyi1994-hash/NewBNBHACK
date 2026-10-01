@@ -7,5 +7,6 @@ export * from './abi.js';
 export * from './addresses.js';
 export { SESSION_CODES } from './calendar-vectors.js';
 export * from './manifest.js';
+export * from './market.js';
 export * from './price.js';
 export * from './status.js';

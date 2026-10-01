@@ -453,6 +453,7 @@ Design and runbook: `docs/RWA_LP.md`. Package: `packages/rwa-lp`. Nothing here d
 ### LP-07 TypeScript reader and status · Criteria: Technical, DX
 - [x] `src/`: ABIs generated from the build, the Uniswap v4 BSC addresses (U-01, U-02), manifest validation, the hook's price math (equal to the contract's on shared vectors in `price.test.ts` and `PoolPriceMath.t.sol`), `readLpStatus` at one block. `pnpm lp:status`: LIVE per pool, or `UNAVAILABLE: no RWA LP deployment recorded …` and exit 3 while nothing is deployed.
   - Evidence: 30 vitest tests in `@yieldvest/rwa-lp`; `pnpm typecheck && pnpm lint && pnpm test` green.
+- [x] (10/1) `pnpm lp:market`: the market the hook is for, read live by anyone — every hookless USDT/USDC pool of each registered token (or `--tokens`) at the standard tiers through StateView in one multicall, priced with the hook's arithmetic, against Binance's `tokenInfo.price`. `poolIdOf` is checked against two ids that hold initialized pools on BSC (`market.test.ts`). Run at block 125050039: RWA_LP.md §1.
 
 ### LP-08 [HUMAN] Mainnet deployment and seed · Criterion: Technical
 - [ ] Decide: deployer key (never the house key), owner multisig (`LP_OWNER`), guardian, fee schedule (D-29 defaults or other), first stock (NVDAB proposed) and seed amount. Deploying and seeding are new spend paths (CLAUDE.md rule 5).

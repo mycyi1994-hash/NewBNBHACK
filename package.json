@@ -44,6 +44,7 @@
     "lp:abi": "pnpm --filter @yieldvest/rwa-lp abi",
     "lp:vectors": "pnpm --filter @yieldvest/rwa-lp vectors",
     "lp:status": "tsx scripts/lp-status.ts",
+    "lp:market": "tsx scripts/lp-market.ts",
     "baw:help": "tsx scripts/baw-help.ts"
   },
   "devDependencies": {

@@ -16,7 +16,7 @@ A tokenized stock trades on-chain around the clock, but the stock's price is onl
 | NVDAon/USDT 1% | price at the tick limit (drained) | 0 |
 | Binance token price, NVDAB (public RWA Dynamic V2, 02:11:39 UTC) | 228.15 | `stockInfo.price` null (market closed) |
 
-Raw reads and the method are in dx/LOG.md 2026-09-30 02:11.
+Raw reads and the method are in dx/LOG.md 2026-09-30 02:11. `pnpm lp:market` repeats the read for every registered token (or `--tokens 0x…`): every hookless USDT/USDC pool at the standard tiers through StateView, priced with the hook's arithmetic, against Binance's `tokenInfo.price`. On 2026-10-01 at block 125050039 (06:10 UTC, US overnight) it found the same picture a day later: NVDAB's three pools 3.2–11.6% under Binance's 232.31 USD with no liquidity in range; QQQB's four pools 2.8–5.5% under 750.98 USD, liquidity in the 0.01% pool only; NVDAon's 0.01% pool 0.27% under Binance with liquidity, its 0.05% pool 8.8% under, a new USDC 0.01% pool 13.0% under with none, and the 1% pool drained.
 
 ## 2. What is in `packages/rwa-lp`
 
