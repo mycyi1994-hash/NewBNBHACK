@@ -1,13 +1,16 @@
 /**
  * Live state of one deployed RWA pool, read at a single block: the fee each swap direction pays
- * right now and why, the halt flag, the pool price against the reference, and what the vault
- * holds. Read-only; a pool that cannot be read is UNAVAILABLE with the reason, never a guess.
+ * right now and why, the halt flag, the pool price against the reference the hook uses, and what
+ * the vault holds. Read-only; a pool that cannot be read is UNAVAILABLE with the reason, never a
+ * guess.
  */
 import {
   encodePacked,
+  getAddress,
   keccak256,
   pad,
   parseAbi,
+  zeroAddress,
   type Address,
   type Hex,
   type PublicClient,
@@ -29,7 +32,10 @@ export const FEE_REASONS = [
 ] as const;
 export type FeeReason = (typeof FEE_REASONS)[number];
 
-export type LpReader = Pick<PublicClient, 'readContract' | 'getBlock' | 'getBlockNumber'>;
+export type LpReader = Pick<
+  PublicClient,
+  'readContract' | 'getBlock' | 'getBlockNumber' | 'getCode'
+>;
 
 export interface SwapFee {
   /** Hundredths of a bip (1_000_000 = 100%). */
@@ -51,6 +57,8 @@ export interface LpStatusLive {
   /** Paying the stock for the quote token. */
   sell: SwapFee;
   poolPriceE18: bigint;
+  /** The source the hook asks for reference prices now (the owner can change it); null: none. */
+  referenceSource: Address | null;
   reference: { priceE18: bigint; observedAt: Date; ageSeconds: number; fresh: boolean } | null;
   vault: {
     totalSupply: bigint;
@@ -102,10 +110,21 @@ function reasonOf(error: unknown): string {
   return typeof short === 'string' ? short : (error.message.split('\n')[0] ?? 'unknown error');
 }
 
+/** The manifest's contracts, which must all have code at the block read. */
+const CONTRACTS = ['poolManager', 'calendar', 'hook', 'oracle', 'vault'] as const;
+
 export async function readLpStatus(client: LpReader, d: RwaLpDeployment): Promise<LpStatus> {
   try {
     const blockNumber = await client.getBlockNumber();
     const at = { blockNumber } as const;
+    // A manifest from a fork rehearsal (chain id 56 as well) names contracts BSC does not have.
+    const codes = await Promise.all(
+      CONTRACTS.map((name) => client.getCode({ address: d[name], blockNumber })),
+    );
+    const missing = CONTRACTS.filter((_, i) => (codes[i] ?? '0x') === '0x');
+    if (missing.length > 0) {
+      throw new Error(`no contract at the manifest's ${missing.join(', ')} on chain ${d.chainId}`);
+    }
     const key = {
       currency0: d.currency0,
       currency1: d.currency1,
@@ -122,7 +141,7 @@ export async function readLpStatus(client: LpReader, d: RwaLpDeployment): Promis
       buy,
       sell,
       slot0,
-      reference,
+      source,
       totalSupply,
       liquidity,
       totals,
@@ -141,13 +160,7 @@ export async function readLpStatus(client: LpReader, d: RwaLpDeployment): Promis
         args: [poolStateSlot(d.poolId)],
         ...at,
       }),
-      client.readContract({
-        address: d.oracle,
-        abi: keeperReferenceOracleAbi,
-        functionName: 'referencePrice',
-        args: [d.rwaToken],
-        ...at,
-      }),
+      client.readContract({ ...hook, functionName: 'referenceSource' }),
       client.readContract({ ...vault, functionName: 'totalSupply' }),
       client.readContract({ ...vault, functionName: 'positionLiquidity' }),
       client.readContract({ ...vault, functionName: 'totalAmounts' }),
@@ -168,8 +181,19 @@ export async function readLpStatus(client: LpReader, d: RwaLpDeployment): Promis
 
     const { sqrtPriceX96 } = decodeSlot0(slot0);
     if (sqrtPriceX96 === 0n) throw new Error('the pool is not initialized');
+    // The reference the hook prices with, not the manifest's oracle: the owner may have replaced
+    // or removed it (DECISIONS Q-19).
+    const referenceSource = getAddress(source) === zeroAddress ? null : getAddress(source);
+    const [referencePriceE18, observedAt] = referenceSource
+      ? await client.readContract({
+          address: referenceSource,
+          abi: keeperReferenceOracleAbi,
+          functionName: 'referencePrice',
+          args: [d.rwaToken],
+          ...at,
+        })
+      : [0n, 0n];
     const now = Number(block.timestamp);
-    const [referencePriceE18, observedAt] = reference;
     const maxReferenceAge = config.fees.maxReferenceAge;
     const [amount0, amount1] = totals;
     return {
@@ -184,6 +208,7 @@ export async function readLpStatus(client: LpReader, d: RwaLpDeployment): Promis
       buy: { feePips: buy[0], reason: reasonName(buy[2]) },
       sell: { feePips: sell[0], reason: reasonName(sell[2]) },
       poolPriceE18: rwaPriceE18(sqrtPriceX96, rwaIsCurrency0, rwaDecimals, quoteDecimals),
+      referenceSource,
       reference:
         referencePriceE18 === 0n
           ? null

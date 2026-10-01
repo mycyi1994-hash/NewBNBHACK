@@ -31,7 +31,9 @@ import {HookMiner} from "./HookMiner.sol";
 /// Environment: RWA_TOKEN and RWA_PRICE_E18 are required. Optional: POOL_MANAGER and QUOTE_TOKEN
 /// (default: Uniswap v4 PoolManager and BSC-USD on BSC), RWA_BSTOCK_MULTIPLIER (default: probed),
 /// TICK_SPACING (60), LP_OWNER (default: the deployer; any other owner must accept ownership),
-/// ORACLE_MAX_REPORT_DELAY seconds (300).
+/// ORACLE_MAX_REPORT_DELAY seconds (300), MANIFEST_DIR (`deployments`). A local fork rehearsal
+/// broadcasts too, and an anvil fork of BSC reports chain id 56, so its manifest would read like a
+/// mainnet one: rehearse with MANIFEST_DIR=deployments/rehearsal, which git ignores.
 contract DeployRwaLp is Script {
     /// Uniswap v4 PoolManager on BSC (Uniswap/contracts deployments/56.md; bytecode = v4-core 1.0.2, D-29).
     address internal constant BSC_POOL_MANAGER = 0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF;
@@ -212,6 +214,8 @@ contract DeployRwaLp is Script {
         vm.serializeUint(o, "fee", d.key.fee);
         vm.serializeInt(o, "tickSpacing", d.key.tickSpacing);
         string memory json = vm.serializeBytes32(o, "poolId", PoolId.unwrap(d.id));
-        vm.writeJson(json, string.concat("deployments/", vm.toString(block.chainid), "-", p.symbol, ".json"));
+        string memory dir = vm.envOr("MANIFEST_DIR", string("deployments"));
+        vm.createDir(dir, true);
+        vm.writeJson(json, string.concat(dir, "/", vm.toString(block.chainid), "-", p.symbol, ".json"));
     }
 }

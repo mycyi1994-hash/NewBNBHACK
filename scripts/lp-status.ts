@@ -3,8 +3,9 @@
  * BSC at one block each: the fee a buy and a sell pay right now and why (NYSE session, opening
  * ramp, reference gap, corporate action), the halt flag, pool price vs reference, vault holdings.
  * Read-only: no key, no transaction. Deploying a pool is a human decision (docs/RWA_LP.md §5).
- * Flags: --deployments <dir> (read manifests from another directory, e.g. a local fork rehearsal).
- * Exit: 0 every pool LIVE · 1 a pool UNAVAILABLE · 3 nothing deployed yet.
+ * Flags: --deployments <dir> (read manifests from another directory, e.g. a local fork rehearsal's
+ * packages/rwa-lp/deployments/rehearsal, with BSC_RPC_URL pointing at the fork).
+ * Exit: 0 every pool LIVE · 1 a pool or a manifest UNAVAILABLE · 3 nothing deployed yet.
  */
 import { parseArgs } from 'node:util';
 import { createBscClient, BSC_CHAIN_ID } from '@yieldvest/chain';
@@ -23,9 +24,13 @@ function describe(status: LpStatus): string[] {
   const head = `${d.rwaSymbol} pool ${d.poolId} (hook ${d.hook}, vault ${d.vault})`;
   if (status.state === 'UNAVAILABLE') return [head, `  UNAVAILABLE: ${status.reason}`];
   const ref = status.reference;
-  const reference = ref
-    ? `reference ${formatE18(ref.priceE18)} USD, ${ref.ageSeconds} s old (${ref.fresh ? 'fresh' : 'STALE'})`
-    : 'no reference price';
+  const source = status.referenceSource;
+  const reference = !source
+    ? 'no reference source (session fees only)'
+    : (ref
+        ? `reference ${formatE18(ref.priceE18)} USD, ${ref.ageSeconds} s old (${ref.fresh ? 'fresh' : 'STALE'})`
+        : 'no reference price') +
+      (source === d.oracle ? '' : ` from ${source}, not the manifest's oracle`);
   return [
     head,
     `  LIVE at block ${status.blockNumber} (${status.at.toISOString()}), session ${status.session}` +
@@ -40,8 +45,13 @@ function describe(status: LpStatus): string[] {
 const { values: flags } = parseArgs({
   options: { deployments: { type: 'string', default: DEPLOYMENTS_DIR } },
 });
-const deployments = loadDeployments(flags.deployments);
-if (deployments.length === 0) {
+const { deployments, problems } = loadDeployments(flags.deployments);
+for (const problem of problems) {
+  console.log(problem.file);
+  console.log(`  UNAVAILABLE: ${problem.reason}`);
+  process.exitCode = 1;
+}
+if (deployments.length === 0 && problems.length === 0) {
   console.log(
     `UNAVAILABLE: no RWA LP deployment recorded in ${flags.deployments} — ` +
       'deploying is a human decision (docs/RWA_LP.md §5)',

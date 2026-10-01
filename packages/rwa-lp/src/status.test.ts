@@ -1,4 +1,4 @@
-import type { PublicClient } from 'viem';
+import { getAddress, zeroAddress, type PublicClient } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { DRY_RUN_MANIFEST } from '../test/fixtures.js';
 import { parseDeployment } from './manifest.js';
@@ -14,8 +14,13 @@ function word(sqrtPriceX96: bigint, tick: number, lpFee: number): `0x${string}` 
   return `0x${packed.toString(16).padStart(64, '0')}`;
 }
 
+const OTHER_SOURCE = '0x00000000000000000000000000000000000000AA';
+
 /** Answers readContract by function name, like a node at one block would. */
-function reader(overrides: Record<string, unknown> = {}): LpReader {
+function reader(
+  overrides: Record<string, unknown> = {},
+  { noCodeAt = [] as string[] } = {},
+): LpReader {
   const answers: Record<string, unknown> = {
     poolConfig: {
       rwaToken: deployment.rwaToken,
@@ -28,6 +33,7 @@ function reader(overrides: Record<string, unknown> = {}): LpReader {
       fees: { maxReferenceAge: 900 },
     },
     extsload: word(SQRT_PRICE_225, 54_000, 0),
+    referenceSource: deployment.oracle,
     referencePrice: [220n * 10n ** 18n, NOW - 120n],
     totalSupply: 10n ** 21n,
     positionLiquidity: 10n ** 21n,
@@ -39,7 +45,12 @@ function reader(overrides: Record<string, unknown> = {}): LpReader {
   const client = {
     getBlockNumber: () => Promise.resolve(124_900_000n),
     getBlock: () => Promise.resolve({ timestamp: NOW }),
-    readContract: (args: { functionName: string; args?: readonly unknown[] }) => {
+    getCode: ({ address }: { address: string }) =>
+      Promise.resolve(noCodeAt.includes(address) ? undefined : '0x6080'),
+    readContract: (args: { address: string; functionName: string; args?: readonly unknown[] }) => {
+      if (args.functionName === 'referencePrice' && args.address === OTHER_SOURCE) {
+        return Promise.resolve([230n * 10n ** 18n, NOW - 60n]);
+      }
       if (args.functionName === 'quoteFee') {
         const zeroForOne = args.args?.[1] === true;
         // selling NVDAB (zeroForOne) closes the premium over the reference: reference_gap (5)
@@ -49,7 +60,10 @@ function reader(overrides: Record<string, unknown> = {}): LpReader {
       return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
     },
   };
-  return client as unknown as Pick<PublicClient, 'readContract' | 'getBlock' | 'getBlockNumber'>;
+  return client as unknown as Pick<
+    PublicClient,
+    'readContract' | 'getBlock' | 'getBlockNumber' | 'getCode'
+  >;
 }
 
 describe('readLpStatus', () => {
@@ -70,6 +84,28 @@ describe('readLpStatus', () => {
     expect(status.vault.rwaAmount).toBe(66_666n * 10n ** 15n);
     expect(status.vault.quoteAmount).toBe(15_000n * 10n ** 18n);
     expect(status.halted).toBe(false);
+    expect(status.referenceSource).toBe(deployment.oracle);
+  });
+
+  it("reads the reference the hook uses now, not the manifest's oracle", async () => {
+    const replaced = await readLpStatus(reader({ referenceSource: OTHER_SOURCE }), deployment);
+    expect(replaced.state === 'LIVE' && replaced.referenceSource).toBe(getAddress(OTHER_SOURCE));
+    expect(replaced.state === 'LIVE' && replaced.reference?.priceE18).toBe(230n * 10n ** 18n);
+    // No source: session fees only, whatever the old oracle still holds.
+    const removed = await readLpStatus(reader({ referenceSource: zeroAddress }), deployment);
+    expect(removed).toMatchObject({ state: 'LIVE', referenceSource: null, reference: null });
+  });
+
+  it('is UNAVAILABLE when the manifest names a contract the chain does not have', async () => {
+    // What a manifest from a fork rehearsal reads like against BSC.
+    const status = await readLpStatus(
+      reader({}, { noCodeAt: [deployment.hook, deployment.vault] }),
+      deployment,
+    );
+    expect(status).toMatchObject({
+      state: 'UNAVAILABLE',
+      reason: "no contract at the manifest's hook, vault on chain 56",
+    });
   });
 
   it('marks an old reference as stale and a missing one as absent', async () => {

@@ -25,12 +25,25 @@ describe('parseDeployment', () => {
     [{ chainId: 0 }, /chainId/],
     [{ tickSpacing: 0 }, /tickSpacing/],
     [{ rwaSymbol: '' }, /rwaSymbol/],
+    // The id of another pool: the hook and the PoolManager would be asked about different pools.
+    [{ poolId: `0x${'ab'.repeat(32)}` }, /not the id of its pool key/],
+    [{ poolManager: '0x000000000000000000000000000000000000dEaD' }, /Uniswap's PoolManager/],
   ])('rejects %o', (patch, message) => {
     expect(() => parseDeployment({ ...DRY_RUN_MANIFEST, ...patch }, 'x.json')).toThrow(message);
   });
 
   it('rejects something that is not an object', () => {
     expect(() => parseDeployment(null, 'x.json')).toThrow(/not a JSON object/);
+  });
+
+  it('takes any PoolManager off chain 56, and the pool id in any case', () => {
+    const local = { ...DRY_RUN_MANIFEST, chainId: 31337, poolManager: DRY_RUN_MANIFEST.oracle };
+    expect(parseDeployment(local, 'x.json').chainId).toBe(31337);
+    const upper = {
+      ...DRY_RUN_MANIFEST,
+      poolId: `0x${DRY_RUN_MANIFEST.poolId.slice(2).toUpperCase()}`,
+    };
+    expect(parseDeployment(upper, 'x.json').rwaSymbol).toBe('NVDAB');
   });
 });
 
@@ -39,11 +52,28 @@ describe('loadDeployments', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'rwa-lp-'));
     writeFileSync(path.join(dir, '56-NVDAB.json'), JSON.stringify(DRY_RUN_MANIFEST));
     writeFileSync(path.join(dir, 'README.md'), 'not a manifest');
-    expect(loadDeployments(dir).map((d) => d.file)).toEqual(['56-NVDAB.json']);
-    expect(loadDeployments(path.join(dir, 'missing'))).toEqual([]);
+    const { deployments, problems } = loadDeployments(dir);
+    expect(deployments.map((d) => d.file)).toEqual(['56-NVDAB.json']);
+    expect(problems).toEqual([]);
+    expect(loadDeployments(path.join(dir, 'missing'))).toEqual({ deployments: [], problems: [] });
+  });
+
+  it('reports a manifest it cannot use, with the reason, and still reads the others', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rwa-lp-'));
+    writeFileSync(path.join(dir, '56-NVDAB.json'), JSON.stringify(DRY_RUN_MANIFEST));
+    writeFileSync(path.join(dir, '56-BROKEN.json'), '{ "chainId": 56,');
+    writeFileSync(
+      path.join(dir, '56-OTHER.json'),
+      JSON.stringify({ ...DRY_RUN_MANIFEST, poolId: `0x${'ab'.repeat(32)}` }),
+    );
+    const { deployments, problems } = loadDeployments(dir);
+    expect(deployments.map((d) => d.file)).toEqual(['56-NVDAB.json']);
+    expect(problems.map((p) => p.file)).toEqual(['56-BROKEN.json', '56-OTHER.json']);
+    expect(problems[0]?.reason).toMatch(/^56-BROKEN\.json: not readable JSON/);
+    expect(problems[1]?.reason).toMatch(/^56-OTHER\.json: poolId is not the id of its pool key/);
   });
 
   it('finds no deployment in the repository until a human deploys', () => {
-    expect(loadDeployments(DEPLOYMENTS_DIR)).toEqual([]);
+    expect(loadDeployments(DEPLOYMENTS_DIR)).toEqual({ deployments: [], problems: [] });
   });
 });

@@ -52,7 +52,7 @@ Then say "Start Yieldvest". Requires: the `binance-agentic-wallet` skill and `ba
 [`packages/rwa-lp`](packages/rwa-lp) lets tokenized stocks be supplied as liquidity without selling the overnight gap for free: a Uniswap v4 hook on BSC's deployed PoolManager charges each swap for the US session it happens in (0.05% regular, 0.30% pre/after-hours, 1.00% closed, a 30-minute ramp after the open), makes the swap that closes a gap to a fresh reference price pay half of that gap, and prices a scheduled bStocks multiplier change (dividend, split) as closed. The session comes from the same NYSE calendar the agent uses, checked on chain against 12,944 vectors. An ERC-20 vault holds the full-range position; withdrawals can never be blocked. Built, fork-tested on real NVDAB and NVDAon, not deployed: deploying and seeding are a human decision. Details: [`docs/RWA_LP.md`](docs/RWA_LP.md).
 
 ```bash
-pnpm lp:test      # forge: 129 tests (BSC fork suite: BSC_FORK_URL=… pnpm lp:test)
+pnpm lp:test      # forge: 144 tests (BSC fork suite: BSC_FORK_URL=… pnpm lp:test)
 pnpm lp:market    # the tokenized-stock pools already on Uniswap v4 on BSC, live, vs Binance's price
 pnpm lp:status    # live state of deployed pools; UNAVAILABLE until one is deployed
 ```
