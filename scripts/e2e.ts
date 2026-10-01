@@ -285,6 +285,20 @@ if (!flags.ok || problem !== null) {
             client: document.documentElement.clientWidth,
           }));
           if (scroll > client) problems.push(`${at} ${where}: scrollWidth ${scroll} > ${client}`);
+          // An amount and its unit stay on one line (a long ledger label once split "5.00 USD" / "T").
+          const split = await page.evaluate(() =>
+            Array.from(document.querySelectorAll<HTMLElement>('.ledger dd'))
+              .filter((dd) => /^\$?[\d,.]+ USDT$/.test(dd.textContent?.trim() ?? ''))
+              .filter((dd) => {
+                const range = document.createRange();
+                range.selectNodeContents(dd);
+                const tops = Array.from(range.getClientRects(), (r) => Math.round(r.top));
+                return new Set(tops).size > 1;
+              })
+              .map((dd) => dd.textContent?.trim() ?? ''),
+          );
+          if (split.length > 0)
+            problems.push(`${at} ${where}: amount split over lines: ${split.join(', ')}`);
           // --shots: what the judge saw at each step, for the demo and the UX review.
           if (flags.values.shots) {
             shot += 1;
