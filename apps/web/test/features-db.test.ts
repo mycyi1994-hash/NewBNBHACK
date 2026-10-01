@@ -186,23 +186,42 @@ describe.skipIf(!webTestUrl)('read-only feature routes and the MCP server (D-31)
     expect(none.body).toMatchObject({ apy: { state: 'UNAVAILABLE' }, projection: null });
 
     await writeWorkerStatus(db, 'venus', { apyDisplay: '3.16%', verifiedAt: ago(30) });
-    const live = await call<{
+    type View = {
       apy: { pct: string; state: string; at: string };
       minBuyUsd: string;
-      price: { issuer: string; sharePriceUsd: string; state: string };
-      projection: { perYearUsd: string; daysToMinBuy: number; sharesPerMonth: string };
+      firstBuyUsd: string;
+      price: { issuer: string; sharePriceUsd: string; venueMinUsd: string | null; state: string };
+      projection: { perYearUsd: string; daysToFirstBuy: number; sharesPerMonth: string | null };
       assumption: string;
-    }>(projectionRoute, { path });
+    };
+    const live = await call<View>(projectionRoute, { path });
     expect(live.body.apy).toEqual({ pct: '3.16', state: 'LIVE', at: ago(30) });
     expect(live.body.minBuyUsd).toBe('0.25');
+    expect(live.body.firstBuyUsd).toBe('0.25');
     expect(live.body.price).toMatchObject({
       issuer: 'bstocks',
       sharePriceUsd: '224.999900',
+      venueMinUsd: null,
       state: 'LIVE',
     });
-    expect(live.body.projection).toMatchObject({ perYearUsd: '31.600000', daysToMinBuy: 3 });
+    expect(live.body.projection).toMatchObject({ perYearUsd: '31.600000', daysToFirstBuy: 3 });
     expect(Number(live.body.projection.sharesPerMonth)).toBeGreaterThan(0);
     expect(live.body.assumption).toBe('listed_apy_held_constant_compounded_daily');
+
+    // Priced in the Ondo token, the first buy is Ondo's $5.01 minimum: 59 days, not 3.
+    const ondoView = await call<View>(projectionRoute, { path: `${path}&issuer=ondo` });
+    expect(ondoView.body.price).toMatchObject({ issuer: 'ondo', venueMinUsd: '5.01' });
+    expect(ondoView.body.firstBuyUsd).toBe('5.01');
+    expect(ondoView.body.projection.daysToFirstBuy).toBe(59);
+
+    // Half an hour later the tape is STALE: its price is shown with that state, and no share
+    // count is made from it.
+    vi.setSystemTime(new Date(NOW.getTime() + 30 * 60_000));
+    const old = await call<View>(projectionRoute, { path });
+    expect(old.body.price.state).toBe('STALE');
+    expect(old.body.projection.sharesPerMonth).toBeNull();
+    expect(old.body.projection.perYearUsd).toBe('31.600000');
+    vi.setSystemTime(NOW);
 
     await writeWorkerStatus(db, 'venus', { apyDisplay: '3.16%', verifiedAt: ago(13 * 60) });
     const stale = await call<{ apy: { state: string } }>(projectionRoute, { path });
@@ -217,6 +236,15 @@ describe.skipIf(!webTestUrl)('read-only feature routes and the MCP server (D-31)
     expect(
       (await call(projectionRoute, { path: '/api/projection?depositUsd=10&ticker=QQQQQQ' })).status,
     ).toBe(404);
+    expect(
+      (
+        await call(projectionRoute, {
+          path: '/api/projection?depositUsd=10&ticker=QQQQQQ&issuer=ondo',
+        })
+      ).body,
+    ).toMatchObject({
+      error: { code: 'unknown_ticker', message: 'QQQQQQ (ondo) is not in the registry' },
+    });
   });
 
   describe('POST /api/mcp with the official MCP SDK client', () => {

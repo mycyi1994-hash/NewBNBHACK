@@ -133,7 +133,8 @@ function Verdicts({ t, comparison }: { t: T; comparison: Comparison }) {
               ? t('compare.more', {
                   size: size.sizeUsd,
                   issuer: issuerName(size.moreShares) ?? size.moreShares,
-                  pct: signedPct(size.byPct),
+                  // Under 0.005 % two decimals would read "0.00": say "<0.01" instead.
+                  pct: Number(size.byPct) < 0.005 ? '<0.01' : signedPct(size.byPct),
                 })
               : t('compare.more.none', { size: size.sizeUsd })}
           </span>

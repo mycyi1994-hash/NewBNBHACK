@@ -5,10 +5,16 @@
  * features-db.test.ts.
  */
 import { loadConfig } from '@yieldvest/config';
-import { formatShares, sharesFromTokens, toUnits, type Instrument } from '@yieldvest/core';
+import {
+  formatShares,
+  fromUnits,
+  sharesFromTokens,
+  toUnits,
+  type Instrument,
+} from '@yieldvest/core';
 import type { TapeSampleRow } from '@yieldvest/db';
 import { describe, expect, it } from 'vitest';
-import { projectInterest } from '../lib/projection';
+import { firstBuyUsd, projectInterest, startingDeposit } from '../lib/projection';
 import { compareFromTape } from '../lib/server/compare';
 import type { TapeView } from '../lib/server/market';
 import { mcpReply, MCP_PROTOCOL_VERSIONS, toolList, type ToolContext } from '../lib/server/mcp';
@@ -133,11 +139,15 @@ describe('compareFromTape (F2)', () => {
     expect(o?.venueMinUsd).toBe('5.01');
     expect(b?.address).toBe(BSTOCKS.address);
     // bStocks: more tokens per dollar and a multiplier above 1 → more shares at every size.
+    // (bStocks ÷ Ondo − 1) × 100, rounded down to four decimals: the denominator is Ondo's count.
     for (const size of view.sizes) {
+      const usd = BigInt(size.sizeUsd);
+      const b = toUnits(sharesFromTokens(TOKENS_PER_USD * usd, 18, BSTOCKS.multiplier), 18);
+      const o = toUnits(sharesFromTokens(ONDO_TOKENS_PER_USD * usd, 18, '1'), 18);
       expect(size.moreShares).toBe('bstocks');
-      expect(Number(size.byPct)).toBeGreaterThan(0.1);
-      expect(Number(size.byPct)).toBeLessThan(0.2);
+      expect(size.byPct).toBe(fromUnits(((b - o) * 1_000_000n) / o, 4));
     }
+    expect(view.sizes[1]?.byPct).toBe('0.178');
     expect(view.data).toMatchObject({ state: 'LIVE', ageSeconds: 60 });
   });
 
@@ -267,6 +277,7 @@ describe('preflightFrom (F1): the agent engine on a plan that does not exist', (
     expect(byId(half.issuers[0]?.checks ?? [], 'amount')).toMatchObject({
       state: 'pass',
       value: '2.5',
+      note: 'off_hours_half',
     });
 
     const tooSmall = preflightFrom(input({ ...after, window: 'anytime', usd: '0.4' }));
@@ -358,35 +369,61 @@ describe('preflightFrom (F1): the agent engine on a plan that does not exist', (
     expect(b).toMatchObject({ decision: 'wait', why: { key: 'why.deferred.quote_impact' } });
   });
 
-  it('a quote refused off-hours waits; any other refusal stops that issuer', () => {
-    const offHours = run([BSTOCKS], REGULAR, () => ({
-      expectedOut: null,
-      errorCode: '40369',
-      errorMsg: 'rfq off hours',
-    }));
-    expect(
+  it('a quote refused off-hours waits, another refusal stops, a failed recording is unknown', () => {
+    const impactWith = (errorCode: string) =>
       byId(
-        preflightFrom(input({ tape: tape(offHours, REGULAR) })).issuers[0]?.checks ?? [],
+        preflightFrom(
+          input({
+            tape: tape(
+              run([BSTOCKS], REGULAR, () => ({ expectedOut: null, errorCode, errorMsg: 'x' })),
+              REGULAR,
+            ),
+          }),
+        ).issuers[0]?.checks ?? [],
         'impact',
-      ),
-    ).toMatchObject({
-      state: 'wait',
-      note: '40369',
+      );
+    expect(impactWith('40369')).toMatchObject({ state: 'wait', code: '40369' });
+    expect(impactWith('40374')).toMatchObject({ state: 'block', code: '40374' });
+    // The worker's own failures (a timeout, an empty answer) are not the market's answer.
+    expect(impactWith('timeout')).toMatchObject({ state: 'unknown', code: 'timeout' });
+    expect(impactWith('EMPTY')).toMatchObject({ state: 'unknown', code: 'EMPTY' });
+  });
+
+  it('reads the impact at the amount the engine settled on when it halved a buy', () => {
+    // $10 is quoted on the $50 row (1.8 %): the engine halves to $5, whose row is at 0.05 %.
+    const rows = run([BSTOCKS], REGULAR, (_i, size) =>
+      size === 50 ? { priceImpactPct: '1.8' } : {},
+    );
+    const [b] = preflightFrom(input({ usd: '10', tape: tape(rows, REGULAR) })).issuers;
+    expect(b).toMatchObject({ decision: 'buy', spendUsd: '5' });
+    expect(byId(b?.checks ?? [], 'impact')).toMatchObject({
+      state: 'pass',
+      value: '0.05',
+      basisUsd: '5',
+      note: 'halved',
     });
-    const noLiquidity = run([BSTOCKS], REGULAR, () => ({
-      expectedOut: null,
-      errorCode: '40374',
-      errorMsg: 'no liquidity',
-    }));
-    expect(
-      byId(
-        preflightFrom(input({ tape: tape(noLiquidity, REGULAR) })).issuers[0]?.checks ?? [],
-        'impact',
-      ),
-    ).toMatchObject({
-      state: 'block',
-      note: '40374',
+    // Asked for $5 outright, nothing was halved.
+    const [plain] = preflightFrom(input({ tape: tape(rows, REGULAR) })).issuers;
+    expect(byId(plain?.checks ?? [], 'impact')).toMatchObject({ state: 'pass', basisUsd: '5' });
+    expect(byId(plain?.checks ?? [], 'impact')?.note).toBeUndefined();
+  });
+
+  it('holds the gap against its limit unrounded, as the engine does', () => {
+    // 224.9999 a share on chain against 220.58: a 2.0036 % premium that reads "2.00".
+    const rows = run([BSTOCKS], REGULAR, () => ({ stockPrice: '220.58' }));
+    const [b] = preflightFrom(input({ tape: tape(rows, REGULAR) })).issuers;
+    expect(byId(b?.checks ?? [], 'gap')).toMatchObject({ value: '2.00', state: 'wait' });
+    expect(b).toMatchObject({ decision: 'wait', why: { key: 'why.deferred.price_gap' } });
+  });
+
+  it('a tape amount that is not a whole number is no amount, never a crash', () => {
+    const rows = run([BSTOCKS], REGULAR, () => ({ expectedOut: '1.5e18' }));
+    const answer = preflightFrom(input({ tape: tape(rows, REGULAR) }));
+    expect(byId(answer.issuers[0]?.checks ?? [], 'impact')).toMatchObject({
+      state: 'unknown',
+      note: 'no_tape',
     });
+    expect(answer.issuers[0]?.decision).not.toBe('buy');
   });
 
   it('waits on stale data and says nothing it did not read', () => {
@@ -423,14 +460,18 @@ describe('preflightFrom (F1): the agent engine on a plan that does not exist', (
 });
 
 describe('projectInterest (F3)', () => {
-  it('compounds the listed APY daily and finds the first day the minimum is reached', () => {
-    const p = projectInterest({
+  const at = (over: Partial<Parameters<typeof projectInterest>[0]> = {}) =>
+    projectInterest({
       depositUsd: 1000,
       apyPct: 3.16,
-      minBuyUsd: 0.25,
+      firstBuyUsd: 0.25,
       sharePriceUsd: 180,
+      ...over,
     });
-    expect(p).toMatchObject({ perYearUsd: '31.600000', daysToMinBuy: 3 });
+
+  it('compounds the listed APY daily and finds the first day the first buy is reached', () => {
+    const p = at();
+    expect(p).toMatchObject({ perYearUsd: '31.600000', daysToFirstBuy: 3 });
     expect(Number(p?.perDayUsd)).toBeCloseTo(1000 * (Math.pow(1.0316, 1 / 365) - 1), 6);
     expect(Number(p?.perWeekUsd)).toBeCloseTo(1000 * (Math.pow(1.0316, 7 / 365) - 1), 6);
     expect(Number(p?.perMonthUsd)).toBeCloseTo(1000 * (Math.pow(1.0316, 30 / 365) - 1), 6);
@@ -439,34 +480,42 @@ describe('projectInterest (F3)', () => {
     expect(2 * Number(p?.perDayUsd)).toBeLessThan(0.25);
   });
 
-  it('rounds down, never up', () => {
-    const p = projectInterest({
-      depositUsd: 1,
-      apyPct: 3.16,
-      minBuyUsd: 0.25,
-      sharePriceUsd: null,
-    });
+  it("waits for a token's venue minimum: Ondo's $5.01 takes 59 days where $0.25 takes 3", () => {
+    expect(at({ firstBuyUsd: Number(firstBuyUsd('0.25', '5.01')) })?.daysToFirstBuy).toBe(59);
+    expect(firstBuyUsd('0.25', '5.01')).toBe('5.01');
+    expect(firstBuyUsd('0.25', null)).toBe('0.25');
+    expect(firstBuyUsd('6', '5.01')).toBe('6');
+  });
+
+  it('rounds down, never up — to the cent from $1,000 up, where the last digits are noise', () => {
+    const p = at({ depositUsd: 1, sharePriceUsd: null });
     expect(p?.perDayUsd).toBe('0.000085');
     expect(p?.sharesPerMonth).toBeNull();
-    expect(p?.daysToMinBuy).toBe(2618);
+    expect(p?.daysToFirstBuy).toBe(2618);
+    // 999,999,999.99 × 3.16 % = 31,599,999.999684: never shown as …999.999700.
+    expect(at({ depositUsd: 999_999_999.99 })?.perYearUsd).toBe('31599999.990000');
+    // Exact decimals stay exact: 12,345.67 × 3.16 % = 390.123172.
+    expect(at({ depositUsd: 12_345.67 })?.perYearUsd).toBe('390.123172');
   });
 
   it('at 0 % nothing is ever reached; without a deposit or a rate there is no projection', () => {
-    expect(
-      projectInterest({ depositUsd: 100, apyPct: 0, minBuyUsd: 0.25, sharePriceUsd: 1 }),
-    ).toMatchObject({
+    expect(at({ depositUsd: 100, apyPct: 0 })).toMatchObject({
       perYearUsd: '0.000000',
-      daysToMinBuy: null,
+      daysToFirstBuy: null,
     });
-    expect(
-      projectInterest({ depositUsd: 0, apyPct: 3, minBuyUsd: 0.25, sharePriceUsd: 1 }),
-    ).toBeNull();
-    expect(
-      projectInterest({ depositUsd: 100, apyPct: Number.NaN, minBuyUsd: 0.25, sharePriceUsd: 1 }),
-    ).toBeNull();
-    expect(
-      projectInterest({ depositUsd: 100, apyPct: -1, minBuyUsd: 0.25, sharePriceUsd: 1 }),
-    ).toBeNull();
+    expect(at({ depositUsd: 0 })).toBeNull();
+    expect(at({ apyPct: Number.NaN })).toBeNull();
+    expect(at({ apyPct: -1 })).toBeNull();
+    expect(at({ firstBuyUsd: 0 })).toBeNull();
+  });
+
+  it('opens on the principal cut to the cent, or $100 when there is none — never on 0', () => {
+    expect(startingDeposit('0')).toBe('100');
+    expect(startingDeposit('0.004')).toBe('100');
+    expect(startingDeposit(null)).toBe('100');
+    expect(startingDeposit('1000')).toBe('1000');
+    expect(startingDeposit('4.999999999999999999')).toBe('4.99');
+    expect(startingDeposit('2.50')).toBe('2.5');
   });
 });
 
@@ -527,7 +576,7 @@ describe('mcpReply (F4): JSON-RPC without a database', () => {
     });
   });
 
-  it('answers ping, accepts notifications and responses with 202, refuses batches', async () => {
+  it('answers ping, accepts notifications and responses with 202, refuses what is not JSON-RPC', async () => {
     expect(await mcpReply(rpc('ping', undefined, 'p'), ctx)).toEqual({
       status: 200,
       body: { jsonrpc: '2.0', id: 'p', result: {} },
@@ -536,10 +585,7 @@ describe('mcpReply (F4): JSON-RPC without a database', () => {
       status: 202,
     });
     expect(await mcpReply({ jsonrpc: '2.0', id: 7, result: {} }, ctx)).toEqual({ status: 202 });
-    expect(await mcpReply([rpc('ping')], ctx)).toMatchObject({
-      status: 400,
-      body: { error: { code: -32600 } },
-    });
+    expect(await mcpReply({ id: 1, method: 'ping' }, ctx)).toMatchObject({ status: 400 });
     expect(await mcpReply({ id: 1, method: 'ping' }, ctx)).toMatchObject({
       status: 400,
       body: { error: { code: -32600 } },
@@ -548,6 +594,43 @@ describe('mcpReply (F4): JSON-RPC without a database', () => {
     expect(await mcpReply({ jsonrpc: '2.0', id: 1.5, method: 'ping' }, ctx)).toMatchObject({
       status: 400,
     });
+  });
+
+  it('answers a batch (MCP 2025-03-26) with an array, and only up to ten messages', async () => {
+    const both = await mcpReply(
+      [
+        rpc('ping', undefined, 'a'),
+        { jsonrpc: '2.0', method: 'notifications/initialized' },
+        rpc('tools/list', undefined, 'b'),
+      ],
+      ctx,
+    );
+    expect(both.status).toBe(200);
+    const answers = (both as unknown as { body: { id: string }[] }).body;
+    expect(answers.map((a) => a.id)).toEqual(['a', 'b']);
+    // Nothing to answer: 202.
+    expect(await mcpReply([{ jsonrpc: '2.0', method: 'notifications/initialized' }], ctx)).toEqual({
+      status: 202,
+    });
+    // An invalid element answers with an error of its own; the rest are answered.
+    const mixed = await mcpReply([rpc('ping', undefined, 'c'), { id: 9 }], ctx);
+    expect(mixed).toMatchObject({
+      status: 200,
+      body: [
+        { id: 'c', result: {} },
+        { id: null, error: { code: -32600 } },
+      ],
+    });
+    expect(await mcpReply([], ctx)).toMatchObject({
+      status: 400,
+      body: { error: { code: -32600 } },
+    });
+    expect(
+      await mcpReply(
+        Array.from({ length: 11 }, (_, i) => rpc('ping', undefined, i)),
+        ctx,
+      ),
+    ).toMatchObject({ status: 400, body: { error: { code: -32600 } } });
   });
 
   it('protocol errors for unknown methods and tools; tool errors for bad arguments', async () => {

@@ -7,15 +7,17 @@
  * the browser as the person types. Every view says it is a projection at today's rate.
  */
 import { useId, useState } from 'react';
-import { grouped, moneyFine, sharesText, timeText } from '../../lib/format';
-import { projectInterest } from '../../lib/projection';
+import { grouped, money, moneyFine, sharesText, timeText } from '../../lib/format';
+import { firstBuyUsd, projectInterest } from '../../lib/projection';
 import { translate, type CopyKey, type Lang, type Params } from '../../lib/i18n/translate';
 import { Ledger } from '../ui';
 
 export interface CalculatorStock {
   ticker: string;
-  /** On-chain price of one share, USD (decimal string), from the latest tape. */
+  /** On-chain price of one share, USD (decimal string), from a LIVE tape. */
   sharePriceUsd: string;
+  /** The token's venue minimum (Ondo $5.01), which a first buy of it must reach; null for none. */
+  venueMinUsd: string | null;
 }
 
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
@@ -30,7 +32,8 @@ export function InterestCalculator({
 }: {
   lang: Lang;
   tz: string;
-  apy: { pct: string; at: string | null };
+  /** `stale`: read longer ago than the worker's refresh allows; the basis line says so. */
+  apy: { pct: string; at: string | null; stale: boolean };
   minBuyUsd: string;
   stocks: CalculatorStock[];
   initialDepositUsd: string;
@@ -41,11 +44,13 @@ export function InterestCalculator({
   const [ticker, setTicker] = useState(stocks[0]?.ticker ?? '');
   const valid = AMOUNT.test(deposit.trim()) && Number(deposit) > 0;
   const stock = stocks.find((s) => s.ticker === ticker) ?? null;
+  // The first buy of this token: Ondo's venue minimum is above the minimum buy.
+  const firstBuy = firstBuyUsd(minBuyUsd, stock?.venueMinUsd ?? null);
   const projection = valid
     ? projectInterest({
         depositUsd: Number(deposit),
         apyPct: Number(apy.pct.replaceAll(',', '')),
-        minBuyUsd: Number(minBuyUsd),
+        firstBuyUsd: Number(firstBuy),
         sharePriceUsd: stock ? Number(stock.sharePriceUsd) : null,
       })
     : null;
@@ -102,9 +107,9 @@ export function InterestCalculator({
             ]}
           />
           <p className="calculator-line" aria-live="polite">
-            {projection.daysToMinBuy === null
-              ? t('calc.first.never', { min: minBuyUsd })
-              : t('calc.first', { min: minBuyUsd, days: projection.daysToMinBuy })}
+            {projection.daysToFirstBuy === null
+              ? t('calc.first.never', { min: money(firstBuy) })
+              : t('calc.first', { min: money(firstBuy), days: projection.daysToFirstBuy })}
           </p>
           <p className="calculator-line">
             {projection.sharesPerMonth !== null && stock
@@ -117,7 +122,10 @@ export function InterestCalculator({
         </>
       ) : null}
       <p className="method-note">
-        {t('calc.basis', { apy: apy.pct, time: timeText(apy.at, lang, tz) })}
+        {t(apy.stale ? 'calc.basis.stale' : 'calc.basis', {
+          apy: apy.pct,
+          time: timeText(apy.at, lang, tz),
+        })}
       </p>
     </div>
   );

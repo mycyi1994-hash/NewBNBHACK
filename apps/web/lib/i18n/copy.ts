@@ -524,6 +524,8 @@ export const COPY = {
     'check.read.gap.no_us_price': 'No independent US price to compare with',
     'check.read.impact': '{value}% · limit {limit}%',
     'check.read.impact.code': 'Quote refused ({code})',
+    'check.read.impact.unrecorded': 'Quote not recorded ({code})',
+    'check.read.impact.halved': '{value}% · limit {limit}% · halved to ${usd}',
     'check.read.none': 'Not read',
     'check.shared.title': 'For every token',
     'check.note':
@@ -565,6 +567,8 @@ export const COPY = {
     'calc.shares.none': 'No share price to convert with right now.',
     'calc.basis':
       "At today's rate ({apy}% APY, read {time}), held constant and compounded daily. The rate changes daily: this is a projection, not a promise.",
+    'calc.basis.stale':
+      'At the last listed rate ({apy}% APY, read {time}), held constant and compounded daily. The rate changes daily: this is a projection, not a promise.',
     'calc.unavailable': 'The rate is unavailable, so there is nothing to project.',
     'calc.amount.error': 'Enter an amount above 0, with up to two decimals.',
     'mcp.title': 'Ask from any MCP client',

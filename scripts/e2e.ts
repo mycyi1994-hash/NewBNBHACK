@@ -311,13 +311,15 @@ async function featureFlow(run: Run, ticker: string) {
   log("compare: the token's $5, $50 and $500 quotes with shares and price per share");
 
   await page.goto(`${base}/earn`, { waitUntil: 'networkidle' });
+  // It opens on a projection, not on an error: $100 (no house principal here) → 3.16 USDT a year.
+  await page.getByText('3.16 USDT', { exact: true }).waitFor({ timeout: STEP_MS });
   const deposit = page.getByRole('textbox', { name: 'If I put in (USDT)' });
   await deposit.fill('1000');
   await page.getByText('31.60 USDT', { exact: true }).waitFor({ timeout: STEP_MS });
   await check('interest calculator');
   await deposit.fill('abc');
   await page.getByText('Enter an amount above 0, with up to two decimals.').waitFor();
-  log('earn: $1,000 at the listed 3.16 % projects 31.60 USDT a year; "abc" is refused');
+  log('earn: opens on $100 → 3.16 USDT a year; $1,000 → 31.60 USDT; "abc" is refused');
 
   await page.goto(`${base}/skill`, { waitUntil: 'networkidle' });
   await page.getByText(`claude mcp add --transport http yieldvest ${base}/api/mcp`).waitFor();

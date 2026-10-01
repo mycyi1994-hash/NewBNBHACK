@@ -5,7 +5,16 @@
  * out no command: a plan is still created with POST /api/plans and decided by its own /next.
  */
 import { context } from '../../../lib/server/context';
-import { guard, json, parseWith, problem, unavailable } from '../../../lib/server/http';
+import {
+  clientIp,
+  guard,
+  json,
+  parseWith,
+  problem,
+  rateLimited,
+  tooMany,
+  unavailable,
+} from '../../../lib/server/http';
 import { preflight, preflightAmountProblem } from '../../../lib/server/preflight';
 import { PreflightQuery, queryOf } from '../../../lib/server/schemas';
 
@@ -14,6 +23,8 @@ export const dynamic = 'force-dynamic';
 async function handleGET(request: Request): Promise<Response> {
   const { config, db } = context();
   if (!db) return unavailable('no DATABASE_URL');
+  // The same courtesy limit as GET /next and POST /api/mcp: 120 a minute per address.
+  if (rateLimited(`preflight-ip:${clientIp(request)}`, 120, 60_000)) return tooMany();
   const query = parseWith(PreflightQuery, queryOf(request));
   if (query instanceof Response) return query;
   const minBuyUsd = String(config.caps.minBuyUsd);

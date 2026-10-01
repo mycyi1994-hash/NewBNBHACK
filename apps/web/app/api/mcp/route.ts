@@ -1,8 +1,9 @@
 /**
  * POST /api/mcp (DECISIONS D-31, F4) — Yieldvest's read-only MCP server over Streamable HTTP:
- * `claude mcp add --transport http yieldvest <app URL>/api/mcp`. One JSON-RPC message per POST,
- * one JSON answer. GET (a server-to-client stream) and DELETE (a session) are not offered: Next
- * answers 405 for methods a route does not export, as the transport allows.
+ * `claude mcp add --transport http yieldvest <app URL>/api/mcp`. One JSON-RPC message (or a
+ * batch of up to ten) per POST, one JSON answer. GET (a server-to-client stream) and DELETE (a
+ * session) are not offered: Next answers 405 for methods a route does not export, as the
+ * transport allows.
  */
 import { context } from '../../../lib/server/context';
 import { clientIp, json, rateLimited, readJson } from '../../../lib/server/http';

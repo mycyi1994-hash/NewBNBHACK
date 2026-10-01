@@ -53,8 +53,15 @@ export interface Check {
   limit: string | null;
   /** When the input was read; null when it was not read at all. */
   at: string | null;
-  /** A machine word: why a rule does not apply, or what it saw (off_hours, cash_dividend, 40375). */
+  /** A machine word: why a rule does not apply, or what it saw (off_hours, cash_dividend, halved). */
   note?: string;
+  /**
+   * impact: the code the recorded quote failed with — a number is the Trading API refusing it
+   * (40375 under the venue minimum), anything else the recording failing (timeout, EMPTY).
+   */
+  code?: string;
+  /** impact: the amount the quote estimate is for (after any halving the engine did). */
+  basisUsd?: string;
 }
 
 export interface IssuerVerdict {
@@ -149,7 +156,8 @@ function amountCheck(market: InstrumentMarket, input: PreflightInput, regular: b
     limit: fromUnits(min, 18),
     at: null,
   };
-  if (now >= min) return { ...base, state: 'pass' };
+  const halved = now < units(input.usd);
+  if (now >= min) return { ...base, state: 'pass', ...(halved ? { note: 'off_hours_half' } : {}) };
   // Only the off-hours half is too small: the whole amount applies in the regular session.
   if (units(input.usd) >= min) return { ...base, state: 'wait', note: 'half_limit_below_min' };
   return { ...base, state: 'block', note: market.venueMinUsd ? 'venue_minimum' : 'below_min' };
@@ -174,24 +182,30 @@ function gapCheck(market: InstrumentMarket, regular: boolean, at: string | null)
   // when there is an independent price to hold it against.
   if (!regular) return { ...base, state: 'na', note: 'off_hours' };
   if (gap === null) return { ...base, state: 'na', at: null, note: 'no_us_price' };
-  return { ...base, state: Number(gap) > MAX_PRICE_GAP_PCT ? 'wait' : 'pass' };
+  // The engine compares the unrounded gap (2.004 % waits though it reads "2.00"); so does this.
+  const raw =
+    (Number(market.onchainSharePriceUsd) / Number(market.independentSharePriceUsd) - 1) * 100;
+  return { ...base, state: raw > MAX_PRICE_GAP_PCT ? 'wait' : 'pass' };
 }
 
-function impactCheck(input: PreflightInput, market: InstrumentMarket, regular: boolean): Check {
-  const spend = fromUnits(spendNow(input.usd, input.window, regular), 18);
-  const quote = estimateQuote(input.tape.rows, market.instrument.id, spend, input.now);
+/** The tape quote's price impact for `spendUsd`, against the 1 % limit. */
+function impactCheck(input: PreflightInput, market: InstrumentMarket, spendUsd: string): Check {
+  const quote = estimateQuote(input.tape.rows, market.instrument.id, spendUsd, input.now);
   const base = {
     id: 'impact' as const,
     value: quote.priceImpactPct ?? null,
     limit: String(MAX_PRICE_IMPACT_PCT),
     at: input.tape.sampledAt,
+    basisUsd: spendUsd,
   };
   const code = quote.errorCode;
   if (code === 'NO_TAPE') return { ...base, state: 'unknown', at: null, note: 'no_tape' };
-  // Refused outside the session: it waits. Any other refusal (40375 under the venue minimum,
-  // 40374 no liquidity, …) rules this issuer out for the cycle.
   if (code !== undefined) {
-    return { ...base, state: OFF_HOURS_QUOTE_CODES.has(code) ? 'wait' : 'block', note: code };
+    // A number is the Trading API refusing the quote: refused outside the session, it waits; any
+    // other refusal (40375 under the venue minimum, 40374 no liquidity) rules this issuer out for
+    // the cycle. Anything else is the recording failing (timeout, EMPTY): nobody knows the answer.
+    if (!/^\d+$/.test(code)) return { ...base, state: 'unknown', code };
+    return { ...base, state: OFF_HOURS_QUOTE_CODES.has(code) ? 'wait' : 'block', code };
   }
   const impact = Number(quote.priceImpactPct ?? NaN);
   if (!Number.isFinite(impact)) return { ...base, state: 'unknown', note: 'impact_unknown' };
@@ -259,11 +273,18 @@ export function preflightFrom(input: PreflightInput): Preflight {
       guardian: verdict,
       now,
     });
+    const asked = fromUnits(spendNow(input.usd, input.window, regular), 18);
+    // A buy the engine halved for price impact is read at the amount it settled on, with a note;
+    // otherwise the rule reads the amount asked for.
+    const halved = answer.decision === 'buy' && units(answer.spendUsd) < units(asked);
+    const impact = halved
+      ? { ...impactCheck(input, market, answer.spendUsd), note: 'halved' }
+      : impactCheck(input, market, asked);
     const checks = [
       amountCheck(market, input, regular),
       statusCheck(market, tape.sampledAt),
       gapCheck(market, regular, tape.sampledAt),
-      impactCheck(input, market, regular),
+      impact,
     ];
     const head = {
       issuer: instrument.issuer,

@@ -29,6 +29,7 @@ import { context } from '../../lib/server/context';
 import { venusInfo, type VenusInfo } from '../../lib/server/house';
 import { marketStatus, type MarketStatus } from '../../lib/server/market';
 import { houseStory, type HouseStory } from '../../lib/server/overview';
+import { startingDeposit } from '../../lib/projection';
 import { apyView } from '../../lib/server/projection';
 import { settle, type Settled } from '../../lib/server/settle';
 
@@ -143,7 +144,7 @@ export default async function EarnPage() {
         venus={venus}
         market={market}
         minBuyUsd={String(config.caps.minBuyUsd)}
-        depositUsd={plan ? (money(plan.principalUsd) ?? '100') : '100'}
+        depositUsd={startingDeposit(plan?.principalUsd)}
       />
     </>
   );
@@ -162,7 +163,11 @@ function calculatorStocks(market: Settled<MarketStatus>): CalculatorStock[] {
     .sort((a, b) => order.indexOf(a.issuer) - order.indexOf(b.issuer));
   for (const i of priced) {
     if (!out.has(i.ticker) && i.onchainSharePriceUsd) {
-      out.set(i.ticker, { ticker: i.ticker, sharePriceUsd: i.onchainSharePriceUsd });
+      out.set(i.ticker, {
+        ticker: i.ticker,
+        sharePriceUsd: i.onchainSharePriceUsd,
+        venueMinUsd: i.venueMinUsd,
+      });
     }
   }
   return [...out.values()];
@@ -188,23 +193,27 @@ function Calculator({
   depositUsd: string;
 }) {
   const apy = venus.ok ? apyView(venus.value, now) : null;
+  // A rate is LIVE, STALE with the time it was read, or not shown: a stale rate without a read
+  // time cannot say how old it is.
   const data =
     !venus.ok || !apy || apy.state === 'UNAVAILABLE'
       ? { state: 'UNAVAILABLE' as const, reason: venus.ok ? 'no rate recorded yet' : venus.reason }
-      : apy.state === 'STALE' && apy.at
-        ? { state: 'STALE' as const, at: apy.at }
-        : { state: 'LIVE' as const };
+      : apy.state === 'LIVE'
+        ? { state: 'LIVE' as const }
+        : apy.at
+          ? { state: 'STALE' as const, at: apy.at }
+          : { state: 'UNAVAILABLE' as const, reason: 'rate read time unknown' };
   return (
     <section className="page-block" aria-label={t('calc.title')}>
       <BlockTitle aside={<StateBadge t={t} data={data} now={now} />}>{t('calc.title')}</BlockTitle>
-      {apy?.pct ? (
+      {apy?.pct && data.state !== 'UNAVAILABLE' ? (
         <InterestCalculator
           lang={lang}
           tz={tz}
-          apy={{ pct: apy.pct, at: apy.at }}
-          minBuyUsd={money(minBuyUsd) ?? minBuyUsd}
+          apy={{ pct: apy.pct, at: apy.at, stale: data.state === 'STALE' }}
+          minBuyUsd={minBuyUsd}
           stocks={calculatorStocks(market)}
-          initialDepositUsd={depositUsd.replace(/\.00$/, '')}
+          initialDepositUsd={depositUsd}
         />
       ) : (
         <p className="state-line">{t('calc.unavailable')}</p>

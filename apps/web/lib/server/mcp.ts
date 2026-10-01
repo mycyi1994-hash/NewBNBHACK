@@ -3,7 +3,8 @@
  * Desktop, an IDE assistant — can ask Yieldvest what the market is doing, compare the two issuers
  * of a stock, run the agent's rules on a plan before it exists, project interest, and read a
  * plan's record or the receipt feed. Stateless Streamable HTTP (MCP 2025-03-26 to 2025-11-25):
- * one JSON-RPC request per POST, one JSON answer, no session, no server-to-client stream.
+ * one JSON-RPC message (or a 2025-03-26 batch) per POST, one JSON answer, no session, no
+ * server-to-client stream.
  *
  * Every tool reads what the worker recorded, through the same functions as the GET routes, and is
  * marked read-only. None of them creates a plan, signs or moves funds: acting stays with the
@@ -91,7 +92,9 @@ export const TOOLS: readonly Tool[] = [
         ...(args.issuer ? { issuer: args.issuer } : {}),
       };
       const answer = await preflight(db, query, minBuyUsd, ctx.now);
-      return answer ? ok(answer) : fail(`${args.ticker} is not in the registry`);
+      return answer
+        ? ok(answer)
+        : fail(`${args.ticker}${args.issuer ? ` (${args.issuer})` : ''} is not in the registry`);
     },
   }),
   tool({
@@ -108,7 +111,11 @@ export const TOOLS: readonly Tool[] = [
         ...(args.issuer ? { issuer: args.issuer } : {}),
       };
       const view = await interestProjection(db, query, String(ctx.config.caps.minBuyUsd), ctx.now);
-      if (args.ticker && view.price === null) return fail(`${args.ticker} is not in the registry`);
+      if (args.ticker && view.price === null) {
+        return fail(
+          `${args.ticker}${args.issuer ? ` (${args.issuer})` : ''} is not in the registry`,
+        );
+      }
       return ok(view);
     },
   }),
@@ -174,7 +181,15 @@ function withStringAmounts(schema: z.ZodType, args: Record<string, unknown>) {
 
 type JsonRpcId = string | number;
 
-export type McpReply = { status: 202 } | { status: 200 | 400; body: Record<string, unknown> };
+export type McpReply =
+  | { status: 202 }
+  | { status: 200 | 400; body: Record<string, unknown> | Record<string, unknown>[] };
+
+/** At most this many messages in one batch (MCP 2025-03-26 lets a client send them batched). */
+export const MAX_BATCH = 10;
+
+/** One message's outcome: nothing to answer (a notification or a response), an answer, or invalid. */
+type Outcome = { kind: 'accepted' } | { kind: 'answer' | 'invalid'; body: Record<string, unknown> };
 
 export const rpcError = (id: JsonRpcId | null, code: number, message: string) => ({
   jsonrpc: '2.0',
@@ -222,26 +237,27 @@ async function callTool(params: unknown, ctx: ToolContext): Promise<object | und
   }
 }
 
-/** One JSON-RPC message in, the HTTP answer out (MCP Streamable HTTP, without streams). */
-export async function mcpReply(message: unknown, ctx: ToolContext): Promise<McpReply> {
-  if (Array.isArray(message)) {
-    return { status: 400, body: rpcError(null, -32600, 'batches are not supported') };
-  }
-  if (typeof message !== 'object' || message === null) {
-    return { status: 400, body: rpcError(null, -32600, 'not a JSON-RPC message') };
+/** One JSON-RPC message: a request is answered, a notification or a response is only accepted. */
+async function handle(message: unknown, ctx: ToolContext): Promise<Outcome> {
+  const invalid = (text: string): Outcome => ({
+    kind: 'invalid',
+    body: rpcError(null, -32600, text),
+  });
+  if (typeof message !== 'object' || message === null || Array.isArray(message)) {
+    return invalid('not a JSON-RPC message');
   }
   const { jsonrpc, id, method, params } = message as Record<string, unknown>;
-  if (jsonrpc !== '2.0') {
-    return { status: 400, body: rpcError(null, -32600, 'jsonrpc must be "2.0"') };
-  }
+  if (jsonrpc !== '2.0') return invalid('jsonrpc must be "2.0"');
   // A response from the client (this server never asks) or a notification: accepted, no body.
-  if (method === undefined || id === undefined) return { status: 202 };
-  if (!isId(id) || typeof method !== 'string') {
-    return { status: 400, body: rpcError(null, -32600, 'bad id or method') };
-  }
-  const answer = (result: object): McpReply => ({
-    status: 200,
+  if (method === undefined || id === undefined) return { kind: 'accepted' };
+  if (!isId(id) || typeof method !== 'string') return invalid('bad id or method');
+  const answer = (result: object): Outcome => ({
+    kind: 'answer',
     body: { jsonrpc: '2.0', id, result },
+  });
+  const error = (code: number, text: string): Outcome => ({
+    kind: 'answer',
+    body: rpcError(id, code, text),
   });
 
   switch (method) {
@@ -266,11 +282,36 @@ export async function mcpReply(message: unknown, ctx: ToolContext): Promise<McpR
       const result = await callTool(params, ctx);
       if (result === undefined) {
         const name = (params as { name?: unknown } | undefined)?.name;
-        return { status: 200, body: rpcError(id, -32602, `unknown tool: ${String(name)}`) };
+        return error(-32602, `unknown tool: ${String(name)}`);
       }
       return answer(result);
     }
     default:
-      return { status: 200, body: rpcError(id, -32601, `method not found: ${method}`) };
+      return error(-32601, `method not found: ${method}`);
   }
+}
+
+/**
+ * The HTTP answer to one POST (MCP Streamable HTTP, without streams): one message, or a batch of
+ * up to MAX_BATCH (MCP 2025-03-26; later revisions dropped batching and their clients do not send
+ * one). A batch answers with the array of its answers, or 202 when it held no request.
+ */
+export async function mcpReply(message: unknown, ctx: ToolContext): Promise<McpReply> {
+  if (!Array.isArray(message)) {
+    const outcome = await handle(message, ctx);
+    if (outcome.kind === 'accepted') return { status: 202 };
+    return { status: outcome.kind === 'invalid' ? 400 : 200, body: outcome.body };
+  }
+  if (message.length === 0) {
+    return { status: 400, body: rpcError(null, -32600, 'an empty batch') };
+  }
+  if (message.length > MAX_BATCH) {
+    return { status: 400, body: rpcError(null, -32600, `at most ${MAX_BATCH} messages a batch`) };
+  }
+  const answers: Record<string, unknown>[] = [];
+  for (const item of message) {
+    const outcome = await handle(item, ctx);
+    if (outcome.kind !== 'accepted') answers.push(outcome.body);
+  }
+  return answers.length === 0 ? { status: 202 } : { status: 200, body: answers };
 }

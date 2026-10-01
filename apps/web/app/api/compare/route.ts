@@ -5,7 +5,16 @@
  */
 import { context } from '../../../lib/server/context';
 import { compareIssuers, comparableTickers } from '../../../lib/server/compare';
-import { guard, json, parseWith, problem, unavailable } from '../../../lib/server/http';
+import {
+  clientIp,
+  guard,
+  json,
+  parseWith,
+  problem,
+  rateLimited,
+  tooMany,
+  unavailable,
+} from '../../../lib/server/http';
 import { CompareQuery, queryOf } from '../../../lib/server/schemas';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +22,8 @@ export const dynamic = 'force-dynamic';
 async function handleGET(request: Request): Promise<Response> {
   const { db } = context();
   if (!db) return unavailable('no DATABASE_URL');
+  // The same courtesy limit as GET /next and POST /api/mcp: 120 a minute per address.
+  if (rateLimited(`compare-ip:${clientIp(request)}`, 120, 60_000)) return tooMany();
   const query = parseWith(CompareQuery, queryOf(request));
   if (query instanceof Response) return query;
   if (query.ticker === undefined) return json({ tickers: await comparableTickers(db) });

@@ -553,6 +553,7 @@ export function openApiDocument(serverUrl: string) {
             200: json({ type: 'object' }, 'The comparison, or { tickers } without a ticker'),
             400: problem('bad_request'),
             404: problem('unknown_ticker'),
+            429: problem('rate_limited: 120 requests a minute per address'),
             503: unavailable,
           },
         },
@@ -567,6 +568,7 @@ export function openApiDocument(serverUrl: string) {
             200: json({ type: 'object' }, 'Verdict per issuer and the rules it read'),
             400: problem('bad_request or bad_amount'),
             404: problem('unknown_ticker'),
+            429: problem('rate_limited: 120 requests a minute per address'),
             503: unavailable,
           },
         },
@@ -575,12 +577,13 @@ export function openApiDocument(serverUrl: string) {
         get: {
           summary: 'What a deposit would earn if today’s listed Venus APY held',
           description:
-            'Interest per day, week, month (30 days) and year, compounded daily at the listed APY; the days until it reaches the minimum buy; about how many shares a month of it buys at the latest on-chain price. Each input carries its data state; no rate means no projection. The rate changes daily: a projection, not a promise.',
+            'Interest per day, week, month (30 days) and year, compounded daily at the listed APY; the days until it reaches the first buy (`firstBuyUsd`: the minimum buy, or the priced token’s venue minimum when higher — Ondo’s $5.01); about how many shares a month of it buys at the on-chain price of a LIVE tape. Each input carries its data state; no rate means no projection. The rate changes daily: a projection, not a promise.',
           parameters: queryParams(ProjectionQuery),
           responses: {
             200: json({ type: 'object' }, 'Inputs with their state, and the projection'),
             400: problem('bad_request or bad_amount'),
             404: problem('unknown_ticker'),
+            429: problem('rate_limited: 120 requests a minute per address'),
             503: unavailable,
           },
         },
@@ -589,7 +592,7 @@ export function openApiDocument(serverUrl: string) {
         post: {
           summary: 'Read-only MCP server (Streamable HTTP, JSON-RPC 2.0)',
           description:
-            'One JSON-RPC message per POST, one JSON answer; no session and no stream (GET and DELETE answer 405). Methods: initialize, ping, tools/list, tools/call. Tools: market_status, compare_issuers, preflight, interest_projection, plan_status, recent_receipts — all read-only. `claude mcp add --transport http yieldvest <server>/api/mcp`.',
+            'One JSON-RPC message per POST (or a batch of up to 10, as MCP 2025-03-26 allows), one JSON answer; no session and no stream (GET and DELETE answer 405). Methods: initialize, ping, tools/list, tools/call. Tools: market_status, compare_issuers, preflight, interest_projection, plan_status, recent_receipts — all read-only. `claude mcp add --transport http yieldvest <server>/api/mcp`.',
           requestBody: {
             required: true,
             content: { 'application/json': { schema: { type: 'object' } } },

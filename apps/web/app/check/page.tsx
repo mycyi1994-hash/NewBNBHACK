@@ -89,14 +89,14 @@ function readText(t: T, lang: Lang, tz: string, check: Check): string {
         session: sessionText(t, value ?? ''),
         window: windowText(t, limit ?? ''),
       });
-    case 'amount':
-      return t(
-        check.note === 'half_limit_below_min' ? 'check.read.amount.half' : 'check.read.amount',
-        {
-          value: money(value),
-          limit: money(limit),
-        },
-      );
+    case 'amount': {
+      // Off-hours an anytime plan buys half: say so whether half reaches the minimum or not.
+      const half = check.note === 'off_hours_half' || check.note === 'half_limit_below_min';
+      return t(half ? 'check.read.amount.half' : 'check.read.amount', {
+        value: money(value),
+        limit: money(limit),
+      });
+    }
     case 'status':
       return value === null || check.at === null
         ? t('check.read.none')
@@ -108,10 +108,16 @@ function readText(t: T, lang: Lang, tz: string, check: Check): string {
       if (check.note === 'no_us_price') return t('check.read.gap.no_us_price');
       return t('check.read.gap', { value, limit });
     case 'impact':
-      if (check.note && /^\d+$/.test(check.note)) {
-        return t('check.read.impact.code', { code: check.note });
+      // A number is the Trading API refusing the quote; anything else, the recording failing.
+      if (check.code) {
+        return /^\d+$/.test(check.code)
+          ? t('check.read.impact.code', { code: check.code })
+          : t('check.read.impact.unrecorded', { code: check.code });
       }
-      return value === null ? t('check.read.none') : t('check.read.impact', { value, limit });
+      if (value === null) return t('check.read.none');
+      return check.note === 'halved'
+        ? t('check.read.impact.halved', { value, limit, usd: money(check.basisUsd ?? null) })
+        : t('check.read.impact', { value, limit });
   }
 }
 
