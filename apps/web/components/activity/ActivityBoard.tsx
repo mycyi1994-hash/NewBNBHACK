@@ -61,7 +61,7 @@ export function ActivityBoard({
             <span>{t('activity.col.amount')}</span>
             <span>{t('activity.col.status')}</span>
           </div>
-          <div className="activity-list" aria-label={listLabel}>
+          <div className="activity-list" role="group" aria-label={listLabel}>
             {visible.map((item) => (
               <button
                 type="button"
