@@ -150,6 +150,8 @@ describe(`baw ${BAW_VERSION} contract`, () => {
   it('reads the recorded help of every command the skill uses', () => {
     expect([...commands.keys()].sort()).toEqual(
       [
+        'approvals-list',
+        'approvals-revoke',
         'cli-check',
         'defi-deposit',
         'defi-investment-list',

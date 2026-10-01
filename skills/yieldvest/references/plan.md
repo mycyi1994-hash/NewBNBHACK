@@ -83,6 +83,13 @@ curl -sS -X POST -H "$AUTH" -H 'content-type: application/json' \
 
    `202 pending` — not mined yet; wait ~15 s and report again. `200 recorded` — the principal is on
    record and the plan starts. `422 rejected` — relay the reason.
+4. Check what the deposit left the Venus market allowed to take (vUSDT
+   `0xfD5840Cd36d94D7229439859C0112a4185BC0255`):
+   `baw approvals list --spender 0xfD5840Cd36d94D7229439859C0112a4185BC0255 --json`. Yieldvest's
+   own wallet approves exact amounts only; if the USDT entry's `amount` is `unlimited` (or a number
+   longer than 18 digits), tell the user and offer to revoke it — a transaction, so ask first:
+   `baw approvals revoke --binanceChainId 56 --tokenContract 0x55d398326f99059fF775485246999027B3197955 --spender 0xfD5840Cd36d94D7229439859C0112a4185BC0255 --type approve --json`.
+   The next deposit asks for a new approval.
 
 ## Check a plan
 

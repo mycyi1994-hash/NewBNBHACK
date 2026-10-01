@@ -27,6 +27,8 @@ export const BAW_COMMANDS: readonly (readonly string[])[] = [
   ['defi', 'preview'],
   ['defi', 'deposit'],
   ['defi', 'redeem'],
+  ['approvals', 'list'],
+  ['approvals', 'revoke'],
 ];
 
 /** fixtures/baw/<version>/<file>: `root.txt` for `baw --help`, else the command joined by '-'. */
