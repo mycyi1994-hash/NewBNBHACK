@@ -8,6 +8,7 @@ import { BSC_USDT } from '@yieldvest/chain';
 import {
   createDb,
   getPlan,
+  guardianEvents,
   insertGuardianEvent,
   resolveGuardianEvents,
   sha256Hex,
@@ -16,7 +17,7 @@ import {
   writeWorkerStatus,
   type InstrumentRow,
 } from '@yieldvest/db';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GET as nextRoute } from '../app/api/plans/[id]/next/route';
 import { POST as previewRoute } from '../app/api/plans/[id]/preview/route';
@@ -68,6 +69,8 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   const chain = fakeWebChain();
   const planIds: string[] = [];
   const tokenIds: string[] = [];
+  /** Global guardian events this file raised: every plan's view lists them, so they go too. */
+  const globalEvents: number[] = [];
   let instrument: InstrumentRow;
 
   beforeAll(async () => {
@@ -79,6 +82,9 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   });
   afterAll(async () => {
     setChainForTests(undefined);
+    if (globalEvents.length > 0) {
+      await db.delete(guardianEvents).where(inArray(guardianEvents.id, globalEvents));
+    }
     await db.delete(workerStatus).where(eq(workerStatus.key, 'venus'));
     await cleanup(db, { planIds, instrumentIds: [instrument.id], tokenIds });
     await resetContext();
@@ -260,12 +266,13 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
     });
 
     await writeTape(db, instrument, '2026-10-05T13:50:00.000Z');
-    await insertGuardianEvent(db, {
+    const hold = await insertGuardianEvent(db, {
       rule: 'usdt_depeg',
       action: 'pause_buys',
       planId: null,
       detail: { price: '0.985' },
     });
+    globalEvents.push(hold.id);
     try {
       expect((await next(id, token)).body).toMatchObject({
         decision: 'skip',
