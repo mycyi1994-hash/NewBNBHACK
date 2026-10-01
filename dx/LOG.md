@@ -483,3 +483,13 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Workaround: `/next` now states the floor in shares (`sharesFromTokens(min tokens, decimals, multiplier)`, rounded down like `baw`); `skills/yieldvest/references/run.md` says both sides are shares.
 - Ask: document per command which RWA amounts `baw` prints and accepts as shares, and the multiplier it used (put it in the JSON output), so an agent can compare a quote with on-chain balances without reading the bundle.
 - Evidence: `apps/web/lib/server/next.ts` (`acceptMinToCoinAmount`), `apps/web/test/skill.test.ts` (0.021990032462334682 tokens × 1.000778223752807865 = 0.022007145627921886 shares).
+
+## 2026-10-01 06:04 UTC — [rwa][docs] The public RWA list repeats each Ondo ticker once per chain, Ethereum first: a lookup by ticker alone finds the wrong token
+- Goal: check the Wallet Skill's token check (the address `/next` names must be the official one for the ticker) against the public list the Skills Hub documents.
+- Expected: one entry per ticker for the list type asked for, or a chain filter.
+- Actual: `GET …/buw/wallet/market/token/rwa/stock/detail/list/ai?type=1` (Ondo, no key, `Accept-Encoding: identity`): HTTP 200, 254,457 bytes, 1.51 s, 1,366 entries for 459 tickers — `chainId` "56" 458, "1" 457, "CT_501" 451. NVDA's entries, in order: Ethereum `0x2d1f7226…`, BSC `0xa9ee28c8…`, CT_501 `gEGtLTPN…`, all with the symbol `NVDAon`. `type=3` (bStocks): 87 entries, all chain "56". There is no chain parameter. A check that takes "the entry for the ticker" compares the BSC address with Ethereum's and refuses every Ondo buy (it fails safe; an agent that took the address from the list instead would send to a token that does not exist on BSC).
+- Docs: Skills Hub `binance-tokenized-securities-info/SKILL.md` API 1: its example response has a chain "1" and a chain "56" entry, but the field table lists only `1` (Ethereum) and `56` (BSC) — not `CT_501` (451 entries) — and the `type` parameter says `1` = Ondo is "currently the only supported tokenized stock provider", while `type=3` returns 87 bStocks tokens. Nothing says a lookup must filter by chain.
+- Time lost: about 10 minutes (found in the skill review).
+- Workaround: `skills/yieldvest/references/safety.md` takes the list for `instrument.issuer` and the entry with `chainId "56"`, and compares the address, the symbol and the quote's `toCoinSymbol`.
+- Ask: a `chainId` filter on the list endpoint, and one sentence in the skill docs that tickers repeat per chain.
+- Evidence: the counts above (re-measured at 06:04:06 UTC); `skills/yieldvest/references/safety.md`.
