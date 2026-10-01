@@ -112,6 +112,7 @@ export async function createWorld(
         }
       : { status: 'success', logs: [] };
   const allowance = () => chain.allowances.get(`${USDT}:${HOUSE}:${ROUTER}`.toLowerCase()) ?? 0n;
+  let swapAmount = 0n;
   const market = { usdtPrice: '1.0001', venusTvl: '1353914642' };
   const api = fakeApi(clock, {
     '/api/v1/dex/market/rwa/tokens': () => [
@@ -164,25 +165,29 @@ export async function createWorld(
         },
       ];
     },
-    '/api/v1/dex/aggregator/swap': (u) => ({
-      tx: {
-        from: u.searchParams.get('userWalletAddress'),
-        to: ROUTER,
-        data: '0xad43f73d',
-        value: '0',
-        gas: '450000',
-        gasPrice: '58339710',
-        maxPriorityFeePerGas: '58339710',
-        minReceiveAmount: '22101093232346474',
-      },
-      executionMode: 'SWAP',
-      rfq: null,
-    }),
+    '/api/v1/dex/aggregator/swap': (u) => {
+      swapAmount = BigInt(u.searchParams.get('amount') ?? '0');
+      return {
+        tx: {
+          from: u.searchParams.get('userWalletAddress'),
+          to: ROUTER,
+          data: '0xad43f73d',
+          value: '0',
+          gas: '450000',
+          gasPrice: '58339710',
+          maxPriorityFeePerGas: '58339710',
+          minReceiveAmount: '22101093232346474',
+        },
+        executionMode: 'SWAP',
+        rfq: null,
+      };
+    },
     '/api/v1/dex/pre-transaction/simulate': (_u, body) => {
       const call = (body as { evmTx: { to: string; data: string } }).evmTx;
       const ok = { status: 'SUCCESS', failReason: '', balanceChanges: [], allowanceChanges: [] };
       if (call.data.startsWith('0x095ea7b3')) return ok;
-      return allowance() >= 5n * 10n ** 18n
+      // The swap pulls what it was built for: an allowance under that amount reverts.
+      return allowance() >= swapAmount
         ? ok
         : {
             status: 'FAILED',

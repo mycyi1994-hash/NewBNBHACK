@@ -11,6 +11,7 @@ import {
   appendCycleStep,
   createDb,
   cycles,
+  cyclesOfPlan,
   getCycle,
   getHolding,
   getPlan,
@@ -37,7 +38,7 @@ import {
   withVenus,
   type World,
 } from '../test/world.js';
-import { recoverInterrupted, runCycle } from './cycle.js';
+import { LockLostError, recoverInterrupted, runCycle } from './cycle.js';
 import { startYieldPlan } from './deposit.js';
 import { redeemPlanPosition } from './guardian.js';
 import { settleOutbox } from './settlement.js';
@@ -215,6 +216,53 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
     expect(await ledgerOf(cycleId)).toMatchObject({ status: 'released' });
   });
 
+  it('stops a cycle that outlived its lock once a settle took the plan over: nothing more is signed', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    const allowance = w.chain.allowance.bind(w.chain);
+    let cycleId = -1;
+    // The cycle has reserved its $5 and reads the allowance 13 minutes in (slow receipts, API
+    // retries): its lock lapsed, and another process's settle takes the plan over.
+    w.chain.allowance = async (token, owner, spender) => {
+      if (cycleId === -1) {
+        cycleId = (await cyclesOfPlan(db, id, ['running']))[0]?.id ?? -2;
+        expect(await ledgerOf(cycleId)).toMatchObject({ status: 'reserved' });
+        w.clock.advance(13 * 60_000);
+        await settleOutbox(w.deps('live'));
+      }
+      return allowance(token, owner, spender);
+    };
+    await expect(runCycle(w.deps('live'), id, { manual: true })).rejects.toThrow(LockLostError);
+    // The approval it was about to sign never was, and the cycle stays as the settle closed it.
+    expect(w.chain.sent).toEqual([]);
+    expect(await db.select().from(txOutbox).where(eq(txOutbox.planId, id))).toEqual([]);
+    expect(await getCycle(db, cycleId)).toMatchObject({
+      state: 'done',
+      outcomeKind: 'FAILED',
+      outcome: { code: 'INTERRUPTED', fundsMoved: 'none' },
+    });
+    expect(await ledgerOf(cycleId)).toMatchObject({ status: 'released' });
+    expect((await getPlan(db, id))?.lockUntil).toBeNull();
+  });
+
+  it('renews the lock of a slow cycle nobody took over, and buys', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    const allowance = w.chain.allowance.bind(w.chain);
+    let slow = true;
+    w.chain.allowance = (token, owner, spender) => {
+      // Once, 13 minutes go by: the lock lapsed, but it is still this cycle's.
+      if (slow) w.clock.advance(13 * 60_000);
+      slow = false;
+      return allowance(token, owner, spender);
+    };
+    expect(await runCycle(w.deps('live'), id, { manual: true })).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'BOUGHT', spendUsd: '5' },
+    });
+    expect((await getPlan(db, id))?.lockUntil).toBeNull();
+  });
+
   it('holds a cycle that signed with no recorded decision for a human', async () => {
     const w = await createWorld(db, MON_1000);
     const id = await plan();
@@ -309,9 +357,9 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
     const first = await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1');
     expect(first).toMatchObject({ status: 'approval_pending' });
     expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3']);
-    // Once it is mined and settled, asking again deposits with the allowance it left.
+    // Once it is mined, asking again settles it and deposits with the allowance it left — no tick
+    // in between.
     w.chain.mines = true;
-    await settleOutbox(w.deps('live'));
     expect(await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1')).toMatchObject({
       status: 'deposited',
       depositedUsd: '1',
@@ -368,7 +416,12 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
     expect(await runCycle(w.deps('simulate'), id)).toEqual({ status: 'stopped', planId: id });
     expect(await getPlan(db, id)).toMatchObject({ status: 'active', vtokenUnits: '10600000000' });
     expect(w.chain.sent).toEqual([]);
-    // The live worker stops it and takes the position back to the house wallet.
+    // A live worker that has not found the Venus market yet leaves it due: no human is needed.
+    const { venus: _unknown, ...blind } = w.deps('live');
+    expect(await runCycle(blind, id)).toEqual({ status: 'stopped', planId: id });
+    expect(await getPlan(db, id)).toMatchObject({ status: 'active', vtokenUnits: '10600000000' });
+    expect(w.alerts).toEqual([]);
+    // The live worker that knows it stops it and takes the position back to the house wallet.
     expect(await runCycle(w.deps('live'), id)).toEqual({ status: 'stopped', planId: id });
     const row = await getPlan(db, id);
     expect(row).toMatchObject({ status: 'stopped', pausedReason: 'expired' });

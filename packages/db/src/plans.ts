@@ -147,6 +147,27 @@ export async function acquirePlanLock(
   return row;
 }
 
+/**
+ * Extends the lock to `now + ttlMs` — only while this holder still has it: `lockUntil` is the value
+ * it holds (from acquirePlanLock or the last renewal). Every other holder changes the value, so a
+ * lock that lapsed is still renewed when nobody took it over. Returns the new value, or undefined
+ * when the lock was taken over or released (the new holder decides from then on).
+ */
+export async function renewPlanLock(
+  db: Db,
+  id: string,
+  lockUntil: string,
+  now: Date,
+  ttlMs: number,
+): Promise<string | undefined> {
+  const [row] = await db
+    .update(plans)
+    .set({ lockUntil: new Date(now.getTime() + ttlMs).toISOString() })
+    .where(and(eq(plans.id, id), eq(plans.lockUntil, lockUntil)))
+    .returning({ lockUntil: plans.lockUntil });
+  return row?.lockUntil ?? undefined;
+}
+
 export type PlanPatch = Partial<
   Pick<
     PlanInsert,
@@ -396,7 +417,10 @@ export async function listGuardianEvents(
   db: Db,
   filter: {
     planId?: string;
-    /** With planId: also the global events still open or raised since this time (ISO). */
+    /**
+     * With planId: also the global events in force at any time since this time (ISO) — still
+     * open, or resolved after it (raised before or after).
+     */
     globalSince?: string;
     openOnly?: boolean;
     limit?: number;
@@ -415,7 +439,10 @@ export async function listGuardianEvents(
                 eq(guardianEvents.planId, filter.planId),
                 and(
                   isNull(guardianEvents.planId),
-                  or(isNull(guardianEvents.resolvedAt), gte(guardianEvents.ts, filter.globalSince)),
+                  or(
+                    isNull(guardianEvents.resolvedAt),
+                    gte(guardianEvents.resolvedAt, filter.globalSince),
+                  ),
                 ),
               ),
         filter.openOnly ? isNull(guardianEvents.resolvedAt) : undefined,

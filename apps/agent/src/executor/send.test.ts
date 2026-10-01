@@ -124,6 +124,43 @@ describe.skipIf(!url)('sending and reconciling on Postgres', () => {
     expect(await rowOf(refused.txHash)).toMatchObject({ status: 'FAILED', broadcastVia: null });
   });
 
+  it('tells a human about bytes the node still refuses to hold half an hour after signing', async () => {
+    const w = await createWorld(db, MON_1000);
+    // The API timed out; the RPC node turns the bytes away for its own policy, every time.
+    w.api.routes['/api/v1/dex/pre-transaction/broadcast-transaction'] = () => {
+      throw new Error('socket hang up');
+    };
+    w.chain.sendRaw = () => Promise.reject(new Error('transaction underpriced'));
+    const result = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 9n),
+    });
+    expect(result).toMatchObject({ state: 'pending' });
+    const hash = result.txHash;
+    // Young: sent again and waited for, no human yet.
+    const early = await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 });
+    expect(early).toMatchObject({ rebroadcast: [hash], pending: [hash], needsHuman: [] });
+    await db
+      .update(txOutbox)
+      .set({ createdAt: new Date(Date.now() - 31 * 60_000).toISOString() })
+      .where(eq(txOutbox.txHash, hash));
+    const late = await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 });
+    expect(late.pending).toEqual([hash]);
+    expect(late.needsHuman).toEqual([
+      {
+        txHash: hash,
+        reason:
+          'approve not held by the node 31 min after signing; the resend was refused (transaction underpriced)',
+      },
+    ]);
+    // Still PENDING: nothing new is signed until a human settles it.
+    expect(await rowOf(hash)).toMatchObject({ status: 'PENDING' });
+    await db
+      .update(txOutbox)
+      .set({ status: 'FAILED', broadcastVia: null, error: 'never went out (human)' })
+      .where(eq(txOutbox.txHash, hash));
+  });
+
   it('never sends again swap bytes the node lost after their quote went stale', async () => {
     const w = await createWorld(db, MON_1000);
     const accept = w.chain.sendRaw.bind(w.chain);

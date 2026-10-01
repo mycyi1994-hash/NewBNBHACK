@@ -3,7 +3,7 @@
  * cycle idempotency and the money CHECK constraints (M1-01).
  */
 import { randomBytes } from 'node:crypto';
-import { inArray } from 'drizzle-orm';
+import { inArray, like } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   deletePlans,
@@ -21,6 +21,7 @@ import {
   getCycle,
   getHolding,
   getPlan,
+  guardianEvents,
   holdingFromRow,
   housePlans,
   insertGuardianEvent,
@@ -35,6 +36,7 @@ import {
   planFromRow,
   plans,
   releasePlanLock,
+  renewPlanLock,
   resolveGuardianEvents,
   seedHousePlans,
   updateCycle,
@@ -185,6 +187,28 @@ describe.skipIf(!url)('plans on Postgres', () => {
     expect(released?.nextDueAt).toMatch(/^2026-09-29/);
   });
 
+  it('renews a lock only for its holder, even after it lapsed, never after a takeover', async () => {
+    const now = new Date('2026-09-28T14:00:00.000Z');
+    const p = await plan({ status: 'active', nextDueAt: '2026-09-28T13:32:00.000Z' });
+    const held = await acquirePlanLock(db, p.id, now, 60_000);
+    const first = held?.lockUntil ?? '';
+    // Lapsed, nobody took it: the holder keeps it, for another TTL from now.
+    const late = new Date(now.getTime() + 90_000);
+    const renewed = await renewPlanLock(db, p.id, first, late, 60_000);
+    expect(Date.parse(renewed ?? '')).toBe(late.getTime() + 60_000);
+    // A stale value (the one before the renewal) renews nothing.
+    expect(await renewPlanLock(db, p.id, first, late, 60_000)).toBeUndefined();
+    // Taken over after it lapsed: the old holder can neither renew nor release it.
+    const takeover = new Date(late.getTime() + 61_000);
+    const next = await acquirePlanLock(db, p.id, takeover, 60_000);
+    expect(next).toBeDefined();
+    expect(await renewPlanLock(db, p.id, renewed ?? '', takeover, 60_000)).toBeUndefined();
+    expect(await releasePlanLock(db, p.id, renewed ?? null)).toBe(false);
+    // Released: nobody's to renew.
+    expect(await releasePlanLock(db, p.id, next?.lockUntil ?? null)).toBe(true);
+    expect(await renewPlanLock(db, p.id, next?.lockUntil ?? '', takeover, 60_000)).toBeUndefined();
+  });
+
   it('opens one cycle per (plan, due time) and logs its steps', async () => {
     const p = await plan();
     const dueAt = '2026-09-28T13:32:00.000Z';
@@ -296,6 +320,38 @@ describe.skipIf(!url)('plans on Postgres', () => {
     await resolveGuardianEvents(db, rule, new Date('2026-09-28T15:00:00.000Z'));
     expect(await listGuardianEvents(db, { planId: p.id, openOnly: true })).toHaveLength(0);
     expect(await listGuardianEvents(db, { planId: p.id })).toHaveLength(1);
+  });
+
+  it('lists with a plan the global holds in force at any time since it was created', async () => {
+    const p = await plan();
+    const tag = randomBytes(4).toString('hex');
+    const hold = (name: string, ts: string, resolvedAt: string) =>
+      insertGuardianEvent(db, {
+        rule: `test-global-${name}-${tag}`,
+        action: 'pause_buys',
+        detail: {},
+        planId: null,
+        ts,
+        resolvedAt,
+      });
+    // Far in the past, resolved: no other test's plan (created now) ever lists them.
+    await hold('before', '2019-12-01T00:00:00.000Z', '2019-12-15T00:00:00.000Z');
+    await hold('across', '2019-12-20T00:00:00.000Z', '2020-01-05T00:00:00.000Z');
+    await hold('after', '2020-01-10T00:00:00.000Z', '2020-01-11T00:00:00.000Z');
+    try {
+      const listed = await listGuardianEvents(db, {
+        planId: p.id,
+        globalSince: '2020-01-01T00:00:00.000Z',
+        limit: 1000,
+      });
+      // A hold raised before the plan and lifted after it skipped the plan's cycles too.
+      expect(listed.filter((e) => e.rule.endsWith(tag)).map((e) => e.rule.split('-')[2])).toEqual([
+        'after',
+        'across',
+      ]);
+    } finally {
+      await db.delete(guardianEvents).where(like(guardianEvents.rule, `test-global-%-${tag}`));
+    }
   });
 
   it('filters plans by owner', async () => {

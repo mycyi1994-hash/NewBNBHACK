@@ -30,6 +30,8 @@ export interface SendDeps {
   db: Db;
   signer: Signer;
   log: (line: string) => void;
+  /** Runs before anything is signed and may refuse by throwing (a cycle renews its plan lock). */
+  beforeSign?: () => Promise<void>;
 }
 
 export interface SendRequest {
@@ -77,8 +79,9 @@ const INVALID_TX =
  */
 const NODE_POLICY = /underpriced|exceeds the configured cap/i;
 /**
- * A used nonce with no receipt for ours, or swap bytes the node lost, is put to a human after this
- * long (RUNBOOK §3.4). Until then it may be a node that has not indexed ours yet.
+ * A used nonce with no receipt for ours, or bytes the node still does not hold, is put to a human
+ * after this long (RUNBOOK §3.4). Until then it may be a node that has not indexed ours yet, or a
+ * resend that is about to be taken.
  */
 export const HUMAN_CHECK_AFTER_MS = 30 * 60_000;
 /** Signed swap bytes are sent again only while their quote could still be current. */
@@ -135,6 +138,7 @@ async function broadcastByRpc(deps: SendDeps, raw: Hex, apiAnswered: boolean): P
 }
 
 export async function sendTransaction(deps: SendDeps, req: SendRequest): Promise<SendResult> {
+  await deps.beforeSign?.();
   const from = deps.signer.address;
   const unsettled = (await unsettledOutbox(deps.db)).filter(
     (row) => row.fromAddress.toLowerCase() === from.toLowerCase(),
@@ -310,13 +314,16 @@ export async function reconcileOutbox(
       });
       continue;
     }
+    let refusal: string | undefined;
     if (unknownToNode) {
       try {
         await deps.chain.sendRaw(row.rawTx as Hex);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (!ALREADY_KNOWN.test(message))
+        if (!ALREADY_KNOWN.test(message)) {
+          refusal = message.split('\n')[0] ?? message;
           deps.log(`reconcile: resend of ${hash} refused — ${message}`);
+        }
       }
       await markOutbox(deps.db, hash, {
         status: 'PENDING',
@@ -330,7 +337,20 @@ export async function reconcileOutbox(
     const settled = await settle(deps, hash, row.broadcastVia ?? 'rpc', options.waitMs ?? 30_000);
     if (settled.state === 'confirmed') result.confirmed.push(hash);
     else if (settled.state === 'reverted') result.failed.push(hash);
-    else result.pending.push(hash);
+    else {
+      result.pending.push(hash);
+      // Bytes the node still does not hold after all this time — refused at every resend (a node
+      // with a higher minimum gas price) or dropped every time — will not settle by themselves.
+      // The row stays PENDING, so nothing new is signed, and a human is told (RUNBOOK §3.4).
+      if (unknownToNode && age >= HUMAN_CHECK_AFTER_MS) {
+        result.needsHuman.push({
+          txHash: hash,
+          reason:
+            `${row.kind} not held by the node ${Math.floor(age / 60_000)} min after signing` +
+            (refusal === undefined ? '' : `; the resend was refused (${refusal})`),
+        });
+      }
+    }
   }
   if (result.confirmed.length + result.failed.length + result.pending.length > 0) {
     deps.log(

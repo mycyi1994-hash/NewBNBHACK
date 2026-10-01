@@ -18,7 +18,15 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';
 import { cleanup, HOUSE, ROUTER } from '../test/harness.js';
-import { createWorld, RECEIVED, testInstrument, testPlan, USDT } from '../test/world.js';
+import {
+  createWorld,
+  RECEIVED,
+  testInstrument,
+  testPlan,
+  USDT,
+  VENUS_RATE,
+  withVenus,
+} from '../test/world.js';
 import { runCycle } from './cycle.js';
 
 const url = agentTestUrl;
@@ -131,32 +139,66 @@ describe.skipIf(!url)('runCycle on Postgres', () => {
     expect(w.alerts).toEqual([]);
   });
 
-  it('live, confirmed: a decision that is not the confirmed buy fails before anything is signed or reserved', async () => {
-    for (const confirmed of [
-      { instrumentId: 'OTHER:bstocks', maxSpendUsd: '5' },
-      { instrumentId, maxSpendUsd: '4.99' },
-    ]) {
-      const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
-      const w = await world(MON_1000);
-      const report = await runCycle(w.deps('live'), id, { manual: true, confirmed });
-      expect(report).toMatchObject({
-        status: 'done',
-        outcome: { kind: 'FAILED', code: 'NOT_CONFIRMED', fundsMoved: 'none' },
-      });
-      expect(w.chain.sent).toEqual([]);
-      expect(w.api.calls).not.toContain('/api/v1/dex/aggregator/approve-transaction');
-      expect(await db.select().from(txOutbox).where(eq(txOutbox.planId, id))).toEqual([]);
-      // A manual run leaves the plan as it was.
-      expect((await getPlan(db, id))?.status).toBe('paused');
-    }
-    // The confirmed buy itself goes through.
+  it('live, confirmed: another instrument fails before anything is signed or reserved', async () => {
     const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
     const w = await world(MON_1000);
     const report = await runCycle(w.deps('live'), id, {
       manual: true,
-      confirmed: { instrumentId, maxSpendUsd: '5' },
+      confirmed: { instrumentId: 'OTHER:bstocks', maxSpendUsd: '5' },
     });
-    expect(report).toMatchObject({ status: 'done', outcome: { kind: 'BOUGHT', spendUsd: '5' } });
+    expect(report).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'FAILED', code: 'NOT_CONFIRMED', fundsMoved: 'none' },
+    });
+    expect(w.chain.sent).toEqual([]);
+    expect(w.api.calls).not.toContain('/api/v1/dex/aggregator/approve-transaction');
+    expect(await db.select().from(txOutbox).where(eq(txOutbox.planId, id))).toEqual([]);
+    // A manual run leaves the plan as it was.
+    expect((await getPlan(db, id))?.status).toBe('paused');
+  });
+
+  it('live, confirmed: the confirmed amount bounds the fresh decision', async () => {
+    for (const [maxSpendUsd, spendUsd] of [
+      ['5', '5'],
+      ['4.99', '4.99'],
+      ['25', '5'],
+    ] as const) {
+      const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
+      const w = await world(MON_1000);
+      const report = await runCycle(w.deps('live'), id, {
+        manual: true,
+        confirmed: { instrumentId, maxSpendUsd },
+      });
+      if (report.status === 'done' && report.outcome.kind === 'FAILED')
+        console.log(JSON.stringify(report.outcome));
+      expect(report).toMatchObject({ status: 'done', outcome: { kind: 'BOUGHT', spendUsd } });
+    }
+  });
+
+  it('live, confirmed: a yield plan buys the confirmed interest although more accrued since the dry run', async () => {
+    // $100 principal and a $103 position: $3 of interest, under every cap.
+    const id = await plan({
+      mode: 'yield',
+      contributionUsd: '0',
+      cadence: 'weekly',
+      principalUsd: '100',
+      vtokenUnits: '10300000000',
+    });
+    const w = await world(MON_1000);
+    withVenus(w);
+    const dry = await runCycle(w.deps('simulate'), id, { manual: true });
+    if (dry.status !== 'simulated') throw new Error(`dry run: ${dry.status}`);
+    expect(dry.buy).toMatchObject({ instrumentId, spendUsd: '3' });
+    // Venus moved on before the person typed y: the position is worth one part in 1e10 more.
+    w.chain.exchangeRate = () => Promise.resolve(VENUS_RATE + VENUS_RATE / 10_000_000_000n);
+    const live = await runCycle(w.deps('live'), id, {
+      manual: true,
+      confirmed: { instrumentId: dry.buy.instrumentId, maxSpendUsd: dry.buy.spendUsd },
+    });
+    expect(live).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'BOUGHT', spendUsd: '3', interestUsd: '3' },
+    });
   });
 
   it('a yield plan waits for an unknown Venus market instead of failing and losing its slot', async () => {

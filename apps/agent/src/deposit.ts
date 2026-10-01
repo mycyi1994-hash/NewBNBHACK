@@ -19,6 +19,10 @@ import {
 import type { CycleDeps } from './cycle.js';
 import { depositPrincipal } from './executor/venus.js';
 import { PublicError } from './public-error.js';
+import { settleOutbox } from './settlement.js';
+
+/** How long a deposit job waits for an earlier transaction's receipt before it refuses. */
+const SETTLE_WAIT_MS = 5_000;
 
 export async function startYieldPlan(
   deps: CycleDeps,
@@ -40,6 +44,12 @@ export async function startYieldPlan(
     ['stop_deposits', 'redeem_all', 'pause_buys'].includes(a.action),
   );
   if (held) throw new PublicError(`the guardian holds new deposits: ${held.rule}`);
+  if (deps.mode === 'live') {
+    // One signer for every plan (D-23): what was sent before settles, and is written down, first —
+    // so a judge who tries again after "approval_pending" goes on from the mined approval at once,
+    // not after the next tick.
+    await settleOutbox(deps, { waitMs: SETTLE_WAIT_MS });
+  }
   // One deposit at a time: a deposit still settling would otherwise be sent a second time (its
   // principal is recorded only from its receipt). For a judge, across all the code's plans, and
   // the code's principal plus its spend stays within the sandbox cap in total.

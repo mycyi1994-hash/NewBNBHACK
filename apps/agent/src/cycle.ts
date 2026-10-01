@@ -73,11 +73,11 @@ import {
 import { redeemFromVenus, vTokensToUsd, type VenusMarket } from './executor/venus.js';
 import { redeemPlanPosition } from './guardian.js';
 import { marketSnapshot, observeQuote } from './market.js';
-import { LOCK_TTL_MS } from './plan-lock.js';
+import { LOCK_TTL_MS, LockLostError, planLease, type PlanLease } from './plan-lock.js';
 import { settleOutbox } from './settlement.js';
 import type { StockQuoteResult } from './stock-price.js';
 
-export { LOCK_TTL_MS };
+export { LOCK_TTL_MS, LockLostError };
 /** Decide/act rounds per cycle before giving up (quotes, re-quotes, approval, redeem, swap). */
 const MAX_ROUNDS = 12;
 
@@ -94,8 +94,8 @@ export interface CycleOptions {
   manual?: boolean;
   /**
    * cycle:once --live: the buy a person confirmed after the dry run. The live run decides again from
-   * fresh data; it may buy that instrument for at most that amount, and fails before it signs or
-   * reserves anything if it would buy another one or spend more.
+   * fresh data, bounded by that amount (interest grows in between), and fails before it signs or
+   * reserves anything if it would buy another instrument.
    */
   confirmed?: { instrumentId: string; maxSpendUsd: string };
 }
@@ -192,13 +192,17 @@ export async function runCycle(
   if (expiresAt !== undefined && !(expiresAt > now.getTime())) {
     // Judge plans stop after seven days (SPEC §8.2); a deposit goes back to the house wallet. A dry
     // run (a preview job, cycle:once without --live) never stops a plan that still holds a
-    // position: only a live run can redeem it, and a stopped plan is never looked at again.
+    // position: only a live run that knows the Venus market can redeem it, and a stopped plan is
+    // never looked at again. A live worker that has not found the market yet (main.ts looks again
+    // every tick) leaves the plan due, and redeems it once it has.
     const holds =
       first.mode === 'yield' &&
       (BigInt(first.vtokenUnits) > 1n ||
         (await unfinishedTransactions(deps.db, first.id)).length > 0);
-    if (deps.mode === 'live' || !holds) {
+    if ((deps.mode === 'live' && deps.venus) || !holds) {
       await redeemPlanPosition(deps, first, { status: 'stopped', reason: 'expired' });
+    } else if (deps.mode === 'live') {
+      deps.log(`cycle ${planId}: expired; its position is redeemed once the Venus market is known`);
     }
     return { status: 'stopped', planId };
   }
@@ -214,8 +218,10 @@ export async function runCycle(
     if (outbox.pending.length > 0)
       return { status: 'outbox_busy', planId, pending: outbox.pending };
   }
-  const locked = await acquirePlanLock(deps.db, planId, now, LOCK_TTL_MS);
+  // The clock is read again: the settle above may have waited for receipts for minutes.
+  const locked = await acquirePlanLock(deps.db, planId, deps.now(), LOCK_TTL_MS);
   if (!locked) return { status: 'locked', planId };
+  const lease = planLease(deps.db, planId, locked.lockUntil, deps.now);
   let patch: PlanPatch = {};
   try {
     // Holding the lock, a cycle of this plan still 'running' was left by a process that died.
@@ -236,11 +242,12 @@ export async function runCycle(
       if (!(Date.parse(fresh.nextDueAt) <= deps.now().getTime()))
         return { status: 'not_due', planId };
     }
-    return await cycleBody(deps, planFromRow(fresh), fresh, options, (p) => {
+    return await cycleBody(deps, planFromRow(fresh), fresh, options, lease, (p) => {
       patch = { ...patch, ...p };
     });
   } finally {
-    await releasePlanLock(deps.db, planId, locked.lockUntil, patch);
+    // A lease that was lost releases nothing and writes nothing: the new holder decides.
+    await releasePlanLock(deps.db, planId, lease.until(), patch);
   }
 }
 
@@ -318,6 +325,7 @@ async function cycleBody(
   plan: Plan,
   row: PlanRow,
   options: CycleOptions,
+  lease: PlanLease,
   setPlan: (patch: PlanPatch) => void,
 ): Promise<CycleReport> {
   const started = deps.now();
@@ -356,6 +364,14 @@ async function cycleBody(
   };
   let reservedUnits: bigint | null = null;
   const dailyRemainingUsd = await remainingSpend(deps.db, scope);
+  // cycle:once --live: the fresh decision is bounded by the amount the person confirmed. A yield
+  // plan's interest is read again and has grown since the dry run (the vToken exchange rate rises
+  // with every Venus interaction), so an unbounded decision would never be the confirmed buy.
+  const { confirmed } = options;
+  const decideRemainingUsd =
+    confirmed && units(confirmed.maxSpendUsd) < units(dailyRemainingUsd)
+      ? usdText(confirmed.maxSpendUsd)
+      : usdText(dailyRemainingUsd);
   if (plan.target.type !== 'ticker') throw new Error('sector plans are not implemented');
   const snapshot = await marketSnapshot(deps, plan.target.ticker);
   await step({
@@ -363,6 +379,7 @@ async function cycleBody(
     at: started.toISOString(),
     mode: deps.mode,
     dailyRemainingUsd: usdText(dailyRemainingUsd),
+    ...(confirmed ? { confirmed } : {}),
     markets: snapshot.markets.map((m) => ({
       id: m.instrument.id,
       status: m.status.reasonCode,
@@ -400,6 +417,8 @@ async function cycleBody(
     why: Why,
     extra: { decision?: ExecuteDecision } = {},
   ): Promise<CycleReport> => {
+    // Never close a cycle that another holder has taken over (and may be recovering).
+    await lease.hold();
     const at = deps.now();
     await updateCycle(deps.db, cycle.id, {
       state: 'done',
@@ -467,14 +486,18 @@ async function cycleBody(
     return { status: 'awaiting_tx' as const, planId: plan.id, cycleId: cycle.id, txHash };
   };
 
-  const tradeDeps: TradeDeps = deps;
+  // Every signature renews the plan lock first: a cycle that lost it signs nothing more.
+  const tradeDeps: TradeDeps = { ...deps, beforeSign: lease.hold };
   try {
     return await rounds();
   } catch (error) {
     // Never leave the cycle 'running': what it signed is finished from the chain, and if it
-    // signed nothing its reservation is freed. The error still reaches the caller's log.
-    const current = await getCycle(deps.db, cycle.id);
-    if (current?.state === 'running') await recoverInterrupted(deps, current);
+    // signed nothing its reservation is freed. The error still reaches the caller's log. A cycle
+    // whose lock was taken over is left to the new holder, which recovers it the same way.
+    if (!(error instanceof LockLostError)) {
+      const current = await getCycle(deps.db, cycle.id);
+      if (current?.state === 'running') await recoverInterrupted(deps, current);
+    }
     throw error;
   }
 
@@ -504,7 +527,7 @@ async function cycleBody(
           nextDueAt: options.manual ? started.toISOString() : dueAt,
         },
         caps: { minBuyUsd: caps.minBuyUsd, maxPerTxUsd: caps.maxPerTxUsd },
-        dailyRemainingUsd: usdText(dailyRemainingUsd),
+        dailyRemainingUsd: decideRemainingUsd,
         dailyLimitUsd: caps.dailyLimitUsd,
         markets: snapshot.markets,
         guardian,
@@ -538,7 +561,7 @@ async function cycleBody(
       // EXECUTE — the decision is recorded before anything is signed, so a cycle interrupted
       // later can still be finished from the chain (recoverInterrupted).
       const spend = units(decision.spendUsd);
-      const { confirmed } = options;
+      // The decision is bounded by the confirmed amount; this is the backstop, and the instrument.
       if (
         confirmed &&
         (decision.instrumentId !== confirmed.instrumentId || spend > units(confirmed.maxSpendUsd))
@@ -556,6 +579,9 @@ async function cycleBody(
       }
       await step({ step: 'EXECUTE', decision });
       if (deps.mode === 'live' && !reserved) {
+        // Reserve only while this cycle still holds the plan: a recovered cycle's reservation was
+        // freed, and a new one would count against today's caps for a cycle that is closed.
+        await lease.hold();
         const reservation = await reserveSpend(deps.db, {
           ...scope,
           day: utcDay(deps.now()),

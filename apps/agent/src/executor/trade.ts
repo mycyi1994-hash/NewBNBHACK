@@ -22,7 +22,7 @@ import { MAX_QUOTE_AGE_MS, type Instrument, type QuoteObservation } from '@yield
 import type { Db } from '@yieldvest/db';
 import { isAddressEqual, type Hex } from 'viem';
 import type { ChainPort, ReceiptLike } from './chain-port.js';
-import { sendTransaction, type SendResult } from './send.js';
+import { sendTransaction, type SendDeps, type SendResult } from './send.js';
 import type { Signer } from './signer.js';
 
 /** Slippage for /swap (the tape and G1 used 0.5 %); the quote-impact rule sits in decideCycle. */
@@ -39,6 +39,8 @@ export interface TradeDeps {
   signer?: Signer;
   log: (line: string) => void;
   now: () => Date;
+  /** Runs before anything is signed and may refuse by throwing (a cycle renews its plan lock). */
+  beforeSign?: () => Promise<void>;
 }
 
 export type Failure = {
@@ -105,6 +107,18 @@ function requireSigner(deps: TradeDeps): Signer {
   if (!isAddressEqual(deps.signer.address, deps.house))
     throw new Error('signer is not the house wallet');
   return deps.signer;
+}
+
+/** What sendTransaction needs from the trade deps (live mode, the house signer). */
+export function sendDeps(deps: TradeDeps): SendDeps {
+  return {
+    client: deps.client,
+    chain: deps.chain,
+    db: deps.db,
+    signer: requireSigner(deps),
+    log: deps.log,
+    ...(deps.beforeSign ? { beforeSign: deps.beforeSign } : {}),
+  };
 }
 
 /** Maps a send result for one transaction; `confirmed` yields the SentTx. */
@@ -192,25 +206,16 @@ export async function ensureApproval(
   const gas = approval.gasLimit
     ? apiInt(approval.gasLimit, 'approve gasLimit')
     : await estimateGasLimit(deps.client, call);
-  const result = await sendTransaction(
-    {
-      client: deps.client,
-      chain: deps.chain,
-      db: deps.db,
-      signer: requireSigner(deps),
-      log: deps.log,
-    },
-    {
-      planId: args.planId,
-      cycleId: args.cycleId,
-      kind: 'approve',
-      to: token,
-      data: approval.data,
-      value: 0n,
-      gas,
-      gasPrice: apiInt(approval.gasPrice, 'approve gasPrice'),
-    },
-  );
+  const result = await sendTransaction(sendDeps(deps), {
+    planId: args.planId,
+    cycleId: args.cycleId,
+    kind: 'approve',
+    to: token,
+    data: approval.data,
+    value: 0n,
+    gas,
+    gasPrice: apiInt(approval.gasPrice, 'approve gasPrice'),
+  });
   const outcome = sentOrFailure(result, 'approve', simulatedAt, {
     token,
     spender,
@@ -305,28 +310,19 @@ export async function performSwap(
     return { kind: 'requote', reason: 'quote older than 25 s at signing' };
   }
 
-  const result = await sendTransaction(
-    {
-      client: deps.client,
-      chain: deps.chain,
-      db: deps.db,
-      signer: requireSigner(deps),
-      log: deps.log,
-    },
-    {
-      planId: args.planId,
-      cycleId: args.cycleId,
-      kind: 'swap',
-      to: tx.to,
-      data: tx.data,
-      value: 0n,
-      gas: apiInt(tx.gas, 'swap gas'),
-      gasPrice: apiInt(tx.gasPrice, 'swap gasPrice'),
-      ...(tx.maxPriorityFeePerGas
-        ? { maxPriorityFeePerGas: apiInt(tx.maxPriorityFeePerGas, 'swap maxPriorityFeePerGas') }
-        : {}),
-    },
-  );
+  const result = await sendTransaction(sendDeps(deps), {
+    planId: args.planId,
+    cycleId: args.cycleId,
+    kind: 'swap',
+    to: tx.to,
+    data: tx.data,
+    value: 0n,
+    gas: apiInt(tx.gas, 'swap gas'),
+    gasPrice: apiInt(tx.gasPrice, 'swap gasPrice'),
+    ...(tx.maxPriorityFeePerGas
+      ? { maxPriorityFeePerGas: apiInt(tx.maxPriorityFeePerGas, 'swap maxPriorityFeePerGas') }
+      : {}),
+  });
   if (result.state !== 'confirmed') {
     const outcome = sentOrFailure(result, 'swap', simulatedAt, {});
     if ('receipt' in outcome) throw new Error('unreachable');

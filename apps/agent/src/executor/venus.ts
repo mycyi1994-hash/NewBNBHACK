@@ -27,7 +27,7 @@ import { fromUnits, toUnits, underlyingFromVTokens } from '@yieldvest/core';
 import { getAddress, isAddressEqual, type Hex } from 'viem';
 import type { ChainPort } from './chain-port.js';
 import { sendTransaction, type SendResult } from './send.js';
-import type { Failure, SentTx, TradeDeps } from './trade.js';
+import { sendDeps, type Failure, type SentTx, type TradeDeps } from './trade.js';
 
 export interface VenusMarket {
   investmentId: string;
@@ -138,17 +138,6 @@ async function gasFor(deps: TradeDeps, call: { to: string; data: string }, fallb
   }
 }
 
-function signerDeps(deps: TradeDeps) {
-  if (deps.mode !== 'live' || !deps.signer) throw new Error('live mode with a signer is required');
-  return {
-    client: deps.client,
-    chain: deps.chain,
-    db: deps.db,
-    signer: deps.signer,
-    log: deps.log,
-  };
-}
-
 type SendOutcome = SentTx | { kind: 'pending'; txHash: Hex } | Failure;
 
 function outcomeOf(
@@ -246,7 +235,7 @@ export async function depositPrincipal(
       return fail('SIM_APPROVE', `approve simulation: ${approveSimulation.failReason}`);
     }
     if (deps.mode === 'live') {
-      const result = await sendTransaction(signerDeps(deps), {
+      const result = await sendTransaction(sendDeps(deps), {
         planId: args.planId,
         cycleId: null,
         kind: 'approve',
@@ -273,7 +262,7 @@ export async function depositPrincipal(
   if (depositSimulation.status !== 'SUCCESS') {
     return fail('SIM_DEPOSIT', `deposit simulation: ${depositSimulation.failReason}`);
   }
-  const result = await sendTransaction(signerDeps(deps), {
+  const result = await sendTransaction(sendDeps(deps), {
     planId: args.planId,
     cycleId: null,
     kind: 'deposit',
@@ -368,7 +357,7 @@ export async function redeemFromVenus(
     return { kind: 'simulated', redeem: simulation, vTokens: call.amount };
   if (simulation.status !== 'SUCCESS')
     return fail('SIM_REDEEM', `redeem simulation: ${simulation.failReason}`);
-  const result = await sendTransaction(signerDeps(deps), {
+  const result = await sendTransaction(sendDeps(deps), {
     planId: args.planId,
     cycleId: args.cycleId,
     kind: 'redeem',
