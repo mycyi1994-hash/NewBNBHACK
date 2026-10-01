@@ -22,6 +22,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { POST as session } from '../app/api/judge/session/route';
 import { GET as nextRoute } from '../app/api/plans/[id]/next/route';
+import { GET as positionRoute } from '../app/api/plans/[id]/position/route';
 import { POST as reportRoute } from '../app/api/plans/[id]/report/route';
 import { POST as run } from '../app/api/plans/[id]/run/route';
 import { POST as stop } from '../app/api/plans/[id]/stop/route';
@@ -297,6 +298,76 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
       reason: 'venus_unavailable',
     });
     chain.walletVTokens = 10n ** 30n;
+  });
+
+  it('gives a stopping skill yield plan its own position to take out, never the wallet’s whole Venus USDT', async () => {
+    at('2026-10-05T14:10:00.000Z');
+    await writeWorkerStatus(db, 'venus', { vToken: VTOKEN, investmentId: `venus-${randomUUID()}` });
+    const { id, token, wallet } = await skillPlan({ mode: 'yield', contributionUsd: '0' });
+    const position = () =>
+      call<{
+        position: { principalUsd: string; vTokens: string; underlyingUsd: string };
+        steps: { id: string; preview?: string[]; run: string[] }[];
+      }>(positionRoute, { path: `/api/plans/${id}/position`, id, token });
+    // Before the deposit is reported there is nothing of this plan's to take out.
+    expect((await position()).body).toMatchObject({
+      position: { principalUsd: '0', vTokens: '0', underlyingUsd: '0' },
+      steps: [],
+    });
+    const deposit = randomHash();
+    chain.mine(deposit, {
+      status: 'success',
+      from: wallet,
+      logs: [
+        transferLog(USDT, wallet, VTOKEN, 100n * E18),
+        transferLog(VTOKEN, VTOKEN, wallet, 100_000_000_000n),
+      ],
+    });
+    await report(id, token, { kind: 'deposit', txHash: deposit });
+    chain.rate = 1_030_000_000_000_000_000_000_000_000n; // $103 for the plan's 1e11 vTokens
+    // The wallet holds far more Venus USDT than this plan put in: only the plan's $103 comes out.
+    chain.walletVTokens = 10n ** 15n;
+    const own = await position();
+    expect(own.status).toBe(200);
+    expect(own.body.position).toEqual({
+      principalUsd: '100',
+      vTokens: '100000000000',
+      underlyingUsd: '103',
+    });
+    const [redeem, ...rest] = own.body.steps;
+    expect(rest).toEqual([]);
+    expect(redeem?.run).toEqual([
+      'baw',
+      'defi',
+      'redeem',
+      '--investmentId',
+      expect.stringMatching(/^venus-/) as unknown,
+      '--tokenAddress',
+      USDT,
+      '--amount',
+      '103',
+      '--json',
+    ]);
+    expect(redeem?.run).not.toContain('--ratio');
+    // The wallet took some out elsewhere: never more than it still holds.
+    chain.walletVTokens = 90_000_000_000n;
+    expect((await position()).body.position.underlyingUsd).toBe('92.7');
+    chain.walletVTokens = 10n ** 30n;
+    // A safe plan keeps no position; a stranger's token opens nothing.
+    const safe = await skillPlan();
+    const notYield = await call<Problem>(positionRoute, {
+      path: `/api/plans/${safe.id}/position`,
+      id: safe.id,
+      token: safe.token,
+    });
+    expect([notYield.status, notYield.body.error.code]).toEqual([409, 'not_yield']);
+    const stranger = await call<Problem>(positionRoute, {
+      path: `/api/plans/${id}/position`,
+      id,
+      token: safe.token,
+    });
+    expect(stranger.status).toBe(404);
+    expect((await call(positionRoute, { path: `/api/plans/${id}/position`, id })).status).toBe(401);
   });
 
   it('holds the per-code plan limit under concurrent requests, and drops a removed code', async () => {

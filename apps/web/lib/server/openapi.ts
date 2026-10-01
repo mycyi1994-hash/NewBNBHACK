@@ -184,6 +184,30 @@ const schemas: Record<string, Schema> = {
       },
     ],
   },
+  PositionAnswer: {
+    type: 'object',
+    description:
+      'A skill yield plan’s own Venus position, read on chain (its vTokens, never more than the wallet holds, at the market’s rate), and the step that takes exactly that out. The wallet may hold other Venus USDT; never redeem it with --ratio 1 for one plan.',
+    required: ['planId', 'asOf', 'position', 'steps'],
+    properties: {
+      planId: str(),
+      asOf: str(),
+      position: {
+        type: 'object',
+        required: ['principalUsd', 'vTokens', 'underlyingUsd'],
+        properties: {
+          principalUsd: str('Principal on record'),
+          vTokens: str('vUSDT units on record for this plan'),
+          underlyingUsd: str('What they are worth now; 0 when nothing is left'),
+        },
+      },
+      steps: {
+        type: 'array',
+        items: ref('NextStep'),
+        description: 'One redeem step, or none when there is nothing to take out.',
+      },
+    },
+  },
   ReportResult: {
     type: 'object',
     description:
@@ -392,6 +416,21 @@ export function openApiDocument(serverUrl: string) {
             404: problem('not_found'),
             429: problem('rate_limited: 30 a minute per plan and token, 120 per address'),
             503: unavailable,
+          },
+        },
+      },
+      '/api/plans/{id}/position': {
+        get: {
+          summary: 'Skill: a yield plan’s own Venus position and the step that takes it out',
+          security: skill,
+          parameters: [idParam],
+          responses: {
+            200: json(ref('PositionAnswer'), 'The position and zero or one redeem step'),
+            401: problem('unauthorized'),
+            404: problem('not_found'),
+            409: problem('not_yield'),
+            429: problem('rate_limited: 10 a minute per plan and token, 60 per address'),
+            503: json(ref('Unavailable'), 'venus_unavailable, chain_unavailable, or no database'),
           },
         },
       },

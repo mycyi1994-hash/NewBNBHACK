@@ -34,8 +34,9 @@ the user confirms, and then reported back — the server records only what the c
    skill's commands and amounts are checked against `baw` 1.10.0 (its quotes print a tokenized stock
    in shares) — the user updates the Binance Agentic Wallet CLI first.
 1. The `binance-agentic-wallet` skill is installed and `baw` is signed in: `baw wallet status --json`.
-   If not, follow that skill's authentication reference. Check `sessionExpireTime`; if it is less
-   than two hours away, say so before starting anything (see [safety.md](references/safety.md)).
+   If not, follow that skill's authentication reference. Then `baw wallet settings --json`: if
+   `data.sessionExpireTime` is less than two hours away, say so before starting anything (see
+   [safety.md](references/safety.md)).
 2. The Yieldvest server URL: `YIELDVEST_URL` in the environment, else the `url` in `~/.config/yieldvest/config.json`,
    else ask the user for the site address (it is in the project README). Check it answers:
    `curl -sS "$YIELDVEST_URL/api/health"`.
@@ -50,7 +51,7 @@ the user confirms, and then reported back — the server records only what the c
 | Put principal in (yield mode) | `baw defi preview --action DEPOSIT …` → confirm → `baw defi deposit …` → `POST /report` | [plan.md](references/plan.md) |
 | Run the plan / "what now?" | `GET /api/plans/{id}/next` → run its `steps` in order, confirming each | [run.md](references/run.md) |
 | Status / history | `GET /api/plans/{id}` (public view: limits, history, receipts, holdings) | [plan.md](references/plan.md) |
-| Stop the plan | `POST /api/plans/{id}/stop`; in yield mode, redeem the position with the user | [plan.md](references/plan.md) |
+| Stop the plan | `POST /api/plans/{id}/stop`; in yield mode, `GET /api/plans/{id}/position` → its redeem step, with the user | [plan.md](references/plan.md) |
 | Anything about risks | Read the disclosure; never promise returns | [safety.md](references/safety.md) |
 
 The API contract (every route, body and answer) is published at `$YIELDVEST_URL/api/openapi`.

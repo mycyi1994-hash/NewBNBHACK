@@ -103,6 +103,14 @@ curl -sS -X POST -H "$AUTH" "$YIELDVEST_URL/api/plans/$PLAN/stop"
 ```
 
 The answer is a job (`202`, poll `GET $YIELDVEST_URL/api/jobs/<jobId>`). The plan stops buying. In
-yield mode the principal stays in the user's own Venus position: offer to take it out with
-`baw defi preview --action REDEEM …` → confirm → `baw defi redeem … --ratio 1 --json`, then report
-it with `{"kind": "redeem", "txHash": …}`. The shares already bought stay in the wallet.
+yield mode the principal stays in the user's own Venus position: offer to take this plan's part out.
+The wallet can hold more Venus USDT than this plan put in (another plan's principal, or the user's
+own), so never redeem with `--ratio 1`; ask the server for this plan's amount:
+
+```bash
+curl -sS -H "$AUTH" "$YIELDVEST_URL/api/plans/$PLAN/position"
+```
+
+Its `steps` hold one `redeem` step (none when nothing is left): run its `preview`, show it, ask; on
+yes run its `run`, then report `{"kind": "redeem", "txHash": "<data.txHash>"}`. The shares already
+bought stay in the wallet.

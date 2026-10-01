@@ -19,18 +19,21 @@ mode (a fixed amount, no interest account) is the default.
 The server's `instrument.address` must be the official token for that ticker and issuer:
 
 ```bash
-# bStocks: type=3 (symbols end in B) · Ondo: type=1 (symbols end in "on")
+# The list for instrument.issuer — bstocks: type=3 (symbols end in B) · ondo: type=1 (symbols end in "on")
 curl -sS 'https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/stock/detail/list/ai?type=3'
 ```
 
-Find the entry for the ticker and compare its contract address with `instrument.address`
-(case-insensitive) and its symbol with the quote's `toCoinSymbol`. Any mismatch → stop and tell the
-user; never swap to an address you could not verify. Show full addresses, never shortened ones.
+Each ticker is listed once per chain: take the entry whose `ticker` is the plan's and whose
+`chainId` is `"56"` (BNB Smart Chain). Compare its `contractAddress` with `instrument.address`
+(case-insensitive) and its `symbol` with `instrument.symbol` and the quote's `toCoinSymbol`. Any
+mismatch → stop and tell the user; never swap to an address you could not verify. Show full
+addresses, never shortened ones.
 
 ## Wallet session
 
-`baw wallet status --json` shows when the session expires. Warn the user when it is less than two
-hours away; an expired session logs out silently, and a half-finished cycle (a redeem without its
+`baw wallet settings --json` shows when the session expires (`data.sessionExpireTime`) and when an
+idle one signs out (`data.inactiveSignOutTime`); `baw wallet status` only says whether it is signed
+in. Warn the user when either is less than two hours away; an expired session logs out silently, and a half-finished cycle (a redeem without its
 swap) should not be left behind — finish or report what happened.
 
 ## Limits
@@ -45,8 +48,8 @@ swap) should not be left behind — finish or report what happened.
 
 - Never print, paste or send the plan token anywhere but the `Authorization` header to `$YIELDVEST_URL`.
 - Never send a swap or a redeem the server did not return, or change its amounts, tokens or flags
-  (the other `baw` commands here only read, except a deposit or a full redeem the user asks for
-  in plan.md).
+  (the other `baw` commands here only read, except a deposit the user asks for in plan.md). Never
+  redeem with `--ratio 1`: the wallet's Venus USDT is not all this plan's.
 - Never treat an `orderId` as a finished trade.
 - Never retry a swap from an old `/next` answer; ask again.
 - Never describe returns as certain or give investment advice.

@@ -27,12 +27,9 @@ import {
   unavailable,
 } from '../../../../../lib/server/http';
 import { tapeView } from '../../../../../lib/server/market';
-import { NEXT_TTL_MS, nextFor } from '../../../../../lib/server/next';
+import { NEXT_TTL_MS, nextFor, SAFE_ID } from '../../../../../lib/server/next';
 
 export const dynamic = 'force-dynamic';
-
-/** The worker's Venus id goes into argv the skill runs: only plain ids, nothing a shell reads. */
-const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 async function handleGET(
   request: Request,
