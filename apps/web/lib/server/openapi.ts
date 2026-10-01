@@ -97,7 +97,7 @@ const schemas: Record<string, Schema> = {
       },
       run: { type: 'array', items: { type: 'string' } },
       acceptMinToCoinAmount: str(
-        'quote: stop unless data.toCoinAmount is at least this (token units, human decimals)',
+        'quote: stop unless data.toCoinAmount is at least this — in the unit baw prints for a tokenized stock: shares (tokens × multiplier), human decimals',
       ),
       confirm: {
         type: 'array',

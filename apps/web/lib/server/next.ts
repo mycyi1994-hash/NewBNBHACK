@@ -45,7 +45,11 @@ export interface NextStep {
   /** Show the user this preview and ask before running `run`. */
   preview?: string[];
   run: string[];
-  /** For quote: stop unless data.toCoinAmount is at least this (human units). */
+  /**
+   * For quote: stop unless data.toCoinAmount is at least this. In the unit `baw market-order quote`
+   * prints for a tokenized stock: shares (tokens × the multiplier, rounded down — read in
+   * @binance/agentic-wallet 1.10.0), not the tokens the tape and the chain count.
+   */
   acceptMinToCoinAmount?: string;
   /** For swap: poll this until FINISHED or FAILED — an orderId is not a trade. */
   confirm?: string[];
@@ -181,7 +185,11 @@ export function nextFor(ctx: NextContext): NextAnswer {
         SKILL_SLIPPAGE,
         '--json',
       ],
-      acceptMinToCoinAmount: human(minTokens, instrument.decimals),
+      acceptMinToCoinAmount: sharesFromTokens(
+        minTokens,
+        instrument.decimals,
+        instrument.multiplier,
+      ),
     });
     steps.push({
       id: 'swap',

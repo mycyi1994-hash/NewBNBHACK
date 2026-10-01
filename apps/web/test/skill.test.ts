@@ -196,8 +196,9 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
         '0.5',
         '--json',
       ],
-      // The wallet's own quote may come in at most 1 % (the price-impact limit) under the tape.
-      acceptMinToCoinAmount: '0.021990032462334682',
+      // The wallet's own quote may come in at most 1 % (the price-impact limit) under the tape —
+      // in shares, as baw prints it: 0.021990032462334682 tokens × the 1.000778… multiplier.
+      acceptMinToCoinAmount: '0.022007145627921886',
     });
     expect(swap).toEqual({
       id: 'swap',

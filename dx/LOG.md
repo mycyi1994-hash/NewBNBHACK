@@ -473,3 +473,13 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Workaround: —
 - Ask: state in the RWA docs, per issuer, whether a token may be held by contracts such as AMM pool managers, and how a scheduled multiplier change is announced on chain.
 - Evidence: `packages/rwa-lp/contracts/test/BscFork.t.sol`; DECISIONS U-05, U-06.
+
+## 2026-10-01 05:12 UTC — [baw][rwa][docs] `baw market-order quote` reports a tokenized stock in shares (tokens × multiplier); the Web3 API quote reports tokens
+- Goal: check that the floor `/next` hands the Wallet Skill (`acceptMinToCoinAmount`) is in the unit the user's `baw` prints, before a human runs M2-09.
+- Expected: `data.toCoinAmount` of `baw market-order quote --json` is the amount of the token bought, like `toTokenAmount` of the Web3 API aggregator quote (`/build/api/v1/dex/aggregator/quote`, token base units; `fixtures/trading/getAggregatedQuote-20260924-1.json`).
+- Actual: in `@binance/agentic-wallet@1.10.0` (npm tarball sha256 `459d014f…0502`, `dist/index.js` sha256 `7048ff79…345d`, read, not run): when either token is in the wallet's RWA list, `quote` multiplies the API's `toCoinAmount` by that token's multiplier, rounded down to 18 decimals (`$e(a.data.toCoinAmount, l)`, offset 82132, for bStocks; Ondo goes to a separate `ondoQuote` endpoint and prints `toTokenShare`). `market-order list` does the same to `toTokenActualQty` (offset 86267), and for a sell `--fromTokenQty` is read as shares and divided by the multiplier. So the CLI speaks shares, the chain and the Web3 API speak tokens. Our `/next` gave the floor in tokens: with a multiplier above 1 the 1 % price check was looser by that factor (0.08 % for NVDAB today, half the price after a 2-for-1 split), below 1 it would refuse every quote.
+- Docs: Skills Hub `binance-agentic-wallet` (market-order) and the `baw --help` text say "Amount to swap" / "Destination token" with no unit for RWA tokens; the conversion is only in the bundle.
+- Time lost: about 20 minutes.
+- Workaround: `/next` now states the floor in shares (`sharesFromTokens(min tokens, decimals, multiplier)`, rounded down like `baw`); `skills/yieldvest/references/run.md` says both sides are shares.
+- Ask: document per command which RWA amounts `baw` prints and accepts as shares, and the multiplier it used (put it in the JSON output), so an agent can compare a quote with on-chain balances without reading the bundle.
+- Evidence: `apps/web/lib/server/next.ts` (`acceptMinToCoinAmount`), `apps/web/test/skill.test.ts` (0.021990032462334682 tokens × 1.000778223752807865 = 0.022007145627921886 shares).

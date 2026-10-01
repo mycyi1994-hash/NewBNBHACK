@@ -29,6 +29,8 @@ and `report`. Placeholders in angle brackets come from the previous command's JS
 2. `quote`
    - Run it. **Stop** unless `data.toCoinAmount` ≥ `acceptMinToCoinAmount` (the price moved more
      than Yieldvest's 1 % impact limit) and the quote's `toCoinSymbol` matches `instrument.symbol`.
+     Both amounts are in shares (`baw` prints a tokenized stock as tokens × its multiplier); compare
+     them as decimals, never as text.
    - Do the token check in [safety.md](safety.md).
 3. `swap`
    - Complete the `binance-agentic-wallet` swap security pre-check; show amount, token, slippage
