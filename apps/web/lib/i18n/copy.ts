@@ -164,6 +164,16 @@ export const COPY = {
     'plan.paused.report_over_limit': 'Paused: a reported buy went over its limits',
     'plan.paused.guardian': 'Paused by the guardian',
     'plan.paused.expired': 'Ended after 7 days',
+    'plan.paused.stopped_by_owner': 'Stopped by its owner',
+    'plan.paused.done': 'Ended after its one buy',
+    'plan.paused.code_disabled': 'Paused: its judge code was turned off',
+    'plan.paused.needs_review': 'Paused until a person checks its last transaction',
+    'plan.paused.redeemed': 'Paused: its principal was taken out of the interest account',
+    'plan.paused.operator_redeem':
+      'Paused: the Yieldvest team took its principal out of the interest account',
+    'plan.paused.paused_by_operator': 'Paused by the Yieldvest team',
+    'plan.paused.redeem_held':
+      '{reason}. Its principal is still in the interest account; the Yieldvest team has been alerted.',
     'plan.paused.other': 'Paused: {reason}',
     'plan.next.none': 'Not scheduled',
     'plan.summary.average': 'Average price ${avg}',

@@ -29,8 +29,17 @@ export function statusText(t: T, status: string): string {
   return isCopyKey(key) ? t(key) : status;
 }
 
+/**
+ * Why a plan is paused or stopped, in words. Every reason the worker and the web write has its
+ * own sentence (test/i18n.test.ts); "Paused: {reason}" is left for an operator's free text.
+ */
 export function pausedText(t: T, reason: string | null): string | null {
   if (!reason) return null;
+  // `<reason>:redeem_<kind>`: the pause or stop stands, its redeem did not complete (guardian.ts).
+  const held = /^(.+):redeem_[a-z_]+$/.exec(reason)?.[1];
+  if (held !== undefined) {
+    return t('plan.paused.redeem_held', { reason: pausedText(t, held) ?? held });
+  }
   if (reason.startsWith('guardian:')) return t('plan.paused.guardian');
   const key = `plan.paused.${reason}`;
   return isCopyKey(key) ? t(key) : t('plan.paused.other', { reason });

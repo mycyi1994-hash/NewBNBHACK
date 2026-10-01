@@ -136,7 +136,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
       ? v.plan.mode === 'yield'
         ? `${t('home.house.next.min', { min: money(String(config.caps.minBuyUsd)) })} · ${timeText(v.plan.nextDueAt, lang, tz)}`
         : (timeText(v.plan.nextDueAt, lang, tz) ?? '—')
-      : (paused ?? t('plan.next.none'));
+      : (paused ?? (v.plan.status === 'stopped' ? statusText(t, 'stopped') : t('plan.next.none')));
   const sharesItem = {
     label: t('home.house.shares'),
     value: (

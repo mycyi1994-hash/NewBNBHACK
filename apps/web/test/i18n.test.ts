@@ -20,7 +20,8 @@ import {
   timeText,
 } from '../lib/format';
 import { COPY } from '../lib/i18n/copy';
-import { translate } from '../lib/i18n/translate';
+import { makeT, translate } from '../lib/i18n/translate';
+import { pausedText } from '../components/plan-text';
 import { parseUxCopy } from '../lib/i18n/ux-copy';
 import { lintCopy, render } from '../scripts/copy';
 
@@ -156,5 +157,48 @@ describe('format', () => {
     expect(params.gap).toBe('−0.35');
     expect(params.ticker).toBe('NVDA');
     expect(timeText('2026-09-28T13:32:00.000Z', 'en', 'America/New_York')).toContain('09:32');
+  });
+});
+
+describe('why a plan is paused or stopped', () => {
+  const t = makeT('en');
+  // Every reason the worker and the web write (pausedReason in apps/agent, apps/web, packages/db).
+  const REASONS = [
+    'awaiting_funding',
+    'awaiting_run',
+    'awaiting_deposit',
+    'report_over_limit',
+    'expired',
+    'stopped_by_owner',
+    'done',
+    'code_disabled',
+    'needs_review',
+    'redeemed',
+    'operator_redeem',
+    'paused_by_operator',
+    'guardian:tvl_drop',
+  ];
+
+  it('has words of its own for each one: no code on the screen, no "Paused" for a stopped plan', () => {
+    for (const reason of REASONS) {
+      const text = pausedText(t, reason) ?? '';
+      expect(text, reason).not.toBe('');
+      expect(text, reason).not.toContain(reason);
+      expect(text, reason).not.toMatch(/_/);
+    }
+    expect(pausedText(t, 'stopped_by_owner')).toBe('Stopped by its owner');
+    expect(pausedText(t, null)).toBeNull();
+    // An operator's own words (plan:status --reason) are shown as given.
+    expect(pausedText(t, 'bank holiday check')).toBe('Paused: bank holiday check');
+  });
+
+  it('says when a stop or pause stands but its redeem did not complete', () => {
+    expect(pausedText(t, 'stopped_by_owner:redeem_pending')).toBe(
+      'Stopped by its owner. Its principal is still in the interest account; the Yieldvest team has been alerted.',
+    );
+    expect(pausedText(t, 'guardian:tvl_drop:redeem_not_live')).toMatch(
+      /^Paused by the guardian\. Its principal is still in the interest account/,
+    );
+    expect(pausedText(t, 'expired:redeem_failed')).toMatch(/^Ended after 7 days\. /);
   });
 });
