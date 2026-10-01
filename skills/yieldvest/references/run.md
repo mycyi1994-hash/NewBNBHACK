@@ -23,6 +23,9 @@ curl -sS -H "$AUTH" "$YIELDVEST_URL/api/plans/$PLAN/next"
 Each step has `run` (argv for `baw`), and may have `preview`, `acceptMinToCoinAmount`, `confirm`
 and `report`. Placeholders in angle brackets come from the previous command's JSON.
 
+Before the first step: `baw wallet left-quota --json`. If `data.quotaLeft` is under `spendUsd`,
+stop — the wallet's own daily limit would refuse the swap (see [safety.md](safety.md)).
+
 1. `redeem` (yield plans: take this cycle's interest out of Venus)
    - Run `preview`; show the fee and balance changes; ask; on yes run `run`.
    - Report `{"kind": "redeem", "txHash": "<data.txHash>"}` once it is mined (retry on `202`).

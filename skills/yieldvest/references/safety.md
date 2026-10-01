@@ -37,13 +37,16 @@ swap) should not be left behind — finish or report what happened.
 
 - The plan's `maxPerBuyUsd` and `maxDailyUsd` are the most a cycle may spend; `/next` never asks for
   more. A report that shows more pauses the plan.
-- The wallet's own daily quota (`baw wallet settings --json`) applies as well; if it is lower, it
-  wins — tell the user.
+- The wallet's own daily trading limit applies as well: `baw wallet left-quota --json` gives
+  `data.quotaLeft` (USD, today in UTC). If it is under `spendUsd`, the wallet would refuse the
+  swap — stop before the redeem and tell the user, rather than leave interest half-spent.
 
 ## Never
 
 - Never print, paste or send the plan token anywhere but the `Authorization` header to `$YIELDVEST_URL`.
-- Never run a command the server did not return, or change its amounts, tokens or flags.
+- Never send a swap or a redeem the server did not return, or change its amounts, tokens or flags
+  (the other `baw` commands here only read, except a deposit or a full redeem the user asks for
+  in plan.md).
 - Never treat an `orderId` as a finished trade.
 - Never retry a swap from an old `/next` answer; ask again.
 - Never describe returns as certain or give investment advice.

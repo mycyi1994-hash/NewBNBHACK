@@ -8,7 +8,7 @@ description: |
   "run my Yieldvest plan", "what should Yieldvest do now", "Yieldvest status", "stop my Yieldvest plan".
 metadata:
   author: yieldvest
-  version: '0.1.0'
+  version: '0.2.0'
   requires:
     skills:
       - binance-agentic-wallet
@@ -30,6 +30,9 @@ the user confirms, and then reported back — the server records only what the c
 
 ## Preflight (every conversation)
 
+0. `baw cli-check --required-version 1.10.0 --json`. If `data.needUpdateCli` is `true`, stop: this
+   skill's commands and amounts are checked against `baw` 1.10.0 (its quotes print a tokenized stock
+   in shares) — the user updates the Binance Agentic Wallet CLI first.
 1. The `binance-agentic-wallet` skill is installed and `baw` is signed in: `baw wallet status --json`.
    If not, follow that skill's authentication reference. Check `sessionExpireTime`; if it is less
    than two hours away, say so before starting anything (see [safety.md](references/safety.md)).

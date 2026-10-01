@@ -1,0 +1,19 @@
+Usage: baw defi deposit [options]
+
+Deposit / stake / supply assets to a DeFi protocol
+
+Options:
+  --investmentId <investmentId>      Investment product ID
+  --tokenAddress <tokenAddress>      Underlying token contract address
+  --amount <amount>                  Amount to deposit (human-readable, e.g.
+                                     "100")
+  --gasLevel <gasLevel>              Gas level: LOW / MEDIUM / HIGH (default:
+                                     "MEDIUM")
+  --binanceChainId <binanceChainId>  Binance chain ID (default: 56) (default:
+                                     "56")
+  -h, --help                         display help for command
+
+Examples:
+  baw defi deposit --investmentId venus_usdt --tokenAddress 0x... --amount 100
+  baw defi deposit --investmentId venus_usdt --tokenAddress 0x... --amount 100 --gasLevel HIGH --json
+

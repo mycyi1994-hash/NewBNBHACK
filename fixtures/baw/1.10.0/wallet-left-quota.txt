@@ -1,0 +1,12 @@
+Usage: baw wallet left-quota [options]
+
+Query daily trading limit usage
+
+Options:
+  -h, --help  display help for command
+
+Examples:
+  baw wallet left-quota
+  baw wallet left-quota --json
+
+

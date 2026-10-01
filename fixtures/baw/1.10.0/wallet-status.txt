@@ -1,0 +1,12 @@
+Usage: baw wallet status [options]
+
+Check authentication status and wallet status
+
+Options:
+  -h, --help  display help for command
+
+Examples:
+  baw wallet status
+  baw wallet status --json
+
+

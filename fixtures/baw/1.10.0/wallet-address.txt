@@ -1,0 +1,12 @@
+Usage: baw wallet address [options]
+
+Get wallet addresses for all supported chains
+
+Options:
+  -h, --help  display help for command
+
+Examples:
+  baw wallet address
+  baw wallet address --json
+
+

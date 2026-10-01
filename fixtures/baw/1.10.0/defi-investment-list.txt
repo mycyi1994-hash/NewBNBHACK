@@ -1,0 +1,21 @@
+Usage: baw defi investment-list [options]
+
+List DeFi investment opportunities
+
+Options:
+  --investType <investType>          Investment type: Earn, Loan, LiquidityPool
+  --defiProtocolId <defiProtocolId>  Filter by protocol ID
+  --contractAddresses <addresses>    Filter by token contract addresses
+                                     (comma-separated, max 2)
+  --binanceChainId <binanceChainId>  Filter by Binance chain ID
+  --sortField <sortField>            Sort by: apy, tvl (default: apy)
+  --sortDirection <sortDirection>    Sort direction: ASC, DESC (default: DESC)
+  --page <page>                      Page number (default: 1)
+  --size <size>                      Page size (default: 20, max: 100)
+  -h, --help                         display help for command
+
+Examples:
+  baw defi investment-list --investType Earn --json
+  baw defi investment-list --investType Earn --defiProtocolId venus --json
+  baw defi investment-list --investType LiquidityPool --sortField tvl --json
+

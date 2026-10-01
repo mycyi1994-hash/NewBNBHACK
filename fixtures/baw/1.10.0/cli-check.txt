@@ -1,0 +1,7 @@
+Usage: baw cli-check [options]
+
+Check if the CLI meets the required version
+
+Options:
+  --required-version <version>  Required CLI version
+  -h, --help                    display help for command

@@ -43,7 +43,8 @@
     "lp:test": "pnpm --filter @yieldvest/rwa-lp test:contracts",
     "lp:abi": "pnpm --filter @yieldvest/rwa-lp abi",
     "lp:vectors": "pnpm --filter @yieldvest/rwa-lp vectors",
-    "lp:status": "tsx scripts/lp-status.ts"
+    "lp:status": "tsx scripts/lp-status.ts",
+    "baw:help": "tsx scripts/baw-help.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -8,3 +8,7 @@ Written only by the client's fixture recorder (`packages/binance/src/fixtures.ts
 - Redacted before writing: API key and secret, our wallet addresses, any value passed in `redact`. Request
   headers (key, signature) are never stored. Public token contract addresses are kept.
 - Never hand-edit or fabricate a fixture (CLAUDE.md rule 4). Tests replay these files; product code never reads them.
+
+`fixtures/baw/<version>/` is the one exception to the recorder: the `--help` of every Binance Agentic Wallet command
+the Wallet Skill uses, printed by the real `baw` and written by `pnpm baw:help` (no sign-in, nothing sent).
+`apps/web/test/baw-contract.test.ts` checks `/next`'s argv and the skill's `baw` lines against them.
