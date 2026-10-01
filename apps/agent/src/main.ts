@@ -40,7 +40,6 @@ const rt = createRuntime(config);
 await migrateDb(rt.database.db);
 const abandoned = await abandonRunningJobs(
   rt.database.db,
-  new Date(),
   'the worker restarted while this job ran — see the plan history for what happened on chain',
 );
 if (abandoned > 0)

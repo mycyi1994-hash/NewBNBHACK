@@ -164,8 +164,8 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
   });
 
   it('records a hash once in any spelling, then keeps the cadence', async () => {
-    const { id, token, wallet } = await skillPlan();
     at(MONDAY_10_ET);
+    const { id, token, wallet } = await skillPlan();
     await writeTape(db, instrument, '2026-09-28T13:55:00.000Z');
     const hash = randomHash();
     chain.mine(hash, {
@@ -194,6 +194,7 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
   });
 
   it('spends a skill yield plan’s interest once and splits a redeem into interest and principal', async () => {
+    at(MONDAY_10_ET);
     await writeWorkerStatus(db, 'venus', { vToken: VTOKEN, investmentId: `venus-${randomUUID()}` });
     const { id, token, wallet } = await skillPlan({ mode: 'yield', contributionUsd: '0' });
     const deposit = randomHash();
@@ -265,6 +266,7 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
   });
 
   it('values only the plan’s own vTokens, never more than the wallet still holds', async () => {
+    at('2026-10-05T14:10:00.000Z');
     await writeWorkerStatus(db, 'venus', { vToken: VTOKEN, investmentId: `venus-${randomUUID()}` });
     const { id, token, wallet } = await skillPlan({ mode: 'yield', contributionUsd: '0' });
     const deposit = randomHash();
@@ -277,7 +279,6 @@ describe.skipIf(!webTestUrl)('web audit fixes', () => {
       ],
     });
     await report(id, token, { kind: 'deposit', txHash: deposit });
-    at('2026-10-05T14:10:00.000Z');
     await writeTape(db, instrument, '2026-10-05T14:05:00.000Z');
     chain.rate = 1_030_000_000_000_000_000_000_000_000n; // $103 for the plan's 1e11 vTokens
     // The wallet holds far more vUSDT (other deposits): only the plan's $3 is interest.

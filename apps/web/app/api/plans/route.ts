@@ -94,6 +94,8 @@ async function handlePOST(request: Request): Promise<Response> {
         status: body.mode === 'yield' ? 'paused' : 'active',
         ...(body.mode === 'yield' ? { pausedReason: AWAITING_DEPOSIT } : {}),
         nextDueAt: now.toISOString(),
+        // The clock /report compares block times with (lib/server/report.ts), not the database's.
+        createdAt: now.toISOString(),
       },
       MAX_OPEN_PER_WALLET,
     );

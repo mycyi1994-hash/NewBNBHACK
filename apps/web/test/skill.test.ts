@@ -153,8 +153,8 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   });
 
   it('answers /next with baw commands in the regular session — no calldata, no signing', async () => {
-    const { id, token } = await skillPlan();
     at(MONDAY_10_ET);
+    const { id, token } = await skillPlan();
     await writeTape(db, instrument, '2026-09-28T13:55:00.000Z');
 
     const res = await next(id, token);
@@ -236,9 +236,9 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   });
 
   it('waits when the market is closed or the tape is old, and skips while the guardian blocks', async () => {
+    at(SATURDAY);
     const { id, token } = await skillPlan();
 
-    at(SATURDAY);
     await writeTape(db, instrument, '2026-10-03T14:55:00.000Z', {
       session: 'weekend',
       stockPrice: null,
@@ -277,8 +277,8 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   });
 
   it('records a mined swap from the plan wallet — and nothing the chain does not show', async () => {
-    const { id, token, wallet } = await skillPlan();
     at(MONDAY_10_ET);
+    const { id, token, wallet } = await skillPlan();
     const received = TOKENS_PER_USD * 5n;
     const swapLogs = (spent: bigint, tokens: bigint) => [
       transferLog(USDT, wallet, ROUTER, spent),
@@ -379,6 +379,8 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   });
 
   it('starts a skill yield plan from its reported deposit and redeems only interest', async () => {
+    // After every earlier tape run in this file: the latest run is the one the decision reads.
+    at('2026-10-05T14:10:00.000Z');
     await writeWorkerStatus(db, 'venus', { vToken: VTOKEN, investmentId: `venus-${randomUUID()}` });
     const { id, token, wallet, created } = await skillPlan({
       mode: 'yield',
@@ -406,8 +408,6 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
       vtokenUnits: '100000000000',
     });
 
-    // After every earlier tape run in this file: the latest run is the one the decision reads.
-    at('2026-10-05T14:10:00.000Z');
     await writeTape(db, instrument, '2026-10-05T14:05:00.000Z');
     // The plan's own 1e11 vTokens: $100.10 at this rate, $0.10 of interest (under the minimum).
     chain.rate = 1_001_000_000_000_000_000_000_000_000n;

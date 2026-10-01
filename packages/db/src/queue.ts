@@ -64,19 +64,17 @@ export async function getJob(db: Db, id: string): Promise<JobRow | undefined> {
 }
 
 /**
- * Jobs a worker left 'running' when it stopped (it is the only worker, so at boot every running job
- * is one of these). They are closed as failed rather than run again: a run may already have
- * broadcast, and the outbox and awaiting-cycle checks finish that on-chain truth by themselves.
+ * Jobs a worker left 'running' when it stopped (it is the only worker, and this runs at boot before
+ * it claims anything, so every running job is one of these). They are closed as failed rather than
+ * run again: a run may already have broadcast, and the outbox and awaiting-cycle checks finish that
+ * on-chain truth by themselves. `started_at` is the database's clock, so the cutoff is too: a
+ * worker clock behind the database's would otherwise leave the last job running for good.
  */
-export async function abandonRunningJobs(
-  db: Db,
-  startedBefore: Date,
-  reason: string,
-): Promise<number> {
+export async function abandonRunningJobs(db: Db, reason: string): Promise<number> {
   const rows = await db
     .update(jobs)
     .set({ status: 'failed', error: reason, finishedAt: sql`now()` })
-    .where(and(eq(jobs.status, 'running'), sql`${jobs.startedAt} < ${startedBefore.toISOString()}`))
+    .where(and(eq(jobs.status, 'running'), sql`${jobs.startedAt} <= now()`))
     .returning({ id: jobs.id });
   return rows.length;
 }
