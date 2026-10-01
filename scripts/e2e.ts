@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 /**
  * pnpm e2e --database <postgres url> [--chromium <path>] [--port 3100] — Judge Mode end to end in
  * Chromium, in simulate mode (GOALS G6-2). The built web app (`next start`) runs on a scratch
@@ -5,13 +6,14 @@
  * Binance answers and an in-memory chain, so nothing reaches a network and nothing is signed.
  * A judge enters a code, picks the test stock, dry-runs a $5 buy, presses "Buy now" (the server
  * answers that it only simulates), opens the plan and stops it. Then "Buy with interest": the risk
- * disclosure must be agreed to before it turns on, and the $5 deposit is dry-run.
+ * disclosure must be agreed to before it turns on, and the $5 deposit is dry-run. All of it at a
+ * phone's 375 px and at 1280 px, with no sideways scroll at any step (dialogs open included).
  * The database name must contain "e2e"; it is created and migrated when missing. Build the web
  * first: pnpm --filter @yieldvest/web build. Exit: 0 pass · 1 fail · 2 usage.
  */
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +26,7 @@ import { createWorld, testInstrument, withVenus } from '../apps/agent/test/world
 import { parseFlags } from './args.js';
 
 const usage =
-  'usage: pnpm e2e --database <postgres url, name containing e2e> [--chromium <path>] [--port 3100]';
+  'usage: pnpm e2e --database <postgres url, name containing e2e> [--chromium <path>] [--port 3100] [--shots <dir>]';
 const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../apps/web');
 const NEXT = path.join(WEB, 'node_modules/next/dist/bin/next');
 /** Mon 28 Sep 2026, 10:00 New York: the worker's world trades in the regular session. */
@@ -32,6 +34,16 @@ const WORLD_START = '2026-09-28T14:00:00.000Z';
 const STEP_MS = 60_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** One browser run: its page, the plans it created, its log and its layout check. */
+interface Run {
+  page: Page;
+  base: string;
+  planIds: string[];
+  log: (step: string) => void;
+  /** Records a sideways scroll at this step (TASKS M2-01: 375 px, no horizontal scroll). */
+  check: (where: string) => Promise<void>;
+}
 
 /** Creates the scratch database when it is missing, through the server's `postgres` database. */
 async function ensureDatabase(url: string): Promise<void> {
@@ -64,14 +76,9 @@ async function waitForWeb(base: string, exited: () => string | null): Promise<vo
 }
 
 /** The POST /api/plans the next click sends: the plan it created, kept for the cleanup. */
-async function planCreatedBy(
-  page: Page,
-  base: string,
-  click: () => Promise<void>,
-  planIds: string[],
-): Promise<string> {
-  const created = page.waitForResponse(
-    (r) => r.url() === `${base}/api/plans` && r.request().method() === 'POST',
+async function planCreatedBy(run: Run, click: () => Promise<void>): Promise<string> {
+  const created = run.page.waitForResponse(
+    (r) => r.url() === `${run.base}/api/plans` && r.request().method() === 'POST',
   );
   await click();
   const answer = await created;
@@ -79,58 +86,56 @@ async function planCreatedBy(
     throw new Error(`POST /api/plans answered ${answer.status()}: ${await answer.text()}`);
   }
   const { plan } = (await answer.json()) as { plan: { id: string } };
-  planIds.push(plan.id);
+  run.planIds.push(plan.id);
   return plan.id;
 }
 
-async function judgeFlow(
-  page: Page,
-  base: string,
-  code: string,
-  ticker: string,
-  planIds: string[],
-  log: (step: string) => void,
-) {
+async function judgeFlow(run: Run, code: string, ticker: string) {
+  const { page, base, log, check } = run;
   await page.goto(`${base}/invest`, { waitUntil: 'networkidle' });
+  await check('invest, no code yet');
   await page.getByRole('textbox', { name: 'Enter your judge code' }).fill(code);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Dry-run it' }).waitFor({ timeout: STEP_MS });
   log('code accepted, the sandbox limit is shown');
 
   await page.getByRole('button', { name: ticker }).first().click();
-  const planId = await planCreatedBy(
-    page,
-    base,
-    () => page.getByRole('button', { name: 'Dry-run it' }).click(),
-    planIds,
+  const planId = await planCreatedBy(run, () =>
+    page.getByRole('button', { name: 'Dry-run it' }).click(),
   );
   log(`plan ${planId} created for ${ticker}`);
 
   const dialog = page.getByRole('dialog');
   await dialog.getByText('the exact approval passes').waitFor({ timeout: STEP_MS });
+  await check('dry-run dialog');
   log('dry run on chain: the exact approval passes, the buy is checked again before signing');
 
   await dialog.getByRole('button', { name: 'Buy now' }).click();
   await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
+  await check('done dialog');
   log('buy now: the worker ran the cycle, the server says it only simulates');
 
   await page.goto(`${base}/plans/${planId}`, { waitUntil: 'networkidle' });
-  await page.getByText('Stopped · Judge trial').waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Stop this plan' }).click();
   await page.getByText('Stop this plan?').waitFor();
+  await check('plan page, stop asked');
   await page.getByRole('button', { name: 'Stop this plan' }).click();
-  // The worker stops it; the page refreshes to the plan's new state (no stop button any more).
-  await page.getByText('Stopped · Judge trial').waitFor({ timeout: STEP_MS });
-  log('plan page: stop asked, confirmed, and the plan reads "Stopped"');
+  // The worker stops it; the page refreshes to the plan's new state (no stop button any more),
+  // which a phone shows too (the summary's status line is hidden under 1100 px).
+  await page.getByText('Stopped by its owner').first().waitFor({ timeout: STEP_MS });
+  await check('plan page, stopped');
+  log('plan page: stop asked, confirmed, and the plan reads "Stopped by its owner"');
   return planId;
 }
 
 /** "Buy with interest" turns on only after the risk disclosure is agreed to; the deposit is dry-run. */
-async function yieldFlow(page: Page, base: string, planIds: string[], log: (step: string) => void) {
+async function yieldFlow(run: Run) {
+  const { page, base, log, check } = run;
   await page.goto(`${base}/invest`, { waitUntil: 'networkidle' });
   const yieldMode = page.getByRole('button', { name: 'Buy with interest' });
   const agree = page.getByRole('button', { name: 'Agree and turn on' });
   await yieldMode.click();
+  await check('risk disclosure');
   if (!(await agree.isDisabled())) {
     throw new Error('yield mode could be turned on before "I understand" was checked');
   }
@@ -146,21 +151,20 @@ async function yieldFlow(page: Page, base: string, planIds: string[], log: (step
   }
   log('yield mode: stays off until "I understand" is checked, on after "Agree and turn on"');
 
-  const planId = await planCreatedBy(
-    page,
-    base,
-    () => page.getByRole('button', { name: 'Continue' }).click(),
-    planIds,
+  const planId = await planCreatedBy(run, () =>
+    page.getByRole('button', { name: 'Continue' }).click(),
   );
   const dialog = page.getByRole('dialog');
+  await check('deposit dialog');
   await dialog.getByRole('button', { name: 'Put it in the interest account' }).click();
   await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
+  await check('deposit done');
   log(`deposit of plan ${planId}: exact approval and Venus deposit dry-run, nothing signed`);
   return planId;
 }
 
 const flags = parseFlags(process.argv.slice(2), {
-  values: ['database', 'chromium', 'port'],
+  values: ['database', 'chromium', 'port', 'shots'],
   required: ['database'],
 });
 const database = flags.ok ? flags.values.database : '';
@@ -236,30 +240,59 @@ if (!flags.ok || problem !== null) {
   );
   const problems: string[] = [];
   const planIds: string[] = [];
+  let current: Page | undefined;
   try {
     await waitForWeb(base, () => exit);
     log('web answers /api/health');
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-    const page = await context.newPage();
-    page.on('pageerror', (error) => problems.push(`page error at ${page.url()}: ${error.message}`));
-    page.on('console', (message) => {
-      if (message.type() === 'error')
-        problems.push(`console error at ${page.url()}: ${message.text()}`);
-    });
-    const safe = await judgeFlow(page, base, code, ticker, planIds, log);
-    const interest = await yieldFlow(page, base, planIds, log);
-    // What the pages said, from the database: the first plan is stopped; the second still waits
-    // for its first run, with no principal (a dry run deposits nothing).
-    const [stopped, waiting] = [await getPlan(db, safe), await getPlan(db, interest)];
-    if (stopped?.status !== 'stopped')
-      problems.push(`plan ${safe} is ${stopped?.status ?? 'missing'}, not stopped`);
-    if (waiting?.pausedReason !== 'awaiting_run' || Number(waiting.principalUsd) !== 0)
-      problems.push(`plan ${interest} is ${waiting?.pausedReason ?? 'missing'} with principal`);
+    // A phone first, then a desktop: each a judge of its own (a fresh session cookie).
+    for (const width of [375, 1280]) {
+      const context = await browser.newContext({ viewport: { width, height: 900 } });
+      const page = await context.newPage();
+      current = page;
+      const at = `${width}px`;
+      page.on('pageerror', (error) =>
+        problems.push(`${at} page error at ${page.url()}: ${error.message}`),
+      );
+      page.on('console', (message) => {
+        if (message.type() === 'error')
+          problems.push(`${at} console error at ${page.url()}: ${message.text()}`);
+      });
+      const run: Run = {
+        page,
+        base,
+        planIds,
+        log: (step) => log(`${at.padStart(6)}  ${step}`),
+        check: async (where) => {
+          const { scroll, client } = await page.evaluate(() => ({
+            scroll: document.documentElement.scrollWidth,
+            client: document.documentElement.clientWidth,
+          }));
+          if (scroll > client) problems.push(`${at} ${where}: scrollWidth ${scroll} > ${client}`);
+        },
+      };
+      const safe = await judgeFlow(run, code, ticker);
+      const interest = await yieldFlow(run);
+      // What the pages said, from the database: the first plan is stopped; the second still
+      // waits for its first run, with no principal (a dry run deposits nothing).
+      const [stopped, waiting] = [await getPlan(db, safe), await getPlan(db, interest)];
+      if (stopped?.status !== 'stopped')
+        problems.push(`${at} plan ${safe} is ${stopped?.status ?? 'missing'}, not stopped`);
+      if (waiting?.pausedReason !== 'awaiting_run' || Number(waiting.principalUsd) !== 0)
+        problems.push(`${at} plan ${interest} is ${waiting?.pausedReason ?? 'missing'}`);
+      await context.close();
+    }
     problems.push(...jobErrors.map((e) => `worker: ${e}`));
   } catch (error) {
     problems.push(
       error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error),
     );
+    // Where it stopped, for whoever reads the failure (--shots).
+    if (current && flags.values.shots) {
+      mkdirSync(flags.values.shots, { recursive: true });
+      const shot = path.join(flags.values.shots, 'e2e-failure.png');
+      await current.screenshot({ path: shot, fullPage: true }).catch(() => undefined);
+      problems.push(`stopped at ${current.url()}; screenshot ${shot}`);
+    }
   } finally {
     working = false;
     await worker.catch((error: unknown) => problems.push(`worker: ${String(error)}`));
@@ -277,6 +310,7 @@ if (!flags.ok || problem !== null) {
     );
     process.exitCode = 1;
   } else {
-    log('PASS: Judge Mode end to end in simulate mode, 0 page or console errors');
+    log('PASS: Judge Mode end to end in simulate mode, at 375 and 1280 px');
+    log('      0 page or console errors, 0 sideways scrolls');
   }
 }
