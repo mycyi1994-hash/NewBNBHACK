@@ -12,10 +12,13 @@ export function StopPlan({
   planId,
   lang,
   yieldPlan,
+  onStopped,
 }: {
   planId: string;
   lang: Lang;
   yieldPlan: boolean;
+  /** Told once the worker has stopped the plan (Judge Mode then offers no retry for it). */
+  onStopped?: () => void;
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<'idle' | 'asking' | 'queued' | 'done' | 'failed'>('idle');
@@ -39,6 +42,7 @@ export function StopPlan({
         };
         if (job.status === 'done') {
           setPhase('done');
+          onStopped?.();
           router.refresh();
           return;
         }

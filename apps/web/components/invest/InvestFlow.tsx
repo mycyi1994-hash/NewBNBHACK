@@ -8,7 +8,14 @@
  */
 import Link from 'next/link';
 import { useId, useState } from 'react';
-import { displayParams, issuerName, money, sharesText, timeText } from '../../lib/format';
+import {
+  displayParams,
+  fromBaseUnits,
+  issuerName,
+  money,
+  sharesText,
+  timeText,
+} from '../../lib/format';
 import {
   isCopyKey,
   translate,
@@ -21,6 +28,7 @@ import { Icon } from '../Icon';
 import { AnimatedText } from '../motion';
 import { StopPlan } from '../plan/StopPlan';
 import { RiskText } from '../RiskText';
+import { doneText, retryable, type Job, type JobResult, type Why } from './outcome';
 import { CheckBadge, Ledger, Panel, SectionHeading, Status } from '../ui';
 
 export interface Venue {
@@ -39,40 +47,6 @@ interface Market {
   nextRegularOpen: string;
 }
 
-interface Why {
-  key: string;
-  params: Record<string, string>;
-}
-interface Outcome {
-  kind: 'BOUGHT' | 'DEFERRED' | 'SKIPPED' | 'FAILED';
-  spendUsd?: string;
-  shares?: string;
-  interestUsd?: string | null;
-  code?: string;
-  message?: string;
-}
-interface JobResult {
-  status: string;
-  cycleId?: number;
-  outcome?: Outcome;
-  why?: Why;
-  txHashes?: string[];
-  txHash?: string;
-  buy?: {
-    spendUsd: string;
-    expectedShares: string | null;
-    expectedTokens: string | null;
-    minReceive: string | null;
-    instrumentId: string;
-    swapSimulation: { status: string; failReason: string };
-  };
-  depositedUsd?: string;
-}
-interface Job {
-  status: 'queued' | 'running' | 'done' | 'failed';
-  result: JobResult | null;
-  error: string | null;
-}
 interface Problem {
   error?: { code: string; message: string };
   reason?: string;
@@ -96,28 +70,46 @@ const units = (value: string) => {
   return BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
 };
 
+/** Never throws: a dropped connection is an answer (status 0) the flow shows, not a stuck spinner. */
 async function post(
   url: string,
   body?: unknown,
 ): Promise<{ status: number; body: Record<string, unknown> & Problem }> {
-  const res = await fetch(url, {
-    method: 'POST',
-    ...(body === undefined
-      ? {}
-      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown> & Problem;
-  return { status: res.status, body: json };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      ...(body === undefined
+        ? {}
+        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown> & Problem;
+    return { status: res.status, body: json };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'network error';
+    return { status: 0, body: { error: { code: 'network', message } } };
+  }
 }
 
+/**
+ * Polls a job until it is done or failed (four minutes at most). A poll that fails on the way — a
+ * dropped connection, a gateway page instead of JSON — is tried again; the job keeps running. When
+ * the page stops waiting, the job as last seen comes back (queued or running): it may still run,
+ * and is never reported as failed.
+ */
 async function waitForJob(jobId: string): Promise<Job> {
+  let last: Job = { status: 'queued', result: null, error: null };
   for (let i = 0; i < 120; i++) {
-    const res = await fetch(`/api/jobs/${jobId}`, { cache: 'no-store' });
-    const job = (await res.json()) as Job;
-    if (job.status === 'done' || job.status === 'failed') return job;
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, { cache: 'no-store' });
+      const job = (await res.json()) as Job;
+      if (job.status === 'done' || job.status === 'failed') return job;
+      last = job;
+    } catch {
+      // Transient: ask again on the next tick.
+    }
     await new Promise((r) => setTimeout(r, 2000));
   }
-  return { status: 'failed', result: null, error: 'timeout' };
+  return last;
 }
 
 export function InvestFlow({
@@ -164,6 +156,14 @@ export function InvestFlow({
   const [amount, setAmount] = useState(capUsd);
   const [window, setWindow] = useState<'regular_session' | 'anytime'>('regular_session');
   const [planId, setPlanId] = useState<string | null>(null);
+  // A plan the judge stopped from the done panel: it is never run again from here.
+  const [stoppedPlan, setStoppedPlan] = useState<string | null>(null);
+  // What the plan was created with: its runs use these, whatever the form shows since.
+  const [terms, setTerms] = useState<{
+    ticker: string;
+    mode: 'safe' | 'yield';
+    amount: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<JobResult | null>(null);
@@ -174,11 +174,16 @@ export function InvestFlow({
   const riskTitle = useId();
 
   const closed = market.session !== 'regular';
+  // Yield mode hides the window choice and runs in regular hours: never a hidden "anytime".
+  const planWindow = mode === 'yield' ? 'regular_session' : window;
   const problemText = (status: number, body: Problem): string => {
     const codeName = body.error?.code;
     if (status === 429) return t('judge.error.rate_limited');
     if (codeName === 'bad_code') return t('judge.code.error.bad');
     if (codeName === 'code_exhausted') return t('judge.code.error.exhausted');
+    if (codeName === 'daily_cap') {
+      return t('judge.error.daily_cap', { remaining: money(remaining ?? capUsd) ?? '' });
+    }
     if (status === 503) return t('judge.error.unavailable', { reason: body.reason ?? '' });
     return t('judge.error.generic', { reason: body.error?.message ?? `HTTP ${status}` });
   };
@@ -199,6 +204,12 @@ export function InvestFlow({
     if (res.status !== 200) return setError(problemText(res.status, res.body));
     if (res.body.exhausted === true) return setError(t('judge.code.error.exhausted'));
     setRemaining(String(res.body.remainingUsd));
+    // The code is fine, but today's house-wide cap is spent: say so now, not after the form.
+    if (res.body.dailyCapReached === true) {
+      setError(
+        t('judge.error.daily_cap', { remaining: money(String(res.body.remainingUsd)) ?? '' }),
+      );
+    }
   }
 
   async function runPreview(id: string) {
@@ -214,6 +225,9 @@ export function InvestFlow({
     const job = await waitForJob(String(res.body.jobId));
     setBusy(false);
     setStage('previewed');
+    if (job.status === 'queued' || job.status === 'running') {
+      return setError(t('judge.job.still_queued'));
+    }
     if (job.status === 'failed' || !job.result) {
       return setError(t('judge.job.failed', { reason: job.error ?? '' }));
     }
@@ -225,7 +239,7 @@ export function InvestFlow({
     setBusy(true);
     setError(null);
     setPreview(null);
-    const res = await post('/api/plans', { ticker, mode, amountUsd: amount, window });
+    const res = await post('/api/plans', { ticker, mode, amountUsd: amount, window: planWindow });
     setBusy(false);
     if (res.status === 401) {
       setRemaining(null);
@@ -234,6 +248,7 @@ export function InvestFlow({
     if (res.status !== 201) return setError(problemText(res.status, res.body));
     const plan = res.body.plan as { id: string };
     setPlanId(plan.id);
+    setTerms({ ticker, mode, amount });
     setResult(null);
     setReview(true);
     setStage('previewed');
@@ -245,9 +260,10 @@ export function InvestFlow({
     setStage('running');
     setBusy(true);
     setError(null);
+    const plan = terms ?? { mode, amount };
     const res = await post(
       `/api/plans/${planId}/run`,
-      mode === 'yield' ? { depositUsd: amount } : undefined,
+      plan.mode === 'yield' ? { depositUsd: plan.amount } : undefined,
     );
     if (res.status !== 202) {
       setBusy(false);
@@ -258,9 +274,12 @@ export function InvestFlow({
     setBusy(false);
     setResult(job);
     setStage('done');
-    // What the code has left: the server's figure less the buy the worker reports (a buy is what
-    // the spend ledger counts against the code).
-    const spent = job.result?.outcome?.kind === 'BOUGHT' ? job.result.outcome.spendUsd : undefined;
+    // What the code has left: the server's figure less what the worker reports — a buy (the spend
+    // ledger) or a deposit (principal counts towards the code's cap too).
+    const spent =
+      job.result?.outcome?.kind === 'BOUGHT'
+        ? job.result.outcome.spendUsd
+        : job.result?.depositedUsd;
     if (spent && /^\d+(\.\d+)?$/.test(spent)) {
       setRemaining((left) => {
         if (left === null) return left;
@@ -270,6 +289,22 @@ export function InvestFlow({
       });
     }
   }
+
+  // A deposit whose exact approval was still confirming goes on from it with the same plan: a new
+  // plan would leave this one waiting for its first run for good. The form shows the plan's own
+  // terms again, so the dialog says what the run sends.
+  const retry =
+    !busy && result && retryable(result) && stoppedPlan !== planId
+      ? () => {
+          if (terms) {
+            setTicker(terms.ticker);
+            setMode(terms.mode);
+            setAmount(terms.amount);
+          }
+          setReview(true);
+          void run();
+        }
+      : undefined;
 
   const amountValid = (() => {
     if (!/^\d+(\.\d{1,2})?$/.test(amount)) return false;
@@ -285,7 +320,7 @@ export function InvestFlow({
   const hasSession = remaining !== null;
   const funding = mode === 'safe' ? t('invest.funding.contribution') : t('invest.funding.interest');
   const windowText = t(
-    window === 'regular_session' ? 'plan.window.regular_session' : 'plan.window.anytime',
+    planWindow === 'regular_session' ? 'plan.window.regular_session' : 'plan.window.anytime',
   );
   const step = !hasSession
     ? 0
@@ -490,10 +525,12 @@ export function InvestFlow({
             t={t}
             lang={lang}
             planId={planId}
-            mode={mode}
-            ticker={ticker ?? ''}
+            mode={terms?.mode ?? mode}
+            ticker={terms?.ticker ?? ticker ?? ''}
             job={result}
             why={why}
+            onRetry={retry}
+            onStopped={() => setStoppedPlan(planId)}
           />
         ) : hasSession ? (
           <Panel
@@ -584,7 +621,14 @@ export function InvestFlow({
           returnFocusId="invest-outcome"
         >
           {stage === 'done' && result ? (
-            <DoneBody t={t} titleId={reviewTitle} ticker={ticker ?? ''} job={result} why={why} />
+            <DoneBody
+              t={t}
+              titleId={reviewTitle}
+              ticker={ticker ?? ''}
+              job={result}
+              why={why}
+              onRetry={retry}
+            />
           ) : (
             <>
               <AssetBadge ticker={ticker ?? ''} />
@@ -630,7 +674,7 @@ export function InvestFlow({
                   <Ledger
                     rows={[
                       [t('judge.details.issuer'), issuerName(preview.buy.instrumentId) ?? '—'],
-                      [t('judge.details.pieces'), preview.buy.expectedTokens ?? '—'],
+                      [t('judge.details.pieces'), fromBaseUnits(preview.buy.expectedTokens) ?? '—'],
                       [t('judge.details.min'), preview.buy.minReceive ?? '—'],
                     ]}
                   />
@@ -792,10 +836,16 @@ function PreviewState({
     );
   }
   if (preview.status === 'simulated' && preview.buy) {
-    const ok = preview.buy.swapSimulation.status === 'SUCCESS';
+    const { swapSimulation, approval } = preview.buy;
+    const ok = swapSimulation.status === 'SUCCESS';
+    // A first buy's exact approval is only simulated, so the swap's own dry run stops at the
+    // missing allowance — the expected answer, not a failure (scripts/operator-rules.ts
+    // buyProblem): the live run dry-runs the swap again once the approval is on chain.
+    const approvalFirst =
+      !ok && approval === 'simulated' && /exceeds allowance/i.test(swapSimulation.failReason);
     return (
       <>
-        <Icon name={ok ? 'check' : 'x'} />
+        <Icon name={ok || approvalFirst ? 'check' : 'x'} />
         <span>
           {t('judge.preview.line', {
             usd: money(preview.buy.spendUsd),
@@ -804,7 +854,9 @@ function PreviewState({
           })}{' '}
           {ok
             ? t('judge.preview.simulated')
-            : t('judge.preview.failed', { reason: preview.buy.swapSimulation.failReason })}
+            : approvalFirst
+              ? t('judge.preview.approval_first')
+              : t('judge.preview.failed', { reason: swapSimulation.failReason })}
         </span>
       </>
     );
@@ -849,94 +901,20 @@ function receiptLinks(t: (key: CopyKey, params?: Params) => string, job: Job) {
   ));
 }
 
-/** What the run came back with, in words: bought, deposited, waiting, dry run or failed. */
-function doneText(
-  t: (key: CopyKey, params?: Params) => string,
-  ticker: string,
-  job: Job,
-  why: (w: Why | undefined) => string | null,
-): {
-  title: string;
-  lead: string | null;
-  tone: 'ok' | 'wait' | 'fail' | 'info';
-  note: string | null;
-} {
-  const r = job.result;
-  if (job.status === 'failed' || !r) {
-    return {
-      title: t('outcome.FAILED'),
-      lead: t('judge.job.failed', { reason: job.error ?? '' }),
-      tone: 'fail',
-      note: null,
-    };
-  }
-  if (r.status === 'done' && r.outcome?.kind === 'BOUGHT') {
-    return {
-      title: t('judge.done.title'),
-      // The reason line says what was bought and when; without one, the done line does (it ends
-      // in "· View receipt", which is the receipt link below).
-      lead:
-        why(r.why) ??
-        t('judge.done.line', {
-          ticker,
-          shares: sharesText(r.outcome.shares),
-          usd: money(r.outcome.spendUsd),
-        }).split(' · ')[0] ??
-        null,
-      tone: 'ok',
-      note: null,
-    };
-  }
-  if (r.status === 'done' && r.outcome) {
-    return {
-      title: t(`outcome.${r.outcome.kind}`),
-      lead: why(r.why),
-      tone: r.outcome.kind === 'DEFERRED' ? 'wait' : r.outcome.kind === 'FAILED' ? 'fail' : 'info',
-      note: r.outcome.kind === 'DEFERRED' ? t('judge.done.deferred_note') : null,
-    };
-  }
-  if (r.status === 'deposited') {
-    return {
-      title: t('judge.done.title'),
-      lead: t('judge.done.deposited', { usd: money(r.depositedUsd) }),
-      tone: 'ok',
-      note: t('judge.yield.note'),
-    };
-  }
-  if (r.status === 'simulated')
-    return {
-      title: t('outcome.simulated'),
-      lead: t('judge.done.simulated'),
-      tone: 'info',
-      note: null,
-    };
-  if (r.status === 'awaiting_tx')
-    return {
-      title: t('outcome.running'),
-      lead: t('judge.done.confirming'),
-      tone: 'wait',
-      note: null,
-    };
-  return {
-    title: t('outcome.FAILED'),
-    lead: t('judge.job.failed', { reason: r.status }),
-    tone: 'fail',
-    note: null,
-  };
-}
-
 function DoneBody({
   t,
   titleId,
   ticker,
   job,
   why,
+  onRetry,
 }: {
   t: (key: CopyKey, params?: Params) => string;
   titleId: string;
   ticker: string;
   job: Job;
   why: (w: Why | undefined) => string | null;
+  onRetry: (() => void) | undefined;
 }) {
   const done = doneText(t, ticker, job, why);
   // The receipt page shows cycles that reached the chain; a wait lives on the plan's page.
@@ -968,7 +946,14 @@ function DoneBody({
           <Icon name="arrow" size={18} />
         </Link>
       ) : null}
-      <p className="dialog-caption">{t('judge.done.plan_note')}</p>
+      {onRetry ? (
+        <button type="button" className="button primary wide" onClick={onRetry}>
+          {t('common.retry')}
+        </button>
+      ) : null}
+      {job.result?.planStatus === 'active' ? (
+        <p className="dialog-caption">{t('judge.done.plan_note')}</p>
+      ) : null}
     </>
   );
 }
@@ -981,6 +966,8 @@ function DonePanel({
   ticker,
   job,
   why,
+  onRetry,
+  onStopped,
 }: {
   t: (key: CopyKey, params?: Params) => string;
   lang: Lang;
@@ -989,6 +976,8 @@ function DonePanel({
   ticker: string;
   job: Job;
   why: (w: Why | undefined) => string | null;
+  onRetry: (() => void) | undefined;
+  onStopped: () => void;
 }) {
   const done = doneText(t, ticker, job, why);
   // The receipt page shows cycles that reached the chain; a wait lives on the plan's page.
@@ -1017,15 +1006,27 @@ function DonePanel({
           <Icon name="arrow" size={18} />
         </Link>
       ) : null}
+      {onRetry ? (
+        <button type="button" className="button dark wide" onClick={onRetry}>
+          {t('common.retry')}
+        </button>
+      ) : null}
       {planId ? (
         <>
           <Link className="text-link panel-link" href={`/plans/${planId}`}>
             {t('judge.plan.link')}
           </Link>
-          <StopPlan planId={planId} lang={lang} yieldPlan={mode === 'yield'} />
+          <StopPlan
+            planId={planId}
+            lang={lang}
+            yieldPlan={mode === 'yield'}
+            onStopped={onStopped}
+          />
         </>
       ) : null}
-      <p className="panel-caption">{t('judge.done.plan_note')}</p>
+      {job.result?.planStatus === 'active' ? (
+        <p className="panel-caption">{t('judge.done.plan_note')}</p>
+      ) : null}
     </aside>
   );
 }

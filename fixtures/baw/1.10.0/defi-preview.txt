@@ -1,0 +1,32 @@
+Usage: baw defi preview [options]
+
+Preview a DeFi transaction (does not broadcast)
+
+Options:
+  --action <action>                  Action: deposit / redeem / lp-add /
+                                     lp-remove / claim
+  --investmentId <investmentId>      Investment product ID
+  --tokenAddress <tokenAddress>      Token contract address
+  --amount <amount>                  Amount (human-readable)
+  --ratio <ratio>                    Ratio (0, 1] (redeem / lp-remove)
+  --nftId <nftId>                    LP NFT tokenId
+  --tickLower <tickLower>            Lower tick of LP price range (lp-add only)
+  --tickUpper <tickUpper>            Upper tick of LP price range (lp-add only)
+  --priceRange <percent>             LP price range percentage, e.g. "5" for
+                                     ±5% (lp-add only, mutually exclusive with
+                                     --nftId / explicit ticks)
+  --slippageBps <slippageBps>        Slippage in basis points: "auto" or 1-4999
+  --claimType <claimType>            Claim type (claim only)
+  --defiProtocolId <defiProtocolId>  DeFi protocol ID (claim REWARD_PROTOCOL)
+  --redemptionId <redemptionId>      Redemption record ID (claim REDEMPTION)
+  --gasLevel <gasLevel>              Gas level: LOW / MEDIUM / HIGH (default:
+                                     "MEDIUM")
+  --binanceChainId <binanceChainId>  Binance chain ID (default: 56) (default:
+                                     "56")
+  -h, --help                         display help for command
+
+Examples:
+  baw defi preview --action deposit --investmentId X --tokenAddress 0x... --amount 100
+  baw defi preview --action lp-remove --investmentId X --nftId 12345 --ratio 1 --json
+  baw defi preview --action claim --claimType LP_FEE --investmentId X --nftId 12345
+

@@ -331,6 +331,8 @@ export async function recordSkillSwap(
       outcome: unknown;
       whyKey: string;
       whyParams: unknown;
+      /** The part of the spend paid with redeemed interest (yield plans), as the worker records it. */
+      interestUsd?: string | null;
       finishedAt: string;
     };
     planPatch: PlanPatch;
@@ -356,6 +358,7 @@ export async function recordSkillSwap(
           whyParams: args.cycle.whyParams,
           instrumentId: args.instrument.id,
           spendUsd: args.spentUsd,
+          interestUsd: args.cycle.interestUsd ?? null,
           finishedAt: args.cycle.finishedAt,
         })
         .onConflictDoNothing({ target: [cycles.planId, cycles.dueAt] })

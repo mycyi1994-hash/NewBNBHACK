@@ -3,7 +3,7 @@
  * Binance Web3 API answering with fixture-shaped data, and an in-memory chain on which approvals
  * set allowances and swaps deliver tokens. Guardian inputs (Venus TVL, USDT price) are settable.
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { decodeVenusCall, encodeApprove } from '@yieldvest/chain';
 import { toUnits, underlyingFromVTokens } from '@yieldvest/core';
 import { parseConfig } from '@yieldvest/config';
@@ -48,7 +48,8 @@ export interface World {
 
 /** Registers a fresh test instrument (its own ticker, so tests never share one). */
 export async function testInstrument(db: Db): Promise<{ ticker: string; instrumentId: string }> {
-  const ticker = `T${randomUUID().slice(0, 6).toUpperCase()}`;
+  // Letters only, like every ticker the web accepts (apps/web/lib/server/schemas.ts): T + five.
+  const ticker = `T${Array.from(randomBytes(5), (b) => String.fromCharCode(65 + (b % 26))).join('')}`;
   const row: InstrumentRow = {
     id: `${ticker}:bstocks`,
     ticker,
@@ -112,6 +113,7 @@ export async function createWorld(
         }
       : { status: 'success', logs: [] };
   const allowance = () => chain.allowances.get(`${USDT}:${HOUSE}:${ROUTER}`.toLowerCase()) ?? 0n;
+  let swapAmount = 0n;
   const market = { usdtPrice: '1.0001', venusTvl: '1353914642' };
   const api = fakeApi(clock, {
     '/api/v1/dex/market/rwa/tokens': () => [
@@ -164,25 +166,29 @@ export async function createWorld(
         },
       ];
     },
-    '/api/v1/dex/aggregator/swap': (u) => ({
-      tx: {
-        from: u.searchParams.get('userWalletAddress'),
-        to: ROUTER,
-        data: '0xad43f73d',
-        value: '0',
-        gas: '450000',
-        gasPrice: '58339710',
-        maxPriorityFeePerGas: '58339710',
-        minReceiveAmount: '22101093232346474',
-      },
-      executionMode: 'SWAP',
-      rfq: null,
-    }),
+    '/api/v1/dex/aggregator/swap': (u) => {
+      swapAmount = BigInt(u.searchParams.get('amount') ?? '0');
+      return {
+        tx: {
+          from: u.searchParams.get('userWalletAddress'),
+          to: ROUTER,
+          data: '0xad43f73d',
+          value: '0',
+          gas: '450000',
+          gasPrice: '58339710',
+          maxPriorityFeePerGas: '58339710',
+          minReceiveAmount: '22101093232346474',
+        },
+        executionMode: 'SWAP',
+        rfq: null,
+      };
+    },
     '/api/v1/dex/pre-transaction/simulate': (_u, body) => {
       const call = (body as { evmTx: { to: string; data: string } }).evmTx;
       const ok = { status: 'SUCCESS', failReason: '', balanceChanges: [], allowanceChanges: [] };
       if (call.data.startsWith('0x095ea7b3')) return ok;
-      return allowance() >= 5n * 10n ** 18n
+      // The swap pulls what it was built for: an allowance under that amount reverts.
+      return allowance() >= swapAmount
         ? ok
         : {
             status: 'FAILED',
@@ -238,7 +244,11 @@ const vTokenAbi = parseAbi([
  * mining moves USDT and vTokens between the house and vUSDT.
  */
 export function withVenus(w: World) {
-  const state = { redeemSimulation: { status: 'SUCCESS', failReason: '' } };
+  const state: {
+    redeemSimulation: { status: string; failReason: string };
+    /** Set: every mint simulation fails with this reason (a paused market, say). */
+    mintFailure?: string;
+  } = { redeemSimulation: { status: 'SUCCESS', failReason: '' } };
   const item = (callDataType: string, data: Hex) => ({
     callDataType,
     from: HOUSE,
@@ -280,8 +290,20 @@ export function withVenus(w: World) {
     if (data.startsWith(REDEEM_SELECTOR)) {
       return { ...state.redeemSimulation, balanceChanges: [], allowanceChanges: [] };
     }
-    if (data.startsWith(MINT_SELECTOR) || data.startsWith('0x095ea7b3')) {
-      return { status: 'SUCCESS', failReason: '', balanceChanges: [], allowanceChanges: [] };
+    const ok = { status: 'SUCCESS', failReason: '', balanceChanges: [], allowanceChanges: [] };
+    if (data.startsWith('0x095ea7b3')) return ok;
+    if (data.startsWith(MINT_SELECTOR)) {
+      if (state.mintFailure) return { ...ok, status: 'FAILED', failReason: state.mintFailure };
+      // A mint pulls its USDT through the allowance: one that was only simulated is not there,
+      // as on BSC (the Transaction API simulates one transaction at a time, DECISIONS Q-05).
+      const allowed = w.chain.allowances.get(`${USDT}:${HOUSE}:${VUSDT}`.toLowerCase()) ?? 0n;
+      return allowed >= decodeVenusCall(data).amount
+        ? ok
+        : {
+            ...ok,
+            status: 'FAILED',
+            failReason: 'execution reverted: BEP20: transfer amount exceeds allowance',
+          };
     }
     return simulate?.(u, body);
   };

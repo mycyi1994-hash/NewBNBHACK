@@ -1,0 +1,46 @@
+# Foundry project for the RWA liquidity contracts (docs/RWA_LP.md). Dependencies come from npm
+# (pnpm install): @uniswap/v4-core 1.0.2 — the build whose PoolManager runs on BSC (DECISIONS
+# D-29) — which also ships forge-std and solmate for tests, and @openzeppelin/contracts.
+[profile.default]
+src = "contracts"
+test = "contracts/test"
+script = "contracts/script"
+out = "out"
+cache_path = "cache"
+libs = ["node_modules"]
+# pnpm links packages from the workspace store two levels up.
+allow_paths = ["../../node_modules"]
+solc = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 10_000
+via_ir = false
+bytecode_hash = "none"
+fs_permissions = [
+  { access = "read", path = "./vectors" },
+  { access = "read", path = "../../fixtures/rwa" },
+  { access = "read", path = "./node_modules/@uniswap/v4-core/out/PoolManager.sol" },
+  { access = "read-write", path = "./deployments" },
+]
+
+[lint]
+# Names follow Uniswap v4 (immutable poolManager, sqrtPriceAX96) and the bStocks ABI (newUIMultiplier);
+# the calendar test reads its vectors from disk on purpose.
+exclude_lints = ["screaming-snake-case-immutable", "mixed-case-variable", "mixed-case-function", "unsafe-cheatcode"]
+# Tests cast freely between bounded fuzz inputs; the production contracts carry the lint.
+ignore = ["contracts/test/**/*.sol"]
+
+[profile.default.fuzz]
+runs = 512
+seed = "0x59564c50"
+
+[profile.default.invariant]
+runs = 64
+depth = 64
+fail_on_revert = true
+
+[profile.ci.fuzz]
+runs = 4096
+
+[rpc_endpoints]
+bsc = "${BSC_FORK_URL}"

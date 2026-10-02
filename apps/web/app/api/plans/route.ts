@@ -13,12 +13,11 @@ import {
   listInstruments,
   planFromRow,
   readWorkerStatus,
-  remainingSpend,
   usdText,
-  utcDay,
 } from '@yieldvest/db';
 import { getAddress, isAddressEqual } from 'viem';
 import { activeJudgeOf } from '../../../lib/server/auth';
+import { judgeRemaining } from '../../../lib/server/judge';
 import { AWAITING_DEPOSIT } from '../../../lib/server/report';
 import { JudgePlanBody, SkillPlanBody } from '../../../lib/server/schemas';
 import { context } from '../../../lib/server/context';
@@ -57,6 +56,14 @@ async function handlePOST(request: Request): Promise<Response> {
     if (body instanceof Response) return body;
     if (issuersOf(body.ticker).length === 0)
       return problem(400, 'unknown_ticker', `${body.ticker} is not in the registry`);
+    // The user picks the issuer; the plan never falls back to the other one (the official
+    // Agentic Wallet skill: "do not default to Ondo. Ask the user which provider they mean").
+    if (!issuersOf(body.ticker).includes(body.issuer))
+      return problem(
+        400,
+        'unknown_ticker',
+        `${body.ticker} has no ${body.issuer} token in the registry`,
+      );
     // A per-buy limit under the minimum buy could never run (decideCycle refuses it).
     const min = units(String(config.caps.minBuyUsd));
     const cap = units(String(config.caps.houseMaxPerTxUsd));
@@ -84,7 +91,7 @@ async function handlePOST(request: Request): Promise<Response> {
         walletAddress: wallet,
         mode: body.mode,
         ticker: body.ticker,
-        issuerPreference: ['bstocks', 'ondo'],
+        issuerPreference: [body.issuer],
         contributionUsd: body.contributionUsd,
         cadence: body.cadence,
         window: body.window,
@@ -94,6 +101,8 @@ async function handlePOST(request: Request): Promise<Response> {
         status: body.mode === 'yield' ? 'paused' : 'active',
         ...(body.mode === 'yield' ? { pausedReason: AWAITING_DEPOSIT } : {}),
         nextDueAt: now.toISOString(),
+        // The clock /report compares block times with (lib/server/report.ts), not the database's.
+        createdAt: now.toISOString(),
       },
       MAX_OPEN_PER_WALLET,
     );
@@ -134,19 +143,22 @@ async function handlePOST(request: Request): Promise<Response> {
       `${body.ticker} is only sold above $${issuers.map((i) => VENUE_MIN_USD[i]).join('/')}`,
     );
   }
-  const remaining = await remainingSpend(db, {
-    planId: '',
-    ownerKind: 'judge',
-    ownerRef: judge.codeHash,
-    day: utcDay(now),
-    caps: {
-      globalDailyUsd: String(config.caps.dailySpendCapUsd),
-      planDailyUsd: cap,
-      judgeTotalUsd: cap,
-    },
-  });
+  const { remainingUsd: remaining, todayUsd } = await judgeRemaining(
+    db,
+    config,
+    judge.codeHash,
+    now,
+  );
   if (body.mode === 'safe' && units(remaining) < amount) {
     return problem(409, 'code_exhausted', `this code has $${fromUnits(units(remaining), 18)} left`);
+  }
+  if (body.mode === 'safe' && units(todayUsd) < amount) {
+    // The code has it; today's house-wide cap (house plans and every code together) does not.
+    return problem(
+      409,
+      'daily_cap',
+      `today's limit across all codes ($${config.caps.dailySpendCapUsd}) leaves $${fromUnits(units(todayUsd), 18)}; this code still has $${fromUnits(units(remaining), 18)}`,
+    );
   }
   if (body.mode === 'yield') {
     // The deposit counts towards the code's total like spend (SECURITY.md: one code, one cap).

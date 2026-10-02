@@ -1,0 +1,37 @@
+# Yieldvest on your own machine (compose.yaml): the web app, the worker and the scripts in one
+# image, run in simulate mode. Nothing secret is built in: keys come from the environment at run
+# time, and the build refuses an env file in its context, like the worker image (Dockerfile).
+FROM node:22-bookworm-slim
+
+ENV CI=true NEXT_TELEMETRY_DISABLED=1
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+WORKDIR /app
+
+# Manifests first so the dependency layer is cached across source changes.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/agent/package.json apps/agent/
+COPY apps/web/package.json apps/web/
+COPY packages/binance/package.json packages/binance/
+COPY packages/chain/package.json packages/chain/
+COPY packages/config/package.json packages/config/
+COPY packages/core/package.json packages/core/
+COPY packages/db/package.json packages/db/
+COPY scripts/package.json scripts/
+# Only what the web app, the worker and the scripts need, as Dockerfile does. packages/rwa-lp is
+# left out of the install: its contracts toolchain (@uniswap/v4-core ships a .env of its own,
+# which the check below would refuse) is not needed to run Yieldvest.
+RUN pnpm install --frozen-lockfile --filter yieldvest --filter "@yieldvest/web..." \
+      --filter "@yieldvest/agent..." --filter "@yieldvest/scripts..."
+
+COPY . .
+RUN if find / -xdev -name '.env*' -not -name '.env.example' -print -quit 2>/dev/null | grep -q .; then \
+      echo 'refusing to build: .env file in image' >&2; exit 1; fi
+
+# Builds like CI does: no secrets, no database.
+ENV NEXT_PUBLIC_APP_URL=http://localhost:3000
+RUN pnpm --filter @yieldvest/web build
+
+ENV NODE_ENV=production
+EXPOSE 3000
+CMD ["pnpm", "--filter", "@yieldvest/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]

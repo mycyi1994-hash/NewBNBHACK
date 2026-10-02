@@ -1,6 +1,6 @@
 /** Vitest global setup for @yieldvest/web: create and migrate the web tests' own database. */
-import { createDb, migrateDb } from '@yieldvest/db';
-import { sql } from 'drizzle-orm';
+import { createDb, guardianEvents, migrateDb } from '@yieldvest/db';
+import { isNull, sql } from 'drizzle-orm';
 import { webDatabaseUrl } from './db';
 
 export default async function migrateOnce(): Promise<void> {
@@ -21,6 +21,9 @@ export default async function migrateOnce(): Promise<void> {
   const { db, close } = createDb(target);
   try {
     await migrateDb(db);
+    // A global guardian hold shows on every plan's page: one left by an earlier run that stopped
+    // before its cleanup would show on the plans these tests create.
+    await db.delete(guardianEvents).where(isNull(guardianEvents.planId));
   } finally {
     await close();
   }

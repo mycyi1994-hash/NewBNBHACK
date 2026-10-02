@@ -1,0 +1,28 @@
+Usage: baw market-order list [options]
+
+List and query market orders with filters
+
+Options:
+  --orderId <id>                     Query specific market order by ID (ignores
+                                     other filters)
+  --binanceChainId <binanceChainId>  Filter by binanceChainId
+  --status <status>                  Filter by order status: PENDING, FINISHED,
+                                     or FAILED
+  --fromToken <address>              Filter by source token contract address
+  --toToken <address>                Filter by target token contract address
+  --startTime <timestamp>            Filter orders created after this time
+                                     (milliseconds timestamp)
+  --endTime <timestamp>              Filter orders created before this time
+                                     (milliseconds timestamp)
+  --page <page>                      Page number for pagination (default: 1)
+  --pageSize <size>                  Number of orders per page (default: 20,
+                                     max: 100)
+  -h, --help                         display help for command
+
+Examples:
+  baw market-order list
+  baw market-order list --orderId 1234567890
+  baw market-order list --status PENDING --page 1 --pageSize 20
+  baw market-order list --json
+
+

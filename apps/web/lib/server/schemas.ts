@@ -55,6 +55,11 @@ export const SkillPlanBody = z.object({
     .refine((v) => isAddress(v), 'an EVM address')
     .describe('The user’s own wallet (Binance Agentic Wallet); it signs, we never do'),
   ticker,
+  issuer: z
+    .enum(['bstocks', 'ondo'])
+    .describe(
+      'The issuer the user chose for the ticker: bstocks (…B) or ondo (…on). The plan buys only that token, never the other one in its place',
+    ),
   mode: z
     .enum(['safe', 'yield'])
     .default('safe')
@@ -76,4 +81,47 @@ export const ReportRequest = z.object({
   kind: z.enum(['swap', 'deposit', 'redeem']),
   txHash,
   orderId: z.string().max(64).optional().describe('baw market-order id, kept with the receipt'),
+});
+
+/** A GET request's query string as an object, for the schemas below. */
+export const queryOf = (request: Request): Record<string, string> =>
+  Object.fromEntries(new URL(request.url).searchParams);
+
+const issuer = z
+  .enum(['bstocks', 'ondo'])
+  .describe('bstocks (symbols end in B) or ondo (symbols end in "on")');
+
+/** GET /api/compare (DECISIONS D-31, F2). */
+export const CompareQuery = z.object({
+  ticker: ticker
+    .optional()
+    .describe('The stock to compare; without it, the tickers that can be compared'),
+});
+
+/** GET /api/preflight (DECISIONS D-31, F1): a fixed-amount plan that does not exist yet. */
+export const PreflightQuery = z.object({
+  ticker,
+  issuer: issuer.optional().describe('Only this issuer; both when absent'),
+  usd: usdAmount.describe(
+    'The amount per buy: at least the minimum buy, at most the house per-transaction cap',
+  ),
+  window,
+});
+
+/** GET /api/projection (DECISIONS D-31, F3). */
+export const ProjectionQuery = z.object({
+  depositUsd: usdAmount.describe('The USDT a person would put in the interest account'),
+  ticker: ticker.optional().describe('Price the monthly interest in shares of this stock'),
+  issuer: issuer.optional().describe('Whose token prices the share (default: bstocks, then ondo)'),
+});
+
+/** GET /api/wallet (DECISIONS D-32): any BNB Smart Chain address, read at one block. */
+export const WalletQuery = z.object({
+  address: z
+    .string()
+    .trim()
+    .refine((v) => isAddress(v, { strict: false }), 'an EVM address (0x and 40 hex characters)')
+    .describe(
+      'A BNB Smart Chain wallet: a Binance Wallet or an Agentic Wallet (baw wallet address)',
+    ),
 });

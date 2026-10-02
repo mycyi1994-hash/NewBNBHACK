@@ -3,7 +3,7 @@
  * inserts its row inside one transaction under an advisory lock, so two cycles can never both
  * squeeze under the same cap (no check-then-act race). Amounts are compared as Postgres numeric.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from './index.js';
 import { spendLedger } from './schema.js';
 
@@ -155,5 +155,11 @@ export async function settleSpend(
   await db
     .update(spendLedger)
     .set({ status, ...(amountUsd === undefined ? {} : { amountUsd }), updatedAt: sql`now()` })
-    .where(eq(spendLedger.cycleId, cycleId));
+    .where(
+      and(
+        eq(spendLedger.cycleId, cycleId),
+        // Freeing only ever frees a reservation: a spend on record never leaves the caps.
+        status === 'released' ? eq(spendLedger.status, 'reserved') : undefined,
+      ),
+    );
 }

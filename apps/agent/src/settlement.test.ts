@@ -11,12 +11,14 @@ import {
   appendCycleStep,
   createDb,
   cycles,
+  cyclesOfPlan,
   getCycle,
   getHolding,
   getPlan,
   listReceipts,
   markOutbox,
   openCycle,
+  plans,
   recordSigned,
   releasePlanLock,
   reserveSpend,
@@ -25,19 +27,20 @@ import {
   usdText,
 } from '@yieldvest/db';
 import { eq } from 'drizzle-orm';
-import type { Hex } from 'viem';
+import { parseTransaction, type Hex } from 'viem';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';
-import { cleanup } from '../test/harness.js';
+import { cleanup, HOUSE, ROUTER, transferLog } from '../test/harness.js';
 import {
   createWorld,
   RECEIVED,
   testInstrument,
   testPlan,
+  USDT,
   withVenus,
   type World,
 } from '../test/world.js';
-import { recoverInterrupted, runCycle } from './cycle.js';
+import { LockLostError, recoverInterrupted, runCycle } from './cycle.js';
 import { startYieldPlan } from './deposit.js';
 import { redeemPlanPosition } from './guardian.js';
 import { settleOutbox } from './settlement.js';
@@ -170,12 +173,11 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
       .where(eq(cycles.id, cycleId));
 
     w.chain.mines = true;
-    // Settling confirms the approval but leaves the running cycle to its lock holder; the run
-    // then recovers it and waits for it instead of opening another.
-    expect(await runCycle(w.deps('live'), id)).toMatchObject({ status: 'outbox_busy' });
-    expect(await getCycle(db, cycleId)).toMatchObject({ state: 'awaiting_tx' });
+    // Settling confirms the approval, takes the dead cycle's free lock, hands it to the awaiting
+    // path and finishes it from the chain — the next run opens nothing on top of it.
     const settled = await settleOutbox(w.deps('live'));
     expect(settled.completed).toEqual([`${id}#${cycleId}`]);
+    expect(await runCycle(w.deps('live'), id)).toEqual({ status: 'not_due', planId: id });
     expect(await getCycle(db, cycleId)).toMatchObject({
       outcomeKind: 'FAILED',
       outcome: { code: 'INTERRUPTED', fundsMoved: 'gas_only' },
@@ -183,6 +185,84 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
     expect(await ledgerOf(cycleId)).toMatchObject({ status: 'released' });
     expect((await getPlan(db, id))?.nextDueAt).toMatch(/^2026-09-29 13:32/);
     expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3']);
+  });
+
+  it('recovers at the next settle a cycle that died while its plan waits for nobody (a judge’s buy now)', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    w.chain.mines = false;
+    const first = await runCycle(w.deps('live'), id, { manual: true });
+    expect(first).toMatchObject({ status: 'awaiting_tx' });
+    const cycleId = first.status === 'awaiting_tx' ? first.cycleId : -1;
+    const cycle = await getCycle(db, cycleId);
+    const steps = (cycle?.steps ?? []) as { step?: string }[];
+    // The worker dies mid-cycle: still 'running', and its lock still held for a while.
+    await db
+      .update(cycles)
+      .set({ state: 'running', steps: steps.filter((s) => s.step !== 'AWAITING') })
+      .where(eq(cycles.id, cycleId));
+    const held = await acquirePlanLock(db, id, new Date(), 60_000);
+    w.chain.mines = true;
+    // While the lock is held the cycle may still be running somewhere: left alone.
+    await settleOutbox(w.deps('live'));
+    expect(await getCycle(db, cycleId)).toMatchObject({ state: 'running' });
+    // Once the dead holder's lock is gone, the next settle finishes it — no due time needed.
+    await releasePlanLock(db, id, held?.lockUntil ?? null);
+    const settled = await settleOutbox(w.deps('live'));
+    expect(settled.completed).toEqual([`${id}#${cycleId}`]);
+    expect(await getCycle(db, cycleId)).toMatchObject({
+      state: 'done',
+      outcomeKind: 'FAILED',
+      outcome: { code: 'INTERRUPTED', fundsMoved: 'gas_only' },
+    });
+    expect(await ledgerOf(cycleId)).toMatchObject({ status: 'released' });
+  });
+
+  it('stops a cycle that outlived its lock once a settle took the plan over: nothing more is signed', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    const allowance = w.chain.allowance.bind(w.chain);
+    let cycleId = -1;
+    // The cycle has reserved its $5 and reads the allowance 13 minutes in (slow receipts, API
+    // retries): its lock lapsed, and another process's settle takes the plan over.
+    w.chain.allowance = async (token, owner, spender) => {
+      if (cycleId === -1) {
+        cycleId = (await cyclesOfPlan(db, id, ['running']))[0]?.id ?? -2;
+        expect(await ledgerOf(cycleId)).toMatchObject({ status: 'reserved' });
+        w.clock.advance(13 * 60_000);
+        await settleOutbox(w.deps('live'));
+      }
+      return allowance(token, owner, spender);
+    };
+    await expect(runCycle(w.deps('live'), id, { manual: true })).rejects.toThrow(LockLostError);
+    // The approval it was about to sign never was, and the cycle stays as the settle closed it.
+    expect(w.chain.sent).toEqual([]);
+    expect(await db.select().from(txOutbox).where(eq(txOutbox.planId, id))).toEqual([]);
+    expect(await getCycle(db, cycleId)).toMatchObject({
+      state: 'done',
+      outcomeKind: 'FAILED',
+      outcome: { code: 'INTERRUPTED', fundsMoved: 'none' },
+    });
+    expect(await ledgerOf(cycleId)).toMatchObject({ status: 'released' });
+    expect((await getPlan(db, id))?.lockUntil).toBeNull();
+  });
+
+  it('renews the lock of a slow cycle nobody took over, and buys', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    const allowance = w.chain.allowance.bind(w.chain);
+    let slow = true;
+    w.chain.allowance = (token, owner, spender) => {
+      // Once, 13 minutes go by: the lock lapsed, but it is still this cycle's.
+      if (slow) w.clock.advance(13 * 60_000);
+      slow = false;
+      return allowance(token, owner, spender);
+    };
+    expect(await runCycle(w.deps('live'), id, { manual: true })).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'BOUGHT', spendUsd: '5' },
+    });
+    expect((await getPlan(db, id))?.lockUntil).toBeNull();
   });
 
   it('holds a cycle that signed with no recorded decision for a human', async () => {
@@ -263,6 +343,151 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
     });
   });
 
+  it('says a Judge Mode deposit waits for its approval, and uses that approval on the next try', async () => {
+    const w = await createWorld(db, MON_1000);
+    withVenus(w);
+    const id = await yieldPlan({
+      ownerKind: 'judge',
+      ownerRef: `code-approve-${Date.now()}`,
+      status: 'paused',
+      pausedReason: 'awaiting_run',
+      principalUsd: '0',
+      vtokenUnits: '0',
+    });
+    // The exact approval is not mined before the job stops waiting: the deposit was never sent.
+    w.chain.mines = false;
+    const first = await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1');
+    expect(first).toMatchObject({ status: 'approval_pending' });
+    expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3']);
+    // Tried again too early, while it still confirms: the same answer, nothing new signed.
+    expect(await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1')).toEqual(first);
+    expect(w.chain.sent).toHaveLength(1);
+    // Once it is mined, asking again settles it and deposits with the allowance it left — no tick
+    // in between.
+    w.chain.mines = true;
+    expect(await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1')).toMatchObject({
+      status: 'deposited',
+      depositedUsd: '1',
+    });
+    expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3', MINT_SELECTOR]);
+    expect(await getPlan(db, id)).toMatchObject({ status: 'active', vtokenUnits: '100000000' });
+  });
+
+  it('never sends a plan a second deposit when its first one is written down late', async () => {
+    const w = await createWorld(db, MON_1000);
+    withVenus(w);
+    const id = await yieldPlan({
+      ownerKind: 'judge',
+      ownerRef: `code-twice-${Date.now()}`,
+      status: 'paused',
+      pausedReason: 'awaiting_run',
+      principalUsd: '0',
+      vtokenUnits: '0',
+    });
+    // The first deposit is not mined before the job stops waiting.
+    w.chain.mines = (tx) => !tx.data.startsWith(MINT_SELECTOR);
+    const stale = (await getPlan(db, id))!;
+    expect(await startYieldPlan(w.deps('live'), stale, '1')).toMatchObject({
+      status: 'awaiting_tx',
+    });
+    // It is mined; the judge asks again with the plan as it was read before (no principal yet).
+    w.chain.mines = true;
+    expect(await startYieldPlan(w.deps('live'), stale, '1')).toMatchObject({
+      status: 'deposited',
+      depositedUsd: '1',
+      alreadyRecorded: true,
+    });
+    // One deposit only, written down once.
+    expect(w.chain.sent.filter((tx) => tx.data.startsWith(MINT_SELECTOR))).toHaveLength(1);
+    const after = await getPlan(db, id);
+    expect(usdText(after?.principalUsd ?? '')).toBe('1');
+    expect(after).toMatchObject({ status: 'active', vtokenUnits: '100000000' });
+  });
+
+  it('stops a plan whose deposit only got as far as its approval: nothing to take out, nobody paged', async () => {
+    const w = await createWorld(db, MON_1000);
+    withVenus(w);
+    const id = await yieldPlan({
+      ownerKind: 'judge',
+      ownerRef: `code-stop-approval-${Date.now()}`,
+      status: 'paused',
+      pausedReason: 'awaiting_run',
+      principalUsd: '0',
+      vtokenUnits: '0',
+    });
+    w.chain.mines = false;
+    expect(await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1')).toMatchObject({
+      status: 'approval_pending',
+    });
+    const outcome = await redeemPlanPosition(w.deps('live'), (await getPlan(db, id))!, {
+      status: 'stopped',
+      reason: 'stopped_by_owner',
+    });
+    expect(outcome).toBe('nothing_to_redeem');
+    expect(await getPlan(db, id)).toMatchObject({
+      status: 'stopped',
+      pausedReason: 'stopped_by_owner',
+    });
+    expect(w.alerts).toEqual([]);
+    // The approval is settled later like any other transaction.
+    w.chain.mines = true;
+    await settleOutbox(w.deps('live'));
+  });
+
+  it('records no transaction for a cycle whose lock was taken over while it signed', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_run' });
+    // The approval goes out; the swap's nonce lookup stalls 13 minutes, and another process's
+    // settle takes the plan over meanwhile (it closes the cycle from what it had signed).
+    const pendingNonce = w.chain.pendingNonce.bind(w.chain);
+    let lookups = 0;
+    w.chain.pendingNonce = async (address) => {
+      lookups += 1;
+      if (lookups === 2) {
+        w.clock.advance(13 * 60_000);
+        await settleOutbox(w.deps('live'));
+      }
+      return pendingNonce(address);
+    };
+    await expect(runCycle(w.deps('live'), id, { manual: true })).rejects.toThrow(LockLostError);
+    // The swap was never written down or sent: only the approval went out.
+    const outbox = await db.select().from(txOutbox).where(eq(txOutbox.planId, id));
+    expect(outbox.map((row) => row.kind)).toEqual(['approve']);
+    expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3']);
+  });
+
+  it('pauses for review a swap with no tokens even when its lease was taken over meanwhile', async () => {
+    const w = await createWorld(db, MON_1000);
+    const id = await plan();
+    // The swap confirms, USDT leaves, no tokens arrive.
+    w.chain.onMine = (tx) =>
+      tx.to.toLowerCase() === ROUTER.toLowerCase()
+        ? { status: 'success', logs: [transferLog(USDT, HOUSE, ROUTER, 5n * 10n ** 18n)] }
+        : { status: 'success', logs: [] };
+    // While the swap's receipt is awaited, another holder takes the plan's lock over.
+    let swapHash: string | undefined;
+    const accept = w.chain.accept.bind(w.chain);
+    w.chain.accept = (raw) => {
+      const hash = accept(raw);
+      if (parseTransaction(raw).to?.toLowerCase() === ROUTER.toLowerCase()) swapHash = hash;
+      return hash;
+    };
+    const wait = w.chain.waitForReceipt.bind(w.chain);
+    w.chain.waitForReceipt = async (hash, ms) => {
+      if (hash === swapHash) {
+        await db
+          .update(plans)
+          .set({ lockUntil: '2026-09-28T15:00:00.000Z' })
+          .where(eq(plans.id, id));
+      }
+      return wait(hash, ms);
+    };
+    expect(await runCycle(w.deps('live'), id)).toMatchObject({ status: 'review' });
+    // The hold stands although this cycle could not release the lock with its changes.
+    expect(await getPlan(db, id)).toMatchObject({ status: 'paused', pausedReason: 'needs_review' });
+    expect(w.alerts.some((line) => line.includes('needs review'))).toBe(true);
+  });
+
   it('never activates a plan a stop reached while its deposit was out', async () => {
     const w = await createWorld(db, MON_1000);
     withVenus(w);
@@ -278,19 +503,50 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
     w.chain.mines = (tx) => !tx.data.startsWith(MINT_SELECTOR);
     const pending = await startYieldPlan(w.deps('live'), (await getPlan(db, id))!, '1');
     expect(pending).toMatchObject({ status: 'awaiting_tx' });
-    // The owner stops the plan meanwhile: nothing to redeem yet, the plan is stopped.
+    // The owner stops the plan meanwhile. Its vTokens are not on record yet, but the deposit is
+    // out: not "nothing to redeem" — the plan is stopped and a human is told to redeem it.
     expect(
       await redeemPlanPosition(w.deps('live'), (await getPlan(db, id))!, {
         status: 'stopped',
         reason: 'stopped_by_owner',
       }),
-    ).toBe('nothing_to_redeem');
+    ).toBe('pending');
+    expect(w.alerts.join('\n')).toContain('not settled yet');
     w.chain.mines = true;
     await settleOutbox(w.deps('live'));
-    // The late deposit is on record, and the stop stands.
+    // The late deposit is on record, the stop stands, and the plan says what is left to do.
     const row = await getPlan(db, id);
-    expect(row).toMatchObject({ status: 'stopped', pausedReason: 'stopped_by_owner' });
+    expect(row).toMatchObject({
+      status: 'stopped',
+      pausedReason: 'stopped_by_owner:redeem_pending',
+    });
     expect(row?.vtokenUnits).toBe('100000000');
+  });
+
+  it('lets only a live run stop an expired plan that still holds a position', async () => {
+    const w = await createWorld(db, MON_1000);
+    withVenus(w);
+    const id = await yieldPlan({
+      ownerKind: 'judge',
+      ownerRef: `code-expired-${Date.now()}`,
+      expiresAt: '2026-09-27T00:00:00.000Z',
+    });
+    // A preview job (simulate) reaches the expired plan first: it signs nothing, so it changes
+    // nothing — a stopped plan would never be looked at again, with its deposit still in Venus.
+    expect(await runCycle(w.deps('simulate'), id)).toEqual({ status: 'stopped', planId: id });
+    expect(await getPlan(db, id)).toMatchObject({ status: 'active', vtokenUnits: '10600000000' });
+    expect(w.chain.sent).toEqual([]);
+    // A live worker that has not found the Venus market yet leaves it due: no human is needed.
+    const { venus: _unknown, ...blind } = w.deps('live');
+    expect(await runCycle(blind, id)).toEqual({ status: 'stopped', planId: id });
+    expect(await getPlan(db, id)).toMatchObject({ status: 'active', vtokenUnits: '10600000000' });
+    expect(w.alerts).toEqual([]);
+    // The live worker that knows it stops it and takes the position back to the house wallet.
+    expect(await runCycle(w.deps('live'), id)).toEqual({ status: 'stopped', planId: id });
+    const row = await getPlan(db, id);
+    expect(row).toMatchObject({ status: 'stopped', pausedReason: 'expired' });
+    expect(BigInt(row?.vtokenUnits ?? '1')).toBeLessThanOrEqual(1n);
+    expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual([REDEEM_SELECTOR]);
   });
 
   it('redeems a whole position only with the lock and a settled plan', async () => {
@@ -310,7 +566,12 @@ describe.skipIf(!url)('settling what was sent (D-23) on Postgres', () => {
 
     // A deposit of this plan still out on chain: its vTokens are not known yet.
     w.chain.mines = (tx) => !tx.data.startsWith(MINT_SELECTOR);
-    const other = await yieldPlan({ principalUsd: '1', vtokenUnits: '100000000' });
+    const other = await yieldPlan({
+      status: 'paused',
+      pausedReason: 'awaiting_run',
+      principalUsd: '0',
+      vtokenUnits: '0',
+    });
     expect(await startYieldPlan(w.deps('live'), (await getPlan(db, other))!, '1')).toMatchObject({
       status: 'awaiting_tx',
     });

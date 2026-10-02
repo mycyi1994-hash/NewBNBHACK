@@ -96,9 +96,7 @@ describe.skipIf(!url)('jobs and tx_outbox on Postgres', () => {
     expect((await claimJob(db, ['run']))?.id).toBe(running);
     await enqueueJob(db, { id: queued, kind: 'preview', planId: p.id });
     // Every running job counts (the concurrency test above leaves some claimed).
-    expect(
-      await abandonRunningJobs(db, new Date(Date.now() + 1000), 'worker restarted'),
-    ).toBeGreaterThanOrEqual(1);
+    expect(await abandonRunningJobs(db, 'worker restarted')).toBeGreaterThanOrEqual(1);
     expect(await getJob(db, running)).toMatchObject({
       status: 'failed',
       error: 'worker restarted',

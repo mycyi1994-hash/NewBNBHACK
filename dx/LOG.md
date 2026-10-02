@@ -433,3 +433,159 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Workaround: the worker stays on our own runtime (Fly, Frankfurt). For an identity, a separate identity wallet can call `register(agentURI)` through `@bnbagent/sdk`, or through a minimal `bag init` project (DECISIONS D-28).
 - Ask: an identity-only command (register an existing agent's URI from a given keystore, without a seller project), and a documented pattern for scheduled or operator agents.
 - Evidence: the CLI output above (`@bnbagent/studio-cli@0.0.14`).
+
+## 2026-09-30 02:08 UTC — [chain][docs] The Uniswap v4 addresses on BSC: the docs page rate-limits a script on its first request; the contracts repo has them, and they check out on chain
+- Goal: find and verify the Uniswap v4 PoolManager on BSC for the RWA LP hook (DECISIONS D-29).
+- Expected: the "v4 Deployments" page of the Uniswap docs, fetched by a script.
+- Actual: `curl https://docs.uniswap.org/contracts/v4/deployments` → `HTTP 429`, body `error code: 1015` (a Cloudflare rate limit) on the first request from this host (02:07 UTC). `raw.githubusercontent.com/Uniswap/contracts/main/deployments/56.md` (sha256 `14a69437…85c4`) lists PoolManager `0x28e2…e9dF`, PositionManager `0x7a4a…f95b`, StateView `0xd13d…e0c4`, V4Quoter `0x9f75…37b0`, UniversalRouter `0xDc26…7C9f`. On chain at block 124825961: StateView, PositionManager and V4Quoter each answer `poolManager()` with the PoolManager; the PoolManager's runtime bytecode (24,009 bytes) equals the `@uniswap/v4-core@1.0.2` npm artifact once its one immutable is masked; PositionManager `nextTokenId()` 1,387,557.
+- Docs: docs.uniswap.org › Contracts › v4 › Deployments; github.com/Uniswap/contracts `deployments/56.md`.
+- Time lost: about 5 minutes.
+- Workaround: the deployment log in the contracts repository, then on-chain checks.
+- Ask: list the canonical v4 DEX contracts on BSC (Uniswap v4, PancakeSwap Infinity) in the BNB Chain developer docs with the other infrastructure addresses.
+- Evidence: DECISIONS §2.3 U-01–U-04; `packages/rwa-lp/src/addresses.ts`.
+
+## 2026-09-30 02:10 UTC — [chain][edge] Public BSC RPCs cannot list a contract's events over any useful range, and a fork of a pruned node dies within minutes
+- Goal: list the Uniswap v4 `Initialize` events whose currency is a tokenized stock (which stock pools exist on BSC).
+- Expected: `eth_getLogs` filtered by address and topic over a few million blocks.
+- Actual: `bsc-dataseed.bnbchain.org`: 200 blocks → `-32005 limit exceeded`. `bsc-rpc.publicnode.com`: 5,000,000 blocks → `HTTP 403 "Archive requests require a personal token"`; 100 blocks → 218 `Swap` logs. `bsc.drpc.org`: `"ranges over 10000 blocks are not supported on free plan"`. `rpc.ankr.com/bsc`: no answer. At about 0.75 s per block, 10,000 blocks is about 2 hours, so the ~100M blocks since v4 launched on BSC take ~10,000 requests on the best free endpoint. Separately (02:48 UTC): an `anvil` fork of `bsc-dataseed` started answering `missing trie node` for accounts it had not read yet about 2 minutes after forking (the node keeps recent state only).
+- Docs: —
+- Time lost: about 10 minutes.
+- Workaround: compute the pool ids of candidate keys (stock × USDT/USDC/WBNB/BNB × fee tiers, no hook) and read `StateView.getSlot0/getLiquidity` (next entry); fork runs read every account they need in their first seconds.
+- Ask: an event index (or a data API) for BSC v4 pools by currency, or a free archive tier with a larger log range.
+- Evidence: the JSON-RPC answers quoted above.
+
+## 2026-09-30 02:11 UTC — [chain][rwa][edge] Tokenized stocks already sit in hookless Uniswap v4 pools on BSC, 205–228 USD apart for the same NVIDIA exposure, and the three NVDAB pools have no active liquidity
+- Goal: see how tokenized stocks are pooled on BSC before designing the hook (D-29).
+- Expected: —
+- Actual: at block 124826328 (US overnight): NVDAB/USDT 0.01% 224.85 USD, liquidity 0; NVDAB/USDT 1% 205.48, 0; NVDAB/USDC 0.3% 221.97, 0; NVDAon/USDT 0.01% 228.30, 1.68e19; NVDAon/USDT 0.05% 212.03, 1.40e18; NVDAon/USDT 1% and NVDAon/BNB 1% at the price limits with 0 liquidity; QQQB/USDT 0.01% 722.32 and 0.3% 709.72. Every pool found is hookless with a static fee (the probe cannot see hooked pools: a pool key includes the hook address). At 02:11:39 the public RWA Dynamic V2 answered NVDAB `tokenInfo.price` 228.1474 and `stockInfo.price` null (market closed).
+- Docs: —
+- Time lost: 0.
+- Workaround: —
+- Ask: —
+- Evidence: pool ids and prices in docs/RWA_LP.md §1 (method: keccak of the pool key, `StateView.getSlot0`/`getLiquidity`, sqrt price → USD with `packages/rwa-lp/src/price.ts`).
+
+## 2026-09-30 02:38 UTC — [rwa][edge] bStocks and Ondo NVIDIA tokens move freely through the Uniswap v4 PoolManager, with no fee on transfer
+- Goal: check that tokenized stocks can be pooled at all (holder allowlists, fees on transfer) before building on it.
+- Expected: unknown — RWA tokens often restrict who may hold them.
+- Actual: on a fork of block 124829943, balances written to fresh addresses moved into the PoolManager (`settle`) and back out (`take`) for NVDAB and NVDAon, through the RwaSessionHook pool and vault. `settle` checks the amount received, so neither token takes a transfer fee. The live PoolManager already held 65.56 NVDAB and 6.87 NVDAon (02:10 UTC). NVDAB, TSLAB and QQQB `effectiveAt()` were 0 (nothing scheduled) at block 124833171.
+- Docs: —
+- Time lost: 0.
+- Workaround: —
+- Ask: state in the RWA docs, per issuer, whether a token may be held by contracts such as AMM pool managers, and how a scheduled multiplier change is announced on chain.
+- Evidence: `packages/rwa-lp/contracts/test/BscFork.t.sol`; DECISIONS U-05, U-06.
+
+## 2026-10-01 05:12 UTC — [baw][rwa][docs] `baw market-order quote` reports a tokenized stock in shares (tokens × multiplier); the Web3 API quote reports tokens
+- Goal: check that the floor `/next` hands the Wallet Skill (`acceptMinToCoinAmount`) is in the unit the user's `baw` prints, before a human runs M2-09.
+- Expected: `data.toCoinAmount` of `baw market-order quote --json` is the amount of the token bought, like `toTokenAmount` of the Web3 API aggregator quote (`/build/api/v1/dex/aggregator/quote`, token base units; `fixtures/trading/getAggregatedQuote-20260924-1.json`).
+- Actual: in `@binance/agentic-wallet@1.10.0` (npm tarball sha256 `459d014f…0502`, `dist/index.js` sha256 `7048ff79…345d`, read, not run): when either token is in the wallet's RWA list, `quote` multiplies the API's `toCoinAmount` by that token's multiplier, rounded down to 18 decimals (`$e(a.data.toCoinAmount, l)`, offset 82132, for bStocks; Ondo goes to a separate `ondoQuote` endpoint and prints `toTokenShare`). `market-order list` does the same to `toTokenActualQty` (offset 86267), and for a sell `--fromTokenQty` is read as shares and divided by the multiplier. So the CLI speaks shares, the chain and the Web3 API speak tokens. Our `/next` gave the floor in tokens: with a multiplier above 1 the 1 % price check was looser by that factor (0.08 % for NVDAB today, half the price after a 2-for-1 split), below 1 it would refuse every quote.
+- Docs: Skills Hub `binance-agentic-wallet` (market-order) and the `baw --help` text say "Amount to swap" / "Destination token" with no unit for RWA tokens; the conversion is only in the bundle.
+- Time lost: about 20 minutes.
+- Workaround: `/next` now states the floor in shares (`sharesFromTokens(min tokens, decimals, multiplier)`, rounded down like `baw`); `skills/yieldvest/references/run.md` says both sides are shares.
+- Ask: document per command which RWA amounts `baw` prints and accepts as shares, and the multiplier it used (put it in the JSON output), so an agent can compare a quote with on-chain balances without reading the bundle.
+- Evidence: `apps/web/lib/server/next.ts` (`acceptMinToCoinAmount`), `apps/web/test/skill.test.ts` (0.021990032462334682 tokens × 1.000778223752807865 = 0.022007145627921886 shares).
+
+## 2026-10-01 06:04 UTC — [rwa][docs] The public RWA list repeats each Ondo ticker once per chain, Ethereum first: a lookup by ticker alone finds the wrong token
+- Goal: check the Wallet Skill's token check (the address `/next` names must be the official one for the ticker) against the public list the Skills Hub documents.
+- Expected: one entry per ticker for the list type asked for, or a chain filter.
+- Actual: `GET …/buw/wallet/market/token/rwa/stock/detail/list/ai?type=1` (Ondo, no key, `Accept-Encoding: identity`): HTTP 200, 254,457 bytes, 1.51 s, 1,366 entries for 459 tickers — `chainId` "56" 458, "1" 457, "CT_501" 451. NVDA's entries, in order: Ethereum `0x2d1f7226…`, BSC `0xa9ee28c8…`, CT_501 `gEGtLTPN…`, all with the symbol `NVDAon`. `type=3` (bStocks): 87 entries, all chain "56". There is no chain parameter. A check that takes "the entry for the ticker" compares the BSC address with Ethereum's and refuses every Ondo buy (it fails safe; an agent that took the address from the list instead would send to a token that does not exist on BSC).
+- Docs: Skills Hub `binance-tokenized-securities-info/SKILL.md` API 1: its example response has a chain "1" and a chain "56" entry, but the field table lists only `1` (Ethereum) and `56` (BSC) — not `CT_501` (451 entries) — and the `type` parameter says `1` = Ondo is "currently the only supported tokenized stock provider", while `type=3` returns 87 bStocks tokens. Nothing says a lookup must filter by chain.
+- Time lost: about 10 minutes (found in the skill review).
+- Workaround: `skills/yieldvest/references/safety.md` takes the list for `instrument.issuer` and the entry with `chainId "56"`, and compares the address, the symbol and the quote's `toCoinSymbol`.
+- Ask: a `chainId` filter on the list endpoint, and one sentence in the skill docs that tickers repeat per chain.
+- Evidence: the counts above (re-measured at 06:04:06 UTC); `skills/yieldvest/references/safety.md`.
+
+## 2026-10-01 06:19 UTC — [baw][auth] `baw wallet status --json` answers `success: true` when signed out; the status is in `data.status`
+- Goal: the Wallet Skill's preflight must tell a signed-in `baw` from a signed-out one before it plans anything.
+- Expected: a signed-out wallet makes `wallet status` fail, as every other command does.
+- Actual: `@binance/agentic-wallet@1.10.0`, fresh `HOME` (never signed in): `baw wallet status --json` → exit 0, `{"success": true, "data": {"status": "UNCONNECTED"}}`. `baw market-order quote … --json` → `{"success": false, "error": {"code": 10003000, "name": "NOT_LOGGED_IN", "message": "Not logged in"}}`. From the bundle, `data.status` is `UNCONNECTED` unless connected, then `CREATING` until the wallet exists, then `CONNECTED`. An agent that checks `success` — the field every other command uses for the outcome — believes it is signed in and fails one step later.
+- Docs: the Skills Hub `binance-agentic-wallet/references/wallet-view.md` lists the three values (`UNCONNECTED` not signed in, `CREATING`, `CONNECTED`); it does not say that `success` stays `true` when signed out, while every other command reports its failure in `success`.
+- Time lost: about 5 minutes.
+- Workaround: `skills/yieldvest/SKILL.md` preflight requires `data.status` = `CONNECTED`.
+- Ask: make `wallet status` exit non-zero (or `success: false`) when the session is not usable, or document that `success` only means the call ran.
+- Evidence: the two outputs above (06:19:48 UTC, `baw` 1.10.0 from a scratch install, no account).
+
+## 2026-10-01 16:40 UTC — [web3api][docs] The 9/23–9/26 documentation findings re-checked against the live docs: 13 still present, 4 found, 2 changed
+- Goal: give each documentation finding a public URL and the current text, and say whether it still holds (REPLAN §7: citations as URL + original text instead of `llms-full.txt` line numbers).
+- Expected: the problems logged from the 9/23 `llms-full.txt` snapshot still read the same on the live pages.
+- Actual (pages fetched 16:40–16:49 UTC; raw Markdown at `<page>.md` where the site serves it, the HTML API reference otherwise):
+
+| Entry | Page § section | Status | Current text |
+| --- | --- | --- | --- |
+| 09-23 17:51 market price body | `/en/dev-docs/catalog/web3-wallet/api/rest-api/general-data` § Get Token Price › Request Body | found\* | an array of `binanceChainId` (string, required) and `tokenContractAddress` (string, required) |
+| 09-23 17:51 header names | `/en/dev-docs/authentication` § Step 2 | still present | `X-OC-RECV-WINDOW`, `X-OC-NONCE`; no `recvWindow` / `nonce` alias |
+| 09-23 17:53 simulate parameters | `…/rest-api/transaction-api` § Simulate Transactions | found\* | "Provide `evmTx` for EVM chains, `solTx` for Solana, or `tronTx` for Tron — exactly one must be present." |
+| 09-23 17:53 GET body signed | `/en/dev-docs/authentication` § 3.1 | still present | `body`: "empty string `""`" for `GET`/`HEAD` (the connector was not re-checked) |
+| 09-23 17:55 signing examples | `/en/dev-docs/authentication` § 3.1 examples | still present | `requestPath = "/build/api/v1/dex/market/price?chainId=1&symbol=ETH%20USDT"`, `"/build/api/v1/dex/swap"` |
+| 09-23 17:58 HTTP status of errors | `/en/dev-docs/products/market-api/error-codes` vs `/products/defi-api/error-codes` § Response Format | still present | "All Market API responses — including errors — return **HTTP 200**." vs "gateway-layer errors are **not** returned as HTTP 200 — authentication failures return **401**, and rate-limit violations return **429**" |
+| 09-23 17:58 rate-limit header table | `/en/dev-docs/authentication` § Rate Limits | still present | "Per Endpoint \| 5 RPS (default) \| 1 s \| `X-OC-Used-Weight`" |
+| 09-23 18:00 B402 envelope | `/en/dev-docs/introduction` § Unified Response Format vs `/products/b402-api/integration-guide` | still present | "All endpoints return the `OCResult<T>` format:" vs "A successful response has envelope code `000000000`." |
+| 09-23 18:00 DeFi example values | `/products/defi-api/integration-flow` § Step 2 | changed | the DeFi API now covers 10 EVM chains (changelog 2026-09-30), so the Ethereum USDT address is on a supported chain; the DEPOSIT `"data": "0xa9059cbb..."` and APPROVE `to` = token are unchanged |
+| 09-23 18:00 unlimited APPROVE | `/products/defi-api/integration-flow` § Calldata Validity & Approvals | still present | "**APPROVE is an unlimited allowance (EVM only)**"; the build body has no approval-amount field |
+| 09-23 18:00 40470 in two modules | `/products/defi-api/error-codes` § DeFi Data Query Errors | fixed | "v1.0 returned `40470` for the same condition — v1.1 renumbers it to `40490`" (see the entry below) |
+| 09-23 18:01 units by module | `/products/defi-api/introduction` § Data Format Conventions vs `…/rest-api/trading-api` § Get Aggregated Quote | still present | "Human-readable decimal strings … **not** the token's smallest unit" vs "Sell-token amount in the token's smallest unit" |
+| 09-23 18:01 broadcast body | `/products/transaction-api/error-codes` § Parameter Errors | still present | "Broadcast request is missing both `evmTx` and `solTx` (one is required)"; the reference body is `binanceChainId`, `signedTransaction`, `address`, `enableMevProtection` |
+| 09-23 18:02 Ondo suffix in a bStock example | `/products/trading-api/introduction` § Equity Token Trading (RWA) | still present | "**BStock tokens** (type=3): … (e.g. PALLon/Palladium, TSLAB/Tesla)" |
+| 09-23 18:03 RWA field descriptions | `…/rest-api/rwa-data` § Get RWA Token List › Response | found\* | `referencePrice`: "A per-share converted price derived from the on-chain token price, not an official quote from the traditional stock market." |
+| 09-23 18:12 JS signing helper | `/en/dev-docs/authentication` § Step 4 | still present | the helper is unchanged; the 40102 it predicts is still not measured |
+| 09-23 18:20 connector timeout | `/en/dev-docs/sdks-tools/connectors/javascript` § Key features | still present | "Configurable timeouts, retries, and proxy support"; no default given |
+| 09-24 05:21 statusInfo lists, stock price | `…/rest-api/rwa-data` § statusInfo.marketStatus, § Get RWA Underlying Market Data | changed\* | the value lists are in the API reference ("… or pause (trading halt/circuit breaker)"; live answers say `paused`); `marketData` has no independent stock price |
+| 09-26 17:59 error messages, no RWA page | `/products/trading-api/error-codes` § Quote | still present | 40401 "Quote expired. Please request a new quote"; no error-code page for RWA Data |
+
+- \* = on the HTML API reference (`/en/dev-docs/catalog/web3-wallet/api/rest-api/…`), which the 9/23 entries did not read (they read `llms-full.txt` and the connector). Whether that text existed on 9/23 cannot be told, so these are not changes Binance made.
+- Docs: the pages above. `llms.txt` lists the API reference endpoints without URLs; the reference pages are reached from the site's navigation.
+- Time lost: 0 (agent re-check).
+- Workaround: not applicable.
+- Ask: the entries' own asks, for the rows still present.
+- Evidence: the quotes above, fetched 16:40–16:49 UTC; three spot-checked again at 16:52–16:54 UTC (the 40470/40490 sentence, both 40102 messages, the 40314 row).
+- Own mistakes and open measurements among the entries: 2026-09-30 02:10 put 10,000 blocks at "about 2 hours" from an assumed 0.75 s block; at the 0.45 s measured on 09-24 02:11 it is about 75 minutes (corrected in `dx/findings/bsc-public-rpc-log-range.md`). Not measured yet: 09-23 17:53 (does the gateway reject a signed GET body?), 09-23 18:12 (does the docs' helper fail with 40102 on a `'`?), 09-23 18:20 (the connector's timeout under real latency).
+
+## 2026-10-01 16:52 UTC — [tx][docs] 40314 says to resubmit "with the user's explicit confirmation flag"; the Broadcast body has no such field
+- Goal: know how to answer a medium-risk (KYT) refusal on broadcast.
+- Expected: the field that carries the user's confirmation, named on the Broadcast Transactions reference.
+- Actual: `/en/dev-docs/products/transaction-api/error-codes.md` § Troubleshooting Guide: "KYT medium-risk prompt \| `40314` \| Display a risk warning to the end user and resubmit with the user's explicit confirmation flag"; the code table: "the client must display a confirmation prompt and resubmit with the user's explicit acknowledgement". The Broadcast Transactions reference body has `binanceChainId`, `signedTransaction`, `address`, `enableMevProtection` and nothing else.
+- Docs: the two pages above.
+- Time lost: 0 (found in the re-check; Yieldvest has not met 40314).
+- Workaround: none known; a 40314 would stop a cycle as a failure.
+- Ask: name the confirmation field (and its value) in the Broadcast Transactions reference, or describe the resubmission.
+- Evidence: the quotes above (16:52–16:54 UTC).
+
+## 2026-10-01 16:52 UTC — [web3api][docs] 40102 is "Invalid signature" on the Authentication page and "Signature error" in every module's table
+- Goal: match signature errors by message as well as code.
+- Expected: one message per code.
+- Actual: `/en/dev-docs/authentication.md` § Error Codes example: `"msg": "Invalid signature"`; the Trading integration flow's Common Pitfalls: "`40102 Invalid signature`"; the Market, Trading, Transaction, Wallet and DeFi error tables: "\| `40102` \| `Signature error` \|".
+- Docs: the pages above.
+- Time lost: 0.
+- Workaround: match by code only (as `packages/binance` does).
+- Ask: one message, the one the gateway sends.
+- Evidence: the quotes above (16:52–16:54 UTC).
+
+## 2026-10-01 16:52 UTC — [defi][docs] The DeFi error page cites a "v1.1" renumbering (40470 → 40490); the changelog has no v1.1
+- Goal: know since when DeFi "not found" is 40490 (09-23 18:00 logged 40470 for it).
+- Expected: the version in the changelog.
+- Actual: `/en/dev-docs/products/defi-api/error-codes.md`: "v1.0 returned `40470` for the same condition — v1.1 renumbers it to `40490`; update any branching on the old code." `/en/dev-docs/products/others/changelog.md` has dated entries (2026-06-01 … 2026-09-30) and one version label, "v1.0.0 — Initial Release"; `llms.txt` calls the reference "Binance Web3 API (1.0.0)".
+- Docs: the pages above.
+- Time lost: 0.
+- Workaround: `packages/binance/src/taxonomy.ts` knew only 40470 for DeFi "not found", so a 40490 would have been filed as an unknown code; it now knows both (`taxonomy.test.ts`).
+- Ask: put the renumbering in the changelog with its date.
+- Evidence: the quotes above (16:52–16:54 UTC).
+
+## 2026-10-01 17:15 UTC — [baw][docs] Developer Mode: the docs say `--unsignedTx` is base58 and `contract-call` takes no gas limit; `baw` 1.10.0 and the Skills Hub say base64 and offer `--gasLimit`
+- Goal: check whether an exact-amount `approve` plus `mint` through Developer Mode could replace the unlimited approval of `defi deposit` (DECISIONS Q-16), for the Wallet Skill review.
+- Expected: one description of `contract-call`'s parameters.
+- Actual: `/en/dev-docs/products/agentic-wallet/use-cases/developer-mode.md`: "Base58-encoded unsigned transaction, used instead of `--to` / `--inputData`" and "Do not pass gas settings. `contract-call` accepts no gas limit, gas price or gas option." `baw contract-call preview --help` (1.10.0): `--unsignedTx <base64>` "Solana unsigned transaction, base64 encoded", `--gasLimit <n>` "EVM custom gas limit, 21000-15000000". Skills Hub `binance-agentic-wallet/references/external-sign.md` (commit `9960c67`): `--unsignedTx` "base64 encoded"; `--gasLimit` "Custom EVM gas limit, an integer from 21000 to 15000000".
+- Docs: the three sources above.
+- Time lost: 0 (found in the review; Yieldvest does not use `contract-call`).
+- Workaround: none needed yet; the CLI's own help is the one to follow.
+- Ask: make the Developer Mode page match the CLI (base64, `--gasLimit` as an advanced fallback).
+- Evidence: the quotes above (2026-10-01 17:15 UTC); `baw` 1.10.0 from npm.
+
+
+## 2026-10-02 14:17 UTC — [bag][edge] A registration file in the SDK's format costs 767,983 gas to register, 4.7× the figure we had: the registry stores the whole agent URI on chain
+- Goal: the gas of `register(agentURI)` for the file Yieldvest would register (DECISIONS D-33), from a fresh unfunded address, without sending anything.
+- Expected: about the 163,268 gas measured on 2026-09-27 (entry 14:11), the figure D-28 and TASKS M0-10 quote. That entry does not record the URI it estimated with.
+- Actual: our file in the SDK's format (`AgentURIGenerator`: canonical JSON in a base64 data URI) is 857 bytes as an agent URI: name, a 313-character description, image, an MCP and a web service, no registrations yet. `eth_call` succeeds ("it would be agent 362236 at this block"), `eth_estimateGas` is 767,983 gas at block 125306973; at the 0.05 gwei the node quotes, the 921,580 limit we would sign with is 0.000046079 BNB. The URI is stored (`tokenURI` returns it), so the gas grows with every 32 bytes of the file. `ERC8004Agent.registerAgent` writes it twice: `register`, then `setAgentURI` with the URI regenerated to include `registrations`. The SDK README (0.6.0) says who pays the gas ("self-paid or MegaFuel-sponsored") but no amount, and the Studio README gives no cost (entry 09-27 14:11).
+- Docs: `@bnbagent/sdk` 0.6.0 README, wallet providers table, row "Gas"; the `@bnbagent/studio-cli` README (entry 09-27 14:11).
+- Time lost: 0.
+- Workaround: a short description; `apps/web/test/agent-card.test.ts` keeps our agent URI under 1,100 bytes.
+- Ask: say in the SDK README that the registry stores the agent URI on chain, with the gas per KB, and that `registerAgent` sends two transactions when the file has endpoints.
+- Evidence: `pnpm agent:register --site http://localhost:3100 --broadcast` with a throwaway unfunded key, 14:17:30–14:17:34 UTC: the dry run above, then three refusals (site not https, no Transaction API simulation, 0 BNB) and "nothing signed".

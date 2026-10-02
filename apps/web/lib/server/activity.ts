@@ -143,7 +143,11 @@ function cycleItem(row: CycleRow, plan: PlanRow | undefined, own: ReceiptRow[]):
   };
 }
 
-function receiptItem(row: ReceiptRow, plan: PlanRow | undefined): ActivityItem {
+function receiptItem(
+  row: ReceiptRow,
+  plan: PlanRow | undefined,
+  before: ReceiptRow[] = [],
+): ActivityItem {
   const receipt = receiptOf(row);
   return {
     key: `tx-${row.txHash}`,
@@ -157,8 +161,37 @@ function receiptItem(row: ReceiptRow, plan: PlanRow | undefined): ActivityItem {
     interestUsd: null,
     shares: null,
     instrumentId: null,
-    receipts: [receipt],
+    receipts: [...before.map(receiptOf), receipt],
   };
+}
+
+/**
+ * Entries for receipts outside any cycle. A deposit's exact approval is its own transaction just
+ * before it: it joins the deposit's entry instead of standing alone as a step that never ends. An
+ * approval with no deposit after it (the deposit failed or is still pending) stays its own entry.
+ */
+function loneItems(
+  rows: ReceiptRow[],
+  planById: (id: string) => PlanRow | undefined,
+): ActivityItem[] {
+  const ordered = [...rows].sort(
+    (a, b) => isoTime(a.createdAt).localeCompare(isoTime(b.createdAt)) || a.id - b.id,
+  );
+  const waiting = new Map<string, ReceiptRow[]>();
+  const items: ActivityItem[] = [];
+  for (const row of ordered) {
+    if (row.kind === 'approve') {
+      waiting.set(row.planId, [...(waiting.get(row.planId) ?? []), row]);
+      continue;
+    }
+    const before = row.kind === 'deposit' ? (waiting.get(row.planId) ?? []) : [];
+    if (row.kind === 'deposit') waiting.delete(row.planId);
+    items.push(receiptItem(row, planById(row.planId), before));
+  }
+  for (const approvals of waiting.values()) {
+    for (const row of approvals) items.push(receiptItem(row, planById(row.planId)));
+  }
+  return items;
 }
 
 /**
@@ -212,29 +245,32 @@ export async function activityFeed(db: Db, limit = 60): Promise<ActivityItem[]> 
   const cycleIdSet = new Set(cycleIds);
   const items = [
     ...allCycles.map((c) => cycleItem(c, planById.get(c.planId), receiptsOf.get(c.id) ?? [])),
-    ...recent
-      .filter((r) => r.cycleId === null || !cycleIdSet.has(r.cycleId))
-      .map((r) => receiptItem(r, planById.get(r.planId))),
+    ...loneItems(
+      recent.filter((r) => r.cycleId === null || !cycleIdSet.has(r.cycleId)),
+      (id) => planById.get(id),
+    ),
   ];
   return items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
 }
 
 /** One plan's history: its cycles with their receipts, and its receipts outside any cycle. */
 export async function planActivity(db: Db, plan: PlanRow, limit = 100): Promise<ActivityItem[]> {
-  const [own, planReceipts] = await Promise.all([
+  const [own, newestReceipts] = await Promise.all([
     db
       .select()
       .from(cycles)
       .where(eq(cycles.planId, plan.id))
       .orderBy(desc(cycles.startedAt), desc(cycles.id))
       .limit(limit),
+    // The newest receipts (a long-running plan has more than a page), shown oldest first.
     db
       .select()
       .from(receipts)
       .where(eq(receipts.planId, plan.id))
-      .orderBy(receipts.createdAt, receipts.id)
+      .orderBy(desc(receipts.createdAt), desc(receipts.id))
       .limit(limit * 3),
   ]);
+  const planReceipts = newestReceipts.reverse();
   const ids = new Set(own.map((c) => c.id));
   const receiptsOf = new Map<number, ReceiptRow[]>();
   for (const row of planReceipts) {
@@ -243,9 +279,10 @@ export async function planActivity(db: Db, plan: PlanRow, limit = 100): Promise<
   }
   const items = [
     ...own.map((c) => cycleItem(c, plan, receiptsOf.get(c.id) ?? [])),
-    ...planReceipts
-      .filter((r) => r.cycleId === null || !ids.has(r.cycleId))
-      .map((r) => receiptItem(r, plan)),
+    ...loneItems(
+      planReceipts.filter((r) => r.cycleId === null || !ids.has(r.cycleId)),
+      () => plan,
+    ),
   ];
   return items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
 }

@@ -27,7 +27,7 @@ import { fromUnits, toUnits, underlyingFromVTokens } from '@yieldvest/core';
 import { getAddress, isAddressEqual, type Hex } from 'viem';
 import type { ChainPort } from './chain-port.js';
 import { sendTransaction, type SendResult } from './send.js';
-import type { Failure, SentTx, TradeDeps } from './trade.js';
+import { sendDeps, type Failure, type SentTx, type TradeDeps } from './trade.js';
 
 export interface VenusMarket {
   investmentId: string;
@@ -138,17 +138,6 @@ async function gasFor(deps: TradeDeps, call: { to: string; data: string }, fallb
   }
 }
 
-function signerDeps(deps: TradeDeps) {
-  if (deps.mode !== 'live' || !deps.signer) throw new Error('live mode with a signer is required');
-  return {
-    client: deps.client,
-    chain: deps.chain,
-    db: deps.db,
-    signer: deps.signer,
-    log: deps.log,
-  };
-}
-
 type SendOutcome = SentTx | { kind: 'pending'; txHash: Hex } | Failure;
 
 function outcomeOf(
@@ -187,7 +176,12 @@ export type DepositResult =
       deposit: SimulationResult;
     }
   | { kind: 'deposited'; vTokensMinted: bigint; usdtSpent: bigint; sent: SentTx[] }
-  | { kind: 'pending'; txHash: Hex; sent: SentTx[] }
+  /**
+   * Not mined yet. `step` says which: a pending deposit is finished from the chain by the
+   * awaiting path; a pending approval means the deposit itself was never sent — ask again once
+   * the approval is mined (the exact allowance it leaves is used then).
+   */
+  | { kind: 'pending'; step: 'approve' | 'deposit'; txHash: Hex; sent: SentTx[] }
   | Failure;
 
 /** Deposits `amountUsd` USDT of the plan's principal into Venus. */
@@ -241,7 +235,7 @@ export async function depositPrincipal(
       return fail('SIM_APPROVE', `approve simulation: ${approveSimulation.failReason}`);
     }
     if (deps.mode === 'live') {
-      const result = await sendTransaction(signerDeps(deps), {
+      const result = await sendTransaction(sendDeps(deps), {
         planId: args.planId,
         cycleId: null,
         kind: 'approve',
@@ -256,7 +250,7 @@ export async function depositPrincipal(
         amount: amount.toString(),
       });
       if (!('receipt' in outcome))
-        return outcome.kind === 'pending' ? { ...outcome, sent } : outcome;
+        return outcome.kind === 'pending' ? { ...outcome, step: 'approve', sent } : outcome;
       sent.push(outcome);
     }
   }
@@ -268,7 +262,7 @@ export async function depositPrincipal(
   if (depositSimulation.status !== 'SUCCESS') {
     return fail('SIM_DEPOSIT', `deposit simulation: ${depositSimulation.failReason}`);
   }
-  const result = await sendTransaction(signerDeps(deps), {
+  const result = await sendTransaction(sendDeps(deps), {
     planId: args.planId,
     cycleId: null,
     kind: 'deposit',
@@ -284,7 +278,8 @@ export async function depositPrincipal(
   const outcome = outcomeOf(result, 'deposit', deps.now().toISOString(), {
     amountUsd: args.amountUsd,
   });
-  if (!('receipt' in outcome)) return outcome.kind === 'pending' ? { ...outcome, sent } : outcome;
+  if (!('receipt' in outcome))
+    return outcome.kind === 'pending' ? { ...outcome, step: 'deposit', sent } : outcome;
   const vTokensMinted = transferredTo(outcome.receipt.logs, args.market.vToken, deps.house);
   const usdtSpent = transferredFrom(outcome.receipt.logs, BSC_USDT, deps.house);
   outcome.amounts = {
@@ -362,7 +357,7 @@ export async function redeemFromVenus(
     return { kind: 'simulated', redeem: simulation, vTokens: call.amount };
   if (simulation.status !== 'SUCCESS')
     return fail('SIM_REDEEM', `redeem simulation: ${simulation.failReason}`);
-  const result = await sendTransaction(signerDeps(deps), {
+  const result = await sendTransaction(sendDeps(deps), {
     planId: args.planId,
     cycleId: args.cycleId,
     kind: 'redeem',

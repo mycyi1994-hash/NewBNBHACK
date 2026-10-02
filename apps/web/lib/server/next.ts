@@ -21,6 +21,9 @@ import {
 } from '@yieldvest/core';
 import { estimateQuote, marketsFromTape, type TapeView } from './market';
 
+/** The worker's Venus id goes into argv the skill runs: only plain ids, nothing a shell reads. */
+export const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
 /** A decision is good for five minutes; after that, ask again. */
 export const NEXT_TTL_MS = 5 * 60_000;
 export const SKILL_SLIPPAGE = '0.5';
@@ -45,7 +48,11 @@ export interface NextStep {
   /** Show the user this preview and ask before running `run`. */
   preview?: string[];
   run: string[];
-  /** For quote: stop unless data.toCoinAmount is at least this (human units). */
+  /**
+   * For quote: stop unless data.toCoinAmount is at least this. In the unit `baw market-order quote`
+   * prints for a tokenized stock: shares (tokens × the multiplier, rounded down — read in
+   * @binance/agentic-wallet 1.10.0), not the tokens the tape and the chain count.
+   */
   acceptMinToCoinAmount?: string;
   /** For swap: poll this until FINISHED or FAILED — an orderId is not a trade. */
   confirm?: string[];
@@ -79,6 +86,17 @@ export type NextAnswer =
     };
 
 const human = (units: bigint, decimals: number) => fromUnits(units, decimals);
+
+/** Take `amountUsd` of USDT out of the wallet's Venus position: preview, confirm, run, report. */
+export function redeemStep(investmentId: string, amountUsd: string): NextStep {
+  const args = ['--investmentId', investmentId, '--tokenAddress', BSC_USDT, '--amount', amountUsd];
+  return {
+    id: 'redeem',
+    preview: ['baw', 'defi', 'preview', '--action', 'REDEEM', ...args, '--json'],
+    run: ['baw', 'defi', 'redeem', ...args, '--json'],
+    report: { kind: 'redeem', body: { kind: 'redeem', txHash: '<data.txHash>' } },
+  };
+}
 
 export function nextFor(ctx: NextContext): NextAnswer {
   const decidedAt = ctx.now.toISOString();
@@ -153,20 +171,7 @@ export function nextFor(ctx: NextContext): NextAnswer {
     ];
     const steps: NextStep[] = [];
     if (toUnits(decision.redeemUsd, 18) > 0n && ctx.venus) {
-      const args = [
-        '--investmentId',
-        ctx.venus.investmentId,
-        '--tokenAddress',
-        BSC_USDT,
-        '--amount',
-        decision.redeemUsd,
-      ];
-      steps.push({
-        id: 'redeem',
-        preview: ['baw', 'defi', 'preview', '--action', 'REDEEM', ...args, '--json'],
-        run: ['baw', 'defi', 'redeem', ...args, '--json'],
-        report: { kind: 'redeem', body: { kind: 'redeem', txHash: '<data.txHash>' } },
-      });
+      steps.push(redeemStep(ctx.venus.investmentId, decision.redeemUsd));
     }
     steps.push({
       id: 'quote',
@@ -181,7 +186,11 @@ export function nextFor(ctx: NextContext): NextAnswer {
         SKILL_SLIPPAGE,
         '--json',
       ],
-      acceptMinToCoinAmount: human(minTokens, instrument.decimals),
+      acceptMinToCoinAmount: sharesFromTokens(
+        minTokens,
+        instrument.decimals,
+        instrument.multiplier,
+      ),
     });
     steps.push({
       id: 'swap',

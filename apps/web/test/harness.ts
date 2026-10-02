@@ -4,7 +4,7 @@
  * them. Everything runs against the web tests' own Postgres (test/db.ts); nothing leaves the host.
  */
 import { randomBytes, randomInt } from 'node:crypto';
-import { BSC_USDT } from '@yieldvest/chain';
+import { BSC_USDT, type BstockMultiplier } from '@yieldvest/chain';
 import { fromUnits } from '@yieldvest/core';
 import {
   cycles,
@@ -139,6 +139,12 @@ export interface FakeWebChain extends WebChain {
   /** vToken → underlying rate (18 decimals of USD per vToken unit, scaled by 1e18). */
   rate: bigint;
   rpcDown: boolean;
+  /** What readWallet sees: base units by lowercase token address, bStocks multipliers, USDT. */
+  holdings: {
+    balances: Map<string, bigint>;
+    multipliers: Map<string, BstockMultiplier>;
+    usdt: bigint | null;
+  };
   /** Mined now (the clock the routes read) unless a block time is given. */
   mine(
     hash: Hex,
@@ -153,6 +159,7 @@ export function fakeWebChain(): FakeWebChain {
     walletVTokens: 10n ** 30n,
     rate: 212_000_000_000_000_000_000_000_000n, // 0.0212 USDT per vToken unit (8 decimals)
     rpcDown: false,
+    holdings: { balances: new Map(), multipliers: new Map(), usdt: 0n },
     mine(hash, tx) {
       chain.txs.set(hash.toLowerCase(), {
         blockNumber: chain.block,
@@ -165,6 +172,31 @@ export function fakeWebChain(): FakeWebChain {
     mined: (hash) => Promise.resolve(chain.txs.get(hash.toLowerCase())),
     vTokenBalance: () => Promise.resolve(chain.walletVTokens),
     vTokensUsd: (_vToken, vTokens) => Promise.resolve(fromUnits((vTokens * chain.rate) / E18, 18)),
+    readWallet(_wallet, tokens, vToken) {
+      if (chain.rpcDown) return Promise.reject(new Error('fetch failed'));
+      const balances = new Map<string, bigint>();
+      for (const t of tokens) {
+        const key = t.address.toLowerCase();
+        balances.set(key, chain.holdings.balances.get(key) ?? 0n);
+      }
+      const multipliers = new Map(
+        tokens
+          .filter((t) => t.bstocks && chain.holdings.multipliers.has(t.address.toLowerCase()))
+          .map((t) => {
+            const key = t.address.toLowerCase();
+            return [key, chain.holdings.multipliers.get(key) as BstockMultiplier] as const;
+          }),
+      );
+      return Promise.resolve({
+        blockNumber: chain.block,
+        blockTime: BigInt(Math.floor(Date.now() / 1000)),
+        balances,
+        multipliers,
+        usdt: chain.holdings.usdt,
+        // exchangeRateStored is scaled by 1e18: the test rate is already USD per vToken unit × 1e18.
+        venus: vToken ? { vTokens: chain.walletVTokens, exchangeRate: chain.rate } : null,
+      });
+    },
   };
   return chain;
 }

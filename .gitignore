@@ -18,6 +18,14 @@ coverage/
 docs/vendor/*
 !docs/vendor/ENDPOINTS.md
 
+# Foundry build output and local script runs (packages/rwa-lp). A live deployment's manifest
+# goes to packages/rwa-lp/deployments/, which is committed; a local fork rehearsal's goes to
+# deployments/rehearsal/ (MANIFEST_DIR), which is not.
+packages/rwa-lp/out/
+packages/rwa-lp/cache/
+packages/rwa-lp/broadcast/
+packages/rwa-lp/deployments/rehearsal/
+
 # local
 .DS_Store
 *.log

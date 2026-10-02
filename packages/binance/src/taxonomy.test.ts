@@ -87,6 +87,9 @@ describe('classifyError — SPEC §11 by code', () => {
     // 40470 is a Solana fee error in Trading but "resource not found" in DeFi data.
     expect(api('trading', 40470).meaning).toMatch(/Solana/);
     expect(api('defi-data', 40470).meaning).toMatch(/not found/);
+    // The DeFi page renumbers "not found" to 40490 (dx/LOG.md 2026-10-01 16:52): both are known.
+    expect(api('defi-data', 40490)).toMatchObject({ documented: true, action: 'fail' });
+    expect(api('defi-data', 40490).meaning).toMatch(/not found/);
     // A module code does not leak into another module.
     expect(api('market', 40401)).toMatchObject({ documented: false, action: 'fail', alert: true });
   });

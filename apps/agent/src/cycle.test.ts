@@ -18,7 +18,15 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../test/db.js';
 import { cleanup, HOUSE, ROUTER } from '../test/harness.js';
-import { createWorld, RECEIVED, testInstrument, testPlan, USDT } from '../test/world.js';
+import {
+  createWorld,
+  RECEIVED,
+  testInstrument,
+  testPlan,
+  USDT,
+  VENUS_RATE,
+  withVenus,
+} from '../test/world.js';
 import { runCycle } from './cycle.js';
 
 const url = agentTestUrl;
@@ -129,6 +137,90 @@ describe.skipIf(!url)('runCycle on Postgres', () => {
     // A scheduled run moves the plan to the next regular open + 2 min.
     expect((await getPlan(db, id))?.nextDueAt).toMatch(/^2026-09-29 13:32/);
     expect(w.alerts).toEqual([]);
+  });
+
+  it('live, confirmed: another instrument fails before anything is signed or reserved', async () => {
+    const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
+    const w = await world(MON_1000);
+    const report = await runCycle(w.deps('live'), id, {
+      manual: true,
+      confirmed: { instrumentId: 'OTHER:bstocks', maxSpendUsd: '5' },
+    });
+    expect(report).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'FAILED', code: 'NOT_CONFIRMED', fundsMoved: 'none' },
+    });
+    expect(w.chain.sent).toEqual([]);
+    expect(w.api.calls).not.toContain('/api/v1/dex/aggregator/approve-transaction');
+    expect(await db.select().from(txOutbox).where(eq(txOutbox.planId, id))).toEqual([]);
+    // A manual run leaves the plan as it was.
+    expect((await getPlan(db, id))?.status).toBe('paused');
+  });
+
+  it('live, confirmed: the confirmed amount bounds the fresh decision', async () => {
+    for (const [maxSpendUsd, spendUsd] of [
+      ['5', '5'],
+      ['4.99', '4.99'],
+      ['25', '5'],
+    ] as const) {
+      const id = await plan({ status: 'paused', pausedReason: 'awaiting_funding' });
+      const w = await world(MON_1000);
+      const report = await runCycle(w.deps('live'), id, {
+        manual: true,
+        confirmed: { instrumentId, maxSpendUsd },
+      });
+      if (report.status === 'done' && report.outcome.kind === 'FAILED')
+        console.log(JSON.stringify(report.outcome));
+      expect(report).toMatchObject({ status: 'done', outcome: { kind: 'BOUGHT', spendUsd } });
+    }
+  });
+
+  it('live, confirmed: a yield plan buys the confirmed interest although more accrued since the dry run', async () => {
+    // $100 principal and a $103 position: $3 of interest, under every cap.
+    const id = await plan({
+      mode: 'yield',
+      contributionUsd: '0',
+      cadence: 'weekly',
+      principalUsd: '100',
+      vtokenUnits: '10300000000',
+    });
+    const w = await world(MON_1000);
+    withVenus(w);
+    const dry = await runCycle(w.deps('simulate'), id, { manual: true });
+    if (dry.status !== 'simulated') throw new Error(`dry run: ${dry.status}`);
+    expect(dry.buy).toMatchObject({ instrumentId, spendUsd: '3' });
+    // Venus moved on before the person typed y: the position is worth one part in 1e10 more.
+    w.chain.exchangeRate = () => Promise.resolve(VENUS_RATE + VENUS_RATE / 10_000_000_000n);
+    const live = await runCycle(w.deps('live'), id, {
+      manual: true,
+      confirmed: { instrumentId: dry.buy.instrumentId, maxSpendUsd: dry.buy.spendUsd },
+    });
+    expect(live).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'BOUGHT', spendUsd: '3', interestUsd: '3' },
+    });
+  });
+
+  it('a yield plan waits for an unknown Venus market instead of failing and losing its slot', async () => {
+    const id = await plan({
+      mode: 'yield',
+      contributionUsd: '0',
+      cadence: 'weekly',
+      principalUsd: '100',
+      vtokenUnits: '10600000000',
+    });
+    const w = await world(MON_1000);
+    // Discovery failed at start-up: the worker has no Venus market.
+    const { venus: _unknown, ...deps } = w.deps('live');
+    const report = await runCycle(deps, id);
+    expect(report).toMatchObject({
+      status: 'done',
+      outcome: { kind: 'DEFERRED', reason: 'data_unavailable' },
+      why: { key: 'why.data.unavailable' },
+    });
+    expect(w.chain.sent).toEqual([]);
+    // Back in 30 minutes, not next week.
+    expect((await getPlan(db, id))?.nextDueAt).toMatch(/^2026-09-28 14:30/);
   });
 
   it('live: a buy on top of a holding written at another multiplier logs the change and recomputes shares (M1-08)', async () => {

@@ -22,7 +22,7 @@ import {
   type PlanInsert,
 } from '@yieldvest/db';
 import { like } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GET as dxMetrics } from '../app/api/dx/metrics/route';
 import { GET as dxTape } from '../app/api/dx/tape/route';
 import { GET as health } from '../app/api/health/route';
@@ -58,6 +58,9 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
     await db.delete(tapeSamples);
     instrument = await testInstrument(db);
     setChainForTests(chain);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
   afterAll(async () => {
     setChainForTests(undefined);
@@ -96,6 +99,8 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
   });
 
   it('tape: UNAVAILABLE with a reason, then STALE with its time, then LIVE', async () => {
+    // A Tuesday in the regular session (Date only; timers stay real for the database driver).
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-06T15:00:00.000Z') });
     const empty = await call(tapeLatest, { path: '/api/tape/latest' });
     expect(empty.status).toBe(503);
     expect(empty.body).toEqual({ state: 'UNAVAILABLE', reason: 'no tape samples yet' });

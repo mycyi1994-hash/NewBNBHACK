@@ -12,39 +12,40 @@
 import { loadConfig } from '@yieldvest/config';
 import { changePlanSettings, planSettings, type PlanSettingsChange } from '@yieldvest/core';
 import { createDb, getPlan, migrateDb, planFromRow, updatePlan } from '@yieldvest/db';
+import { parseFlags } from './args.js';
 import { confirmSpend } from './confirm.js';
 
 const FLAGS = {
-  '--contribution': 'contributionUsd',
-  '--per-buy': 'maxPerBuyUsd',
-  '--daily': 'maxDailyUsd',
-  '--cadence': 'cadence',
-  '--window': 'window',
+  contribution: 'contributionUsd',
+  'per-buy': 'maxPerBuyUsd',
+  daily: 'maxDailyUsd',
+  cadence: 'cadence',
+  window: 'window',
 } as const;
 const USAGE =
   'usage: pnpm plan:set --plan <id> [--contribution usd] [--per-buy usd] [--daily usd] ' +
   '[--cadence daily|weekly|once] [--window regular_session|anytime]';
 
-const args = process.argv.slice(2).filter((a) => a !== '--');
-const valueOf = (flag: string) => {
-  const i = args.indexOf(flag);
-  const value = i >= 0 ? args[i + 1] : undefined;
-  return value === undefined || value.startsWith('--') ? undefined : value;
-};
-const planId = valueOf('--plan');
+// Strict like every operator script (audit S20): a misspelt or repeated flag is a usage error,
+// never a change silently left out.
+const flags = parseFlags(process.argv.slice(2), {
+  values: ['plan', ...(Object.keys(FLAGS) as (keyof typeof FLAGS)[])],
+  required: ['plan'],
+});
 const change: PlanSettingsChange = {};
-const missing: string[] = [];
-for (const [flag, key] of Object.entries(FLAGS)) {
-  if (!args.includes(flag)) continue;
-  const value = valueOf(flag);
-  if (value === undefined) missing.push(flag);
-  else change[key] = value;
+if (flags.ok) {
+  for (const [flag, key] of Object.entries(FLAGS) as [
+    keyof typeof FLAGS,
+    (typeof FLAGS)[keyof typeof FLAGS],
+  ][]) {
+    const value = flags.values[flag];
+    if (value !== undefined) change[key] = value;
+  }
 }
 const config = loadConfig();
 
-if (!planId || missing.length > 0 || Object.keys(change).length === 0) {
-  if (missing.length > 0) console.log(`no value after ${missing.join(', ')}`);
-  console.log(USAGE);
+if (!flags.ok || Object.keys(change).length === 0) {
+  console.log(`${flags.ok ? 'nothing to change' : flags.error}\n${USAGE}`);
   process.exitCode = 2;
 } else if (!config.databaseUrl) {
   console.log('UNAVAILABLE: no DATABASE_URL');
@@ -53,6 +54,7 @@ if (!planId || missing.length > 0 || Object.keys(change).length === 0) {
   const { db, close } = createDb(config.databaseUrl);
   try {
     await migrateDb(db);
+    const planId = flags.values.plan;
     const row = await getPlan(db, planId);
     if (!row) throw new Error(`plan ${planId} not found`);
     const plan = planFromRow(row);
@@ -80,6 +82,7 @@ if (!planId || missing.length > 0 || Object.keys(change).length === 0) {
           ));
         if (!ok) {
           console.log('not changed');
+          process.exitCode = 1;
         } else {
           await updatePlan(db, plan.id, settings);
           console.log(`changed ${summary}`);

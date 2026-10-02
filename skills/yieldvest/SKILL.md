@@ -8,10 +8,14 @@ description: |
   "run my Yieldvest plan", "what should Yieldvest do now", "Yieldvest status", "stop my Yieldvest plan".
 metadata:
   author: yieldvest
-  version: '0.1.0'
+  version: '0.2.0'
+  # The baw version every command and amount here is checked against (as binance-agentic-wallet 1.12.0).
+  requiredCliVersion: '1.10.0'
   requires:
     skills:
       - binance-agentic-wallet
+      # The swap pre-check of binance-agentic-wallet audits the token with it.
+      - query-token-audit
   openclaw:
     requires:
       bins:
@@ -30,9 +34,17 @@ the user confirms, and then reported back — the server records only what the c
 
 ## Preflight (every conversation)
 
-1. The `binance-agentic-wallet` skill is installed and `baw` is signed in: `baw wallet status --json`.
-   If not, follow that skill's authentication reference. Check `sessionExpireTime`; if it is less
-   than two hours away, say so before starting anything (see [safety.md](references/safety.md)).
+0. `baw cli-check --required-version 1.10.0 --json` (`metadata.requiredCliVersion`). If `data.needUpdateCli` is `true`, stop: this
+   skill's commands and amounts are checked against `baw` 1.10.0 (its quotes print a tokenized stock
+   in shares) — the user updates the Binance Agentic Wallet CLI first.
+1. The `binance-agentic-wallet` skill is installed and `baw` is signed in: `baw wallet status --json`
+   must say `data.status` = `CONNECTED` (`success` is `true` either way: signed out is
+   `UNCONNECTED`, a wallet still being created is `CREATING`). If not, follow that skill's
+   authentication reference. Then `baw wallet settings --json`: if
+   `data.sessionExpireTime` is less than two hours away, say so before starting anything (see
+   [safety.md](references/safety.md)). In the same answer: if `data.tradeAllTokens` is `false`, the
+   wallet trades only tokens on its allowed list, so the plan's token must be on it (the user adds
+   it in the Binance App); `data.dailyLimit` is the wallet's own daily cap (see plan.md).
 2. The Yieldvest server URL: `YIELDVEST_URL` in the environment, else the `url` in `~/.config/yieldvest/config.json`,
    else ask the user for the site address (it is in the project README). Check it answers:
    `curl -sS "$YIELDVEST_URL/api/health"`.
@@ -47,15 +59,34 @@ the user confirms, and then reported back — the server records only what the c
 | Put principal in (yield mode) | `baw defi preview --action DEPOSIT …` → confirm → `baw defi deposit …` → `POST /report` | [plan.md](references/plan.md) |
 | Run the plan / "what now?" | `GET /api/plans/{id}/next` → run its `steps` in order, confirming each | [run.md](references/run.md) |
 | Status / history | `GET /api/plans/{id}` (public view: limits, history, receipts, holdings) | [plan.md](references/plan.md) |
-| Stop the plan | `POST /api/plans/{id}/stop`; in yield mode, redeem the position with the user | [plan.md](references/plan.md) |
+| Stop the plan | `POST /api/plans/{id}/stop`; in yield mode, `GET /api/plans/{id}/position` → its redeem step, with the user | [plan.md](references/plan.md) |
+| "bStocks or Ondo?" | `GET /api/compare?ticker=…`: both tokens' recorded quotes side by side — facts, the user chooses | [plan.md](references/plan.md) |
+| "Would it buy now?" before a plan exists | `GET /api/preflight?ticker=…&usd=…`: the engine's verdict and each rule it read; creates nothing | [plan.md](references/plan.md) |
+| "What would my deposit earn?" | `GET /api/projection?depositUsd=…&ticker=…`: at today's listed rate — a projection, never a promise | [safety.md](references/safety.md) |
 | Anything about risks | Read the disclosure; never promise returns | [safety.md](references/safety.md) |
 
-The API contract (every route, body and answer) is published at `$YIELDVEST_URL/api/openapi`.
+The API contract (every route, body and answer) is published at `$YIELDVEST_URL/api/openapi`. The
+same read-only answers (market status, the comparison, the pre-flight check, the projection, plan
+records) are also an MCP server at `$YIELDVEST_URL/api/mcp`; nothing there can move funds.
 
 ## Rules that always apply
 
-- **Confirm every state change.** Show the preview (`defi preview`, `market-order quote`) and ask;
-  proceed only on a clear yes. The server's answer is advice to the wallet, not permission.
+- **Check every command before you show it.** The server's answer is advice to the wallet, not
+  permission: before asking about a step, compare its `run` with what the user agreed. It is a
+  `baw` command of that step's kind (`defi preview` / `defi redeem`, `market-order quote`,
+  `market-order swap`, `market-order list`); `--binanceChainId` is `56`; a quote or swap has
+  `--fromToken` USDT `0x55d398326f99059fF775485246999027B3197955` and `--toToken` the
+  `instrument.address` that passed the token check in [safety.md](references/safety.md) for the
+  plan's ticker and issuer; `--fromTokenQty` equals
+  `spendUsd`, and `spendUsd` is at most the plan's `maxPerBuyUsd` saved at creation. If anything
+  differs, stop, show the difference and run nothing.
+- **Confirm every state change with the wallet's own numbers.** Show the preview or quote `baw`
+  printed (amounts, fees, balance changes, the contract it calls) with full token addresses, add
+  "Do your own research (DYOR)", and proceed only on a clear yes.
+- **One transaction at a time.** Before a redeem, a swap, a deposit or a revoke,
+  `baw wallet tx-lock --binanceChainId 56 --json` must say `UNLOCKED`. `LOCKED` means an earlier
+  transaction is still pending, or one is waiting for the user's approval in the Binance App
+  (five minutes): tell the user, wait, and check again.
 - **Run exactly what `/next` returned, before its `expiresAt`.** Never change amounts, tokens or
   flags; never reuse an expired answer — ask `/next` again.
 - **Verify the token.** Before a swap, check the `toToken` address against the official RWA list

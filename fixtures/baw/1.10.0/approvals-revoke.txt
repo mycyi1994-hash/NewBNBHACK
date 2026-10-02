@@ -1,0 +1,10 @@
+Usage: baw approvals revoke [options]
+
+Revoke a token approval
+
+Options:
+  --binanceChainId <binanceChainId>  Binance chain ID
+  --tokenContract <address>          Token contract address
+  --spender <address>                Spender contract address
+  --type <type>                      Approval type (approve | permit2)
+  -h, --help                         display help for command

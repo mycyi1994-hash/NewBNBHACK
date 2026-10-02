@@ -7,14 +7,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AutoRefresh, InterestChart, ProgressStrip } from '../../components/design';
+import { InterestCalculator, type CalculatorStock } from '../../components/earn/InterestCalculator';
 import { Icon } from '../../components/Icon';
 import { AnimatedText } from '../../components/motion';
 import { pausedText, statusText } from '../../components/plan-text';
 import { Toolbar } from '../../components/Toolbar';
 import {
+  BlockTitle,
   Ledger,
   Panel,
   SectionHeading,
+  StateBadge,
   Status,
   SummaryStrip,
   Unavailable,
@@ -24,7 +27,10 @@ import { locale } from '../../lib/i18n/server';
 import type { Lang, T } from '../../lib/i18n/translate';
 import { context } from '../../lib/server/context';
 import { venusInfo, type VenusInfo } from '../../lib/server/house';
+import { marketStatus, type MarketStatus } from '../../lib/server/market';
 import { houseStory, type HouseStory } from '../../lib/server/overview';
+import { startingDeposit } from '../../lib/projection';
+import { apyView } from '../../lib/server/projection';
 import { settle, type Settled } from '../../lib/server/settle';
 
 export const dynamic = 'force-dynamic';
@@ -40,12 +46,14 @@ export default async function EarnPage() {
   const { lang, tz, t } = await locale();
   const { config, db } = context();
   const now = new Date();
-  const [house, venus]: [Settled<HouseStory>, Settled<VenusInfo>] = db
-    ? await Promise.all([
-        settle('database', () => houseStory(db, config, now)),
-        settle('database', () => venusInfo(db, now)),
-      ])
-    : [noDatabase, noDatabase];
+  const [house, venus, market]: [Settled<HouseStory>, Settled<VenusInfo>, Settled<MarketStatus>] =
+    db
+      ? await Promise.all([
+          settle('database', () => houseStory(db, config, now)),
+          settle('database', () => venusInfo(db, now)),
+          settle('database', () => marketStatus(db, now)),
+        ])
+      : [noDatabase, noDatabase, noDatabase];
   const plan = house.ok ? house.value.plan : null;
   const interest = house.ok ? house.value.interest : null;
   const available = moneyFine(interest?.availableUsd ?? null);
@@ -128,7 +136,89 @@ export default async function EarnPage() {
           aria={t('progress.aria')}
         />
       ) : null}
+      <Calculator
+        t={t}
+        lang={lang}
+        tz={tz}
+        now={now}
+        venus={venus}
+        market={market}
+        minBuyUsd={String(config.caps.minBuyUsd)}
+        depositUsd={startingDeposit(plan?.principalUsd)}
+      />
     </>
+  );
+}
+
+/**
+ * One share price per ticker for the calculator: bStocks first, then Ondo, from a LIVE tape only —
+ * "at today's price" is never an old price.
+ */
+function calculatorStocks(market: Settled<MarketStatus>): CalculatorStock[] {
+  if (!market.ok || market.value.data.state !== 'LIVE') return [];
+  const out = new Map<string, CalculatorStock>();
+  const order = ['bstocks', 'ondo'];
+  const priced = market.value.instruments
+    .filter((i) => i.onchainSharePriceUsd !== null)
+    .sort((a, b) => order.indexOf(a.issuer) - order.indexOf(b.issuer));
+  for (const i of priced) {
+    if (!out.has(i.ticker) && i.onchainSharePriceUsd) {
+      out.set(i.ticker, {
+        ticker: i.ticker,
+        sharePriceUsd: i.onchainSharePriceUsd,
+        venueMinUsd: i.venueMinUsd,
+      });
+    }
+  }
+  return [...out.values()];
+}
+
+function Calculator({
+  t,
+  lang,
+  tz,
+  now,
+  venus,
+  market,
+  minBuyUsd,
+  depositUsd,
+}: {
+  t: T;
+  lang: Lang;
+  tz: string;
+  now: Date;
+  venus: Settled<VenusInfo>;
+  market: Settled<MarketStatus>;
+  minBuyUsd: string;
+  depositUsd: string;
+}) {
+  const apy = venus.ok ? apyView(venus.value, now) : null;
+  // A rate is LIVE, STALE with the time it was read, or not shown: a stale rate without a read
+  // time cannot say how old it is.
+  const data =
+    !venus.ok || !apy || apy.state === 'UNAVAILABLE'
+      ? { state: 'UNAVAILABLE' as const, reason: venus.ok ? 'no rate recorded yet' : venus.reason }
+      : apy.state === 'LIVE'
+        ? { state: 'LIVE' as const }
+        : apy.at
+          ? { state: 'STALE' as const, at: apy.at }
+          : { state: 'UNAVAILABLE' as const, reason: 'rate read time unknown' };
+  return (
+    <section className="page-block" aria-label={t('calc.title')}>
+      <BlockTitle aside={<StateBadge t={t} data={data} now={now} />}>{t('calc.title')}</BlockTitle>
+      {apy?.pct && data.state !== 'UNAVAILABLE' ? (
+        <InterestCalculator
+          lang={lang}
+          tz={tz}
+          apy={{ pct: apy.pct, at: apy.at, stale: data.state === 'STALE' }}
+          minBuyUsd={minBuyUsd}
+          stocks={calculatorStocks(market)}
+          initialDepositUsd={depositUsd}
+        />
+      ) : (
+        <p className="state-line">{t('calc.unavailable')}</p>
+      )}
+    </section>
   );
 }
 

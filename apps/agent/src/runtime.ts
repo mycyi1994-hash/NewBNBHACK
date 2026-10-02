@@ -53,6 +53,7 @@ export function createRuntime(config: Config, options: { fixtures?: boolean } = 
     alerter,
   });
   const sinkErrors: unknown[] = [];
+  let sinkErrorTotal = 0;
   const root = findWorkspaceRoot() ?? process.cwd();
   const client = new BinanceClient({
     baseUrl: config.binance.baseUrl,
@@ -60,7 +61,19 @@ export function createRuntime(config: Config, options: { fixtures?: boolean } = 
     apiSecret: config.binance.apiSecret,
     region: config.regionTag ?? null,
     onApiCall: sink,
-    onSinkError: (error) => sinkErrors.push(error),
+    // Telemetry never fails a request (audit I10), but a lost api_calls row is lost DX evidence:
+    // said in the log (the first, then every 100th), and only the latest 1,000 kept in memory —
+    // a database down for hours must not grow the worker without bound.
+    onSinkError: (error) => {
+      sinkErrorTotal += 1;
+      if (sinkErrors.push(error) > 1_000) sinkErrors.shift();
+      if (sinkErrorTotal === 1 || sinkErrorTotal % 100 === 0) {
+        const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+        console.log(
+          maskHouse(`api_calls sink: ${sinkErrorTotal} write(s) failed — ${reason}`, redact),
+        );
+      }
+    },
     redact,
     ...(options.fixtures
       ? { fixtures: createFixtureRecorder({ rootDir: path.join(root, 'fixtures'), redact }) }

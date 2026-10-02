@@ -15,6 +15,20 @@ Author: Minseo Kang. Filming 10/6~10/7, editing 10/8. Screen recording + narrati
 
 Filming checklist: browser zoom 125%, lock to either dark or light, mask addresses and keys, failure scenes use real failure records (no staging), 3 links in the last frame (live, repo, DX).
 
+### 1.1 Agent draft (10/2): where the read-only views fit — a person decides
+
+> Author: coding agent, at a human's request on 10/2. The script above is the person's and is left as it is; these are optional swaps that keep the video at 4:00. Every screen named here exists on the branch today (DECISIONS D-31, D-32), and each shows real data only once the worker records it on the deployed site.
+
+| Swap into | Seconds | Screen | Narration gist |
+| --- | --- | --- | --- |
+| 0:20–1:30 (Judge Mode), before **Buy now** | 10 | `/check?ticker=NVDA&usd=5`: per token "Would buy about … shares for $5.00 now" (or "Would wait" with the next try), and the seven rules with what each read | "Before any money moves, you can ask the agent's own rules what they would do right now — and see every number they read." |
+| 0:20–1:30, at the stock pick | 8 | `/compare?ticker=NVDA`: bStocks and Ondo side by side; Ondo's $5 quote refused (40375), the $50 quote in shares and price per share | "Two issuers of the same share. We show both, in shares, and you choose; a plan never switches." |
+| 1:30–2:20 (yield mode), on Earn | 8 | The calculator: $1,000 at today's listed APY → interest a year, the first buy after N days, about how many shares a month | "Small interest, next investment — at today's rate, and we say it's a projection." |
+| 2:20–3:10 (Claude Code), after the fill | 12 | In Claude Code with `claude mcp add --transport http yieldvest <site>/api/mcp`: "Would Yieldvest buy NVDA now?" → the `preflight` tool's answer; then `/wallet?address=<the team wallet>` showing the bought shares at the on-chain multiplier | "Any assistant can ask the same engine through MCP — read-only. And your wallet shows what you own in real shares, not tokens." |
+| Cut to make room | −38 | Shorten 3:10–3:40 (guardian) to 15 s and 3:40–4:00 (README, /dx) to 12 s, or drop one swap | — |
+
+Before filming, check two lines of the script against the repository on the day: 3:40 says "7 modules" — the README module matrix today shows the RWA Data, Market, Trading, Transaction and DeFi APIs plus the Agentic Wallet, with the Wallet API, b402 and Agent Studio not in use; and "2 weeks of off-hours data" needs the production tape (`/dx`). The filming checklist's "mask addresses" applies to `/wallet` too: film a team wallet whose address may be shown.
+
 ## 2. The judges' 15-minute path (draft for the top of the README)
 
 ```

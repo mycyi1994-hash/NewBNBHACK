@@ -218,9 +218,16 @@ async function pageSpeed(browser: Browser) {
   }
 }
 
+const CHECKS = ['a11y', 'keyboard', 'motion', 'perf'];
+const only = new Set(values.only.split(','));
+const unknown = [...only].filter((name) => !CHECKS.includes(name));
+if (unknown.length > 0 || only.size === 0) {
+  // A misspelt check would otherwise run nothing and report 0 problems.
+  console.log(`qa:check — unknown --only ${unknown.join(',')}; choose from ${CHECKS.join(',')}`);
+  process.exit(2);
+}
 const browser = await chromium.launch(values.chromium ? { executablePath: values.chromium } : {});
 try {
-  const only = new Set(values.only.split(','));
   if (only.has('a11y')) await accessibility(browser);
   if (only.has('keyboard')) await keyboard(browser);
   if (only.has('motion')) await motion(browser);

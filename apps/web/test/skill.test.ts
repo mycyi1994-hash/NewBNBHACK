@@ -8,6 +8,7 @@ import { BSC_USDT } from '@yieldvest/chain';
 import {
   createDb,
   getPlan,
+  guardianEvents,
   insertGuardianEvent,
   resolveGuardianEvents,
   sha256Hex,
@@ -16,7 +17,7 @@ import {
   writeWorkerStatus,
   type InstrumentRow,
 } from '@yieldvest/db';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GET as nextRoute } from '../app/api/plans/[id]/next/route';
 import { POST as previewRoute } from '../app/api/plans/[id]/preview/route';
@@ -68,6 +69,8 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   const chain = fakeWebChain();
   const planIds: string[] = [];
   const tokenIds: string[] = [];
+  /** Global guardian events this file raised: every plan's view lists them, so they go too. */
+  const globalEvents: number[] = [];
   let instrument: InstrumentRow;
 
   beforeAll(async () => {
@@ -79,6 +82,9 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   });
   afterAll(async () => {
     setChainForTests(undefined);
+    if (globalEvents.length > 0) {
+      await db.delete(guardianEvents).where(inArray(guardianEvents.id, globalEvents));
+    }
     await db.delete(workerStatus).where(eq(workerStatus.key, 'venus'));
     await cleanup(db, { planIds, instrumentIds: [instrument.id], tokenIds });
     await resetContext();
@@ -98,6 +104,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
         owner: 'skill',
         walletAddress: wallet.toLowerCase(),
         ticker: instrument.ticker,
+        issuer: instrument.issuer,
         contributionUsd: '5',
         cadence: 'weekly',
         maxPerBuyUsd: '5',
@@ -126,6 +133,10 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
       [{ maxPerBuyUsd: '5', maxDailyUsd: '4' }, 'bad_limits'],
       [{ maxPerBuyUsd: '0.2', maxDailyUsd: '1' }, 'bad_limits'],
       [{ ticker: 'ZZZZZZ' }, 'unknown_ticker'],
+      // The user chooses the issuer, and only one the registry has for the ticker.
+      [{ issuer: undefined }, 'bad_request'],
+      [{ issuer: 'xstocks' }, 'bad_request'],
+      [{ issuer: 'ondo' }, 'unknown_ticker'],
     ];
     for (const [override, errorCode] of bad) {
       const res = await call<Problem>(createPlan, {
@@ -134,6 +145,7 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
           owner: 'skill',
           walletAddress: randomAddress(),
           ticker: instrument.ticker,
+          issuer: instrument.issuer,
           contributionUsd: '5',
           maxPerBuyUsd: '5',
           maxDailyUsd: '10',
@@ -150,11 +162,13 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
     expect(stored).toMatchObject({ tokenHash: sha256Hex(token), walletAddress: wallet });
     expect(JSON.stringify(stored)).not.toContain(token);
     expect((await getPlan(db, id))?.walletAddress).toBe(wallet);
+    // Only the chosen issuer: no silent switch to the other token for the same ticker.
+    expect((await getPlan(db, id))?.issuerPreference).toEqual([instrument.issuer]);
   });
 
   it('answers /next with baw commands in the regular session — no calldata, no signing', async () => {
-    const { id, token } = await skillPlan();
     at(MONDAY_10_ET);
+    const { id, token } = await skillPlan();
     await writeTape(db, instrument, '2026-09-28T13:55:00.000Z');
 
     const res = await next(id, token);
@@ -196,8 +210,9 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
         '0.5',
         '--json',
       ],
-      // The wallet's own quote may come in at most 1 % (the price-impact limit) under the tape.
-      acceptMinToCoinAmount: '0.021990032462334682',
+      // The wallet's own quote may come in at most 1 % (the price-impact limit) under the tape —
+      // in shares, as baw prints it: 0.021990032462334682 tokens × the 1.000778… multiplier.
+      acceptMinToCoinAmount: '0.022007145627921886',
     });
     expect(swap).toEqual({
       id: 'swap',
@@ -236,9 +251,9 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   });
 
   it('waits when the market is closed or the tape is old, and skips while the guardian blocks', async () => {
+    at(SATURDAY);
     const { id, token } = await skillPlan();
 
-    at(SATURDAY);
     await writeTape(db, instrument, '2026-10-03T14:55:00.000Z', {
       session: 'weekend',
       stockPrice: null,
@@ -259,17 +274,26 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
     });
 
     await writeTape(db, instrument, '2026-10-05T13:50:00.000Z');
-    await insertGuardianEvent(db, {
+    const hold = await insertGuardianEvent(db, {
       rule: 'usdt_depeg',
       action: 'pause_buys',
       planId: null,
       detail: { price: '0.985' },
     });
+    globalEvents.push(hold.id);
     try {
       expect((await next(id, token)).body).toMatchObject({
         decision: 'skip',
         why: { key: 'why.skipped.guardian.hold', params: { rule: 'usdt_depeg' } },
       });
+      // The plan's page shows the global hold that stops it, not an empty guardian list.
+      const view = await call<{ guardian: { rule: string; resolvedAt: string | null }[] }>(
+        planRoute,
+        { path: `/api/plans/${id}`, id },
+      );
+      expect(view.body.guardian).toContainEqual(
+        expect.objectContaining({ rule: 'usdt_depeg', resolvedAt: null }),
+      );
     } finally {
       await resolveGuardianEvents(db, 'usdt_depeg', new Date());
     }
@@ -277,8 +301,8 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
   });
 
   it('records a mined swap from the plan wallet — and nothing the chain does not show', async () => {
-    const { id, token, wallet } = await skillPlan();
     at(MONDAY_10_ET);
+    const { id, token, wallet } = await skillPlan();
     const received = TOKENS_PER_USD * 5n;
     const swapLogs = (spent: bigint, tokens: bigint) => [
       transferLog(USDT, wallet, ROUTER, spent),
@@ -378,7 +402,19 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
     expect([bad.status, bad.body.error.code]).toEqual([400, 'bad_request']);
   });
 
+  it('counts a skill plan’s day against its own daily limit, not the house wallet’s', async () => {
+    // $100 a day from the user's own wallet, above the house-wide $50.
+    const { id } = await skillPlan({ maxPerBuyUsd: '25', maxDailyUsd: '100' });
+    const view = await call<{ limits: { perDayUsd: string; remainingTodayUsd: string } }>(
+      planRoute,
+      { path: `/api/plans/${id}`, id },
+    );
+    expect(view.body.limits).toMatchObject({ perDayUsd: '100', remainingTodayUsd: '100' });
+  });
+
   it('starts a skill yield plan from its reported deposit and redeems only interest', async () => {
+    // After every earlier tape run in this file: the latest run is the one the decision reads.
+    at('2026-10-05T14:10:00.000Z');
     await writeWorkerStatus(db, 'venus', { vToken: VTOKEN, investmentId: `venus-${randomUUID()}` });
     const { id, token, wallet, created } = await skillPlan({
       mode: 'yield',
@@ -406,8 +442,6 @@ describe.skipIf(!webTestUrl)('skill routes (mode C)', () => {
       vtokenUnits: '100000000000',
     });
 
-    // After every earlier tape run in this file: the latest run is the one the decision reads.
-    at('2026-10-05T14:10:00.000Z');
     await writeTape(db, instrument, '2026-10-05T14:05:00.000Z');
     // The plan's own 1e11 vTokens: $100.10 at this rate, $0.10 of interest (under the minimum).
     chain.rate = 1_001_000_000_000_000_000_000_000_000n;

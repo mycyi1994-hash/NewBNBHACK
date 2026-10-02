@@ -98,7 +98,7 @@ function Summary({
         items={[
           { label: t('overview.supplied'), value: '—' },
           { label: t('overview.available'), value: '—' },
-          { label: t('overview.next'), value: '—' },
+          { label: t('earn.threshold'), value: '—' },
         ]}
         status={
           <Status tone="skip">{t('home.status.unavailable', { reason: house.reason })}</Status>
@@ -140,7 +140,9 @@ function Summary({
               : t('home.status.unavailable', { reason: interest.reason ?? '' }),
         },
         {
-          label: t('overview.next'),
+          // The minimum buy is a threshold, not the next purchase's amount: an interest plan buys
+          // what has accrued once it reaches this.
+          label: t('earn.threshold'),
           value: (
             <>
               {money(house.value.minBuyUsd)} <small>USDT</small>

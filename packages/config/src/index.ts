@@ -102,6 +102,26 @@ export const envSchema = z
         .regex(/^0x[0-9a-fA-F]{64}$/, { message: 'must be 0x followed by 64 hex characters' })
         .optional(),
     ),
+    // The ERC-8004 agent identity (DECISIONS D-33): a wallet of its own, never the house key; it
+    // pays the registration's gas (pnpm agent:register). Read only by that script.
+    AGENT_IDENTITY_PRIVATE_KEY: z.preprocess(
+      blankToUndefined,
+      z
+        .string()
+        .trim()
+        .regex(/^0x[0-9a-fA-F]{64}$/, { message: 'must be 0x followed by 64 hex characters' })
+        .optional(),
+    ),
+    // The agentId the ERC-8004 registry assigned (public), once registered. Ids are sequential; 15
+    // digits keep it an exact JSON number in the registration file.
+    AGENT_ID: z.preprocess(
+      blankToUndefined,
+      z
+        .string()
+        .trim()
+        .regex(/^\d{1,15}$/, { message: 'must be the agent id the registry assigned (digits)' })
+        .optional(),
+    ),
     EXECUTION_MODE: z.preprocess(
       blankToUndefined,
       z.enum(['simulate', 'live'], { message: 'must be "simulate" or "live"' }).default('simulate'),
@@ -167,6 +187,17 @@ export const envSchema = z
         fail('SANDBOX_MAX_PER_PLAN_USD', 'must not exceed DAILY_SPEND_CAP_USD');
       }
     }
+    // One key, one role: the identity wallet must not be able to move the house's funds.
+    if (
+      env.AGENT_IDENTITY_PRIVATE_KEY !== undefined &&
+      env.HOUSE_WALLET_PRIVATE_KEY !== undefined &&
+      env.AGENT_IDENTITY_PRIVATE_KEY.toLowerCase() === env.HOUSE_WALLET_PRIVATE_KEY.toLowerCase()
+    ) {
+      fail(
+        'AGENT_IDENTITY_PRIVATE_KEY',
+        'must not be HOUSE_WALLET_PRIVATE_KEY (a wallet of its own)',
+      );
+    }
     if (env.EXECUTION_MODE === 'live') {
       // Live mode signs and spends: it needs credentials, the house key, and the spend ledger
       // (the daily cap is computed from spend_ledger in Postgres).
@@ -201,6 +232,11 @@ export interface Config {
   readonly bsc: { readonly rpcUrl: string; readonly rpcUrlFallback: string };
   readonly databaseUrl: string | undefined;
   readonly houseWalletPrivateKey: `0x${string}` | undefined;
+  /** The ERC-8004 identity (D-33): its own wallet's key, and the id the registry assigned. */
+  readonly agent: {
+    readonly identityPrivateKey: `0x${string}` | undefined;
+    readonly id: string | undefined;
+  };
   readonly executionMode: 'simulate' | 'live';
   readonly caps: Caps;
   readonly judgeCodes: readonly string[];
@@ -246,6 +282,10 @@ export function parseConfig(input: EnvInput): Config {
     bsc: { rpcUrl: env.BSC_RPC_URL, rpcUrlFallback: env.BSC_RPC_URL_FALLBACK },
     databaseUrl: env.DATABASE_URL,
     houseWalletPrivateKey: env.HOUSE_WALLET_PRIVATE_KEY as `0x${string}` | undefined,
+    agent: {
+      identityPrivateKey: env.AGENT_IDENTITY_PRIVATE_KEY as `0x${string}` | undefined,
+      id: env.AGENT_ID,
+    },
     executionMode: env.EXECUTION_MODE,
     caps: {
       houseMaxPerTxUsd: env.HOUSE_MAX_PER_TX_USD,
@@ -301,9 +341,20 @@ export function loadConfig(options: LoadOptions = {}): Config {
   return parseConfig({ ...fromFile, ...Object.fromEntries(real) });
 }
 
-/** A loggable view: secrets become booleans, the database URL loses its credentials. */
+/**
+ * A loggable view: secrets become booleans, the database URL loses its credentials, and an RPC
+ * URL is reduced to its host — providers often keep the API key in the path (as packages/chain's
+ * error messages already do).
+ */
 export function describeConfig(config: Config): Record<string, unknown> {
   const db = config.databaseUrl ? new URL(config.databaseUrl) : undefined;
+  const host = (url: string) => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return 'invalid';
+    }
+  };
   return {
     executionMode: config.executionMode,
     regionTag: config.regionTag ?? 'unset',
@@ -313,9 +364,11 @@ export function describeConfig(config: Config): Record<string, unknown> {
       apiKey: config.binance.apiKey !== undefined,
       apiSecret: config.binance.apiSecret !== undefined,
     },
-    bsc: config.bsc,
+    bsc: { rpc: host(config.bsc.rpcUrl), rpcFallback: host(config.bsc.rpcUrlFallback) },
     database: db ? `${db.protocol}//${db.host}${db.pathname}` : 'unset',
     houseWalletKey: config.houseWalletPrivateKey !== undefined,
+    agentIdentityKey: config.agent.identityPrivateKey !== undefined,
+    agentId: config.agent.id ?? 'unset',
     judgeCodes: config.judgeCodes.length,
     sessionSecret: config.sessionSecret !== undefined,
     telegram: config.telegram.botToken !== undefined && config.telegram.opsChatId !== undefined,

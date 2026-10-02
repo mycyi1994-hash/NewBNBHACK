@@ -1,0 +1,13 @@
+Usage: baw wallet tx-lock [options]
+
+Query transaction lock status for the current chain
+
+Options:
+  --binanceChainId <binanceChainId>  Binance chain ID
+  -h, --help                         display help for command
+
+Examples:
+  baw wallet tx-lock --binanceChainId 56
+  baw wallet tx-lock --binanceChainId 56 --json
+
+

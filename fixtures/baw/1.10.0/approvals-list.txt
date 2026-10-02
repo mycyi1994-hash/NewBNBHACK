@@ -1,0 +1,11 @@
+Usage: baw approvals list [options]
+
+List token approvals for your wallet
+
+Options:
+  --spender <address>    Filter by spender address
+  --filterTypes <types>  Filter by risk type (high_risk, medium_risk,
+                         non_interactive, others)
+  --limit <number>       Number of results to return (default: 20)
+  --offset <cursor>      Pagination cursor from previous query
+  -h, --help             display help for command

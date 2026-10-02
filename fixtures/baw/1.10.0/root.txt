@@ -1,0 +1,33 @@
+Usage: baw [options] [command]
+
+CLI wallet tool for payments and crypto
+
+Options:
+  -V, --version          output the version number
+  --json                 Output in JSON format
+  -h, --help             display help for command
+
+Commands:
+  skill-check [options]  Check if a skill has a newer version available
+  cli-check [options]    Check if the CLI meets the required version
+  auth                   Authentication commands (signin, signout, verify QR
+                         code status)
+  wallet                 Wallet management commands (status, address, balance,
+                         send, cancel, speed-up, tx-history, settings,
+                         left-quota, tx-lock, chains, gas-price)
+  market-order           Market order commands (swap, quote, list)
+  limit-order            Limit order commands (buy, sell, list, cancel)
+  x402-payment           x402 (B402) payment — preview and sign PaymentRequired
+                         responses
+  prediction             Prediction market commands (market, category,
+                         position, order, trade)
+  approvals              Approval management commands (list, detail, revoke)
+  defi                   DeFi protocol, investment, and position commands
+  signal                 Custom signal commands
+  tracker                Wallet Tracker commands (monitor / groups / addresses)
+  leaderboard            Leaderboard commands (query / analyze / alpha-radar /
+                         preset / alpha-radar-config)
+  contract-call          Preview and execute agent wallet contract calls
+  sign-message           Preview, execute, and query agent wallet message
+                         signatures
+  help [command]         display help for command

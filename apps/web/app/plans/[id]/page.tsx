@@ -136,7 +136,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
       ? v.plan.mode === 'yield'
         ? `${t('home.house.next.min', { min: money(String(config.caps.minBuyUsd)) })} · ${timeText(v.plan.nextDueAt, lang, tz)}`
         : (timeText(v.plan.nextDueAt, lang, tz) ?? '—')
-      : (paused ?? t('plan.next.none'));
+      : (paused ?? (v.plan.status === 'stopped' ? statusText(t, 'stopped') : t('plan.next.none')));
   const sharesItem = {
     label: t('home.house.shares'),
     value: (
@@ -227,7 +227,13 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
           heading={
             <SectionHeading
               title={t('plan.timeline.title')}
-              sub={[paused, v.plan.mode === 'yield' ? `${t('home.house.next')}: ${next}` : null]
+              sub={[
+                paused,
+                // The next buy is news only for a running plan; otherwise it repeats the reason.
+                v.plan.mode === 'yield' && v.plan.status === 'active'
+                  ? `${t('home.house.next')}: ${next}`
+                  : null,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             />

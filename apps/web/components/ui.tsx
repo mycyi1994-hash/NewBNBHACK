@@ -287,3 +287,37 @@ export function BlockTitle({ children, aside }: { children: ReactNode; aside?: R
     </div>
   );
 }
+
+/** Scrolls sideways on a phone, so it takes focus and a name: the keyboard can scroll it too. */
+export function DataTable({
+  label,
+  head,
+  rows,
+}: {
+  label: string;
+  head: ReactNode[];
+  rows: ReactNode[][];
+}) {
+  return (
+    <div className="table-wrap" role="region" aria-label={label} tabIndex={0}>
+      <table className="data-table">
+        <thead>
+          <tr>
+            {head.map((h, i) => (
+              <th key={i}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i}>
+              {row.map((cell, j) => (
+                <td key={j}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

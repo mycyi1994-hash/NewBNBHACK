@@ -112,7 +112,8 @@ export function estimateQuote(
   if (row.errorCode) {
     return { ...base, errorCode: row.errorCode, errorMsg: row.errorMsg ?? 'recorded quote error' };
   }
-  if (!row.expectedOut)
+  // Base units are a whole number; anything else ("1.5e18") is no amount, never a crash.
+  if (!row.expectedOut || !/^\d+$/.test(row.expectedOut))
     return { ...base, errorCode: 'NO_TAPE', errorMsg: 'tape quote has no amount' };
   const scaled = (BigInt(row.expectedOut) * spend) / toUnits(String(row.sizeUsd), 18);
   return {

@@ -4,9 +4,9 @@
  * the issuers compared; first sightings of undocumented codes. Each block says how it was measured.
  */
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
+import { sessionText } from '../../components/plan-text';
 import { Toolbar } from '../../components/Toolbar';
-import { BlockTitle, Pill, StateBadge } from '../../components/ui';
+import { BlockTitle, DataTable as Table, Pill, StateBadge } from '../../components/ui';
 import { signedPct, timeText } from '../../lib/format';
 import { locale } from '../../lib/i18n/server';
 import type { T } from '../../lib/i18n/translate';
@@ -21,32 +21,6 @@ const DAYS = 7;
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await locale();
   return { title: t('dx.title') };
-}
-
-/** Scrolls sideways on a phone, so it takes focus and a name: the keyboard can scroll it too. */
-function Table({ label, head, rows }: { label: string; head: ReactNode[]; rows: ReactNode[][] }) {
-  return (
-    <div className="table-wrap" role="region" aria-label={label} tabIndex={0}>
-      <table className="data-table">
-        <thead>
-          <tr>
-            {head.map((h, i) => (
-              <th key={i}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>
-              {row.map((cell, j) => (
-                <td key={j}>{cell}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
 }
 
 /** A horizontal bar per row; values may be negative (bars grow from the middle line). */
@@ -78,20 +52,6 @@ function Bars({ rows, unit }: { rows: { label: string; value: number | null; not
 
 function Method({ t, method }: { t: T; method: string }) {
   return <p className="method-note">{t('dx.method', { method })}</p>;
-}
-
-function sessionName(t: T, session: string): string {
-  switch (session) {
-    case 'regular':
-    case 'pre':
-    case 'post':
-    case 'overnight':
-    case 'weekend':
-    case 'holiday':
-      return t(`dx.session.${session}`);
-    default:
-      return session;
-  }
 }
 
 function impactBySize(rows: DxTape['rows']) {
@@ -232,7 +192,7 @@ export default async function DxPage() {
             <Bars
               unit="%"
               rows={gapBySession(tape.value.rows).map((s) => ({
-                label: sessionName(t, s.session),
+                label: sessionText(t, s.session),
                 value: s.gapPct,
                 note: `n=${s.samples}`,
               }))}

@@ -5,7 +5,17 @@
  */
 import { z } from 'zod';
 import { SESSION_COOKIE } from './session';
-import { JudgePlanBody, JudgeSessionBody, ReportRequest, RunBody, SkillPlanBody } from './schemas';
+import {
+  CompareQuery,
+  JudgePlanBody,
+  JudgeSessionBody,
+  PreflightQuery,
+  ProjectionQuery,
+  ReportRequest,
+  RunBody,
+  SkillPlanBody,
+  WalletQuery,
+} from './schemas';
 
 type Schema = Record<string, unknown>;
 
@@ -67,7 +77,11 @@ const schemas: Record<string, Schema> = {
     type: 'object',
     description: 'Work handed to the worker, which signs (the web never does). Poll `poll`.',
     required: ['jobId', 'status', 'poll'],
-    properties: { jobId: str(), status: { const: 'queued' }, poll: str() },
+    properties: {
+      jobId: str(),
+      status: { enum: ['queued', 'running'], description: 'running: a stop already under way' },
+      poll: str(),
+    },
   },
   Job: {
     type: 'object',
@@ -77,7 +91,10 @@ const schemas: Record<string, Schema> = {
       kind: { enum: ['preview', 'run', 'stop'] },
       planId: str(),
       status: { enum: ['queued', 'running', 'done', 'failed'] },
-      result: { description: "The worker's report: a cycle outcome, a simulation or a stop." },
+      result: {
+        description:
+          "The worker's report: a cycle outcome, a simulation or a stop. A run's report also has `planStatus`, the plan's status once it is over (`active`: it now runs on its own).",
+      },
       error: nullable(str()),
       createdAt: str(),
       finishedAt: nullable(str()),
@@ -97,7 +114,7 @@ const schemas: Record<string, Schema> = {
       },
       run: { type: 'array', items: { type: 'string' } },
       acceptMinToCoinAmount: str(
-        'quote: stop unless data.toCoinAmount is at least this (token units, human decimals)',
+        'quote: stop unless data.toCoinAmount is at least this — in the unit baw prints for a tokenized stock: shares (tokens × multiplier), human decimals',
       ),
       confirm: {
         type: 'array',
@@ -184,6 +201,30 @@ const schemas: Record<string, Schema> = {
       },
     ],
   },
+  PositionAnswer: {
+    type: 'object',
+    description:
+      'A skill yield plan’s own Venus position, read on chain (its vTokens, never more than the wallet holds, at the market’s rate), and the step that takes exactly that out. The wallet may hold other Venus USDT; never redeem it with --ratio 1 for one plan.',
+    required: ['planId', 'asOf', 'position', 'steps'],
+    properties: {
+      planId: str(),
+      asOf: str(),
+      position: {
+        type: 'object',
+        required: ['principalUsd', 'vTokens', 'underlyingUsd'],
+        properties: {
+          principalUsd: str('Principal on record'),
+          vTokens: str('vUSDT units on record for this plan'),
+          underlyingUsd: str('What they are worth now; 0 when nothing is left'),
+        },
+      },
+      steps: {
+        type: 'array',
+        items: ref('NextStep'),
+        description: 'One redeem step, or none when there is nothing to take out.',
+      },
+    },
+  },
   ReportResult: {
     type: 'object',
     description:
@@ -219,6 +260,24 @@ const open = (summary: string, description = 'OK') => ({
   get: { summary, responses: { 200: json({ type: 'object' }, description), 503: unavailable } },
 });
 const days = { name: 'days', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 30 } };
+
+/** Query parameters from the zod object the route parses its query with. */
+function queryParams(schema: z.ZodObject) {
+  const json = fromZod(schema) as {
+    properties?: Record<string, Schema & { description?: string }>;
+    required?: string[];
+  };
+  return Object.entries(json.properties ?? {}).map(([name, property]) => {
+    const { description, ...rest } = property;
+    return {
+      name,
+      in: 'query',
+      required: (json.required ?? []).includes(name),
+      ...(description ? { description } : {}),
+      schema: rest,
+    };
+  });
+}
 
 export function openApiDocument(serverUrl: string) {
   return {
@@ -272,8 +331,14 @@ export function openApiDocument(serverUrl: string) {
                 properties: {
                   ok: { const: true },
                   capUsd: str(),
-                  remainingUsd: str(),
-                  exhausted: { type: 'boolean' },
+                  remainingUsd: str('What the code itself has left'),
+                  todayUsd: str('What today’s house-wide cap still lets it spend (≤ remainingUsd)'),
+                  dailyCapUsd: str('The house-wide daily cap'),
+                  exhausted: { type: 'boolean', description: 'The code has used its own cap' },
+                  dailyCapReached: {
+                    type: 'boolean',
+                    description: 'The code has money left, but today’s house-wide cap is spent',
+                  },
                   expiresAt: str(),
                 },
               },
@@ -281,6 +346,8 @@ export function openApiDocument(serverUrl: string) {
             ),
             400: problem('Bad body'),
             401: problem('bad_code'),
+            413: problem('too_large'),
+            415: problem('json_only'),
             429: problem('rate_limited: 10 attempts a minute per address'),
             503: unavailable,
           },
@@ -318,7 +385,10 @@ export function openApiDocument(serverUrl: string) {
               'bad_request, unknown_ticker, over_cap, below_min, venue_minimum, bad_limits, house_wallet',
             ),
             401: problem('no_session'),
-            409: problem('code_exhausted: the code’s spend and deposits together reach its cap'),
+            409: problem(
+              'code_exhausted: the code’s spend and deposits together reach its cap; daily_cap: the code has it, today’s house-wide cap does not',
+            ),
+            413: problem('too_large'),
             415: problem('json_only'),
             429: problem('too_many_plans or rate_limited'),
             503: unavailable,
@@ -347,6 +417,7 @@ export function openApiDocument(serverUrl: string) {
             404: problem('not_found'),
             409: problem('use_next: skill plans are decided by GET /next'),
             429: problem('too_many_jobs: ten per plan per ten minutes'),
+            503: unavailable,
           },
         },
       },
@@ -362,8 +433,10 @@ export function openApiDocument(serverUrl: string) {
             401: problem('unauthorized'),
             404: problem('not_found'),
             409: problem('plan_held (paused or stopped), code_exhausted'),
+            413: problem('too_large'),
             415: problem('json_only'),
             429: problem('too_many_jobs'),
+            503: unavailable,
           },
         },
       },
@@ -378,6 +451,7 @@ export function openApiDocument(serverUrl: string) {
             202: json(ref('Queued'), 'Queued (or the stop already waiting)'),
             401: problem('unauthorized'),
             404: problem('not_found'),
+            503: unavailable,
           },
         },
       },
@@ -395,6 +469,21 @@ export function openApiDocument(serverUrl: string) {
           },
         },
       },
+      '/api/plans/{id}/position': {
+        get: {
+          summary: 'Skill: a yield plan’s own Venus position and the step that takes it out',
+          security: skill,
+          parameters: [idParam],
+          responses: {
+            200: json(ref('PositionAnswer'), 'The position and zero or one redeem step'),
+            401: problem('unauthorized'),
+            404: problem('not_found'),
+            409: problem('not_yield'),
+            429: problem('rate_limited: 10 a minute per plan and token, 60 per address'),
+            503: json(ref('Unavailable'), 'venus_unavailable, chain_unavailable, or no database'),
+          },
+        },
+      },
       '/api/plans/{id}/report': {
         post: {
           summary: 'Skill: report a transaction; the chain decides what is recorded',
@@ -407,9 +496,11 @@ export function openApiDocument(serverUrl: string) {
             400: problem('bad_json, bad_request'),
             401: problem('unauthorized'),
             404: problem('not_found'),
+            413: problem('too_large'),
             415: problem('json_only'),
             422: json(ref('ReportResult'), 'rejected, with the reason'),
             429: problem('rate_limited: 20 a minute per plan and token, 60 per address'),
+            503: unavailable,
           },
         },
       },
@@ -451,6 +542,94 @@ export function openApiDocument(serverUrl: string) {
           summary: 'Tape aggregates for /dx: session gap, price impact by size, issuers',
           parameters: [days],
           responses: { 200: json({ type: 'object' }, 'Aggregates'), 503: unavailable },
+        },
+      },
+      '/api/compare': {
+        get: {
+          summary: 'bStocks against Ondo for one stock, from the latest tape run',
+          description:
+            'Per issuer: status, on-chain price per share, US price and gap, venue minimum, full address, and for each tape quote size the shares it was worth, the price per share in it and its price impact (or the code it was refused with). Per size: which quote was worth more shares. Without `ticker`: the tickers and the issuers that sell each. Facts with their data state; never a pick.',
+          parameters: queryParams(CompareQuery),
+          responses: {
+            200: json({ type: 'object' }, 'The comparison, or { tickers } without a ticker'),
+            400: problem('bad_request'),
+            404: problem('unknown_ticker'),
+            429: problem('rate_limited: 120 requests a minute per address'),
+            503: unavailable,
+          },
+        },
+      },
+      '/api/preflight': {
+        get: {
+          summary: 'Would Yieldvest buy this right now? decideCycle on the latest tape, read-only',
+          description:
+            'Runs the agent’s engine for a fixed-amount plan that does not exist yet, once per issuer — the answer GET /api/plans/{id}/next would give such a skill plan — and lists every rule’s input against its limit with its read time: data age (seconds), guardian, session, amount vs minimum (USD), token status, price gap (%), price impact (%). A buy needs a guardian check within 15 minutes. Creates nothing and returns no command.',
+          parameters: queryParams(PreflightQuery),
+          responses: {
+            200: json({ type: 'object' }, 'Verdict per issuer and the rules it read'),
+            400: problem('bad_request or bad_amount'),
+            404: problem('unknown_ticker'),
+            429: problem('rate_limited: 120 requests a minute per address'),
+            503: unavailable,
+          },
+        },
+      },
+      '/api/projection': {
+        get: {
+          summary: 'What a deposit would earn if today’s listed Venus APY held',
+          description:
+            'Interest per day, week, month (30 days) and year, compounded daily at the listed APY; the days until it reaches the first buy (`firstBuyUsd`: the minimum buy, or the priced token’s venue minimum when higher — Ondo’s $5.01); about how many shares a month of it buys at the on-chain price of a LIVE tape. Each input carries its data state; no rate means no projection. The rate changes daily: a projection, not a promise.',
+          parameters: queryParams(ProjectionQuery),
+          responses: {
+            200: json({ type: 'object' }, 'Inputs with their state, and the projection'),
+            400: problem('bad_request or bad_amount'),
+            404: problem('unknown_ticker'),
+            429: problem('rate_limited: 120 requests a minute per address'),
+            503: unavailable,
+          },
+        },
+      },
+      '/api/wallet': {
+        get: {
+          summary: 'A wallet’s tokenized stocks in shares, read on chain at one block',
+          description:
+            'Every registered bStocks or Ondo token the address holds, in underlying shares (tokens × the multiplier: a bStocks token’s own on chain at that block, with a scheduled change; an Ondo token’s from the registry), its value at the last recorded price (`prices.state`), the wallet’s USDT, its Venus USDT position and the Yieldvest plans that use it. `chain.state` is LIVE with the block, or UNAVAILABLE with the reason. Nothing is signed or stored.',
+          parameters: queryParams(WalletQuery),
+          responses: {
+            200: json({ type: 'object' }, 'The wallet at one block'),
+            400: problem('bad_request'),
+            429: problem('rate_limited: 30 requests a minute per address'),
+            503: unavailable,
+          },
+        },
+      },
+      '/api/mcp': {
+        post: {
+          summary: 'Read-only MCP server (Streamable HTTP, JSON-RPC 2.0)',
+          description:
+            'One JSON-RPC message per POST (or a batch of up to 10, as MCP 2025-03-26 allows), one JSON answer; no session and no stream (GET and DELETE answer 405). Methods: initialize, ping, tools/list, tools/call. Tools: market_status, compare_issuers, preflight, interest_projection, wallet_holdings, plan_status, recent_receipts — all read-only. `claude mcp add --transport http yieldvest <server>/api/mcp`.',
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { type: 'object' } } },
+          },
+          responses: {
+            200: json({ type: 'object' }, 'A JSON-RPC result or error'),
+            202: { description: 'A notification or a response: accepted, no body' },
+            400: json(
+              { type: 'object' },
+              'Not a JSON-RPC message, or an unsupported protocol version',
+            ),
+            403: json({ type: 'object' }, 'A browser origin other than this site'),
+            429: json({ type: 'object' }, '120 requests a minute per address'),
+          },
+        },
+      },
+      '/api/agent': {
+        get: {
+          summary: 'The ERC-8004 registration file of the Yieldvest agent',
+          description:
+            'BNB Agent Studio’s registration-v1 format: `name`, `description`, `image`, `services` (the read-only MCP server with its protocol version, and the site) and `registrations` (the BSC identity registry `eip155:56:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and the agent id once one is assigned, else empty). `pnpm agent:register` puts exactly this file on chain, as its canonical JSON in a base64 data URI.',
+          responses: { 200: json({ type: 'object' }, 'The registration file') },
         },
       },
       '/api/openapi': open('This document'),

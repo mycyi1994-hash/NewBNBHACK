@@ -1,0 +1,12 @@
+Usage: baw wallet settings [options]
+
+Query agent wallet settings
+
+Options:
+  -h, --help  display help for command
+
+Examples:
+  baw wallet settings
+  baw wallet settings --json
+
+

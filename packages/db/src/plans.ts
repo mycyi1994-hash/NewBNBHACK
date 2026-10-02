@@ -2,7 +2,7 @@
  * Plans, cycles, holdings, receipts and guardian events (SPEC §4–§6). The scheduler's lock is a
  * conditional UPDATE on `lock_until`, so two workers can never run the same plan at once.
  */
-import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { newSkillToken } from './auth.js';
 import type { Db } from './index.js';
 import { cycles, guardianEvents, holdings, plans, receipts, skillTokens } from './schema.js';
@@ -101,7 +101,8 @@ export async function getPlan(db: Db, id: string): Promise<PlanRow | undefined> 
 
 export async function listPlans(
   db: Db,
-  filter: { ownerKind?: string; ownerRef?: string } = {},
+  /** `walletAddress` matches whatever case the address was stored in. */
+  filter: { ownerKind?: string; ownerRef?: string; walletAddress?: string } = {},
 ): Promise<PlanRow[]> {
   return db
     .select()
@@ -110,6 +111,9 @@ export async function listPlans(
       and(
         filter.ownerKind === undefined ? undefined : eq(plans.ownerKind, filter.ownerKind),
         filter.ownerRef === undefined ? undefined : eq(plans.ownerRef, filter.ownerRef),
+        filter.walletAddress === undefined
+          ? undefined
+          : sql`lower(${plans.walletAddress}) = ${filter.walletAddress.toLowerCase()}`,
       ),
     )
     .orderBy(asc(plans.createdAt), asc(plans.id));
@@ -145,6 +149,27 @@ export async function acquirePlanLock(
     .where(and(eq(plans.id, id), or(isNull(plans.lockUntil), lt(plans.lockUntil, nowIso))))
     .returning();
   return row;
+}
+
+/**
+ * Extends the lock to `now + ttlMs` — only while this holder still has it: `lockUntil` is the value
+ * it holds (from acquirePlanLock or the last renewal). Every other holder changes the value, so a
+ * lock that lapsed is still renewed when nobody took it over. Returns the new value, or undefined
+ * when the lock was taken over or released (the new holder decides from then on).
+ */
+export async function renewPlanLock(
+  db: Db,
+  id: string,
+  lockUntil: string,
+  now: Date,
+  ttlMs: number,
+): Promise<string | undefined> {
+  const [row] = await db
+    .update(plans)
+    .set({ lockUntil: new Date(now.getTime() + ttlMs).toISOString() })
+    .where(and(eq(plans.id, id), eq(plans.lockUntil, lockUntil)))
+    .returning({ lockUntil: plans.lockUntil });
+  return row?.lockUntil ?? undefined;
 }
 
 export type PlanPatch = Partial<
@@ -309,6 +334,11 @@ export async function cyclesAwaitingTx(db: Db): Promise<CycleRow[]> {
   return db.select().from(cycles).where(eq(cycles.state, 'awaiting_tx')).orderBy(asc(cycles.id));
 }
 
+/** Every plan's cycles still marked 'running' (a live one holds its plan's lock; a dead one does not). */
+export async function cyclesRunning(db: Db): Promise<CycleRow[]> {
+  return db.select().from(cycles).where(eq(cycles.state, 'running')).orderBy(asc(cycles.id));
+}
+
 export async function getHolding(
   db: Db,
   planId: string,
@@ -389,14 +419,36 @@ export async function insertGuardianEvent(
 
 export async function listGuardianEvents(
   db: Db,
-  filter: { planId?: string; openOnly?: boolean; limit?: number } = {},
+  filter: {
+    planId?: string;
+    /**
+     * With planId: also the global events in force at any time since this time (ISO) — still
+     * open, or resolved after it (raised before or after).
+     */
+    globalSince?: string;
+    openOnly?: boolean;
+    limit?: number;
+  } = {},
 ): Promise<GuardianEventRow[]> {
   return db
     .select()
     .from(guardianEvents)
     .where(
       and(
-        filter.planId === undefined ? undefined : eq(guardianEvents.planId, filter.planId),
+        filter.planId === undefined
+          ? undefined
+          : filter.globalSince === undefined
+            ? eq(guardianEvents.planId, filter.planId)
+            : or(
+                eq(guardianEvents.planId, filter.planId),
+                and(
+                  isNull(guardianEvents.planId),
+                  or(
+                    isNull(guardianEvents.resolvedAt),
+                    gte(guardianEvents.resolvedAt, filter.globalSince),
+                  ),
+                ),
+              ),
         filter.openOnly ? isNull(guardianEvents.resolvedAt) : undefined,
       ),
     )

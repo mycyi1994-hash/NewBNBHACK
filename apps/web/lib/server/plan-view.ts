@@ -29,7 +29,9 @@ export async function planView(db: Db, config: Config, row: PlanRow, now: Date) 
     listCycles(db, { planIds: [row.id], limit: 100 }),
     listReceipts(db, { planIds: [row.id], limit: 100 }),
     listHoldings(db, row.id),
-    listGuardianEvents(db, { planId: row.id, limit: 50 }),
+    // The plan's own guardian events and the global ones in its lifetime (a depeg hold stops
+    // every plan) — open ones always.
+    listGuardianEvents(db, { planId: row.id, globalSince: isoTime(row.createdAt), limit: 50 }),
   ]);
   const judge = plan.owner.kind === 'judge';
   const planDaily = plan.limits.maxDailyUsd;
@@ -42,7 +44,9 @@ export async function planView(db: Db, config: Config, row: PlanRow, now: Date) 
     ownerRef: row.ownerRef,
     day: utcDay(now),
     caps: {
-      globalDailyUsd: String(config.caps.dailySpendCapUsd),
+      // A skill plan spends from its own wallet: the house-wide cap is not its limit (as /next).
+      globalDailyUsd:
+        plan.owner.kind === 'skill' ? planDaily : String(config.caps.dailySpendCapUsd),
       planDailyUsd: planDaily,
       ...(judge ? { judgeTotalUsd: String(config.caps.sandboxMaxPerPlanUsd) } : {}),
     },

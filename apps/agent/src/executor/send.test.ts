@@ -94,6 +94,104 @@ describe.skipIf(!url)('sending and reconciling on Postgres', () => {
     expect(await lastOutboxNonce(db, 56, HOUSE)).toBe(before);
   });
 
+  it('calls "underpriced" final only when the Transaction API itself answered', async () => {
+    const w = await createWorld(db, MON_1000);
+    const accept = w.chain.sendRaw.bind(w.chain);
+    // The API never answers (it may have relayed the bytes), and the node already holds a
+    // transaction with this nonce — very likely ours: tracked, not released.
+    w.api.routes['/api/v1/dex/pre-transaction/broadcast-transaction'] = () => {
+      throw new Error('socket hang up');
+    };
+    w.chain.sendRaw = () => Promise.reject(new Error('replacement transaction underpriced'));
+    // Bytes of their own (an earlier test's released nonce must not make the same hash).
+    const unclear = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 7n),
+    });
+    expect(unclear).toMatchObject({ state: 'pending', broadcastVia: 'unknown' });
+    expect(await rowOf(unclear.txHash)).toMatchObject({ status: 'PENDING' });
+    w.chain.sendRaw = accept;
+    expect(await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 })).toMatchObject({
+      confirmed: [unclear.txHash],
+    });
+    // The API answered with a refusal of its own: the node's "underpriced" settles it.
+    failBroadcast(w, 'transaction underpriced');
+    const refused = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 8n),
+    });
+    expect(refused).toMatchObject({ state: 'not_sent' });
+    expect(await rowOf(refused.txHash)).toMatchObject({ status: 'FAILED', broadcastVia: null });
+  });
+
+  it('tells a human about bytes the node still refuses to hold half an hour after signing', async () => {
+    const w = await createWorld(db, MON_1000);
+    // The API timed out; the RPC node turns the bytes away for its own policy, every time.
+    w.api.routes['/api/v1/dex/pre-transaction/broadcast-transaction'] = () => {
+      throw new Error('socket hang up');
+    };
+    w.chain.sendRaw = () => Promise.reject(new Error('transaction underpriced'));
+    const result = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 9n),
+    });
+    expect(result).toMatchObject({ state: 'pending' });
+    const hash = result.txHash;
+    // Young: sent again and waited for, no human yet.
+    const early = await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 });
+    expect(early).toMatchObject({ rebroadcast: [hash], pending: [hash], needsHuman: [] });
+    await db
+      .update(txOutbox)
+      .set({ createdAt: new Date(Date.now() - 31 * 60_000).toISOString() })
+      .where(eq(txOutbox.txHash, hash));
+    const late = await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 });
+    expect(late.pending).toEqual([hash]);
+    expect(late.needsHuman).toEqual([
+      {
+        txHash: hash,
+        reason:
+          'approve not held by the node 31 min after signing; the resend was refused (transaction underpriced)',
+      },
+    ]);
+    // Still PENDING: nothing new is signed until a human settles it.
+    expect(await rowOf(hash)).toMatchObject({ status: 'PENDING' });
+    await db
+      .update(txOutbox)
+      .set({ status: 'FAILED', broadcastVia: null, error: 'never went out (human)' })
+      .where(eq(txOutbox.txHash, hash));
+  });
+
+  it('tells a human about bytes the node holds but nobody mines half an hour after signing', async () => {
+    const w = await createWorld(db, MON_1000);
+    // Broadcast and held in the mempool, under the validators' gas floor: never mined.
+    w.chain.mines = false;
+    const result = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 10n),
+    });
+    expect(result).toMatchObject({ state: 'pending' });
+    const hash = result.txHash;
+    expect(await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 })).toMatchObject({
+      pending: [hash],
+      needsHuman: [],
+    });
+    await db
+      .update(txOutbox)
+      .set({ createdAt: new Date(Date.now() - 31 * 60_000).toISOString() })
+      .where(eq(txOutbox.txHash, hash));
+    const late = await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 });
+    expect(late.rebroadcast).toEqual([]);
+    expect(late.needsHuman).toEqual([
+      { txHash: hash, reason: 'approve held by the node but not mined 31 min after signing' },
+    ]);
+    // A human replaces or drops it (RUNBOOK §3.4); until then it stays PENDING.
+    expect(await rowOf(hash)).toMatchObject({ status: 'PENDING' });
+    await db
+      .update(txOutbox)
+      .set({ status: 'FAILED', broadcastVia: null, error: 'replaced (human)' })
+      .where(eq(txOutbox.txHash, hash));
+  });
+
   it('never sends again swap bytes the node lost after their quote went stale', async () => {
     const w = await createWorld(db, MON_1000);
     const accept = w.chain.sendRaw.bind(w.chain);

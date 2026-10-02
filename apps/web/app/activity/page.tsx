@@ -4,8 +4,10 @@
  * receipt is here with its BscScan link. Totals are counted over everything recorded.
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { ActivityBoard, type BoardItem } from '../../components/activity/ActivityBoard';
 import { EmptyReceiptPanel, EventRow, ReceiptPanel } from '../../components/activity/items';
+import { Icon } from '../../components/Icon';
 import { Toolbar } from '../../components/Toolbar';
 import { SectionHeading, Status, SummaryStrip, Unavailable } from '../../components/ui';
 import { grouped, money, timeText } from '../../lib/format';
@@ -82,6 +84,12 @@ export default async function ActivityPage() {
           )
         }
       />
+      <nav className="link-row page-links" aria-label={t('wallet.link')}>
+        <Link className="text-link" href="/wallet">
+          {t('wallet.link')}
+          <Icon name="arrow" size={16} />
+        </Link>
+      </nav>
       {feed.ok ? (
         <ActivityBoard
           lang={lang}

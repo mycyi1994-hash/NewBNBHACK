@@ -8,9 +8,11 @@ import {
   createDb,
   getJob,
   getPlan,
+  insertPlan,
   judgeCodes,
   openCycle,
   reserveSpend,
+  settleSpend,
   sha256Hex,
   utcDay,
   type PlanRow,
@@ -58,16 +60,21 @@ describe.skipIf(!webTestUrl)('Judge Mode routes', () => {
   const code = `judge-${randomUUID()}`;
   const other = `judge-${randomUUID()}`;
   const spent = `judge-${randomUUID()}`;
+  const fresh = `judge-${randomUUID()}`;
   const planIds: string[] = [];
   let ticker = '';
   let instrumentId = '';
 
   beforeAll(async () => {
     ({ ticker, id: instrumentId } = await testInstrument(db));
-    await addJudgeCodes(db, [code, other, spent]);
+    await addJudgeCodes(db, [code, other, spent, fresh]);
   });
   afterAll(async () => {
-    await cleanup(db, { planIds, instrumentIds: [instrumentId], judgeCodes: [code, other, spent] });
+    await cleanup(db, {
+      planIds,
+      instrumentIds: [instrumentId],
+      judgeCodes: [code, other, spent, fresh],
+    });
     await resetContext();
     await close();
   });
@@ -292,6 +299,60 @@ describe.skipIf(!webTestUrl)('Judge Mode routes', () => {
     expect([again.status, again.body.error.code]).toEqual([409, 'code_exhausted']);
     const state = await call(session, { path: '/api/judge/session', body: { code: spent } });
     expect(state.body).toMatchObject({ remainingUsd: '0', exhausted: true });
+  });
+
+  it('tells a fresh code that today’s house-wide cap is spent — not that the code is', async () => {
+    // House plans and other codes spent the whole $50 of today.
+    const houseId = `H-test-${randomUUID()}`;
+    await insertPlan(db, {
+      id: houseId,
+      ownerKind: 'house',
+      mode: 'safe',
+      ticker,
+      issuerPreference: ['bstocks', 'ondo'],
+      contributionUsd: '5',
+      cadence: 'daily',
+      window: 'regular_session',
+      maxPerBuyUsd: '5',
+      maxDailyUsd: '5',
+      status: 'paused',
+      pausedReason: 'awaiting_funding',
+      nextDueAt: new Date().toISOString(),
+    });
+    planIds.push(houseId);
+    const { cycle } = await openCycle(db, {
+      planId: houseId,
+      dueAt: new Date().toISOString(),
+      executionMode: 'simulate',
+    });
+    await reserveSpend(db, {
+      planId: houseId,
+      ownerKind: 'house',
+      ownerRef: null,
+      day: utcDay(new Date()),
+      caps: { globalDailyUsd: '1000000', planDailyUsd: '1000000' },
+      cycleId: cycle.id,
+      amountUsd: '50',
+    });
+    try {
+      const state = await call(session, { path: '/api/judge/session', body: { code: fresh } });
+      expect(state.body).toMatchObject({
+        remainingUsd: '5',
+        todayUsd: '0',
+        dailyCapUsd: '50',
+        exhausted: false,
+        dailyCapReached: true,
+      });
+      const refused = await call<Problem>(createPlan, {
+        path: '/api/plans',
+        body: { ticker, amountUsd: '5' },
+        cookie: cookieFrom(state),
+      });
+      expect([refused.status, refused.body.error.code]).toEqual([409, 'daily_cap']);
+      expect(refused.body.error.message).toContain('this code still has $5');
+    } finally {
+      await settleSpend(db, cycle.id, 'released');
+    }
   });
 
   it('shows the public plan view with limits and no owner reference', async () => {

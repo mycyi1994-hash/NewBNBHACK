@@ -65,6 +65,15 @@ function plain(value: unknown): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+/** A run's report, with the plan's status once it is over: whether it now runs on its own. */
+async function withPlanStatus(
+  deps: CycleDeps,
+  planId: string,
+  report: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return { ...report, planStatus: (await getPlan(deps.db, planId))?.status ?? null };
+}
+
 /** One job from the web. `preview` never signs, whatever the worker's mode. */
 export async function processJob(
   deps: CycleDeps,
@@ -101,13 +110,17 @@ export async function processJob(
         const depositUsd = (job.payload as { depositUsd?: unknown }).depositUsd;
         if (typeof depositUsd !== 'string')
           throw new PublicError('a yield plan starts with payload.depositUsd');
-        return startYieldPlan(deps, plan, depositUsd);
+        return withPlanStatus(deps, plan.id, await startYieldPlan(deps, plan, depositUsd));
       }
       const report = await runCycle(deps, job.planId, { manual: true });
       // A judge's first run starts the plan: it keeps running on its own until it expires (7 days)
       // or the code's cap is used up. A deferred first run starts at the time it was deferred to.
       // Only a plan still waiting for that run: a review hold the cycle set, or a stop, stands.
+      // A run that never opened a cycle (the outbox busy, the plan locked) did not start anything:
+      // the plan keeps waiting for its first run, and the judge can press "Buy now" again.
+      const ran = report.status === 'done' || report.status === 'awaiting_tx';
       if (
+        ran &&
         deps.mode === 'live' &&
         plan.status === 'paused' &&
         plan.pausedReason === 'awaiting_run'
@@ -126,7 +139,7 @@ export async function processJob(
             : { status: 'active', pausedReason: null, nextDueAt: next.nextDueAt },
         );
       }
-      return plain(report);
+      return withPlanStatus(deps, plan.id, plain(report));
     }
     case 'stop': {
       const plan = await getPlan(deps.db, job.planId);

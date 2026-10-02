@@ -5,6 +5,8 @@
  */
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
+import Link from 'next/link';
+import { Icon } from '../../components/Icon';
 import { InvestFlow, type Venue } from '../../components/invest/InvestFlow';
 import { Toolbar } from '../../components/Toolbar';
 import { Unavailable } from '../../components/ui';
@@ -73,6 +75,17 @@ export default async function InvestPage() {
   return (
     <>
       {toolbar}
+      <nav className="link-row page-links" aria-label={t('invest.tools')}>
+        <span className="field-label">{t('invest.tools')}</span>
+        <Link className="text-link" href="/check">
+          {t('invest.tools.check')}
+          <Icon name="arrow" size={16} />
+        </Link>
+        <Link className="text-link" href="/compare">
+          {t('invest.tools.compare')}
+          <Icon name="arrow" size={16} />
+        </Link>
+      </nav>
       {venues.length === 0 ? (
         <section className="empty-state">
           <Unavailable t={t} reason="registry empty" />

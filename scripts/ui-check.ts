@@ -17,7 +17,8 @@ const { values } = parseArgs({
     chromium: { type: 'string' },
     pages: {
       type: 'string',
-      default: '/,/earn,/invest,/activity,/skill,/risk,/dx,/plans/H-SAFE,/plans/H-YIELD',
+      default:
+        '/,/earn,/invest,/check,/compare,/activity,/wallet,/skill,/risk,/dx,/plans/H-SAFE,/plans/H-YIELD',
     },
   },
 });
@@ -62,7 +63,7 @@ try {
         if (scroll > client) problems.push(`${line}: horizontal scroll`);
         if (htmlLang !== 'en' || hangul) problems.push(`${line}: not English only`);
         if (values.out) {
-          const name = `${lang}-${width}${route === '/' ? '-home' : route.replaceAll('/', '-')}.png`;
+          const name = `${lang}-${width}${route === '/' ? '-home' : route.replace(/[^\w]+/g, '-')}.png`;
           await page.screenshot({ path: path.join(values.out, name), fullPage: true });
         }
       }
