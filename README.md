@@ -44,10 +44,10 @@ Read-only, from the worker's latest market recording, each with its data state (
 
 ## Verify it yourself
 
-| Command | What it shows | Result on 10/1 |
+| Command | What it shows | Result on 10/2 |
 | --- | --- | --- |
-| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 68 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 703 passed, 10 skipped |
-| `pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e` | Judge Mode end to end in Chromium at 375 and 1280 px, in simulate mode over a test world (no network), then `/check`, `/compare`, the Earn calculator and the MCP block | green in CI on every push |
+| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 72 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 764 passed, 10 skipped |
+| `pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e` | Judge Mode end to end in Chromium at 375 and 1280 px, in simulate mode over a test world (no network), then `/check`, `/compare`, the Earn calculator, `/wallet`, the MCP block and the agent card it links | green in CI on every push |
 | `pnpm lp:test` | the Uniswap v4 hook, the reference oracle and the LP vault | 144 Foundry tests; `BSC_FORK_URL=…` adds 2 on BSC mainnet state |
 | `pnpm dx:repro` | each DX finding ([`dx/findings`](dx/findings/README.md)) against the platform as it is now | 4 of 4 keyless findings reproduced; 6 need a key |
 | `docker compose up --build` | the app on your machine, simulate mode | see [Run](#run) |
