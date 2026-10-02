@@ -124,6 +124,12 @@ curl -sS -X POST -H "$AUTH" -H 'content-type: application/json' \
 `curl -sS "$YIELDVEST_URL/api/plans/$PLAN"` — status, limits (with today's use), history with reasons,
 receipts with BscScan links, holdings in shares. The same page is at `$YIELDVEST_URL/plans/$PLAN`.
 
+Everything the wallet holds, not only what this plan bought:
+`curl -sS "$YIELDVEST_URL/api/wallet?address=<address from baw wallet address>"` — each bStocks or
+Ondo token in shares, read on chain at one block (`chain.blockNumber`), with a scheduled dividend
+or split (`pendingChange`), values at the last recorded price (`prices.state`), the wallet's USDT
+and Venus position, and its Yieldvest plans. The page is `$YIELDVEST_URL/wallet?address=…`.
+
 ## Stop a plan
 
 ```bash

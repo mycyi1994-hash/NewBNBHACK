@@ -72,6 +72,7 @@ Track rules (gist of the original):
 | Issuer comparison `/compare`: bStocks vs Ondo for one share, shares per quote size (D-31) | ● | ● | ● | ● | | |
 | Interest calculator on Earn: today's listed APY → days to the first buy, shares a month (D-31) | | | | ● | | |
 | Read-only MCP server `/api/mcp`, checked with the official MCP SDK client (D-31) | ● | ● | ● | | ● | |
+| My wallet `/wallet`: any BSC address read on chain in shares, with a coming dividend or split (D-32) | ● | ● | | ● | ● | |
 | KR/EN, mobile, crypto term substitution | | | | ● | | |
 
 ## 4. Self-assessment rubric (updated every Sunday: 9/27, 10/4, 10/8 final)

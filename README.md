@@ -18,14 +18,14 @@ The official "Ideas to Build" include "Auto-DCA and rebalancing" and "Buy your f
 - **Tokenized-stock rules in the engine.** Buys only in the NYSE regular session (holidays, early closes, daylight saving); the RWA Data API's `ASSET_PAUSED` / `ASSET_LIMITED` codes hold a buy around earnings, dividends and splits; amounts are shown in shares, tokens × the bStocks multiplier read on chain. Each hold is a sentence the user sees (`packages/core`).
 - **The server decides, the user's AI assistant signs.** The Wallet Skill gets exact `baw` commands from `/next`, runs them in the user's Agentic Wallet after the user says yes, and reports back; the server checks every report on chain and holds no key or session (`skills/yieldvest`).
 - **A Uniswap v4 hook priced by the NYSE session**, so LPs of tokenized stocks are paid for the overnight gap risk only these assets carry (`packages/rwa-lp`, tested on a BSC fork, not deployed).
-- **Check before money moves.** `/check` runs the agent's own engine on a plan that does not exist yet and shows each rule it read against its limit; `/compare` puts the two tokens of one US share — bStocks and Ondo — side by side, in shares per dollar. Both are MCP tools too, so any assistant can ask ([below](#before-you-buy-check-compare-project)).
+- **Check before money moves.** `/check` runs the agent's own engine on a plan that does not exist yet and shows each rule it read against its limit; `/compare` puts the two tokens of one US share — bStocks and Ondo — side by side, in shares per dollar. Both are MCP tools too, so any assistant can ask ([below](#before-you-buy-and-after-check-compare-project-hold)).
 
 ## 3-minute trial (Judge Mode, `/invest` — the old address `/judge` also leads here)
 
 **Try it** or the Invest tab → code → stock (NVDA, etc.) → Contribution only · $5 · regular session → **Dry-run it** (the worker simulates it on-chain) → **Buy now** → a receipt or "Waiting" (if the market is closed, it buys automatically at the next open +2 min) → **Stop this plan**.
 1 code = up to $5, and the money comes from Yieldvest's house wallet. The plan ends automatically after 7 days.
 
-## Before you buy: check, compare, project
+## Before you buy, and after: check, compare, project, hold
 
 Read-only, from the worker's latest market recording, each with its data state (live, minutes old, or unavailable with the reason). None of them can create a plan or move funds ([DECISIONS D-31](docs/DECISIONS.md)).
 
@@ -34,7 +34,8 @@ Read-only, from the worker's latest market recording, each with its data state (
 | `/check` · `GET /api/preflight?ticker=NVDA&usd=5` | **Would it buy right now?** `decideCycle` — the code the agent and a skill plan's `/next` run — on a plan you have not made, once per token: buy (about how many shares), wait (until when) or skip, with the agent's own one-line reason, and every rule's input against its limit: data age, guardian, US session, amount vs the venue minimum, token status, price vs the US stock, price impact. A buy needs a guardian check in the last 15 minutes. |
 | `/compare` · `GET /api/compare?ticker=NVDA` | **bStocks or Ondo?** The same share from two issuers: shares each $5 / $50 / $500 quote was worth, price per share, price impact or the code it was refused with (Ondo refuses exactly $5), status, minimum order, full addresses. Facts with their time; a plan never switches issuer. |
 | Earn · `GET /api/projection?depositUsd=1000&ticker=NVDA` | **What would a deposit earn?** At today's listed Venus APY, compounded daily: per day, week, month and year, the days until the interest reaches the first buy (the minimum buy, or the token's venue minimum — Ondo's $5.01), and about how many shares a month buys at a live price. Labeled a projection at today's rate, never a promise. |
-| `POST /api/mcp` | The same answers, plus market status, plan records and receipts, as a **read-only MCP server** (Streamable HTTP; checked with the official MCP SDK client): `claude mcp add --transport http yieldvest <site URL>/api/mcp` |
+| `/wallet` · `GET /api/wallet?address=0x…` | **What do I hold, in shares?** Any BNB Smart Chain address — your Binance Wallet or Agentic Wallet — read on chain at one block: each bStocks or Ondo token in real shares (a bStocks token's own on-chain multiplier, with a scheduled dividend or split), its value at the last recorded price, USDT, the Venus position and the Yieldvest plans that use it. |
+| `POST /api/mcp` | The same answers, plus market status, wallets, plan records and receipts, as a **read-only MCP server** (Streamable HTTP; checked with the official MCP SDK client): `claude mcp add --transport http yieldvest <site URL>/api/mcp` |
 
 ## What Yieldvest ran itself
 
