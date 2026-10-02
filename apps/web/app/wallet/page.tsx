@@ -92,7 +92,8 @@ function Holdings({
           </div>
         ))}
       </section>
-      <section className="page-block" aria-label={t('wallet.title')}>
+      {/* No section label: the holdings table carries this name (one name per landmark, axe). */}
+      <section className="page-block">
         <BlockTitle>{t('wallet.title')}</BlockTitle>
         <p className="method-note wallet-read">
           {t('wallet.read', {

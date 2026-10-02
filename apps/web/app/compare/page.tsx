@@ -54,7 +54,8 @@ function Side({ t, side }: { t: T; side: IssuerSide }) {
   const name = issuerName(side.issuer) ?? side.issuer;
   const usd = (value: string | null) => (value === null ? '—' : `$${money(value) ?? value}`);
   return (
-    <section className="page-block compare-side" aria-label={`${name} · ${side.symbol}`}>
+    // No section label: the table inside carries this name, and one name per landmark (axe).
+    <section className="page-block compare-side">
       <BlockTitle
         aside={
           <Pill tone={statusTone(side)}>

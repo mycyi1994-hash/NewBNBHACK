@@ -129,10 +129,23 @@ function stateText(t: T, check: Check): string {
   return t(`check.state.${check.state}`);
 }
 
-function Rules({ t, lang, tz, checks }: { t: T; lang: Lang; tz: string; checks: Check[] }) {
+/** `of` names whose rules these are: two tables of one page need two names (axe landmark-unique). */
+function Rules({
+  t,
+  lang,
+  tz,
+  checks,
+  of,
+}: {
+  t: T;
+  lang: Lang;
+  tz: string;
+  checks: Check[];
+  of: string;
+}) {
   return (
     <DataTable
-      label={t('check.rules.title')}
+      label={`${t('check.rules.title')} · ${of}`}
       head={[t('check.col.rule'), t('check.col.read'), t('check.col.state')]}
       rows={checks.map((check) => [
         ruleText(t, check),
@@ -188,7 +201,7 @@ function Verdict({
           {t('check.retry', { time: timeText(verdict.retryAt, lang, tz) })}
         </p>
       ) : null}
-      <Rules t={t} lang={lang} tz={tz} checks={verdict.checks} />
+      <Rules t={t} lang={lang} tz={tz} checks={verdict.checks} of={`${name} · ${verdict.symbol}`} />
     </section>
   );
 }

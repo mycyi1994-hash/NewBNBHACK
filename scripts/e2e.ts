@@ -335,7 +335,20 @@ async function featureFlow(run: Run, ticker: string) {
   await page.goto(`${base}/skill`, { waitUntil: 'networkidle' });
   await page.getByText(`claude mcp add --transport http yieldvest ${base}/api/mcp`).waitFor();
   await check('mcp block');
-  log('skill: the read-only MCP endpoint and its tools are named');
+  // The ERC-8004 registration file it links (D-33): the SDK's format, pointing at this MCP server.
+  const card = page.getByRole('link', { name: "The agent's ERC-8004 registration file" });
+  if ((await card.getAttribute('href')) !== '/api/agent')
+    throw new Error('no registration file link');
+  const file = (await (await fetch(`${base}/api/agent`)).json()) as {
+    type?: string;
+    services?: { name: string; endpoint: string }[];
+  };
+  const mcp = file.services?.find((service) => service.name === 'MCP');
+  if (file.type !== 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1' || !mcp) {
+    throw new Error(`/api/agent is not a registration file: ${JSON.stringify(file)}`);
+  }
+  if (mcp.endpoint !== `${base}/api/mcp`) throw new Error(`MCP service at ${mcp.endpoint}`);
+  log('skill: the read-only MCP endpoint and its tools are named; the agent card points at it');
 }
 
 const flags = parseFlags(process.argv.slice(2), {

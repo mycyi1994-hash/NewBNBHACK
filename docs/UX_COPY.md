@@ -488,7 +488,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `calc.unavailable`: The rate is unavailable, so there is nothing to project.
 - `calc.amount.error`: Enter an amount above 0, with up to two decimals.
 - `mcp.title`: Ask from any MCP client
-- `mcp.body`: Yieldvest also answers as a read-only MCP server: market status, bStocks vs Ondo, the pre-flight check, the interest calculator, plan records and receipts. It can't create a plan or move funds.
+- `mcp.body`: Yieldvest also answers as a read-only MCP server: market status, bStocks vs Ondo, the pre-flight check, the interest calculator, a wallet in shares, plan records and receipts. It can't create a plan or move funds.
 - `mcp.install.label`: In Claude Code:
 - `mcp.tools`: Tools: {tools}
 
