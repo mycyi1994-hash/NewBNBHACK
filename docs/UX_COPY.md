@@ -510,3 +510,9 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `wallet.note`: Shares = tokens × the token's multiplier: a bStocks token's is read on-chain at this block, an Ondo token's comes from Binance's list. Do your own research: this is a reading, not advice.
 - `wallet.plans.title`: Yieldvest plans for this wallet · `wallet.plans.none`: No Yieldvest plan uses this wallet.
 - `wallet.link`: See a wallet's stocks in shares
+
+### 7.9 Agent identity (DECISIONS D-33)
+> Author: coding agent (10/2). Two lines in the MCP block on `/skill`, for the ERC-8004 identity a human said yes to on 10/2: where the agent's registration file is, and — only once AGENT_ID is set after the registration — the agent's id on chain. Drafts until a person confirms them.
+
+- `agent.card`: The agent's ERC-8004 registration file
+- `agent.registered`: Registered on BNB Smart Chain as ERC-8004 agent #{id}

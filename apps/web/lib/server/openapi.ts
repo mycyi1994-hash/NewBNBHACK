@@ -624,6 +624,14 @@ export function openApiDocument(serverUrl: string) {
           },
         },
       },
+      '/api/agent': {
+        get: {
+          summary: 'The ERC-8004 registration file of the Yieldvest agent',
+          description:
+            'BNB Agent Studio’s registration-v1 format: `name`, `description`, `image`, `services` (the read-only MCP server with its protocol version, and the site) and `registrations` (the BSC identity registry `eip155:56:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and the agent id once one is assigned, else empty). `pnpm agent:register` puts exactly this file on chain, as its canonical JSON in a base64 data URI.',
+          responses: { 200: json({ type: 'object' }, 'The registration file') },
+        },
+      },
       '/api/openapi': open('This document'),
     },
   };

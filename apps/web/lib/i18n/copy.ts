@@ -602,6 +602,8 @@ export const COPY = {
     'wallet.plans.title': 'Yieldvest plans for this wallet',
     'wallet.plans.none': 'No Yieldvest plan uses this wallet.',
     'wallet.link': "See a wallet's stocks in shares",
+    'agent.card': "The agent's ERC-8004 registration file",
+    'agent.registered': 'Registered on BNB Smart Chain as ERC-8004 agent #{id}',
   },
 } as const;
 

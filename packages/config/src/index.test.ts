@@ -203,6 +203,33 @@ describe('secrets and modes', () => {
     expect(error.message).not.toContain(secret);
   });
 
+  it('keeps the agent identity key apart from the house key, and never echoes it', () => {
+    const house = `0x${'ab'.repeat(32)}`;
+    const same = errorOf(() =>
+      parseConfig({
+        HOUSE_WALLET_PRIVATE_KEY: house,
+        AGENT_IDENTITY_PRIVATE_KEY: house.toUpperCase().replace('0X', '0x'),
+      }),
+    );
+    expect(same.issues).toContain(
+      'AGENT_IDENTITY_PRIVATE_KEY must not be HOUSE_WALLET_PRIVATE_KEY (a wallet of its own)',
+    );
+    expect(same.message).not.toContain(house);
+    const identity = `0x${'cd'.repeat(32)}`;
+    const config = parseConfig({
+      HOUSE_WALLET_PRIVATE_KEY: house,
+      AGENT_IDENTITY_PRIVATE_KEY: identity,
+      AGENT_ID: '42',
+    });
+    expect(config.agent).toEqual({ identityPrivateKey: identity, id: '42' });
+    const described = JSON.stringify(describeConfig(config));
+    expect(described).not.toContain(identity);
+    expect(described).toContain('"agentIdentityKey":true');
+    expect(() => parseConfig({ AGENT_ID: '4x2' })).toThrow(ConfigError);
+    expect(() => parseConfig({ AGENT_ID: '1'.repeat(16) })).toThrow(ConfigError);
+    expect(parseConfig({}).agent).toEqual({ identityPrivateKey: undefined, id: undefined });
+  });
+
   it('requires https for the Web3 API base URL', () => {
     const error = errorOf(() =>
       parseConfig({ BINANCE_WEB3_BASE_URL: 'http://web3.binance.com/build' }),

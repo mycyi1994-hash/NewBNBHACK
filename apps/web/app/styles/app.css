@@ -1464,6 +1464,12 @@ a.chip {
   margin-top: 14px;
 }
 
+/* The ERC-8004 identity under the MCP block (DECISIONS D-33). */
+.agent-identity {
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+
 /* /wallet (DECISIONS D-32). */
 .wallet-form {
   display: grid;

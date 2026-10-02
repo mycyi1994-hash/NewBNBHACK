@@ -14,6 +14,7 @@ import type { Config } from '@yieldvest/config';
 import type { Issuer, PlanWindow } from '@yieldvest/core';
 import { getPlan, type Db } from '@yieldvest/db';
 import { z } from 'zod';
+import { MCP_PROTOCOL_VERSIONS } from '../mcp-versions';
 import { compareIssuers } from './compare';
 import { marketStatus } from './market';
 import { planView } from './plan-view';
@@ -24,7 +25,7 @@ import { PreflightQuery, ProjectionQuery, WalletQuery } from './schemas';
 import { walletView } from './wallet';
 
 /** Newest first; an initialize asking for anything else is answered with the newest. */
-export const MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+export { MCP_PROTOCOL_VERSIONS };
 
 export const SERVER_INFO = { name: 'yieldvest', title: 'Yieldvest (read-only)', version: '1.0.0' };
 

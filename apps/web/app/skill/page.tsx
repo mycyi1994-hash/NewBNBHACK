@@ -3,6 +3,7 @@
  * server decides; the user's Binance Agentic Wallet signs on their device (DECISIONS D-03). The
  * install line is the real one for Claude Code (a personal skill under ~/.claude/skills).
  */
+import { ERC8004_REGISTRY_BSC } from '@yieldvest/chain';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { REPO_URL } from '../../components/Footer';
@@ -22,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function SkillPage() {
   const { lang, tz, t } = await locale();
-  const appUrl = context().config.appUrl;
+  const { appUrl, agent } = context().config;
   const dialogue = [
     { who: 'me', key: 'skill.example.1' },
     { who: 'assistant', key: 'skill.example.2' },
@@ -68,6 +69,25 @@ export default async function SkillPage() {
               {t('wallet.link')}
               <Icon name="arrow" size={16} />
             </Link>
+            {/* The ERC-8004 identity (D-33): the file always; the id only once it is registered. */}
+            <p className="method-note agent-identity">
+              <a className="text-link" href="/api/agent">
+                {t('agent.card')}
+              </a>
+              {agent.id ? (
+                <>
+                  {' · '}
+                  <a
+                    className="text-link"
+                    href={`https://bscscan.com/token/${ERC8004_REGISTRY_BSC}?a=${agent.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t('agent.registered', { id: agent.id })}
+                  </a>
+                </>
+              ) : null}
+            </p>
           </div>
           <div className="page-block">
             <BlockTitle>{t('skill.example.title')}</BlockTitle>
