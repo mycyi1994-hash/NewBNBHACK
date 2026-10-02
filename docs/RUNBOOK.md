@@ -100,6 +100,18 @@ The repo became Yieldvest on 9/27 (Fly app `ijaro-agent` → `yieldvest-agent`).
 6. GitHub: recreate the repository variable `IJARO_APP_URL` as `YIELDVEST_APP_URL` (the monitor reads only the new name). Likewise change `IJARO_TEST_DATABASE_URL` to `YIELDVEST_TEST_DATABASE_URL` in local dev shells.
 7. The web (Vercel) keeps its env names. The cookie name changed, so existing judge sessions must enter their code again, and `ijr_` skill tokens are no longer accepted (new tokens are `yv_…`) — skill users use `YIELDVEST_URL` and `~/.config/yieldvest`.
 
+## 6.2 Agent identity (ERC-8004), once, after the web deploy (DECISIONS D-33)
+
+The agent's identity on the BSC registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` points at the file the web serves at `/api/agent`. `pnpm agent:register` puts exactly that file on chain, one transaction per run, and signs only with `AGENT_IDENTITY_PRIVATE_KEY` — **a fresh wallet, never the house key** (the config refuses the house key). It spends gas only: about 0.00005 BNB per transaction at 0.05 gwei (dx/LOG 10-02 14:17), refused above 0.001 BNB.
+
+1. Make a fresh wallet and send it about 0.0002 BNB (two transactions and a margin). Keep its key in the password manager only — not a Fly secret, not a Vercel variable, not a file.
+2. Run it in the worker machine, so the Transaction API simulation stays in `fra` (Q-01): `fly ssh console -a yieldvest-agent` → `cd /app` → `read -rs AGENT_IDENTITY_PRIVATE_KEY && export AGENT_IDENTITY_PRIVATE_KEY` (paste; nothing is echoed or kept in history).
+3. Dry run: `pnpm agent:register --site https://<web>` — the file it read, the registry check (`AgentIdentity`/`AGENT`), "it would be agent N", the Transaction API simulation `SUCCESS`, and the gas. Nothing is signed.
+4. `pnpm agent:register --site https://<web> --broadcast` → type `y`. It prints the BscScan link and `registered: agent <id>`.
+5. Set `AGENT_ID=<id>` on the web (Vercel) and redeploy; `curl https://<web>/api/agent` now lists the registry entry, and `/skill` links to the agent.
+6. In the same worker shell: `AGENT_ID=<id> pnpm agent:register --site https://<web> --broadcast` → `y`: `setAgentURI` writes the file with its registry entry (the SDK's second phase).
+7. Check, any time: `AGENT_ID=<id> pnpm agent:register --site https://<web>` prints `current: agent <id> on chain holds the site's file byte for byte`. Then `unset AGENT_IDENTITY_PRIVATE_KEY` and leave the shell. Record the two tx hashes in TASKS M2-10.
+
 ## 7. Command list
 
 | Command | Purpose |
@@ -113,6 +125,7 @@ The repo became Yieldvest on 9/27 (Fly app `ijaro-agent` → `yieldvest-agent`).
 | `pnpm cycle:once --plan <id> [--live]` | 1 cycle (simulation first; live needs `y`) |
 | `pnpm yield:deposit --plan <id> --usd <n>` | Deposit a yield plan's principal |
 | `pnpm yield:redeem --plan <id> [--live] \| --record <tx>` | Redeem a yield plan's whole position (preview first; live needs `y`) |
+| `pnpm agent:register [--site <url>] [--broadcast]` | The agent's ERC-8004 identity: register, then write the file with its id (dry run first; `--broadcast` needs `y`), §6.2 |
 | `pnpm dx:metrics` · `pnpm dx:events` | DX metrics, new findings |
 | `pnpm receipts:table` | README receipts table |
 | `pnpm db:migrate` · `pnpm db:seed` · `pnpm db:rollback <tag> --yes` | DB |

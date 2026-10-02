@@ -579,3 +579,13 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Ask: make the Developer Mode page match the CLI (base64, `--gasLimit` as an advanced fallback).
 - Evidence: the quotes above (2026-10-01 17:15 UTC); `baw` 1.10.0 from npm.
 
+
+## 2026-10-02 14:17 UTC — [bag][edge] A registration file in the SDK's format costs 767,983 gas to register, 4.7× the figure we had: the registry stores the whole agent URI on chain
+- Goal: the gas of `register(agentURI)` for the file Yieldvest would register (DECISIONS D-33), from a fresh unfunded address, without sending anything.
+- Expected: about the 163,268 gas measured on 2026-09-27 (entry 14:11), the figure D-28 and TASKS M0-10 quote. That entry does not record the URI it estimated with.
+- Actual: our file in the SDK's format (`AgentURIGenerator`: canonical JSON in a base64 data URI) is 857 bytes as an agent URI: name, a 313-character description, image, an MCP and a web service, no registrations yet. `eth_call` succeeds ("it would be agent 362236 at this block"), `eth_estimateGas` is 767,983 gas at block 125306973; at the 0.05 gwei the node quotes, the 921,580 limit we would sign with is 0.000046079 BNB. The URI is stored (`tokenURI` returns it), so the gas grows with every 32 bytes of the file. `ERC8004Agent.registerAgent` writes it twice: `register`, then `setAgentURI` with the URI regenerated to include `registrations`. The SDK README (0.6.0) says who pays the gas ("self-paid or MegaFuel-sponsored") but no amount, and the Studio README gives no cost (entry 09-27 14:11).
+- Docs: `@bnbagent/sdk` 0.6.0 README, wallet providers table, row "Gas"; the `@bnbagent/studio-cli` README (entry 09-27 14:11).
+- Time lost: 0.
+- Workaround: a short description; `apps/web/test/agent-card.test.ts` keeps our agent URI under 1,100 bytes.
+- Ask: say in the SDK README that the registry stores the agent URI on chain, with the gas per KB, and that `registerAgent` sends two transactions when the file has endpoints.
+- Evidence: `pnpm agent:register --site http://localhost:3100 --broadcast` with a throwaway unfunded key, 14:17:30–14:17:34 UTC: the dry run above, then three refusals (site not https, no Transaction API simulation, 0 BNB) and "nothing signed".

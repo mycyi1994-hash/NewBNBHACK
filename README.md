@@ -36,6 +36,7 @@ Read-only, from the worker's latest market recording, each with its data state (
 | Earn · `GET /api/projection?depositUsd=1000&ticker=NVDA` | **What would a deposit earn?** At today's listed Venus APY, compounded daily: per day, week, month and year, the days until the interest reaches the first buy (the minimum buy, or the token's venue minimum — Ondo's $5.01), and about how many shares a month buys at a live price. Labeled a projection at today's rate, never a promise. |
 | `/wallet` · `GET /api/wallet?address=0x…` | **What do I hold, in shares?** Any BNB Smart Chain address — your Binance Wallet or Agentic Wallet — read on chain at one block: each bStocks or Ondo token in real shares (a bStocks token's own on-chain multiplier, with a scheduled dividend or split), its value at the last recorded price, USDT, the Venus position and the Yieldvest plans that use it. |
 | `POST /api/mcp` | The same answers, plus market status, wallets, plan records and receipts, as a **read-only MCP server** (Streamable HTTP; checked with the official MCP SDK client): `claude mcp add --transport http yieldvest <site URL>/api/mcp` |
+| `GET /api/agent` | The agent's **ERC-8004 registration file** in BNB Agent Studio's format (name, what it does, the MCP server and the site; the registry entry once registered) — what `pnpm agent:register` puts on the BSC identity registry ([D-33](docs/DECISIONS.md)) |
 
 ## What Yieldvest ran itself
 
@@ -89,7 +90,7 @@ In safe mode the cycle skips the redeem. In the Wallet Skill the same decision c
 | Wallet API | — (the house balance is read over BSC RPC) | Not used |
 | Agentic Wallet / Wallet Skills | `skills/yieldvest`: the server hands out only `baw` commands via `/next` (and `/position` to take a stopped plan's own deposit out), signing happens on the user's device, `/report` is checked on chain. Every `baw` command and flag is tested against the real CLI's recorded help (`pnpm baw:help`, `baw` 1.10.0), and the quote check is in the shares `baw` prints | Code and docs done; the real-run demo is done by a human (M2-09) |
 | b402 Payments | — | Not built (M3-01, cut candidate) |
-| BNB Agent Studio | — | Not built (M2-10) |
+| BNB Agent Studio | ERC-8004 identity: `GET /api/agent` serves the registration file — byte for byte what `@bnbagent/sdk` 0.6.0 builds (tested against it) — pointing at the read-only MCP server; `pnpm agent:register` puts it on the BSC identity registry from a wallet of its own: dry run, Transaction API simulation, fee bound, typed `y` (DECISIONS D-33) | Code done, dry run on real BSC (agent URI 857 bytes, 767,983 gas); the registration itself after the web deploy (M2-10, RUNBOOK §6.2) |
 | BSC | viem reads and writes, amounts confirmed from the receipt's Transfer logs, Venus vToken | In use |
 
 ## Use it with my AI assistant (Agentic Wallet, mode C)

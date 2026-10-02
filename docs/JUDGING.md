@@ -62,7 +62,7 @@ Track rules (gist of the original):
 | Confirmation screen that shows the Transaction API simulation in plain words | ● | | | ● | | |
 | Wallet Skill (the user's AI assistant executes with baw) | ● | | ● | | ● | |
 | Decision API for the Skill (`/next`): the server only decides, signing is on the user's side | ● | | | | ● | |
-| Agent Studio identity (ERC-8004) + runtime/MCP registration | ● | | ● | | | ● |
+| Agent Studio identity (ERC-8004): the registration file at `/api/agent`, byte for byte the SDK's, pointing at the MCP server; `pnpm agent:register` with a dry run, Transaction API simulation and a typed `y` (D-33; runtime no-go, D-28) | ● | | ● | | | ● |
 | b402: paid plan report endpoint + x402 calls to the official Stock Analyze Agent | ● | ● | ● | | | ● |
 | /dx page: p50/p95 per endpoint, error codes, off-hours tape | | | ● | | | |
 | Error taxonomy table and LIVE/STALE/UNAVAILABLE states | ● | | ● | ● | | |
