@@ -491,3 +491,22 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `mcp.body`: Yieldvest also answers as a read-only MCP server: market status, bStocks vs Ondo, the pre-flight check, the interest calculator, plan records and receipts. It can't create a plan or move funds.
 - `mcp.install.label`: In Claude Code:
 - `mcp.tools`: Tools: {tools}
+
+### 7.8 My wallet (DECISIONS D-32)
+> Author: coding agent (10/2). Copy for `/wallet`, a person's own wallet read on chain, a human asked for on 10/2. Drafts until a person confirms them. Every number comes from one block's chain reading or the worker's recorded price, each with its state.
+
+- `wallet.title`: Your stocks, in shares
+- `wallet.sub`: Paste a BNB Smart Chain address — your Binance Wallet's, or your Agentic Wallet's (baw wallet address). We only read the chain: nothing is signed, nothing is stored.
+- `wallet.form.address`: Wallet address (BNB Smart Chain) · `wallet.form.submit`: Show my stocks
+- `wallet.empty`: Enter an address to see the tokenized stocks it holds, counted in real shares.
+- `wallet.error.address`: That is not a BNB Smart Chain address: 0x and 40 characters.
+- `wallet.read`: Read on-chain at block {block} · {time}
+- `wallet.col.stock`: Stock · `wallet.col.shares`: Shares · `wallet.col.value`: Value
+- `wallet.pending`: Becomes {m} shares per token on {time} (a dividend or a split)
+- `wallet.none`: No tokenized stock from Yieldvest's list in this wallet ({n} checked).
+- `wallet.unread`: {n} tokens could not be read at this block.
+- `wallet.summary`: Wallet summary · `wallet.summary.stocks`: Stocks held · `wallet.summary.value`: Value at the last price · `wallet.summary.usdt`: USDT in the wallet · `wallet.summary.venus`: In the interest account (Venus)
+- `wallet.prices`: Values use the last recorded price:
+- `wallet.note`: Shares = tokens × the token's multiplier: a bStocks token's is read on-chain at this block, an Ondo token's comes from Binance's list. Do your own research: this is a reading, not advice.
+- `wallet.plans.title`: Yieldvest plans for this wallet · `wallet.plans.none`: No Yieldvest plan uses this wallet.
+- `wallet.link`: See a wallet's stocks in shares

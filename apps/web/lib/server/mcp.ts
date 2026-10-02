@@ -20,7 +20,8 @@ import { planView } from './plan-view';
 import { preflight, preflightAmountProblem } from './preflight';
 import { interestProjection } from './projection';
 import { receiptFeed } from './receipts';
-import { PreflightQuery, ProjectionQuery } from './schemas';
+import { PreflightQuery, ProjectionQuery, WalletQuery } from './schemas';
+import { walletView } from './wallet';
 
 /** Newest first; an initialize asking for anything else is answered with the newest. */
 export const MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
@@ -118,6 +119,14 @@ export const TOOLS: readonly Tool[] = [
       }
       return ok(view);
     },
+  }),
+  tool({
+    name: 'wallet_holdings',
+    title: 'A wallet’s tokenized stocks, in shares',
+    description:
+      'A BNB Smart Chain address (the user’s Binance Wallet or Agentic Wallet: `baw wallet address`) read on chain at one block: each registered bStocks or Ondo token it holds, in underlying shares (tokens × the multiplier; a scheduled bStocks multiplier change is named), its value at the last recorded price with that price’s state, the wallet’s USDT, its Venus USDT position and the Yieldvest plans that use it. Public chain reads; nothing is stored.',
+    input: WalletQuery,
+    run: async (args, db, ctx) => ok(await walletView(db, ctx.config, args.address, ctx.now)),
   }),
   tool({
     name: 'plan_status',

@@ -563,6 +563,7 @@ describe('mcpReply (F4): JSON-RPC without a database', () => {
       'compare_issuers',
       'preflight',
       'interest_projection',
+      'wallet_holdings',
       'plan_status',
       'recent_receipts',
     ]);

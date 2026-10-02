@@ -24,7 +24,7 @@ export function activeTab(pathname: string): TabId | null {
   const first = pathname.split('/')[1] ?? '';
   if (first === 'earn') return 'earn';
   if (['invest', 'judge', 'skill', 'check', 'compare'].includes(first)) return 'invest';
-  if (first === 'activity' || first === 'plans') return 'activity';
+  if (first === 'activity' || first === 'plans' || first === 'wallet') return 'activity';
   return null;
 }
 

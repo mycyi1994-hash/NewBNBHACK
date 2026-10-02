@@ -114,3 +114,14 @@ export const ProjectionQuery = z.object({
   ticker: ticker.optional().describe('Price the monthly interest in shares of this stock'),
   issuer: issuer.optional().describe('Whose token prices the share (default: bstocks, then ondo)'),
 });
+
+/** GET /api/wallet (DECISIONS D-32): any BNB Smart Chain address, read at one block. */
+export const WalletQuery = z.object({
+  address: z
+    .string()
+    .trim()
+    .refine((v) => isAddress(v, { strict: false }), 'an EVM address (0x and 40 hex characters)')
+    .describe(
+      'A BNB Smart Chain wallet: a Binance Wallet or an Agentic Wallet (baw wallet address)',
+    ),
+});

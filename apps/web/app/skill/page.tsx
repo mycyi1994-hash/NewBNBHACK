@@ -4,6 +4,7 @@
  * install line is the real one for Claude Code (a personal skill under ~/.claude/skills).
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { REPO_URL } from '../../components/Footer';
 import { Icon } from '../../components/Icon';
 import { Toolbar } from '../../components/Toolbar';
@@ -63,6 +64,10 @@ export default async function SkillPage() {
             <p className="method-note">
               {t('mcp.tools', { tools: TOOLS.map((tool) => tool.name).join(', ') })}
             </p>
+            <Link className="text-link mcp-label" href="/wallet">
+              {t('wallet.link')}
+              <Icon name="arrow" size={16} />
+            </Link>
           </div>
           <div className="page-block">
             <BlockTitle>{t('skill.example.title')}</BlockTitle>

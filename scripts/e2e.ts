@@ -321,6 +321,17 @@ async function featureFlow(run: Run, ticker: string) {
   await page.getByText('Enter an amount above 0, with up to two decimals.').waitFor();
   log('earn: opens on $100 → 3.16 USDT a year; $1,000 → 31.60 USDT; "abc" is refused');
 
+  // The wallet view (D-32): an address that is not one is refused; a real one is read on chain —
+  // here the RPC refuses connections, so the chain is UNAVAILABLE with its reason, never zeros.
+  await page.goto(`${base}/wallet?address=0x12`, { waitUntil: 'networkidle' });
+  await page.getByText('That is not a BNB Smart Chain address').waitFor();
+  await page.goto(`${base}/wallet?address=0x000000000000000000000000000000000000dEaD`, {
+    waitUntil: 'networkidle',
+  });
+  await page.getByText('Unavailable (BSC RPC did not answer)').waitFor({ timeout: STEP_MS });
+  await check('wallet view');
+  log('wallet: a bad address is refused; with the RPC down it says so instead of showing zeros');
+
   await page.goto(`${base}/skill`, { waitUntil: 'networkidle' });
   await page.getByText(`claude mcp add --transport http yieldvest ${base}/api/mcp`).waitFor();
   await check('mcp block');
@@ -508,7 +519,7 @@ if (!flags.ok || problem !== null) {
     process.exitCode = 1;
   } else {
     log('PASS: Judge Mode end to end in simulate mode, at 375 and 1280 px');
-    log('      and the pre-flight check, issuer comparison, calculator and MCP block');
+    log('      and the pre-flight check, issuer comparison, calculator, wallet view and MCP block');
     log('      0 page or console errors, 0 sideways scrolls');
   }
 }

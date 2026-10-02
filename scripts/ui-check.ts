@@ -18,7 +18,7 @@ const { values } = parseArgs({
     pages: {
       type: 'string',
       default:
-        '/,/earn,/invest,/check,/compare,/activity,/skill,/risk,/dx,/plans/H-SAFE,/plans/H-YIELD',
+        '/,/earn,/invest,/check,/compare,/activity,/wallet,/skill,/risk,/dx,/plans/H-SAFE,/plans/H-YIELD',
     },
   },
 });

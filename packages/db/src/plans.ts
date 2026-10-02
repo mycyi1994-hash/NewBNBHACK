@@ -101,7 +101,8 @@ export async function getPlan(db: Db, id: string): Promise<PlanRow | undefined> 
 
 export async function listPlans(
   db: Db,
-  filter: { ownerKind?: string; ownerRef?: string } = {},
+  /** `walletAddress` matches whatever case the address was stored in. */
+  filter: { ownerKind?: string; ownerRef?: string; walletAddress?: string } = {},
 ): Promise<PlanRow[]> {
   return db
     .select()
@@ -110,6 +111,9 @@ export async function listPlans(
       and(
         filter.ownerKind === undefined ? undefined : eq(plans.ownerKind, filter.ownerKind),
         filter.ownerRef === undefined ? undefined : eq(plans.ownerRef, filter.ownerRef),
+        filter.walletAddress === undefined
+          ? undefined
+          : sql`lower(${plans.walletAddress}) = ${filter.walletAddress.toLowerCase()}`,
       ),
     )
     .orderBy(asc(plans.createdAt), asc(plans.id));

@@ -284,6 +284,7 @@ describe.skipIf(!webTestUrl)('read-only feature routes and the MCP server (D-31)
           'plan_status',
           'preflight',
           'recent_receipts',
+          'wallet_holdings',
         ]);
         expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);
 

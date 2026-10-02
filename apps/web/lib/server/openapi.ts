@@ -14,6 +14,7 @@ import {
   ReportRequest,
   RunBody,
   SkillPlanBody,
+  WalletQuery,
 } from './schemas';
 
 type Schema = Record<string, unknown>;
@@ -588,11 +589,25 @@ export function openApiDocument(serverUrl: string) {
           },
         },
       },
+      '/api/wallet': {
+        get: {
+          summary: 'A wallet’s tokenized stocks in shares, read on chain at one block',
+          description:
+            'Every registered bStocks or Ondo token the address holds, in underlying shares (tokens × the multiplier: a bStocks token’s own on chain at that block, with a scheduled change; an Ondo token’s from the registry), its value at the last recorded price (`prices.state`), the wallet’s USDT, its Venus USDT position and the Yieldvest plans that use it. `chain.state` is LIVE with the block, or UNAVAILABLE with the reason. Nothing is signed or stored.',
+          parameters: queryParams(WalletQuery),
+          responses: {
+            200: json({ type: 'object' }, 'The wallet at one block'),
+            400: problem('bad_request'),
+            429: problem('rate_limited: 30 requests a minute per address'),
+            503: unavailable,
+          },
+        },
+      },
       '/api/mcp': {
         post: {
           summary: 'Read-only MCP server (Streamable HTTP, JSON-RPC 2.0)',
           description:
-            'One JSON-RPC message per POST (or a batch of up to 10, as MCP 2025-03-26 allows), one JSON answer; no session and no stream (GET and DELETE answer 405). Methods: initialize, ping, tools/list, tools/call. Tools: market_status, compare_issuers, preflight, interest_projection, plan_status, recent_receipts — all read-only. `claude mcp add --transport http yieldvest <server>/api/mcp`.',
+            'One JSON-RPC message per POST (or a batch of up to 10, as MCP 2025-03-26 allows), one JSON answer; no session and no stream (GET and DELETE answer 405). Methods: initialize, ping, tools/list, tools/call. Tools: market_status, compare_issuers, preflight, interest_projection, wallet_holdings, plan_status, recent_receipts — all read-only. `claude mcp add --transport http yieldvest <server>/api/mcp`.',
           requestBody: {
             required: true,
             content: { 'application/json': { schema: { type: 'object' } } },

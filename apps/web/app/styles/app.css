@@ -1463,3 +1463,59 @@ a.chip {
 .mcp-label {
   margin-top: 14px;
 }
+
+/* /wallet (DECISIONS D-32). */
+.wallet-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.wallet-field {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .wallet-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.wallet-summary .summary-stat {
+  min-width: 0;
+}
+
+/* A wallet's USDT can run to eight digits: the value wraps instead of pushing the page sideways. */
+.wallet-summary .summary-stat > strong {
+  font-size: clamp(18px, 2vw, 28px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.wallet-read {
+  margin: -8px 0 6px;
+}
+
+.wallet-field .text-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+
+/* Three short columns fit a phone: no minimum width, no sideways scroll in the table. */
+.wallet-table .data-table {
+  min-width: 0;
+}
+
+.table-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.wallet-prices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
