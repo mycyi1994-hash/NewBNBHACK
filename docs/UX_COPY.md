@@ -49,7 +49,7 @@ Author: Minseo Kang. Rule: every UI string uses a key from this document. When n
 
 ### 3.2 Judge Mode
 - `judge.code.title`: Enter your invite code
-- `judge.code.hint`: Each invite runs up to ${cap} of real purchases on BNB Chain, paid for and held by Yieldvest. You choose, and you can follow every step and receipt.
+- `judge.code.hint`: Each invite covers up to ${cap} of purchases on BNB Chain, paid for and held by Yieldvest. You choose, and you can follow every step and receipt.
 - `judge.pick.title`: Which stock should we collect?
 - `judge.pick.sector`: Or pick a sector
 - `judge.pick.issuer.auto`: Issuer chosen automatically ({issuer})

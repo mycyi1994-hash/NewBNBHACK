@@ -80,3 +80,7 @@ From REPLAN §7: (1) the Agentic Wallet session makes unattended runs impossible
 | `baw`: units and the multiplier in its JSON; `wallet status` failing when signed out | LOG 10-01 05:12, 06:19 |
 | An event index for BSC v4 pools, or a larger free log range | LOG 09-30 02:10 |
 | The 40314 confirmation field on Broadcast | LOG 10-01 16:52 |
+| The SDK README to say the registry stores the agent URI on chain (gas per KB), and that `registerAgent` sends two transactions | LOG 10-02 14:17 |
+| One convention for `excludeRiskToken` on the two balance endpoints | LOG 10-03 04:21 |
+| Changelog version labels that match the error page's "v1.1" | LOG 10-03 04:26 |
+| How an exact-amount redeem becomes vTokens (the rate read at build time, floored), or the rate and block returned with the calldata | LOG 10-03 05:19 |

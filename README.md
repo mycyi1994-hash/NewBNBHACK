@@ -23,7 +23,7 @@ The official "Ideas to Build" include "Auto-DCA and rebalancing" and "Buy your f
 ## 3-minute trial with an invite code (`/invest`; for judges, this is Judge Mode — `/judge` also leads here)
 
 **Try it** or the Invest tab → invite code → stock (NVDA, etc.) → Contribution only · $5 · regular session → **Test it on-chain** (the agent simulates it through the Transaction API) → **Buy now** → a receipt or "Waiting" (if the market is closed, it buys automatically at the next open +2 min) → **Stop this plan**.
-1 invite = up to $5 of real purchases, paid for and held by Yieldvest's own wallet. The plan ends automatically after 7 days.
+1 invite = up to $5 of purchases, paid for and held by Yieldvest's own wallet. The plan ends automatically after 7 days.
 
 ## Before you buy, and after: check, compare, project, hold
 

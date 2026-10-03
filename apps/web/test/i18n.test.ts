@@ -79,7 +79,7 @@ describe('UX_COPY → dictionary', () => {
 describe('translate', () => {
   it('fills placeholders, keeping the literal $ of the copy', () => {
     expect(translate('en', 'judge.code.hint', { cap: '5.00' })).toBe(
-      'Each invite runs up to $5.00 of real purchases on BNB Chain, paid for and held by Yieldvest. You choose, and you can follow every step and receipt.',
+      'Each invite covers up to $5.00 of purchases on BNB Chain, paid for and held by Yieldvest. You choose, and you can follow every step and receipt.',
     );
   });
 

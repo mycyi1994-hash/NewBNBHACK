@@ -20,7 +20,7 @@ export const COPY = {
     'home.house.next': 'Next buy',
     'judge.code.title': 'Enter your invite code',
     'judge.code.hint':
-      'Each invite runs up to ${cap} of real purchases on BNB Chain, paid for and held by Yieldvest. You choose, and you can follow every step and receipt.',
+      'Each invite covers up to ${cap} of purchases on BNB Chain, paid for and held by Yieldvest. You choose, and you can follow every step and receipt.',
     'judge.pick.title': 'Which stock should we collect?',
     'judge.pick.sector': 'Or pick a sector',
     'judge.pick.issuer.auto': 'Issuer chosen automatically ({issuer})',
