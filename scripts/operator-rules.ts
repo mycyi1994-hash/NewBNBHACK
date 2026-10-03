@@ -187,6 +187,20 @@ export function depositProblem(dry: DepositResult): string | undefined {
 }
 
 /**
+ * Why plan:status --activate refuses a plan with a cycle held for review (PD-07): until a person
+ * closes it, every cycle of the plan answers outbox_busy (RUNBOOK §3.7).
+ */
+export function activationRefusal(planId: string, held: readonly number[]): string | undefined {
+  const [first] = held;
+  if (first === undefined) return undefined;
+  return (
+    `refused: ${planId} has cycle ${held.map((id) => `#${id}`).join(', ')} held for review, and ` +
+    'every cycle of the plan waits on it. Check its transactions on BscScan, then close it: ' +
+    `pnpm plan:status --plan ${planId} --close-review ${first} (RUNBOOK §3.7)`
+  );
+}
+
+/**
  * Whether yield:deposit --record may book a transaction as this plan's deposit (audit S15): only a
  * deposit our outbox signed for this plan, as yield:redeem --record requires of a redeem
  * (recordOperatorRedeem). A mint to the house wallet alone proves nothing about whose it is.

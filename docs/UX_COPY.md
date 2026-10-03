@@ -523,3 +523,8 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `receipt.indexed.agrees`: Binance Web3 API confirms the same result
 - `receipt.indexed.fee`: fee {fee} BNB
 - `receipt.indexed.differs`: Binance Web3 API says "{status}" — the BSC receipt is the record
+
+### 7.11 A cycle closed after review (PD-07)
+> Author: coding agent (10/3). The reason line of a cycle an operator closed with `pnpm plan:status --close-review` after checking its transactions on BscScan (RUNBOOK §3.7): a swap that confirmed with no tokens arriving, or a cycle interrupted after signing with no recorded decision. Its receipts, shown with it, say what moved. Drafts until a person confirms them.
+
+- `why.closed.review`: Held for review. A person checked its transactions on BscScan and closed it.

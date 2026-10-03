@@ -26,7 +26,7 @@ Author: the coding agent (9/27). A human reviews it. Human decision (9/27): live
 3. Top up the house wallet (BSC): **USDT 3~5, BNB 0.005.**
    - The minimum is USDT 2 (buy $1 + deposit $1) and BNB 0.001. The balance cap is $300 (SPEC §14).
    - The operator who created the wallet knows the address (it is masked in logs and on screen).
-4. Do the buy steps (5–6) **only during the US regular session**. 9/28 (Mon) 22:30 KST open → **after 22:32**, before the 05:00 KST close. Deposit and redeem work at any time.
+4. Do the buy steps (5–6) **only during the US regular session**: 22:30–05:00 KST on a US trading day while the US is on daylight time (until 11/1; 23:30–06:00 KST after it) → start **after the open + 2 minutes** (22:32 KST). `/api/market/status` gives the next open. Deposit and redeem work at any time.
 
 ## 2. Procedure (inside `fly ssh console -a yieldvest-agent`, `cd /app`)
 
@@ -36,7 +36,7 @@ Author: the coding agent (9/27). A human reviews it. Human decision (9/27): live
 | 1 | `pnpm plan:set --plan H-SAFE --contribution 1 --per-buy 1 --daily 1` | `changed H-SAFE (safe, paused): $5 daily … → $1 daily, per buy ≤ $1, per day ≤ $1 …` | `refused` |
 | 2 | (after the top-up) `pnpm live:check` | `GO` | `NO-GO` |
 | 3 | `pnpm yield:deposit --plan H-YIELD --usd 1` | Simulation JSON. Approval sim SUCCESS. Deposit sim FAILED is the expected result (in the simulation, the exact approval is not on chain yet). | Build error, approval FAILED |
-| 4 | `EXECUTION_MODE=live pnpm yield:deposit --plan H-YIELD --usd 1 --live` → `y` | `approve`·`deposit` BscScan links, `deposited 1 USDT → … vTokens` | `not deposited …`. If `pending: <tx>` appears, after it is mined run `pnpm yield:deposit --plan H-YIELD --record <tx>` |
+| 4 | `EXECUTION_MODE=live pnpm yield:deposit --plan H-YIELD --usd 1 --live` → `y` | `approve`·`deposit` BscScan links, `deposited 1 USDT → … vTokens` | `not deposited …`. If `pending: approve <tx>` appears, nothing was deposited: once it is mined, run this step again (the allowance covers it; `--record` refuses an approval). If `pending: deposit <tx>` appears, once it is mined run `pnpm yield:deposit --plan H-YIELD --record <tx>`. The line says which |
 | 5 | (regular session) `pnpm cycle:once --plan H-SAFE` | Simulation: NVDA bStocks $1 quote, approval sim SUCCESS | DEFERRED·SKIPPED (read the reason), FAILED |
 | 6 | `EXECUTION_MODE=live pnpm cycle:once --plan H-SAFE --live` → `y` | BOUGHT, approval (exactly $1)·swap links, reason `why.bought.regular` | FAILED, `review` |
 | 7 | `pnpm yield:redeem --plan H-YIELD` | Preview: `amountUsd` ≈ 1, `redeem.status` SUCCESS | `refused`, sim FAILED |
@@ -55,7 +55,7 @@ A human decides the next steps:
 - `FAILED` with `fundsMoved: gas_only`, or the cycle went into `review`.
 - A region or compliance code (40301~40304) shows up in a response.
 - The house balance dropped by more than $1 + gas per step.
-- A tx has not been mined for more than 3 minutes. New signing is blocked (`outbox`). On every tick (in simulate mode too) the worker reconciles with the chain, and once the tx is mined, it applies it only once, including its effects (principal, vToken, holdings, ledger) (DECISIONS D-23). When `outbox` in `live:check` becomes settled, confirm with `plan:status` that it was applied, and run `--record` only if it was not. If it has not cleared after 30 minutes, a Telegram alert arrives and a human decides per RUNBOOK §3.4.
+- A tx has not been mined for more than 3 minutes. New signing is blocked (`outbox`). On every tick (in simulate mode too) the worker reconciles with the chain — never a transaction a running command is still sending (that command holds the plan's lock; PD-07) — and once the tx is mined, it applies it only once, including its effects (principal, vToken, holdings, ledger) (DECISIONS D-23). When `outbox` in `live:check` becomes settled, confirm with `plan:status` that it was applied, and run `--record` only if it was not. If it has not cleared after 30 minutes, a Telegram alert arrives and a human decides per RUNBOOK §3.4.
 
 If you stop: write the `pnpm live:check` output, the command output, the UTC time and the tx hash into `dx/LOG.md` (DX_PROTOCOL format), and a human decides.
 

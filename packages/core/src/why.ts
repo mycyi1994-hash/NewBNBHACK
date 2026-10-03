@@ -26,6 +26,8 @@ export const WHY_KEYS = [
   'why.data.unavailable',
   'why.skipped.guardian.hold',
   'why.skipped.venue_minimum',
+  // An operator closed a cycle held for review (review.ts in the worker, PD-07).
+  'why.closed.review',
 ] as const;
 
 export type WhyKey = (typeof WHY_KEYS)[number];

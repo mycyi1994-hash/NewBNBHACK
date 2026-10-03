@@ -89,20 +89,32 @@ export async function recordSigned(db: Db, row: Omit<OutboxInsert, 'status'>): P
   return created;
 }
 
+/**
+ * Updates one outbox row. With `onlyFrom`, only while its status is still one of those (a
+ * compare-and-set): a process that read the row earlier never writes over what another process
+ * recorded since — a settled CONFIRMED or FAILED stays settled. Returns whether the row changed.
+ */
 export async function markOutbox(
   db: Db,
   txHash: string,
   patch: Partial<Pick<OutboxInsert, 'status' | 'broadcastVia' | 'error'>> & { attempted?: boolean },
-): Promise<void> {
+  onlyFrom?: readonly string[],
+): Promise<boolean> {
   const { attempted, ...rest } = patch;
-  await db
+  const changed = await db
     .update(txOutbox)
     .set({
       ...rest,
       ...(attempted ? { attempts: sql`${txOutbox.attempts} + 1` } : {}),
       updatedAt: sql`now()`,
     })
-    .where(eq(txOutbox.txHash, txHash));
+    .where(
+      onlyFrom === undefined
+        ? eq(txOutbox.txHash, txHash)
+        : and(eq(txOutbox.txHash, txHash), inArray(txOutbox.status, [...onlyFrom])),
+    )
+    .returning({ txHash: txOutbox.txHash });
+  return changed.length > 0;
 }
 
 export async function outboxByHash(db: Db, txHash: string): Promise<OutboxRow | undefined> {

@@ -3,9 +3,18 @@
  * and chain, with the outbox on real Postgres: a broadcast that may have gone out is tracked, one
  * that certainly did not is released, and stale swap bytes the node lost are never sent again.
  */
-import { encodeApprove } from '@yieldvest/chain';
-import { createDb, lastOutboxNonce, txOutbox } from '@yieldvest/db';
+import { encodeApprove, signableTx } from '@yieldvest/chain';
+import {
+  acquirePlanLock,
+  createDb,
+  lastOutboxNonce,
+  markOutbox,
+  recordSigned,
+  releasePlanLock,
+  txOutbox,
+} from '@yieldvest/db';
 import { eq } from 'drizzle-orm';
+import { keccak256 } from 'viem';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../../test/db.js';
 import { cleanup, HOUSE, ROUTER, signer } from '../../test/harness.js';
@@ -122,6 +131,23 @@ describe.skipIf(!url)('sending and reconciling on Postgres', () => {
     });
     expect(refused).toMatchObject({ state: 'not_sent' });
     expect(await rowOf(refused.txHash)).toMatchObject({ status: 'FAILED', broadcastVia: null });
+    // A server error of the API's own (50000/50001) can come after it relayed the bytes: with the
+    // node's "underpriced", that is not proof they never went out — tracked, not released.
+    w.api.routes['/api/v1/dex/pre-transaction/broadcast-transaction'] = () => ({
+      code: 50000,
+      msg: 'Internal server error',
+    });
+    w.chain.sendRaw = () => Promise.reject(new Error('transaction underpriced'));
+    const serverError = await sendTransaction(sendDeps(w), {
+      ...(await request('approve')),
+      data: encodeApprove(ROUTER, 10n),
+    });
+    expect(serverError).toMatchObject({ state: 'pending', broadcastVia: 'unknown' });
+    expect(await rowOf(serverError.txHash)).toMatchObject({ status: 'PENDING' });
+    w.chain.sendRaw = accept;
+    expect(await reconcileOutbox(sendDeps(w), { from: HOUSE, waitMs: 1 })).toMatchObject({
+      confirmed: [serverError.txHash],
+    });
   });
 
   it('tells a human about bytes the node still refuses to hold half an hour after signing', async () => {
@@ -190,6 +216,92 @@ describe.skipIf(!url)('sending and reconciling on Postgres', () => {
       .update(txOutbox)
       .set({ status: 'FAILED', broadcastVia: null, error: 'replaced (human)' })
       .where(eq(txOutbox.txHash, hash));
+  });
+
+  /** Bytes another process signed and wrote down (SIGNED), from a sender of their own. */
+  async function signedElsewhere(req: SendRequest) {
+    const sender = '0x000000000000000000000000000000000000dEaD';
+    const nonce = 1_000_000 + (Date.now() % 1_000_000_000);
+    const raw = await signer.sign(
+      signableTx({
+        to: req.to,
+        data: req.data,
+        value: 0n,
+        gas: req.gas,
+        gasPrice: req.gasPrice,
+        nonce,
+      }),
+    );
+    const hash = keccak256(raw);
+    await recordSigned(db, {
+      planId: req.planId,
+      cycleId: null,
+      kind: req.kind,
+      chainId: 56,
+      fromAddress: sender,
+      nonce,
+      rawTx: raw,
+      txHash: hash,
+    });
+    return { sender, nonce, hash };
+  }
+
+  it('leaves a row to the process holding its plan’s lock: never sent around its broadcast', async () => {
+    const w = await createWorld(db, MON_1000);
+    const req = await request('approve');
+    // A live command (cycle:once, yield:deposit, yield:redeem) holds the plan's lock, has written
+    // its bytes down and is waiting for the Transaction API, while the worker's tick settles.
+    const lock = await acquirePlanLock(db, req.planId, new Date(), 60_000);
+    if (!lock?.lockUntil) throw new Error('no lock');
+    const { sender, hash } = await signedElsewhere(req);
+    const sentBefore = w.chain.sent.length;
+    expect(await reconcileOutbox(sendDeps(w), { from: sender, waitMs: 1 })).toMatchObject({
+      pending: [hash],
+      rebroadcast: [],
+      confirmed: [],
+    });
+    expect(w.chain.sent.length).toBe(sentBefore);
+    expect(await rowOf(hash)).toMatchObject({ status: 'SIGNED' });
+    expect(w.lines.join('\n')).toMatch(/left to it/);
+    // The command's broadcast is refused for compliance: final (D-13) — nothing went out meanwhile.
+    expect(
+      await markOutbox(db, hash, { status: 'FAILED', error: 'refused: 40301' }, ['SIGNED']),
+    ).toBe(true);
+    await releasePlanLock(db, req.planId, lock.lockUntil);
+    expect(await reconcileOutbox(sendDeps(w), { from: sender, waitMs: 1 })).toMatchObject({
+      pending: [],
+      rebroadcast: [],
+    });
+    expect(w.chain.sent.length).toBe(sentBefore);
+  });
+
+  it('settles the row of a process that died once its lock has lapsed', async () => {
+    const w = await createWorld(db, MON_1000);
+    const req = await request('approve');
+    const lapsed = await acquirePlanLock(db, req.planId, new Date(Date.now() - 120_000), 60_000);
+    if (!lapsed) throw new Error('no lock');
+    const { sender, hash } = await signedElsewhere(req);
+    expect(await reconcileOutbox(sendDeps(w), { from: sender, waitMs: 1 })).toMatchObject({
+      rebroadcast: [hash],
+      confirmed: [hash],
+    });
+    expect(await rowOf(hash)).toMatchObject({ status: 'CONFIRMED' });
+  });
+
+  it('never writes over a status another process recorded while it read the chain', async () => {
+    const w = await createWorld(db, MON_1000);
+    const { sender, nonce, hash } = await signedElsewhere(await request('approve'));
+    // The node holds the bytes; while the worker reads the chain, the sender settles the row.
+    w.chain.minedNonce = async () => {
+      await markOutbox(db, hash, { status: 'CONFIRMED' });
+      return nonce;
+    };
+    w.chain.pendingNonce = () => Promise.resolve(nonce + 1);
+    await reconcileOutbox(sendDeps(w), { from: sender, waitMs: 1 });
+    // Before: the worker's "PENDING" landed on the CONFIRMED row, and the sender's next
+    // transaction met an unsettled outbox.
+    expect(await rowOf(hash)).toMatchObject({ status: 'CONFIRMED' });
+    expect(await markOutbox(db, hash, { status: 'PENDING' }, ['SIGNED', 'PENDING'])).toBe(false);
   });
 
   it('never sends again swap bytes the node lost after their quote went stale', async () => {

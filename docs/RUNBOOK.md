@@ -67,6 +67,12 @@ Execution mode: `EXECUTION_MODE=simulate` (the default) signs nothing. `live` si
 - A skill plan's principal is in the user's wallet, so the worker never redeems it (`redeemPlanPosition` owner check, test "never redeems a skill plan's position from the house wallet").
 - Clearing is automatic (when the inputs read normal again). After it clears, a human turns paused house plans back on with `plan:status --activate`.
 
+### 3.7 A cycle held for review (PD-07)
+- Symptoms: Telegram `[yieldvest] <plan> cycle #<n> needs review: …` (a swap confirmed and no tokens arrived) or `… was interrupted after signing with no recorded decision`; the plan is paused (`needs_review`) and every cycle of it answers `outbox_busy`. `pnpm live:check` shows `review ✗ held for review: <plan> cycle #<n>`, and `pnpm plan:status --plan <plan> --activate` refuses with the cycle's number.
+- Check: the cycle's transactions — `select tx_hash, kind, status, nonce from tx_outbox where cycle_id = <n>;` — each on BscScan: what left the house wallet and what arrived. Write the UTC time, the hashes and what you found into `dx/LOG.md` (fund decisions = human).
+- Close it once every one of them is mined or settled (`CONFIRMED` or `FAILED`; while one is `SIGNED` or `PENDING` the close is refused and §3.4 applies): `pnpm plan:status --plan <plan> --close-review <n>` → it lists the transactions and asks for `y`. The cycle ends FAILED `CLOSED_AFTER_REVIEW` ("Held for review. A person checked its transactions on BscScan and closed it."), its cap reservation counts as spent, and the plan stays paused (`paused_by_operator`). A confirmed transaction of the cycle that is not written down yet is applied by the next tick like any finished cycle's late transaction; a swap with no recorded decision stays a human's to write down.
+- Then `pnpm plan:status --plan <plan> --activate` when you want it to run again.
+
 ## 4. Changing caps (limits) — a human's explicit "yes" comes first (CLAUDE.md rule 5)
 
 1. Write the new value and the reason in the conversation or in an issue, and get approval.
@@ -119,7 +125,7 @@ The agent's identity on the BSC registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539
 | `pnpm smoke [--url] [--strict] [--alert]` | Check everything judging depends on, in one go |
 | `pnpm ui:check [--url] [--out dir]` | 9 screens × Korean and US browsers × 375/1440px: horizontal scroll, page errors, CSP violations, non-English text (D-26) |
 | `pnpm qa:check [--url] [--only a11y,keyboard,motion,perf]` | 9 screens: axe-core WCAG 2.1 A/AA at 375/1440px (serious or critical fails), skip link by keyboard, looping motion pauses and reduced motion stops it, phone profile (4× CPU, 150 ms / 1.6 Mbps) LCP, CLS, TBT and JS size (M3-02) |
-| `pnpm plan:status [--plan id --activate/--pause]` | List plans, turn them on, turn them off |
+| `pnpm plan:status [--plan id --activate/--pause \| --close-review <cycle>]` | List plans, turn them on, turn them off; close a cycle held for review after checking it (§3.7) |
 | `pnpm plan:set --plan <id> [--contribution] [--per-buy] [--daily] [--cadence] [--window]` | Change a house plan's amounts and cadence within the caps (an active plan needs `y`) |
 | `pnpm live:check [--usd 1]` | Check before a live trade (read-only, no Web3 API calls) → GO / NO-GO |
 | `pnpm cycle:once --plan <id> [--live]` | 1 cycle (simulation first; live needs `y`) |

@@ -44,6 +44,7 @@ function facts(overrides: Partial<LiveCheckFacts> = {}): LiveCheckFacts {
     safe: SAFE,
     yield: YIELD,
     unsettled: [],
+    held: [],
     worker: {
       tick: { at: '2026-09-28T12:57:00.000Z', mode: 'simulate' },
       tapeSlotAt: '2026-09-28T12:50:00.000Z',
@@ -73,6 +74,7 @@ describe('liveChecks', () => {
       ['H-SAFE', 'ok'],
       ['H-YIELD', 'ok'],
       ['outbox', 'ok'],
+      ['review', 'ok'],
       ['house', 'ok'],
       ['venus', 'ok'],
       ['guardian', 'ok'],
@@ -136,6 +138,19 @@ describe('liveChecks', () => {
     const region = facts({ apiCodes: ['0', '40303', '40303'] });
     expect(mark(region, 'web3api')).toMatchObject({ mark: 'fail' });
     expect(mark(region, 'web3api')?.detail).toContain('40303 — stop');
+    // KYT refusals are final too (D-13): an address or its funds, or the check before a broadcast.
+    for (const code of ['40311', '40312', '40313', '40314', '40434']) {
+      expect(mark(facts({ apiCodes: ['0', code] }), 'web3api')?.mark).toBe('fail');
+    }
+  });
+
+  it('refuses while a cycle is held for review: every cycle of its plan waits on it (PD-07)', () => {
+    expect(mark(facts(), 'review')).toMatchObject({ mark: 'ok', detail: 'no cycle held' });
+    const held = facts({ held: [{ planId: 'H-SAFE', cycleId: 42 }] });
+    expect(liveChecks(held).go).toBe(false);
+    expect(mark(held, 'review')).toMatchObject({ mark: 'fail' });
+    expect(mark(held, 'review')?.detail).toContain('H-SAFE cycle #42');
+    expect(mark(held, 'review')?.detail).toContain('--close-review');
   });
 
   it('checks the house balances against the test, the gas and the $300 limit', () => {

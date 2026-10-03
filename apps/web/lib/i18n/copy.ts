@@ -607,6 +607,8 @@ export const COPY = {
     'receipt.indexed.agrees': 'Binance Web3 API confirms the same result',
     'receipt.indexed.fee': 'fee {fee} BNB',
     'receipt.indexed.differs': 'Binance Web3 API says "{status}" — the BSC receipt is the record',
+    'why.closed.review':
+      'Held for review. A person checked its transactions on BscScan and closed it.',
   },
 } as const;
 

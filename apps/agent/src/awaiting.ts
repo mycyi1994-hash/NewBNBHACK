@@ -64,6 +64,14 @@ function awaitingStep(cycle: CycleRow): AwaitingStep | undefined {
   return steps[at] as AwaitingStep;
 }
 
+/**
+ * A cycle out on chain that waits for a person, not for the chain: an ANOMALY after its last
+ * AWAITING step (or with none) holds it until an operator closes it (review.ts).
+ */
+export function heldForReview(cycle: CycleRow): boolean {
+  return cycle.state === 'awaiting_tx' && awaitingStep(cycle) === undefined;
+}
+
 /** The last execute decision a cycle recorded before signing (cycle.ts writes it). */
 export function lastExecute(cycle: CycleRow): ExecuteDecision | undefined {
   const steps = cycle.steps as { step?: string; decision?: ExecuteDecision }[];
