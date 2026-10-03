@@ -44,15 +44,38 @@ Read-only, from the worker's latest market recording, each with its data state (
 
 ## Verify it yourself
 
-| Command | What it shows | Result on 10/2 |
+| Command | What it shows | Result on 10/3 |
 | --- | --- | --- |
-| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 72 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 764 passed, 10 skipped |
-| `pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e` | Judge Mode end to end in Chromium at 375 and 1280 px, in simulate mode over a test world (no network), then `/check`, `/compare`, the Earn calculator, `/wallet`, the MCP block and the agent card it links | green in CI on every push |
+| `pnpm typecheck && pnpm lint && pnpm test` | types, lint, the copy lint, 76 test files (`YIELDVEST_TEST_DATABASE_URL` points at a Postgres) | 804 passed with the docs snapshot (`scripts/fetch-docs.sh`); without it, its 10 checks skip |
+| `pnpm --filter @yieldvest/web build && pnpm e2e --database postgres://…/yieldvest_e2e` | Judge Mode end to end in Chromium at 375 and 1280 px, in simulate mode over a test world (no network), then the first screen, `/check`, `/compare`, the Earn calculator, `/wallet`, the MCP block and the agent card it links | green in CI on every push |
 | `pnpm lp:test` | the Uniswap v4 hook, the reference oracle and the LP vault | 144 Foundry tests; `BSC_FORK_URL=…` adds 2 on BSC mainnet state |
 | `pnpm dx:repro` | each DX finding ([`dx/findings`](dx/findings/README.md)) against the platform as it is now | 4 of 4 keyless findings reproduced; 6 need a key |
 | `docker compose up --build` | the app on your machine, simulate mode | see [Run](#run) |
 
 GitHub Actions (`.github/workflows/ci.yml`) runs the first three on every push.
+
+## How it holds up: known traps → code → test
+
+Every row is something the Binance Web3 API, the venues or the chain do that a first integration gets wrong — most found the hard way ([`dx/LOG.md`](dx/LOG.md)). Each is handled in one place and pinned by a named test; `pnpm test` runs them all. Until the live link: `docker compose up --build` ([Run](#run)) or `pnpm e2e` shows the same code on your machine in simulate mode.
+
+| Trap | Handled in | Pinned by |
+| --- | --- | --- |
+| Errors come back as HTTP 200 with a business code | `packages/binance/src/client.ts` (envelope → `BinanceApiError`) | `client.test.ts` "raises HTTP-200 business errors as BinanceApiError" |
+| The signature covers `/build`, the path and the query exactly as sent; two identical requests in one millisecond are a replay (40103) | `packages/binance/src/client.ts` | `client.test.ts` "signs exactly the path and query that go on the wire, with /build", "never signs two identical requests in the same millisecond alike (40103 replay)" |
+| The limit is 5 per endpoint in any 1,000 ms window (a token bucket still gets 429s); DeFi endpoints share one 5 QPS | `packages/binance/src/rate-limit.ts` | `rate-limit.test.ts` "replays the 2026-09-24 quote burst without a sixth call inside one second", "makes DeFi endpoints share one 5 QPS budget" |
+| One code means different things per module (40470: a Solana fee in Trading, "not found" in DeFi, renumbered to 40490) | `packages/binance/src/taxonomy.ts` | `taxonomy.test.ts` "gives a code the meaning of its own module", and "every … code we map is on that page" against the docs snapshot |
+| A `quoteId` lives 30 s | `MAX_QUOTE_AGE_MS` (25 s) in `packages/core/src/decide.ts`, checked again at signing (`apps/agent/src/executor/trade.ts`) | `decide.test.ts` "re-quotes a quote older than 25 s (the id lives 30 s)" |
+| Off-hours, the venues refuse quotes (bStocks 40369, Ondo 40367), and bStocks still says TRADING overnight | `OFF_HOURS_QUOTE_CODES` in `decide.ts`; our own NYSE calendar, `packages/core/src/session.ts` | `decide.test.ts` "defers when the venue rejects the quote as off-hours"; `market.test.ts` "keeps a regular-session plan closed overnight although bStocks says TRADING (our NYSE calendar)" |
+| NYSE holidays, early closes, daylight saving | `packages/core/src/session.ts` | `session.test.ts` "tags weekends and NYSE holidays", "closes at 13:00 ET on early-close days", "follows the DST switch (EST, UTC−5, from 1 Nov 2026)" |
+| Earnings, dividends and splits hold a token (`ASSET_PAUSED` / `ASSET_LIMITED` with a reason) | `CORPORATE_ACTION_CODES` in `decide.ts` | `decide.test.ts` "skips for earnings without switching issuer", "uses the dividend line for cash and stock dividends" |
+| Ondo refuses exactly its minimum ($5.00 → 40375) | `venueMinimumUsd` in `taxonomy.ts`; `packages/core/src/venues.ts` | `taxonomy.test.ts` "reads the minimum from the 40375 message"; `decide.test.ts` "says a $5 plan can never buy an Ondo-only stock, instead of promising to" |
+| Tokens are not shares: a bStocks token × its `uiMultiplier`, which a split or dividend moves | `packages/chain/src/index.ts` (multiplier, next multiplier and its time at one block); `packages/core/src/holdings.ts` | `packages/chain/src/index.test.ts` "reads every field at one block and feeds the core maths"; `holdings.test.ts` "recomputes shares after a split moves the multiplier (balanceOf unchanged)" |
+| The DeFi deposit build approves the maximum | our own exact `approve(vToken, amount)`, `apps/agent/src/executor/venus.ts` | `venus.test.ts` "simulates our exact approval, never the unlimited APPROVE item, and signs nothing" |
+| Simulation takes one transaction: an approval does not carry into the next one, and the simulating node can be a block behind ours | each step simulated after the previous one is mined; `simulateAfterApproval` in `trade.ts` | `venus.test.ts` "simulates the deposit again while the API’s node has not seen the approval yet" |
+| A DeFi redeem is sized at the vToken rate the API reads, and that rate jumps whenever someone touches the market | `redeemLimit` in `venus.ts` | `venus.test.ts` "accepts the build when interest accrued between the API’s read and ours, either way" |
+| A compliance refusal (KYT, region) is final; a server error can come after a relay | `apps/agent/src/executor/send.ts` | `send.test.ts` "calls "underpriced" final only when the Transaction API itself answered", "leaves a row to the process holding its plan’s lock: never sent around its broadcast" |
+| A broadcast transaction is not indexed at once | `packages/binance/src/wallet.ts` | `wallet.test.ts` "reads an empty list as not indexed yet (the docs: indexing may lag the broadcast)" |
+| A process dies between signing and recording | the signed bytes are written down before they leave; every tick settles them against the chain (`send.ts`, `apps/agent/src/settlement.ts`) | `send.test.ts` "tracks bytes that may have gone out, and sends them again once the node is back"; `settlement.test.ts` "books an interest redeem once when the cycle dies after it confirmed" |
 
 ## One cycle across the modules
 
@@ -79,19 +102,19 @@ In safe mode the cycle skips the redeem. In the Wallet Skill the same decision c
 
 ## Module matrix (PLAN §6.1 + status as of the code)
 
-| Module | Where Yieldvest uses it | Status |
-| --- | --- | --- |
-| RWA Data API | Token list (address, multiplier, status code, next open), RWA prices — registry, tape, decisions | In use (Frankfurt worker, tape every 10 min) |
-| Public bapi RWA Dynamic V2 (outside the Web3 API) | US stock price (`stockInfo.price`, null off-hours) — gap calculation, tape. A public endpoint with no key; the only docs are Skills Hub `binance-tokenized-securities-info` | In use (`apps/agent/src/stock-price.ts`) |
-| Market API | USDT price (depeg guardian) | Code done |
-| Trading API | Quotes (price impact, route), exact-amount approval calldata, swap calldata | Quotes in use (tape); signing path waiting for live |
-| Transaction API | Simulation before every signature, gas limit estimation, broadcast (an alternative path to RPC) | Code done, waiting for live. Receipts are confirmed over BSC RPC; the status lookup is the Wallet API's (next row) |
-| DeFi API | Venus USDT investment and APY (`apyDisplay`), TVL and security score (guardian, risk disclosure), deposit and redeem calldata | Code done |
-| Wallet API | The official flow's last step: each receipt's transaction looked up by hash (`transaction-detail-by-txhash`) once its BSC receipt settled it — status and fee shown under the receipt link, a disagreement shown as one — and the house balances (`token-balances-by-address`) compared with the RPC read on every tick, in `/api/judge/smoke`. Read-only, never in the signing path; the chain stays the record (DECISIONS D-34) | Code done (worker, `apps/agent/src/wallet-index.ts`); first live answers with the API key |
-| Agentic Wallet / Wallet Skills | `skills/yieldvest`: the server hands out only `baw` commands via `/next` (and `/position` to take a stopped plan's own deposit out), signing happens on the user's device, `/report` is checked on chain. Every `baw` command and flag is tested against the real CLI's recorded help (`pnpm baw:help`, `baw` 1.10.0), and the quote check is in the shares `baw` prints | Code and docs done; the real-run demo is done by a human (M2-09) |
-| b402 Payments | — | Not built (M3-01, cut candidate) |
-| BNB Agent Studio | ERC-8004 identity: `GET /api/agent` serves the registration file — byte for byte what `@bnbagent/sdk` 0.6.0 builds (tested against it) — pointing at the read-only MCP server; `pnpm agent:register` puts it on the BSC identity registry from a wallet of its own: dry run, Transaction API simulation, fee bound, typed `y` (DECISIONS D-33) | Code done, dry run on real BSC (agent URI 857 bytes, 767,983 gas); the registration itself after the web deploy (M2-10, RUNBOOK §6.2) |
-| BSC | viem reads and writes, amounts confirmed from the receipt's Transfer logs, Venus vToken | In use |
+| Module | Where Yieldvest uses it | Status | Code → test |
+| --- | --- | --- | --- |
+| RWA Data API | Token list (address, multiplier, status code, next open), RWA prices — registry, tape, decisions | In use (Frankfurt worker, tape every 10 min) | `apps/agent/src/registry.ts`, `market.ts` → `registry.test.ts`, `market.test.ts` |
+| Public bapi RWA Dynamic V2 (outside the Web3 API) | US stock price (`stockInfo.price`, null off-hours) — gap calculation, tape. A public endpoint with no key; the only docs are Skills Hub `binance-tokenized-securities-info` | In use (`apps/agent/src/stock-price.ts`) | `apps/agent/src/stock-price.ts` → `stock-price.test.ts` |
+| Market API | USDT price (depeg guardian) | Code done | `apps/agent/src/guardian.ts`, `packages/core/src/guardian.ts` → `guardian.test.ts`, `scheduler.test.ts` |
+| Trading API | Quotes (price impact, route), exact-amount approval calldata, swap calldata | Quotes in use (tape); signing path waiting for live | `apps/agent/src/executor/trade.ts` → `cycle.test.ts`, `decide.test.ts` |
+| Transaction API | Simulation before every signature, gas limit estimation, broadcast (an alternative path to RPC) | Code done, waiting for live. Receipts are confirmed over BSC RPC; the status lookup is the Wallet API's (next row) | `apps/agent/src/executor/send.ts` → `send.test.ts` |
+| DeFi API | Venus USDT investment and APY (`apyDisplay`), TVL and security score (guardian, risk disclosure), deposit and redeem calldata | Code done | `apps/agent/src/executor/venus.ts` → `venus.test.ts`, `settlement.test.ts` |
+| Wallet API | The official flow's last step: each receipt's transaction looked up by hash (`transaction-detail-by-txhash`) once its BSC receipt settled it — status and fee shown under the receipt link, a disagreement shown as one — and the house balances (`token-balances-by-address`) compared with the RPC read on every tick, in `/api/judge/smoke`. Read-only, never in the signing path; the chain stays the record (DECISIONS D-34) | Code done (worker, `apps/agent/src/wallet-index.ts`); first live answers with the API key | `packages/binance/src/wallet.ts`, `apps/agent/src/wallet-index.ts` → `wallet.test.ts`, `wallet-index.test.ts` |
+| Agentic Wallet / Wallet Skills | `skills/yieldvest`: the server hands out only `baw` commands via `/next` (and `/position` to take a stopped plan's own deposit out), signing happens on the user's device, `/report` is checked on chain. Every `baw` command and flag is tested against the real CLI's recorded help (`pnpm baw:help`, `baw` 1.10.0), and the quote check is in the shares `baw` prints | Code and docs done; the real-run demo is done by a human (M2-09) | `skills/yieldvest`, `apps/web/lib/server/next.ts` → `baw-contract.test.ts`, `skill.test.ts` |
+| b402 Payments | — | Not built (M3-01, cut candidate) | — |
+| BNB Agent Studio | ERC-8004 identity: `GET /api/agent` serves the registration file — byte for byte what `@bnbagent/sdk` 0.6.0 builds (tested against it) — pointing at the read-only MCP server; `pnpm agent:register` puts it on the BSC identity registry from a wallet of its own: dry run, Transaction API simulation, fee bound, typed `y` (DECISIONS D-33) | Code done, dry run on real BSC (agent URI 857 bytes, 767,983 gas); the registration itself after the web deploy (M2-10, RUNBOOK §6.2) | `apps/web/lib/agent-card.ts`, `packages/chain/src/erc8004.ts`, `scripts/agent-register.ts` → `agent-card.test.ts`, `erc8004.test.ts`, `agent-register-rules.test.ts` |
+| BSC | viem reads and writes, amounts confirmed from the receipt's Transfer logs, Venus vToken | In use | `packages/chain/src/index.ts`, `apps/agent/src/executor/chain-port.ts` → `index.test.ts`, `chain-port.test.ts` |
 
 ## Use it with my AI assistant (Agentic Wallet, mode C)
 
