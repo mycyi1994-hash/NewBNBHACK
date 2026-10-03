@@ -2,7 +2,7 @@
 
 > **Own US stocks with the interest your dollars earn.** Yieldvest keeps your USDT in an interest account (Venus on BNB Smart Chain) and buys tokenized US stocks (bStocks / Ondo) with the interest — or a fixed amount you choose — **only during US market hours**, within hard limits, with an on-chain receipt and a one-sentence reason for every action. Your principal stays put; you can see and check every step.
 
-**Live:** filled in after deploy · **Video:** M4-02 · **DX report:** M4-01 · **Try it:** with an invite code (judges: the code in the submission form)
+**Live:** https://yieldvest.gana003.workers.dev · **Video:** M4-02 · **DX report:** M4-01 · **Try it:** with an invite code (judges: the code in the submission form)
 
 Built for BNB Hack: Tokenized Stocks Edition (deadline 10/11 12:00 UTC). Everything below describes the product as it runs, and how to check it.
 
