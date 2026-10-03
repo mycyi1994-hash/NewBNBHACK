@@ -127,6 +127,7 @@ The agent's identity on the BSC registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539
 | `pnpm yield:redeem --plan <id> [--live] \| --record <tx>` | Redeem a yield plan's whole position (preview first; live needs `y`) |
 | `pnpm agent:register [--site <url>] [--broadcast]` | The agent's ERC-8004 identity: register, then write the file with its id (dry run first; `--broadcast` needs `y`), §6.2 |
 | `pnpm dx:metrics` · `pnpm dx:events` | DX metrics, new findings |
+| `pnpm tape:summary [--days 30]` | The tape's numbers for the DX report: refusals, price impact, the gap to the US price, codes and token statuses → `dx/tape-summary.md` |
 | `pnpm receipts:table` | README receipts table |
 | `pnpm db:migrate` · `pnpm db:seed` · `pnpm db:rollback <tag> --yes` | DB |
 | `pnpm alert:test` | Send one test Telegram alert |

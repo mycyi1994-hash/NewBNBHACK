@@ -41,6 +41,7 @@ Title, impact, repro steps, expected/actual, evidence, suggestion.
 
 ### 3.4 Tape summary (`/dx` page + `dx/tape-summary.md`)
 Regular session vs pre-market/after-hours vs weekend: quote success rate, average price impact ($5/$50/$500), gap distribution, by issuer.
+`pnpm tape:summary [--days 30]` writes `dx/tape-summary.md` from `tape_samples` (coverage, refusals and impact per issuer × session × size, the gap's median and p90, the refusal codes, the token statuses); run it against the production database.
 
 ### 3.5 `dx/REPORT_DRAFT.md` — **Only humans write this.** The agent does not edit this file.
 

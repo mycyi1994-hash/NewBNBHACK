@@ -55,7 +55,7 @@ Not recorded yet (people): a signed-in `baw` run (M0-09, REPLAN R9), session exp
 | `statusInfo` differs by issuer | bStocks: `marketStatus`, `nextOpen`, `nextClose` null | LOG 09-24 00:45 |
 | Hookless Uniswap v4 pools on BSC | the same NVIDIA exposure priced from 205 to 228 USD across pools; the three NVDAB pools have no active liquidity | LOG 09-30 02:11; `pnpm lp:market` |
 | Transfers through the v4 PoolManager | bStocks and Ondo NVIDIA tokens move freely, no fee on transfer | LOG 09-30 02:38 |
-| Regular session vs off-hours (tape) | not summarized yet: `tape_samples` on the production database (`/dx`, `dx/tape-summary.md`) | DX_PROTOCOL §3.4 |
+| Regular session vs off-hours (tape) | not summarized yet: `pnpm tape:summary` writes `dx/tape-summary.md` from `tape_samples` on the production database (also `/dx`) | DX_PROTOCOL §3.4 |
 
 ## 6. Redesign suggestions (candidates; people choose)
 
