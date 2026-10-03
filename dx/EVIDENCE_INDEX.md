@@ -34,6 +34,7 @@ Key issued → first signed call: 14 minutes. Not recorded yet (people): the tim
 | Error HTTP status differs by page | HTTP 200 for every Market error vs 401/429 at the gateway | LOG 09-23 17:58 |
 | Connector vs docs | header names, `simulateTransactions` requires three txs, a signed GET body | LOG 09-23 17:51, 17:53 (two) |
 | One parameter, two conventions | `excludeRiskToken`: `true` excludes on GET all-token-balances, `"0"` excludes (and `"1"` includes) on POST token-balances | LOG 10-03 04:21 |
+| An exact-amount redeem is converted at the API's own read of the stored rate (undocumented); the rate jumps when the market is touched | 1 USDT → floor(1e36 / stored rate) vTokens; 2 moves in 80 blocks, 3.37e-8 together; our 1-vToken check refused a correct $1 redeem (ours) | LOG 10-03 05:19 |
 | Latency | Frankfurt 2–4× Korea; per-endpoint p50/p95 come from `pnpm dx:metrics` on the production database (`dx/metrics.md`, not generated yet) | LOG 09-24 02:31 |
 
 ## 4. AI stack feedback
