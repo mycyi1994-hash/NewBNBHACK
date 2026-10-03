@@ -309,7 +309,17 @@ describe('secrets and modes', () => {
  */
 function capOffenders(root: string): string[] {
   const TREES = ['apps', 'packages', 'scripts', 'skills', '.github'];
-  const SKIP = new Set(['node_modules', '.next', 'dist', 'coverage', '.turbo', '.git']);
+  const SKIP = new Set([
+    'node_modules',
+    '.next',
+    // The Cloudflare build of apps/web (pnpm cf:build) bundles packages/config, and wrangler's state.
+    '.open-next',
+    '.wrangler',
+    'dist',
+    'coverage',
+    '.turbo',
+    '.git',
+  ]);
   const configDir = path.join(root, 'packages', 'config') + path.sep;
   const walk = (dir: string): string[] =>
     existsSync(dir)

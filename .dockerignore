@@ -5,6 +5,7 @@
 **/.env*
 *.pem
 *.key
+**/.dev.vars*
 .studio/
 .baw/
 
@@ -12,6 +13,8 @@
 .git/
 **/node_modules/
 **/.next/
+**/.open-next/
+**/.wrangler/
 **/dist/
 **/coverage/
 *.log

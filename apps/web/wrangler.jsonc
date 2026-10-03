@@ -1,0 +1,22 @@
+// apps/web as the Cloudflare Worker `yieldvest`, built by the OpenNext adapter (G2-2):
+// `pnpm cf:build` writes .open-next/, `pnpm cf:preview` runs it in workerd locally.
+// No secrets here: DATABASE_URL, SESSION_SECRET and JUDGE_CODES are Worker secrets a human sets;
+// a local preview reads them from .dev.vars (gitignored).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yieldvest",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "vars": {
+    "EXECUTION_MODE": "simulate",
+    "NEXT_PUBLIC_APP_URL": "https://yieldvest.gana003.workers.dev",
+  },
+}
