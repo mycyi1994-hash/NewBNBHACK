@@ -48,7 +48,8 @@
     "lp:status": "tsx scripts/lp-status.ts",
     "lp:market": "tsx scripts/lp-market.ts",
     "baw:help": "tsx scripts/baw-help.ts",
-    "agent:register": "tsx scripts/agent-register.ts"
+    "agent:register": "tsx scripts/agent-register.ts",
+    "tape:summary": "tsx scripts/tape-summary.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

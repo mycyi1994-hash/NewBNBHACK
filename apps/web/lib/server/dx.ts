@@ -4,12 +4,18 @@
  * All measured by the worker; each block states how.
  */
 import { summarizeCalls } from '@yieldvest/binance';
-import { isoTime, listApiCalls, listDxEvents, tapeSummary, type Db } from '@yieldvest/db';
+import {
+  isoTime,
+  listApiCalls,
+  listDxEvents,
+  TAPE_METHOD,
+  tapeSummary,
+  type Db,
+} from '@yieldvest/db';
 
 export const CALLS_METHOD =
   'every HTTP attempt the worker made to the Binance Web3 API (api_calls), latency measured around fetch';
-export const TAPE_METHOD =
-  'every 10 minutes the worker quotes $5/$50/$500 USDT → each registered token (never executed) and records the RWA status, token price and the independent US price (RWA Dynamic V2 stockInfo.price); gap = (token price ÷ multiplier) ÷ US price − 1, only where a US price existed';
+export { TAPE_METHOD };
 
 /**
  * These numbers are public and read up to 30 days of rows: each window is computed at most once a
