@@ -1,5 +1,6 @@
 /** JSON responses, request parsing and a per-instance rate limit for the API routes. */
 import type { z } from 'zod';
+import { onWorkers } from './runtime';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 
@@ -97,8 +98,11 @@ export function intParam(
 /**
  * The caller's address as the platform saw it: Vercel sets x-real-ip and overwrites
  * x-forwarded-for, so neither is the client's own claim there (RUNBOOK: the web runs on Vercel).
+ * On Cloudflare Workers (G2-2) x-real-ip and the head of x-forwarded-for can be the client's own
+ * claim; cf-connecting-ip is set by Cloudflare, replacing any value the client sent.
  */
 export function clientIp(request: Request): string {
+  if (onWorkers) return request.headers.get('cf-connecting-ip')?.trim() || 'unknown';
   return (
     request.headers.get('x-real-ip')?.trim() ||
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
