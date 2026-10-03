@@ -96,10 +96,11 @@ In safe mode the cycle skips the redeem. In the Wallet Skill the same decision c
 ## Use it with my AI assistant (Agentic Wallet, mode C)
 
 ```bash
-git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK yieldvest-src \
-  && mkdir -p ~/.claude/skills && cp -r yieldvest-src/skills/yieldvest ~/.claude/skills/
+npx skills add mycyi1994-hash/NewBNBHACK --skill yieldvest -g -a claude-code -y
 export YIELDVEST_URL=<site URL>
 ```
+
+One line, with the same installer the Binance Skills Hub uses (`skills` CLI, checked with 1.7.0 on 10/3: `skills/yieldvest` lands in `~/.claude/skills/yieldvest` file for file). Without Node: `git clone --depth 1 https://github.com/mycyi1994-hash/NewBNBHACK yieldvest-src && mkdir -p ~/.claude/skills && cp -r yieldvest-src/skills/yieldvest ~/.claude/skills/`.
 
 Then say "Start Yieldvest". Requires: `baw` 1.10.0 (`npm i -g @binance/agentic-wallet@1.10.0`), the `binance-agentic-wallet` and `query-token-audit` skills (`npx skills add binance/binance-skills-hub/skills/binance-web3/<skill>`), USDT to buy and a little BNB for gas. Before each signature the skill checks the command against the plan the user agreed (token, chain, amount within the plan's per-buy limit), that the wallet is not locked by a pending transaction, and the token against the official list; the user confirms with the wallet's own quote in front of them. The server only decides (it stores no keys or sessions); every transaction is signed by the user's wallet after the user confirms. API contract: `/api/openapi` (OpenAPI 3.1). Before a plan exists, the skill can show the user `/api/compare` (to choose a token) and `/api/preflight` (what the rules would do now); an assistant without the skill can ask the same through the read-only MCP server at `/api/mcp`.
 

@@ -571,6 +571,11 @@ The seven items the agent proposed on 10/3 for before the deploy, all approved b
   - Evidence: `packages/db/src/tape-summary.test.ts` (on Postgres, in a window of its own), `scripts/tape-summary-render.test.ts` (5 tests). On a scratch database with 6 synthetic runs: `6 runs, 36 rows, 2 tokens`, exit 0; no `DATABASE_URL` → `UNAVAILABLE`, exit 3; `--days 0` → the usage line, exit 2.
   - [ ] [PC] Run it on the production database and commit `dx/tape-summary.md` (M4-01).
 
+### PD-04 One-line Wallet Skill install · Criteria: AW special prize, UX
+- [x] (10/3) `npx skills add mycyi1994-hash/NewBNBHACK --skill yieldvest -g -a claude-code -y` — the `skills` CLI the Binance Skills Hub installs with (`npx skills add binance/binance-skills-hub/…`). Now the line on `/skill`, in the README and in `skills/yieldvest/README.md`; the `git clone` line stays as the way without Node.
+  - Evidence (`skills` 1.7.0, a scratch `HOME`, telemetry off): `--list` on this repository finds `yieldvest` with its description; installed from the local path and from the GitHub shorthand (the default branch, after PR #7), with and without `--copy`: `✓ yieldvest … → ~/.claude/skills/yieldvest`, and `diff -r` against `skills/yieldvest` is empty each time.
+  - The repository must be public for a judge's machine to fetch it (a human decision, M4-03); this sandbox fetched it with its own GitHub access.
+
 ---
 
 ## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]
