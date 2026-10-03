@@ -313,7 +313,7 @@ export function openApiDocument(serverUrl: string) {
         get: {
           summary: 'Everything a judge’s visit depends on, in one read',
           description:
-            'Database, the worker’s last tick, the Web3 API as the worker last saw it, BSC RPC, house balances, last receipt, tape. green / degraded (200) or red (503).',
+            'Database, the worker’s last tick, the Web3 API as the worker last saw it, BSC RPC, house balances (with the Wallet API’s view of them beside the chain read, informational), last receipt, tape. green / degraded (200) or red (503).',
           responses: {
             200: json({ type: 'object' }, 'green or degraded'),
             503: json({ type: 'object' }, 'red'),
@@ -517,6 +517,8 @@ export function openApiDocument(serverUrl: string) {
       '/api/receipts': {
         get: {
           summary: 'Receipt feed: every on-chain action with its one-line reason',
+          description:
+            'Each receipt carries `indexed`: the Binance Web3 Wallet API’s status of the transaction (transaction-detail-by-txhash) once the worker has read it, and whether it agrees with the BSC receipt — which stays the record. Null until read.',
           parameters: [
             { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100 } },
           ],

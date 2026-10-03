@@ -604,6 +604,9 @@ export const COPY = {
     'wallet.link': "See a wallet's stocks in shares",
     'agent.card': "The agent's ERC-8004 registration file",
     'agent.registered': 'Registered on BNB Smart Chain as ERC-8004 agent #{id}',
+    'receipt.indexed.agrees': 'Binance Web3 API confirms the same result',
+    'receipt.indexed.fee': 'fee {fee} BNB',
+    'receipt.indexed.differs': 'Binance Web3 API says "{status}" — the BSC receipt is the record',
   },
 } as const;
 

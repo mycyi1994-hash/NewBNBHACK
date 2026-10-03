@@ -77,16 +77,6 @@ export interface DeFiBuild {
   redeemDelayDays?: number[] | null;
 }
 
-/** GET /transaction-detail-by-txhash item (§ Integration Flow (Trading API) › Step 6). */
-export interface TransactionDetail {
-  txhash?: string;
-  txStatus?: string;
-  height?: string;
-  gasUsed?: string;
-  txFee?: string;
-  tokenTransferDetails?: unknown[];
-}
-
 /** Quote routes for `amount` base units of `fromToken`; the best route first. */
 export async function getQuote(
   client: BinanceClient,
@@ -211,20 +201,6 @@ export async function broadcastSigned(
   );
   if (!res.data.txHash) throw new Error('broadcast returned no txHash');
   return { txHash: res.data.txHash, orderId: res.data.orderId ?? null };
-}
-
-/** Indexed status of a transaction; undefined while it is not indexed yet (Step 6). */
-export async function getTransactionDetail(
-  client: BinanceClient,
-  txHash: string,
-): Promise<TransactionDetail | undefined> {
-  const res = await client.request<TransactionDetail[]>('wallet', 'getTransactionDetailByHash', {
-    method: 'GET',
-    path: '/api/v1/dex/post-transaction/transaction-detail-by-txhash',
-    query: { binanceChainId: BSC, txHash },
-    retries: 2,
-  });
-  return res.data[0];
 }
 
 /**

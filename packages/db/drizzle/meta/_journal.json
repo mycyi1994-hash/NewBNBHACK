@@ -71,6 +71,13 @@
       "when": 1790487950858,
       "tag": "0009_audit_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791000785800,
+      "tag": "0010_receipts_indexed",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,7 @@ import { runCycle, type CycleDeps, type CycleReport } from './cycle.js';
 import { startYieldPlan } from './deposit.js';
 import type { Reconciliation } from './executor/send.js';
 import { guardianTick, redeemPlanPosition, type GuardianReport } from './guardian.js';
+import { houseViaWalletApi, indexReceipts } from './wallet-index.js';
 import { PublicError, publicMessage } from './public-error.js';
 import { settleOutbox } from './settlement.js';
 
@@ -225,11 +226,13 @@ export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promi
       report.cycles.push(await runCycle(deps, plan.id));
     });
   }
+  let houseOnChain: { usdt: bigint; bnb: bigint } | undefined;
   await guard('house balance', async () => {
     const [usdt, bnb] = await Promise.all([
       deps.chain.balanceOf(BSC_USDT, deps.house),
       deps.chain.nativeBalance(deps.house),
     ]);
+    houseOnChain = { usdt, bnb };
     await writeWorkerStatus(deps.db, 'house', {
       // Private to the database: the web refuses it as a skill plan's wallet.
       address: deps.house,
@@ -237,6 +240,11 @@ export async function schedulerTick(deps: CycleDeps, simulate: CycleDeps): Promi
       bnbWei: bnb.toString(),
       at: deps.now().toISOString(),
     });
+  });
+  // The Wallet API beside the chain (D-34): best-effort reads, never a tick error.
+  await houseViaWalletApi(deps, houseOnChain);
+  await indexReceipts(deps).catch((error: unknown) => {
+    deps.log(`wallet api: receipts not indexed — ${message(error)}`);
   });
   await writeWorkerStatus(deps.db, 'tick', {
     at: report.at,

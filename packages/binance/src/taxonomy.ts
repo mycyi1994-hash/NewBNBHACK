@@ -204,7 +204,9 @@ const DEFI: Record<string, Rule> = {
   '40460': rule('defi', 'fail', false, 'why.failed.simulation', 'DeFi simulation reverted'),
   '40470': ourBug('DeFi resource not found (protocol or investment id)'),
   // The DeFi error page (10/1): "v1.0 returned 40470 for the same condition — v1.1 renumbers it to
-  // 40490" (dx/LOG.md 2026-10-01 16:52). Both mean the same until 40470 is gone.
+  // 40490" (dx/LOG.md 2026-10-01 16:52). On 10/3 the page lists only 40490 and the changelog's
+  // 2026-09-30 entry has the renumbering (dx/LOG.md 2026-10-03 04:26). Both stay mapped to the same
+  // meaning: 40470 was measured live (09-23 18:00) and a server may still answer it.
   '40490': ourBug('DeFi resource not found (protocol or investment id)'),
   '40480': rule('defi', 'fail', false, 'why.failed.simulation', 'insufficient balance'),
   '40481': rule('defi', 'defer', false, 'err.trade', 'DeFi action temporarily unavailable'),

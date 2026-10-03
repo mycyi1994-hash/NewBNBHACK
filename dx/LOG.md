@@ -589,3 +589,23 @@ Times are UTC. Tags: `[web3api|baw|skill|bag|chain|defi|rwa|trading|tx|wallet|b4
 - Workaround: a short description; `apps/web/test/agent-card.test.ts` keeps our agent URI under 1,100 bytes.
 - Ask: say in the SDK README that the registry stores the agent URI on chain, with the gas per KB, and that `registerAgent` sends two transactions when the file has endpoints.
 - Evidence: `pnpm agent:register --site http://localhost:3100 --broadcast` with a throwaway unfunded key, 14:17:30–14:17:34 UTC: the dry run above, then three refusals (site not https, no Transaction API simulation, 0 BNB) and "nothing signed".
+
+## 2026-10-03 04:21 UTC — [wallet][docs] One parameter name, two conventions: `excludeRiskToken` is `true` to exclude on one balance endpoint and `"0"` to exclude on its sibling
+- Goal: read the house wallet's USDT and BNB through the Wallet API beside the RPC read (DECISIONS D-34), with risk-flagged tokens left at the API's default.
+- Expected: one meaning for one parameter name across the Wallet API's two balance endpoints.
+- Actual: `GET /api/v1/dex/balance/all-token-balances-by-address`: "Set `excludeRiskToken=true` to filter out airdrop-risk and honeypot tokens" (a boolean). `POST /api/v1/dex/balance/token-balances-by-address`: "Set `excludeRiskToken="0"` to exclude risk-flagged tokens (default), or `"1"` to include them" (a string enum, `GetTokenBalancesByAddressExcludeRiskTokenEnum` `EXCLUDE_RISK_TOKEN_0 = "0"`, `EXCLUDE_RISK_TOKEN_1 = "1"` in the connector). On the second endpoint, `excludeRiskToken: "1"` includes the risk tokens: the value reads the opposite of the name, and a client that sends `true` or `1` there by analogy with the first endpoint gets a type it does not document.
+- Docs: llms-full.txt § API Reference › Wallet API, "Get All Token Balances by Address" (L8489) and "Get Token Balances by Address" (L8497); `@binance-web3/wallet` 12.3.0 `index.d.ts` (`WalletApiGetTokenBalancesByAddress.excludeRiskToken`: `"0"=exclude (default), "1"=include`).
+- Time lost: 0 (found while writing the call; not measured live yet).
+- Workaround: `packages/binance/src/wallet.ts` sends no `excludeRiskToken` and asks only for USDT and BNB by address, so the default does not matter to us.
+- Ask: one convention for both endpoints (a boolean named for what `true` does), or rename the enum to `riskTokens: "exclude" | "include"`.
+- Evidence: the quotes above (2026-10-03 04:21 UTC).
+
+## 2026-10-03 04:26 UTC — [defi][docs] Follow-up to 10-01 16:52: the changelog now carries the 40470 → 40490 renumbering, and the DeFi error page no longer lists 40470
+- Goal: refresh the docs snapshot (`scripts/fetch-docs.sh`, 10-03 04:09 UTC) for the Wallet API work and keep the code map's docs test honest.
+- Expected: the DeFi page as on 10-01 (40470 named only in 40490's row as the v1.0 code).
+- Actual: `taxonomy.test.ts` "every defi-api code we map is on that page" failed on the new snapshot: `expected [ '40470' ] to deeply equal []`. The DeFi page's tables now have a row for `40490` only, still with "v1.0 returned `40470` for the same condition — v1.1 renumbers it to `40490`". `/en/dev-docs/products/others/changelog.md`, entry "2026-09-30", "DeFi API — Multi-Chain EVM Expansion": "Renumbered the data-query error code `40470` to `40490` (same semantics). Update any branching on the old code." — what our 10-01 entry asked for. We did not keep the 10-01 snapshot, so we cannot show whether the line was added after 10-01 or missed by us then; the changelog still has no "v1.1" label.
+- Docs: llms-full.txt (10-03 04:09 UTC) — § Change Log › 2026-09-30, § DeFi API › Error Codes › DeFi Data Query Errors.
+- Time lost: 0 (the docs test caught it).
+- Workaround: none needed: `packages/binance/src/taxonomy.ts` already maps both codes to "not found"; the test now names 40470 as kept on purpose (measured live on 09-23 18:00) instead of expecting it on the page.
+- Ask: version labels in the changelog that match the "v1.1" the error page cites.
+- Evidence: the test output and quotes above; `docs/vendor/` is not committed (re-fetch with `scripts/fetch-docs.sh`).

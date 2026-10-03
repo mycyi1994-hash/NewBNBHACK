@@ -408,6 +408,49 @@ export async function listReceipts(
     .limit(filter.limit ?? 50);
 }
 
+/** The Wallet API's view of a receipt's transaction (DECISIONS D-34); the BSC receipt stays the record. */
+export type ReceiptIndex =
+  | {
+      state: 'indexed';
+      txStatus: 'success' | 'fail' | 'pending';
+      /** Fee in BNB, as the Wallet API wrote it. */
+      txFee: string | null;
+      height: string | null;
+      /** Whether its final status matches the BSC receipt's; null while it says pending. */
+      agrees: boolean | null;
+      checkedAt: string;
+    }
+  | { state: 'not_indexed'; tries: number; checkedAt: string };
+
+/**
+ * Receipts the Wallet API has not reported final yet — never checked, not indexed yet, or pending —
+ * created since `since`, newest first: what the worker asks about on its next tick.
+ */
+export async function receiptsToIndex(db: Db, since: Date, limit = 5): Promise<ReceiptRow[]> {
+  return db
+    .select()
+    .from(receipts)
+    .where(
+      and(
+        gte(receipts.createdAt, since.toISOString()),
+        sql`(${receipts.indexed} is null or ${receipts.indexed}->>'state' = 'not_indexed' or ${receipts.indexed}->>'txStatus' = 'pending')`,
+      ),
+    )
+    .orderBy(desc(receipts.createdAt), desc(receipts.id))
+    .limit(limit);
+}
+
+export async function recordReceiptIndex(
+  db: Db,
+  txHash: string,
+  index: ReceiptIndex,
+): Promise<void> {
+  await db
+    .update(receipts)
+    .set({ indexed: index })
+    .where(eq(receipts.txHash, txHash.toLowerCase()));
+}
+
 export async function insertGuardianEvent(
   db: Db,
   row: typeof guardianEvents.$inferInsert,

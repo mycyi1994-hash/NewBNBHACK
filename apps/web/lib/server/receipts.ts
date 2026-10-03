@@ -31,6 +31,8 @@ export async function receiptFeed(db: Db, limit: number) {
       amounts: r.amounts,
       broadcastVia: r.broadcastVia,
       status: r.status,
+      /** The Wallet API's view of the transaction (D-34), as the worker stored it; null until read. */
+      indexed: r.indexed ?? null,
       at: isoTime(r.createdAt),
       outcome: cycle?.outcomeKind ?? null,
       why: cycle?.whyKey ? { key: cycle.whyKey, params: cycle.whyParams } : null,

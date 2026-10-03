@@ -64,7 +64,6 @@ export {
   getQuote,
   getRwaPrices,
   getTokenPrices,
-  getTransactionDetail,
   listDeFiInvestments,
   simulateCall,
 } from './endpoints.js';
@@ -78,5 +77,11 @@ export type {
   RwaPrice,
   SwapBuild,
   SwapTx,
-  TransactionDetail,
 } from './endpoints.js';
+export {
+  getTokenBalances,
+  getTransactionDetail,
+  parseTokenBalances,
+  parseTransactionDetail,
+} from './wallet.js';
+export type { IndexedTransaction, IndexedTxStatus, WalletTokenBalance } from './wallet.js';

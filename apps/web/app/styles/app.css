@@ -297,6 +297,23 @@ code {
   margin: 0 0 18px;
 }
 
+/* A receipt link with the Wallet API's word on it underneath (DECISIONS D-34). */
+.receipt-ref {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.receipt-index {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+:is(.receipt-panel, .receipt-document) .receipt-index {
+  color: #626c78;
+}
+
 .text-link {
   display: inline-flex;
   align-items: center;

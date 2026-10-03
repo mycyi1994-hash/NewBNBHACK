@@ -28,6 +28,24 @@ export interface ActivityReceipt {
   at: string;
   /** USDT this transaction moved, from the chain's Transfer logs when recorded; null for approvals. */
   usd: string | null;
+  /**
+   * The Wallet API's final status of the transaction (D-34), once the worker has read it: whether it
+   * agrees with the BSC receipt, and the fee it reports. Null until then (or while it says pending).
+   */
+  indexed: { txStatus: 'success' | 'fail'; txFee: string | null; agrees: boolean } | null;
+}
+
+/** The stored Wallet API index, when it is final and well formed; null otherwise. */
+function indexOf(value: unknown): ActivityReceipt['indexed'] {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (v.state !== 'indexed' || (v.txStatus !== 'success' && v.txStatus !== 'fail')) return null;
+  if (typeof v.agrees !== 'boolean') return null;
+  return {
+    txStatus: v.txStatus,
+    txFee: typeof v.txFee === 'string' && /^\d+(\.\d+)?$/.test(v.txFee) ? v.txFee : null,
+    agrees: v.agrees,
+  };
 }
 
 export interface ActivityPlan {
@@ -100,6 +118,7 @@ function receiptOf(row: ReceiptRow): ActivityReceipt {
     status: row.status,
     at: isoTime(row.createdAt),
     usd: receiptUsd(row.kind, row.amounts),
+    indexed: indexOf(row.indexed),
   };
 }
 

@@ -12,6 +12,7 @@ import {
   insertPlan,
   openCycle,
   recordReceiptFacts,
+  recordReceiptIndex,
   updateCycle,
   type InstrumentRow,
   type PlanInsert,
@@ -244,6 +245,54 @@ describe.skipIf(!webTestUrl)('activity reads', () => {
     if (!row) throw new Error(`plan ${id} missing`);
     return row;
   }
+
+  it("shows the Wallet API's word on a receipt only once it is final and well formed (D-34)", async () => {
+    const house = await plan();
+    const buy = await bought(house, minutesAgo(3), '5', null);
+    const receiptsOf = async () =>
+      (await activityFeed(db, 500)).find((item) => item.cycleId === buy)?.receipts ?? [];
+    const [approve, swap] = await receiptsOf();
+    if (!approve || !swap) throw new Error('the buy has no receipts');
+    expect([approve.indexed, swap.indexed]).toEqual([null, null]);
+
+    const checkedAt = new Date().toISOString();
+    await recordReceiptIndex(db, swap.txHash, {
+      state: 'indexed',
+      txStatus: 'success',
+      txFee: '0.0000123',
+      height: '62000000',
+      agrees: true,
+      checkedAt,
+    });
+    // Still pending at the Wallet API: nothing to say yet.
+    await recordReceiptIndex(db, approve.txHash, {
+      state: 'indexed',
+      txStatus: 'pending',
+      txFee: null,
+      height: null,
+      agrees: null,
+      checkedAt,
+    });
+    expect((await receiptsOf()).map((r) => r.indexed)).toEqual([
+      null,
+      { txStatus: 'success', txFee: '0.0000123', agrees: true },
+    ]);
+
+    // A disagreement is shown as one; a fee that is not a number is left out.
+    await recordReceiptIndex(db, approve.txHash, {
+      state: 'indexed',
+      txStatus: 'fail',
+      txFee: '<b>1</b>',
+      height: null,
+      agrees: false,
+      checkedAt,
+    });
+    await recordReceiptIndex(db, swap.txHash, { state: 'not_indexed', tries: 2, checkedAt });
+    expect((await receiptsOf()).map((r) => r.indexed)).toEqual([
+      { txStatus: 'fail', txFee: null, agrees: false },
+      null,
+    ]);
+  });
 
   it('counts every recorded buy and receipt', async () => {
     const before = await activityTotals(db);

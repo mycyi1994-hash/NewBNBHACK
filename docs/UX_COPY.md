@@ -516,3 +516,10 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 
 - `agent.card`: The agent's ERC-8004 registration file
 - `agent.registered`: Registered on BNB Smart Chain as ERC-8004 agent #{id}
+
+### 7.10 The Wallet API on receipts (DECISIONS D-34)
+> Author: coding agent (10/3). One small line under a receipt link in the activity feed, once the worker has read the transaction's final status from the Binance Web3 Wallet API (transaction-detail-by-txhash) after its BSC receipt settled it. `{status}` is the API's own word (success or fail), quoted; `{fee}` is the fee it reports in BNB. The BSC receipt stays the record. Drafts until a person confirms them.
+
+- `receipt.indexed.agrees`: Binance Web3 API confirms the same result
+- `receipt.indexed.fee`: fee {fee} BNB
+- `receipt.indexed.differs`: Binance Web3 API says "{status}" — the BSC receipt is the record

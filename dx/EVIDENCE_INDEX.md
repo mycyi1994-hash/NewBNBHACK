@@ -19,6 +19,7 @@ Key issued → first signed call: 14 minutes. Not recorded yet (people): the tim
 
 - All 19 documentation entries of 09-23 to 09-26 re-checked on 10-01, each with its public URL, section and current text: 13 still present, 4 found on the API reference (not proven to be changes), 2 changed — LOG 10-01 16:40.
 - New on 10-01: 40314's "confirmation flag" that the Broadcast body does not have; 40102 with two messages; a "v1.1" renumbering missing from the changelog — LOG 10-01 16:52 (three entries).
+- 10-03: the changelog's 2026-09-30 entry now has the 40470 → 40490 renumbering and the DeFi page lists only 40490 (still no "v1.1" label) — LOG 10-03 04:26.
 - Others: multiplier functions not in the docs (LOG 09-24 00:41); the Uniswap v4 addresses page rate-limits a script (LOG 09-30 02:08); `baw` prints tokenized stocks in shares, undocumented (LOG 10-01 05:12); the public RWA list repeats tickers per chain (LOG 10-01 06:04).
 
 ## 3. API pitfalls
@@ -32,6 +33,7 @@ Key issued → first signed call: 14 minutes. Not recorded yet (people): the tim
 | quoteId lifetime (docs match) | `/swap` at once: 96 ms; 35 s later: 40401 | LOG 09-24 00:52 |
 | Error HTTP status differs by page | HTTP 200 for every Market error vs 401/429 at the gateway | LOG 09-23 17:58 |
 | Connector vs docs | header names, `simulateTransactions` requires three txs, a signed GET body | LOG 09-23 17:51, 17:53 (two) |
+| One parameter, two conventions | `excludeRiskToken`: `true` excludes on GET all-token-balances, `"0"` excludes (and `"1"` includes) on POST token-balances | LOG 10-03 04:21 |
 | Latency | Frankfurt 2–4× Korea; per-endpoint p50/p95 come from `pnpm dx:metrics` on the production database (`dx/metrics.md`, not generated yet) | LOG 09-24 02:31 |
 
 ## 4. AI stack feedback
