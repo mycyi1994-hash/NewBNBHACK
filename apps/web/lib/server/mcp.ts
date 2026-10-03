@@ -30,7 +30,7 @@ export { MCP_PROTOCOL_VERSIONS };
 export const SERVER_INFO = { name: 'yieldvest', title: 'Yieldvest (read-only)', version: '1.0.0' };
 
 export const INSTRUCTIONS =
-  'Yieldvest buys tokenized US stocks (bStocks and Ondo tokens on BNB Smart Chain) with the interest of a USDT deposit, only in the US regular session, under hard caps, with an on-chain receipt and a one-sentence reason for every action. These tools are read-only: they read what the Yieldvest worker recorded (a market tape every 10 minutes, the Venus rate, the guardian) and run its deterministic rules. None of them creates a plan, signs or moves funds. Every answer carries its data state (LIVE, STALE with a time, UNAVAILABLE with a reason): say it whenever you quote a number. Nothing here is investment advice; never choose an issuer for the user. To act, the user runs the Yieldvest Wallet Skill with their own Binance Agentic Wallet.';
+  'Yieldvest buys tokenized US stocks (bStocks and Ondo tokens on BNB Smart Chain) with the interest of a USDT deposit, only in the US regular session, under hard caps, with an on-chain receipt and a one-sentence reason for every action. These tools are read-only: they read what the Yieldvest agent recorded (market data every 10 minutes, the Venus rate, the guardian’s checks) and run its deterministic rules. None of them creates a plan, signs or moves funds. Every answer carries its data state (LIVE, STALE with a time, UNAVAILABLE with a reason): say it whenever you quote a number. Nothing here is investment advice; never choose an issuer for the user. To act, the user runs the Yieldvest Wallet Skill with their own Binance Agentic Wallet.';
 
 export interface ToolContext {
   db: Db | undefined;
@@ -59,7 +59,7 @@ export const TOOLS: readonly Tool[] = [
     name: 'market_status',
     title: 'US session and token status',
     description:
-      'The US equity session by Yieldvest’s NYSE calendar (regular, pre, post, overnight, weekend, holiday), the next regular open, and for every registered token: issuer, symbol, full contract address, status reason code, on-chain price per share, the US stock price and the gap between them, and the venue minimum. From the latest tape run, with its data state.',
+      'The US equity session by Yieldvest’s NYSE calendar (regular, pre, post, overnight, weekend, holiday), the next regular open, and for every registered token: issuer, symbol, full contract address, status reason code, on-chain price per share, the US stock price and the gap between them, and the venue minimum. From the latest market recording, with its data state.',
     input: z.object({}),
     run: async (_args, db, ctx) => ok(await marketStatus(db, ctx.now)),
   }),
@@ -67,7 +67,7 @@ export const TOOLS: readonly Tool[] = [
     name: 'compare_issuers',
     title: 'bStocks vs Ondo for one stock',
     description:
-      'The same US stock from its two issuers, side by side, from the latest tape run: the shares each $5 / $50 / $500 quote was worth, the price per share in that quote, price impact or the error code it was refused with, token status and venue minimum, and per size which quote was worth more shares. Facts with their time; the user chooses.',
+      'The same US stock from its two issuers, side by side, from the latest market recording: the shares each $5 / $50 / $500 quote was worth, the price per share in that quote, price impact or the error code it was refused with, token status and venue minimum, and per size which quote was worth more shares. Facts with their time; the user chooses.',
     input: z.object({ ticker: PreflightQuery.shape.ticker }),
     run: async (args, db, ctx) => {
       const comparison = await compareIssuers(db, args.ticker, ctx.now);
@@ -78,7 +78,7 @@ export const TOOLS: readonly Tool[] = [
     name: 'preflight',
     title: 'Would Yieldvest buy this right now?',
     description:
-      'Runs Yieldvest’s deterministic decision engine (decideCycle) on the latest tape for a fixed-amount plan that does not exist yet, once per issuer: buy (with the amount and about how many shares), wait (with when), or skip, with the one-line reason the agent would record. Lists every rule’s input against its limit — data age, guardian, session, amount vs minimum, token status, price gap, price impact. Creates nothing.',
+      'Runs Yieldvest’s deterministic decision rules on the latest market recording for a fixed-amount plan that does not exist yet, once per issuer: buy (with the amount and about how many shares), wait (with when), or skip, with the one-line reason the agent would record. Lists every rule’s input against its limit — data age, guardian, session, amount vs minimum, token status, price gap, price impact. Creates nothing.',
     input: PreflightQuery,
     run: async (args, db, ctx) => {
       const minBuyUsd = String(ctx.config.caps.minBuyUsd);

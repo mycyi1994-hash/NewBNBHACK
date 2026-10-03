@@ -59,7 +59,8 @@ export async function ownedPlan(
   caller: Caller | undefined,
   planId: string,
 ): Promise<PlanRow | Response> {
-  if (!caller) return problem(401, 'unauthorized', 'a judge session or a skill token is required');
+  if (!caller)
+    return problem(401, 'unauthorized', 'an invite session or a skill token is required');
   const plan = await getPlan(db, planId);
   const owns =
     plan &&

@@ -14,7 +14,7 @@ export async function GET(): Promise<Response> {
   if (!db) return unavailable('no DATABASE_URL');
   try {
     const tape = await tapeView(db, new Date());
-    if (tape.state === 'UNAVAILABLE') return unavailable('no tape samples yet');
+    if (tape.state === 'UNAVAILABLE') return unavailable('no market data recorded yet');
     return json(tape);
   } catch {
     return unavailable('database error');

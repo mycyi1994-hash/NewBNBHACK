@@ -136,7 +136,7 @@ function NowPanel({
             <StateBadge
               key="data"
               t={t}
-              data={tapeState(preflight.data, 'no tape samples yet')}
+              data={tapeState(preflight.data, 'no market data recorded yet')}
               now={now}
             />,
           ],

@@ -107,30 +107,30 @@ async function judgeFlow(run: Run, code: string, ticker: string) {
   const { page, base, log, check } = run;
   await page.goto(`${base}/invest`, { waitUntil: 'networkidle' });
   await check('invest, no code yet');
-  await page.getByRole('textbox', { name: 'Enter your judge code' }).fill(code);
+  await page.getByRole('textbox', { name: 'Enter your invite code' }).fill(code);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('button', { name: 'Dry-run it' }).waitFor({ timeout: STEP_MS });
+  await page.getByRole('button', { name: 'Test it on-chain' }).waitFor({ timeout: STEP_MS });
   log('code accepted, the sandbox limit is shown');
 
   await page.getByRole('button', { name: ticker }).first().click();
   const planId = await planCreatedBy(run, () =>
-    page.getByRole('button', { name: 'Dry-run it' }).click(),
+    page.getByRole('button', { name: 'Test it on-chain' }).click(),
   );
   log(`plan ${planId} created for ${ticker}`);
 
   const dialog = page.getByRole('dialog');
-  await dialog.getByText('the exact approval passes').waitFor({ timeout: STEP_MS });
-  await check('dry-run dialog');
-  log('dry run on chain: the exact approval passes, the buy is checked again before signing');
+  await dialog.getByText('the exact-amount approval passes').waitFor({ timeout: STEP_MS });
+  await check('on-chain test dialog');
+  log('tested on-chain: the exact-amount approval passes, the buy is tested again before signing');
 
   await dialog.getByRole('button', { name: 'Buy now' }).click();
-  await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
+  await dialog.getByText('This site runs in preview mode').waitFor({ timeout: STEP_MS });
   await check('done dialog');
-  // A dry run starts nothing: the dialog must not promise seven days of buying.
+  // A preview starts nothing: the dialog must not promise seven days of buying.
   if ((await dialog.getByText('keeps running for 7 days').count()) > 0) {
-    throw new Error('the done dialog says the plan keeps running after a dry run');
+    throw new Error('the done dialog says the plan keeps running after a preview');
   }
-  log('buy now: the worker ran the cycle, the server says it only simulates');
+  log('buy now: the agent ran the cycle, the site says it runs in preview mode');
 
   await page.goto(`${base}/plans/${planId}`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Stop this plan' }).click();
@@ -200,7 +200,7 @@ async function yieldFlow(run: Run, venus: ReturnType<typeof withVenus>) {
 
   const planId = await depositDryRun(
     run,
-    'The deposit is dry-run again right after it, before anything is signed',
+    'The deposit is tested again right after it, before anything is signed',
     'deposit',
   );
   log(
@@ -214,7 +214,7 @@ async function yieldFlow(run: Run, venus: ReturnType<typeof withVenus>) {
     await turnOnYield(page);
     const failed = await depositDryRun(
       run,
-      'The dry-run failed: execution reverted: mint is paused',
+      'The on-chain test failed: execution reverted: mint is paused',
       'failed deposit',
     );
     log(`deposit of plan ${failed}: its failing dry run is shown as a failure`);
@@ -320,7 +320,7 @@ async function featureFlow(run: Run, ticker: string) {
   const eyebrow = (await now.locator('.eyebrow').innerText()).trim();
   const title = (await now.locator('h3').innerText()).trim();
   const answer = (await now.locator('.now-verdict .pill').innerText()).trim();
-  if (!/the agent, right now/i.test(eyebrow) || title !== `Would it buy ${ticker} now?`) {
+  if (!/^right now$/i.test(eyebrow) || title !== `Would it buy ${ticker} now?`) {
     throw new Error(`the first screen says "${eyebrow}" / "${title}", not the agent's verdict`);
   }
   if (!/^Would (buy about|wait|skip|stop)/.test(answer)) {

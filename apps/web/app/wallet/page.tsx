@@ -136,7 +136,11 @@ function Holdings({
         ) : null}
         <p className="method-note wallet-prices">
           {t('wallet.prices')}{' '}
-          <StateBadge t={t} data={tapeState(view.prices, 'no tape samples yet')} now={now} />
+          <StateBadge
+            t={t}
+            data={tapeState(view.prices, 'no market data recorded yet')}
+            now={now}
+          />
         </p>
         <p className="method-note">{t('wallet.note')}</p>
       </section>

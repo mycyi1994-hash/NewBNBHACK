@@ -108,7 +108,8 @@ export function estimateQuote(
     .sort((a, b) => a.sizeUsd - b.sizeUsd);
   const row = candidates.find((r) => toUnits(String(r.sizeUsd), 18) >= spend) ?? candidates.at(-1);
   const base = { instrumentId, spendUsd, receivedAt: now.toISOString() };
-  if (!row) return { ...base, errorCode: 'NO_TAPE', errorMsg: 'no tape quote for this instrument' };
+  if (!row)
+    return { ...base, errorCode: 'NO_TAPE', errorMsg: 'no recorded quote for this instrument' };
   if (row.errorCode) {
     return { ...base, errorCode: row.errorCode, errorMsg: row.errorMsg ?? 'recorded quote error' };
   }

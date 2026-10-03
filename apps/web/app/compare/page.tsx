@@ -172,7 +172,7 @@ export default async function ComparePage({ searchParams }: { searchParams: Sear
     return empty(comparison.ok ? 'registry empty' : comparison.reason);
   }
   const view = comparison.value;
-  const data = tapeState(view.data, 'no tape samples yet');
+  const data = tapeState(view.data, 'no market data recorded yet');
 
   return (
     <>

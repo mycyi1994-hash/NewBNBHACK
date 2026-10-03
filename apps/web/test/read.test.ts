@@ -103,7 +103,7 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-06T15:00:00.000Z') });
     const empty = await call(tapeLatest, { path: '/api/tape/latest' });
     expect(empty.status).toBe(503);
-    expect(empty.body).toEqual({ state: 'UNAVAILABLE', reason: 'no tape samples yet' });
+    expect(empty.body).toEqual({ state: 'UNAVAILABLE', reason: 'no market data recorded yet' });
 
     const old = minutesAgo(25);
     await writeTape(db, instrument, old);

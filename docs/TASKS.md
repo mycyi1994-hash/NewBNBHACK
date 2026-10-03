@@ -603,6 +603,10 @@ The seven items the agent proposed on 10/3 for before the deploy, all approved b
   - Checked and sound (the review's list): caps and reservations, exact approvals, simulation of the exact signed call, one signer at a time, crash recovery, receipt amounts from Transfer logs, the live gates (typed `y`), LIVE_TEST's steps.
   - Gates: `pnpm typecheck` 0, `pnpm lint` 0, `pnpm test` 76 files, 802 passed (with Postgres and the docs snapshot).
 
+### PD-08 Copy for real customers (human request 10/3, DECISIONS D-35) · Criterion: UX
+- [x] (10/3) 47 copy keys rewritten so the product reads as one a customer buys, not a hackathon entry: invite codes, "Test it on-chain", "preview mode", tokens not pieces, "our team" for review holds, no internal names; UX_COPY §2 gains the three words; API error messages, OpenAPI summaries, MCP instructions and the "no market data recorded yet" reasons follow; README and DEMO.md speak the same words.
+  - Evidence: `pnpm lint:copy` 563 keys, 0 problems; `pnpm test` 76 files, 804 passed; `pnpm e2e` PASS at 375 and 1280 px with the new button and dialog texts ("Enter your invite code", "Test it on-chain", "the exact-amount approval passes", "This site runs in preview mode", "The on-chain test failed: …").
+
 ---
 
 ## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]

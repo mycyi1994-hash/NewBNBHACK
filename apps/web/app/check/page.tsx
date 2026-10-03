@@ -248,7 +248,11 @@ function Shared({
     <Panel eyebrow={t('check.shared.title')} title={t('check.rules.title')} badge={false}>
       {answer ? (
         <>
-          <StateBadge t={t} data={tapeState(answer.data, 'no tape samples yet')} now={now} />
+          <StateBadge
+            t={t}
+            data={tapeState(answer.data, 'no market data recorded yet')}
+            now={now}
+          />
           <Ledger
             rows={answer.checks.map((check) => [
               ruleText(t, check),

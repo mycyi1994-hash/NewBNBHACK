@@ -1,14 +1,14 @@
 # Yieldvest — Interest becomes ownership.
 
-> **In one line:** an agent that keeps your principal in a USDT savings pool (Venus on BNB Smart Chain) and buys tokenized US stocks (bStocks / Ondo) with the interest — or a fixed amount in safe mode — **only during the US regular session**, under hard caps, with an on-chain receipt and a one-sentence reason for every action.
+> **Own US stocks with the interest your dollars earn.** Yieldvest keeps your USDT in an interest account (Venus on BNB Smart Chain) and buys tokenized US stocks (bStocks / Ondo) with the interest — or a fixed amount you choose — **only during US market hours**, within hard limits, with an on-chain receipt and a one-sentence reason for every action. Your principal stays put; you can see and check every step.
 
-An entry for BNB Hack: Tokenized Stocks Edition. Build 9/23 → internal submission 10/9 → deadline 10/11 12:00 UTC.
+**Live:** filled in after deploy · **Video:** M4-02 · **DX report:** M4-01 · **Try it:** with an invite code (judges: the code in the submission form)
 
-**Live:** filled in after deploy · **Video:** M4-02 · **DX report:** M4-01 · **Judge Mode:** the judge code in the submission form
+Built for BNB Hack: Tokenized Stocks Edition (deadline 10/11 12:00 UTC). Everything below describes the product as it runs, and how to check it.
 
 ## 60-second summary
 
-The principal stays in a USDT interest account (Venus), and pieces of tokenized US stocks are bought **only with the interest (or a set contribution)** and **only during the US regular session**. Safe mode (contribution only) is the default. Decisions are made by decision rules (`packages/core` `decideCycle`, 100% coverage), not by a model, and every buy is signed **only after a dry run through the Binance Web3 Transaction API**. Every cycle leaves a receipt (BscScan) and a one-line reason (`why.*`), and the reasons it cannot buy (market closed, price gap, limits, guardian) are shown as they are, too.
+The principal stays in a USDT interest account (Venus), and tokenized US stocks are bought **only with the interest (or a set contribution)** and **only during the US regular session**. Safe mode (contribution only) is the default. Decisions are made by decision rules (`packages/core` `decideCycle`, 100% coverage), not by a model, and every purchase is signed **only after it passes an on-chain test (a simulation) through the Binance Web3 Transaction API**. Every cycle leaves a receipt (BscScan) and a one-line reason (`why.*`), and the reasons it cannot buy (market closed, price gap, limits, guardian) are shown as they are, too.
 
 ## Not on the organizers' ideas list
 
@@ -20,10 +20,10 @@ The official "Ideas to Build" include "Auto-DCA and rebalancing" and "Buy your f
 - **A Uniswap v4 hook priced by the NYSE session**, so LPs of tokenized stocks are paid for the overnight gap risk only these assets carry (`packages/rwa-lp`, tested on a BSC fork, not deployed).
 - **Check before money moves.** `/check` runs the agent's own engine on a plan that does not exist yet and shows each rule it read against its limit; `/compare` puts the two tokens of one US share — bStocks and Ondo — side by side, in shares per dollar. Both are MCP tools too, so any assistant can ask ([below](#before-you-buy-and-after-check-compare-project-hold)).
 
-## 3-minute trial (Judge Mode, `/invest` — the old address `/judge` also leads here)
+## 3-minute trial with an invite code (`/invest`; for judges, this is Judge Mode — `/judge` also leads here)
 
-**Try it** or the Invest tab → code → stock (NVDA, etc.) → Contribution only · $5 · regular session → **Dry-run it** (the worker simulates it on-chain) → **Buy now** → a receipt or "Waiting" (if the market is closed, it buys automatically at the next open +2 min) → **Stop this plan**.
-1 code = up to $5, and the money comes from Yieldvest's house wallet. The plan ends automatically after 7 days.
+**Try it** or the Invest tab → invite code → stock (NVDA, etc.) → Contribution only · $5 · regular session → **Test it on-chain** (the agent simulates it through the Transaction API) → **Buy now** → a receipt or "Waiting" (if the market is closed, it buys automatically at the next open +2 min) → **Stop this plan**.
+1 invite = up to $5 of real purchases, paid for and held by Yieldvest's own wallet. The plan ends automatically after 7 days.
 
 ## Before you buy, and after: check, compare, project, hold
 
@@ -154,7 +154,7 @@ skills/yieldvest    Wallet Skill (SKILL.md + references)
 
 ## Safety measures (summary — details in [`docs/SECURITY.md`](docs/SECURITY.md))
 
-- Hard caps are read from one place in env and enforced by code: $25 per tx and $50 per day (house), $5 per judge code. Spending is reserved in the ledger under a lock.
+- Hard caps are read from one place in env and enforced by code: $25 per tx and $50 per day (house), $5 per invite code. Spending is reserved in the ledger under a lock.
 - Exact-amount approvals only; calldata is decoded and verified before signing (a swap may only call the approved router); **no signature without a simulation SUCCESS**; if there is no receipt within 3 minutes, the outbox stays PENDING and new signing is blocked. Effects confirmed on chain are recorded exactly once, in one transaction together with the receipt — when the outcome is unclear, it does not guess but asks a human ([DECISIONS D-23](docs/DECISIONS.md)).
 - Guardian: Venus paused, TVL −30% in 24 hours, utilization 95%, USDT at 0.99 for 30 minutes → stop buying / redeem everything (in live, only when the simulation passes).
 - Every data block is one of Live / n min old / Unavailable (reason). It does not make up numbers.
@@ -169,11 +169,11 @@ skills/yieldvest    Wallet Skill (SKILL.md + references)
 **With Docker, nothing else to install** (simulate mode: nothing is signed, no wallet key is used):
 
 ```bash
-docker compose up --build    # http://localhost:3000 · judge code LOCAL-JUDGE
+docker compose up --build    # http://localhost:3000 · invite code LOCAL-JUDGE
 docker compose down -v       # stop and delete the local database
 ```
 
-Postgres, migrations and seed, the web app and the worker start together (`compose.yaml`, `Dockerfile.local`). Without a Binance Web3 API key every screen says what it cannot show and why, and `/api/judge/smoke` shows the RPC and the database green and the rest red with its reason (checked 10/1). With `BINANCE_WEB3_API_KEY` and `BINANCE_WEB3_API_SECRET` in your environment the worker records live quotes and market status every 10 minutes. Judge Mode's dry runs also need a house wallet, which this setup leaves out on purpose; the whole Judge Mode flow runs in `pnpm e2e` (below) and on the live site.
+Postgres, migrations and seed, the web app and the worker start together (`compose.yaml`, `Dockerfile.local`). Without a Binance Web3 API key every screen says what it cannot show and why, and `/api/judge/smoke` shows the RPC and the database green and the rest red with its reason (checked 10/1). With `BINANCE_WEB3_API_KEY` and `BINANCE_WEB3_API_SECRET` in your environment the worker records live quotes and market status every 10 minutes. The trial's on-chain tests also need a house wallet, which this setup leaves out on purpose; the whole trial flow runs in `pnpm e2e` (below) and on the live site.
 
 **With pnpm:**
 

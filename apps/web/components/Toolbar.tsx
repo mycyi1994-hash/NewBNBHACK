@@ -18,7 +18,7 @@ async function tapeData(now: Date): Promise<DataState> {
   if (!db) return { state: 'UNAVAILABLE', reason: 'no database' };
   const tape = await settle('database', () => tapeView(db, now));
   if (!tape.ok) return { state: 'UNAVAILABLE', reason: tape.reason };
-  return tapeState(tape.value, 'no tape yet');
+  return tapeState(tape.value, 'no market data recorded yet');
 }
 
 export async function Toolbar({

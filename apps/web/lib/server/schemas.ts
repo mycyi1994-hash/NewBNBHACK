@@ -33,7 +33,7 @@ const txHash = z
   .describe('BSC transaction hash');
 
 export const JudgeSessionBody = z.object({
-  code: z.string().trim().min(1).max(128).describe('Judge code from the submission page'),
+  code: z.string().trim().min(1).max(128).describe('Invite code'),
 });
 
 export const JudgePlanBody = z.object({
@@ -74,7 +74,7 @@ export const SkillPlanBody = z.object({
 export const RunBody = z.object({
   depositUsd: usdAmount
     .optional()
-    .describe('Yield plans only: the Venus deposit that starts the plan (at most the sandbox cap)'),
+    .describe('Yield plans only: the Venus deposit that starts the plan (at most the trial cap)'),
 });
 
 export const ReportRequest = z.object({
