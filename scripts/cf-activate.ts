@@ -244,12 +244,17 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  // From here on these codes are the Worker's: shown before anything else can end the run.
+  const codesLine = `Invite codes (put one in the submission form): ${inviteCodes.join('  ')}`;
+  console.log(codesLine);
+
   // wrangler exits 0 even when it read nothing from stdin: the Worker's own answer is the proof.
   console.log('Waiting for the new version to answer…');
   if (!(await rolledOut(target.url))) {
     console.log(
       'failed: the Worker still answers without a database. Check the secret names with ' +
-        '`npx wrangler secret list` in apps/web, then run this again.',
+        `\`npx wrangler secret list\` in apps/web and run pnpm smoke --url ${target.url} in a few ` +
+        'minutes; if it stays red, run this again (it writes new invite codes).',
     );
     return 1;
   }
@@ -257,7 +262,7 @@ async function main(): Promise<number> {
   console.log(
     [
       '',
-      `Invite codes (put one in the submission form): ${inviteCodes.join('  ')}`,
+      codesLine,
       `Next: set the repository variable YIELDVEST_APP_URL to ${target.url} (Settings → Secrets and variables → Actions) for the 30-minute monitor,`,
       `then pnpm ui:check --url ${target.url} and pnpm qa:check --url ${target.url}.`,
     ].join('\n'),
