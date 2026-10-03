@@ -90,7 +90,7 @@ Execution mode: `EXECUTION_MODE=simulate` (the default) signs nothing. `live` si
 ## 6. Deploy
 
 - Worker: `fly deploy -a yieldvest-agent` (the Dockerfile fails the build if `.env*` is present). After the deploy, check the config-validation line in the log.
-- Web: Vercel (`apps/web`, build `pnpm --filter @yieldvest/web build`). env: `DATABASE_URL`, `SESSION_SECRET` (32 characters or more), `JUDGE_CODES`, `NEXT_PUBLIC_APP_URL`. The web holds no house key and no API key.
+- Web: **Cloudflare Workers** since 10/3 (DECISIONS D-36, §6.3); Vercel stays the fallback (`apps/web`, build `pnpm --filter @yieldvest/web build`). env: `DATABASE_URL`, `SESSION_SECRET` (32 characters or more), `JUDGE_CODES` (the invite codes), `NEXT_PUBLIC_APP_URL`. The web holds no house key and no API key.
 - Always after a deploy: `pnpm smoke --url https://<web>`, `pnpm ui:check --url https://<web>` (375/1440px, English only, no CSP violations), `pnpm qa:check --url https://<web>` (accessibility, keyboard, motion, phone performance).
 - After 10/9: hotfixes only.
 
@@ -117,6 +117,16 @@ The agent's identity on the BSC registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539
 5. Set `AGENT_ID=<id>` on the web (Vercel) and redeploy; `curl https://<web>/api/agent` now lists the registry entry, and `/skill` links to the agent.
 6. In the same worker shell: `AGENT_ID=<id> pnpm agent:register --site https://<web> --broadcast` → `y`: `setAgentURI` writes the file with its registry entry (the SDK's second phase).
 7. Check, any time: `AGENT_ID=<id> pnpm agent:register --site https://<web>` prints `current: agent <id> on chain holds the site's file byte for byte`. Then `unset AGENT_IDENTITY_PRIVATE_KEY` and leave the shell. Record the two tx hashes in TASKS M2-10.
+
+## 6.3 The web on Cloudflare Workers (D-36)
+
+The Worker is `yieldvest` (`apps/web/wrangler.jsonc`, built with the OpenNext adapter), at https://yieldvest.gana003.workers.dev. It signs nothing and holds no wallet or Binance key: it reads the database the Fly worker writes and queues jobs for it.
+
+1. Deploy (any machine with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in its environment): `pnpm --filter @yieldvest/web cf:deploy` (it builds first). Only the `yieldvest` Worker changes.
+2. Secrets, once, by a human — never in the repo or a chat: `cd apps/web && npx wrangler secret put DATABASE_URL` (the production Neon URL — the same database the worker writes), then `SESSION_SECRET` (32+ random characters) and `JUDGE_CODES` (the invite codes, comma-separated; the judges' code goes in the submission form). Or: Cloudflare dashboard → Workers & Pages → `yieldvest` → Settings → Variables and Secrets. The cap variables (`HOUSE_MAX_PER_TX_USD`, `SANDBOX_MAX_PER_PLAN_USD`, `DAILY_SPEND_CAP_USD`, `MIN_BUY_USD`, `MAX_PRINCIPAL_USD`) must equal the worker's (§4); unset, both use the defaults.
+3. Check: `pnpm smoke --url https://yieldvest.gana003.workers.dev` (database, worker, web3api, rpc, house, receipts and tape green or degraded with a reason), then `pnpm ui:check` and `pnpm qa:check` with the same `--url`.
+4. Then: the repository variable `YIELDVEST_APP_URL` (Settings → Secrets and variables → Actions) turns the 30-minute monitor on; fill in the README's "Live:" line; `pnpm agent:register --site https://yieldvest.gana003.workers.dev` (§6.2).
+5. Rollback: `npx wrangler rollback` in `apps/web` (the previous version), or `npx wrangler deployments list` to pick one.
 
 ## 7. Command list
 

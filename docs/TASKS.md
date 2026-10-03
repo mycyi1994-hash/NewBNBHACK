@@ -607,6 +607,15 @@ The seven items the agent proposed on 10/3 for before the deploy, all approved b
 - [x] (10/3) 47 copy keys rewritten so the product reads as one a customer buys, not a hackathon entry: invite codes, "Test it on-chain", "preview mode", tokens not pieces, "our team" for review holds, no internal names; UX_COPY §2 gains the three words; API error messages, OpenAPI summaries, MCP instructions and the "no market data recorded yet" reasons follow; README and DEMO.md speak the same words.
   - Evidence: `pnpm lint:copy` 563 keys, 0 problems; `pnpm test` 76 files, 804 passed; `pnpm e2e` PASS at 375 and 1280 px with the new button and dialog texts ("Enter your invite code", "Test it on-chain", "the exact-amount approval passes", "This site runs in preview mode", "The on-chain test failed: …").
 
+### PD-H Human steps before 10/9, ranked by what they add to the score (JUDGING §4, 10/3 draft)
+Everything below needs a person: money, keys, accounts or a human voice. The code for each is done and tested.
+1. **Live site on the production data** (Technical "does it run", UX deduction "the deployment is down"): the `yieldvest` Worker's secrets `DATABASE_URL`, `SESSION_SECRET`, `JUDGE_CODES` (RUNBOOK §6.3), then `pnpm smoke --url …`, the README "Live:" line and the `YIELDVEST_APP_URL` repository variable. About 15 minutes.
+2. **The $1 live test → first mainnet receipts** (Technical 5 → 7+, Creativity: the interest → stock loop on mainnet): money decisions REPLAN R1–R4, then `docs/LIVE_TEST.md` steps 0–9 in a US regular session (22:30–05:00 KST until 11/1); `pnpm receipts:table` fills the README table. About 2 hours.
+3. **The DX report** (25 %, empty until written): people write it from `dx/EVIDENCE_INDEX.md` (54 entries, findings, asks), `pnpm tape:summary` and `pnpm dx:metrics` on the production database (M4-01). About 4 hours.
+4. **The video** (≤ 4 min, the judge's minutes 1–5): `docs/DEMO.md` scenes on the live site (M4-02). About 2 hours.
+5. **Real Agentic Wallet use** (the "heavily weighted" Agentic Wallet prize): the Wallet Skill with a signed-in `baw` wallet, a $5 buy and its `/report` (R9; the one-line install is `npx skills add mycyi1994-hash/NewBNBHACK --skill yieldvest -g -a claude-code -y`).
+6. **The ERC-8004 registration** (Agent Studio prize): `pnpm agent:register --site <live URL> --broadcast` from its own wallet after step 1 (RUNBOOK §6.2).
+
 ---
 
 ## Weekly self-assessment (JUDGING §4) — 9/27, 10/4, 10/8 [HUMAN+agent]
