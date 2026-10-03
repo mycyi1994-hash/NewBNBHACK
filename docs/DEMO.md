@@ -7,7 +7,7 @@ Author: Minseo Kang. Filming 10/6~10/7, editing 10/8. Screen recording + narrati
 | Time | Screen | Narration gist |
 | --- | --- | --- |
 | 0:00–0:20 | Home. House plan card: principal $x, interest earned $y, n shares collected | "The principal stays put. Only the interest becomes stock. This plan is a record Yieldvest has been running on its own since late September." |
-| 0:20–1:30 | Judge Mode run-through: code → NVDA → safe mode $5 → preview (simulation sentence) → Buy now → receipt (BscScan) | "A judge gets all the way through with one code in under 3 minutes. Before executing, it dry-runs on the blockchain, shows it in plain words, and leaves a receipt and a reason." |
+| 0:20–1:30 | Invite trial run-through: invite code → NVDA → safe mode $5 → Test it on-chain (the simulation sentence) → Buy now → receipt (BscScan) | "Anyone gets all the way through with one invite code in under 3 minutes. Before executing, it tests the purchase on the blockchain, shows it in plain words, and leaves a receipt and a reason." |
 | 1:30–2:20 | Turn on yield mode → risk disclosure → deposit receipt → the house plan's cumulative interest chart → weekend DEFERRED record ("US market is closed. Retrying at Monday 22:30.") → Monday buy receipt | "Yield mode buys only with the interest from the Venus deposit. Because it buys only during the regular session, it waits over the weekend. It records why it waited, too." |
 | 2:20–3:10 | Claude Code screen: one-line skill install → "Start Yieldvest" → the assistant reads out the risk disclosure → `baw` preview and confirm → fill → `/report` | "The user's AI assistant executes through the Agentic Wallet. The server only decides; signing happens on the user's device." |
 | 3:10–3:40 | Guardian screen + corporate-action SKIPPED record + share count display (multiplier applied) | "The guardian watches for protocol anomalies, depegs and price gaps, and it also understands earnings restrictions and splits." |
@@ -36,9 +36,9 @@ Before filming, check two lines of the script against the repository on the day:
 Live: https://…  ·  Video (3:50): https://…  ·  DX report: docs/… · Judge Mode: code in submission form
 
 **60-second summary** Principal sits in a USDT interest account (Venus); only the interest automatically buys US stock tokens (bStocks/Ondo) during the regular session.
-Safe mode (contribution only) is the default. Every buy is dry-run through the Transaction API first and leaves a receipt and a one-line reason.
+Safe mode (contribution only) is the default. Every purchase is tested on-chain through the Transaction API first and leaves a receipt and a one-line reason.
 
-**3-minute trial** Home → [judge code] → stock → $5 → preview → Buy now → receipt → [Stop this plan]
+**3-minute trial** Home → [invite code] → stock → $5 → Test it on-chain → Buy now → receipt → [Stop this plan]
 
 **Record of Yieldvest's own runs** (auto-generated table: date · plan · outcome · amount · shares · receipt)
 

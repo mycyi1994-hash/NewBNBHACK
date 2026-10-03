@@ -255,8 +255,18 @@ describe.skipIf(!existsSync(DOCS))('code map vs the official error tables (docs 
     expect(listed.filter((code) => !documentedCodes(module).includes(code))).toEqual([]);
   });
 
+  /** Codes the page no longer lists that we keep on purpose, each with why. */
+  const retired: Partial<Record<ApiModule, Record<string, string>>> = {
+    // The 10/3 snapshot lists only 40490 for "not found"; its changelog (2026-09-30) says 40470 was
+    // renumbered to it. 40470 was measured live on 09-23: kept for a server still answering it.
+    'defi-transaction': { '40470': 'renumbered to 40490' },
+  };
+
   it.each(pages)('every %s code we map is on that page', (product, module) => {
     const listed = docCodes(product);
-    expect(moduleCodes(module).filter((code) => !listed.includes(code))).toEqual([]);
+    const kept = retired[module] ?? {};
+    expect(moduleCodes(module).filter((code) => !listed.includes(code) && !(code in kept))).toEqual(
+      [],
+    );
   });
 });

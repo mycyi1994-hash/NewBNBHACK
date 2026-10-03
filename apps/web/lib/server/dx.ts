@@ -4,28 +4,48 @@
  * All measured by the worker; each block states how.
  */
 import { summarizeCalls } from '@yieldvest/binance';
-import { isoTime, listApiCalls, listDxEvents, tapeSummary, type Db } from '@yieldvest/db';
+import {
+  isoTime,
+  listApiCalls,
+  listDxEvents,
+  TAPE_METHOD,
+  tapeSummary,
+  type Db,
+} from '@yieldvest/db';
+import { onWorkers } from './runtime';
 
 export const CALLS_METHOD =
   'every HTTP attempt the worker made to the Binance Web3 API (api_calls), latency measured around fetch';
-export const TAPE_METHOD =
-  'every 10 minutes the worker quotes $5/$50/$500 USDT → each registered token (never executed) and records the RWA status, token price and the independent US price (RWA Dynamic V2 stockInfo.price); gap = (token price ÷ multiplier) ÷ US price − 1, only where a US price existed';
+export { TAPE_METHOD };
 
 /**
  * These numbers are public and read up to 30 days of rows: each window is computed at most once a
- * minute per server instance, however often it is asked for.
+ * minute per server instance, however often it is asked for. A Node server also shares the
+ * computation in flight; on Workers a pending promise belongs to the request that started it
+ * (runtime.ts), so other requests get only its finished result.
  */
 const CACHE_MS = 60_000;
-const cache = new Map<string, { at: number; value: Promise<unknown> }>();
+type Entry = { at: number; pending: Promise<unknown> } | { at: number; result: unknown };
+const cache = new Map<string, Entry>();
 
 function cached<T>(key: string, work: () => Promise<T>): Promise<T> {
   const nowMs = Date.now();
   const hit = cache.get(key);
-  if (hit && nowMs - hit.at < CACHE_MS) return hit.value as Promise<T>;
-  const value = work();
-  cache.set(key, { at: nowMs, value });
-  value.catch(() => cache.delete(key));
-  return value;
+  if (hit && nowMs - hit.at < CACHE_MS)
+    return 'pending' in hit ? (hit.pending as Promise<T>) : Promise.resolve(hit.result as T);
+  const pending = work();
+  const entry: Entry = { at: nowMs, pending };
+  if (!onWorkers) cache.set(key, entry);
+  return pending.then(
+    (result) => {
+      cache.set(key, { at: nowMs, result });
+      return result;
+    },
+    (error: unknown) => {
+      if (cache.get(key) === entry) cache.delete(key);
+      throw error;
+    },
+  );
 }
 
 export function dxMetrics(db: Db, days: number, now = new Date()) {

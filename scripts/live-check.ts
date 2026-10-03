@@ -4,7 +4,7 @@
  * It never calls the Binance Web3 API, never signs and never writes. Prints each check and GO,
  * or NO-GO with exit code 1. The rules are in live-check-rules.ts (tested).
  */
-import { createRuntime, viemChainPort } from '@yieldvest/agent';
+import { createRuntime, cyclesHeldForReview, viemChainPort } from '@yieldvest/agent';
 import { assertBscChain, BSC_USDT } from '@yieldvest/chain';
 import { loadConfig } from '@yieldvest/config';
 import {
@@ -76,6 +76,10 @@ if (!/^\d+(\.\d{1,2})?$/.test(testUsd)) {
         safe: safeRow ? planFromRow(safeRow) : undefined,
         yield: yieldRow ? planFromRow(yieldRow) : undefined,
         unsettled: (await unsettledOutbox(db)).map((tx) => tx.txHash),
+        held: [
+          ...(await cyclesHeldForReview(db, 'H-SAFE')),
+          ...(await cyclesHeldForReview(db, 'H-YIELD')),
+        ].map((c) => ({ planId: c.planId, cycleId: c.id })),
         worker: {
           ...(tickAt ? { tick: { at: tickAt, mode: text(tick?.value.mode) ?? '?' } } : {}),
           ...(text(tape?.value.slotAt) ? { tapeSlotAt: text(tape?.value.slotAt) } : {}),

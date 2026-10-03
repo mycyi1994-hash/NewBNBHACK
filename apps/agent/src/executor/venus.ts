@@ -27,7 +27,13 @@ import { fromUnits, toUnits, underlyingFromVTokens } from '@yieldvest/core';
 import { getAddress, isAddressEqual, type Hex } from 'viem';
 import type { ChainPort } from './chain-port.js';
 import { sendTransaction, type SendResult } from './send.js';
-import { sendDeps, type Failure, type SentTx, type TradeDeps } from './trade.js';
+import {
+  sendDeps,
+  simulateAfterApproval,
+  type Failure,
+  type SentTx,
+  type TradeDeps,
+} from './trade.js';
 
 export interface VenusMarket {
   investmentId: string;
@@ -255,7 +261,9 @@ export async function depositPrincipal(
     }
   }
 
-  const depositSimulation = await simulate(deps, deposit);
+  const depositSimulation = await simulateAfterApproval(deps, sent.length > 0, () =>
+    simulate(deps, deposit),
+  );
   if (deps.mode === 'simulate') {
     return { kind: 'simulated', approve: approveSimulation, deposit: depositSimulation };
   }
@@ -291,6 +299,21 @@ export async function depositPrincipal(
   return { kind: 'deposited', vTokensMinted, usdtSpent, sent };
 }
 
+/**
+ * The most vTokens a REDEEM of `amount` USDT units may burn, at the exchange rate read just before
+ * the build: what the amount is worth in vTokens (rounded up), plus one part per million and one
+ * vToken. The DeFi API sizes REDEEM at the exchangeRateStored it reads itself — the recorded
+ * 1 USDT build burns floor(1e36 / rate) vTokens at the rate read on chain that minute — so it
+ * asks for no more than this unless its node is behind ours. Interest accrues to the stored rate
+ * in jumps, when someone touches the market (on 10/3, twice in 80 blocks, 3.4e-8 together); the
+ * ppm covers a node dozens of those behind and is at most $0.000025 of a $25 redeem.
+ */
+export function redeemLimit(amount: bigint, rate: bigint): bigint {
+  if (rate <= 0n) throw new Error('exchange rate must be positive');
+  const worth = (amount * 10n ** 18n + rate - 1n) / rate;
+  return worth + worth / 1_000_000n + 1n;
+}
+
 export type RedeemResult =
   | { kind: 'simulated'; redeem: SimulationResult; vTokens: bigint }
   | { kind: 'redeemed'; usdtReceived: bigint; vTokensBurned: bigint; sent: SentTx }
@@ -299,8 +322,8 @@ export type RedeemResult =
 
 /**
  * Redeems `amountUsd` of USDT from the plan's Venus position. The calldata may burn no more than
- * the plan's own vTokens and no more than the amount is worth (one vToken of rounding), so a
- * redemption of interest can never reach into the principal.
+ * the plan's own vTokens and no more than the amount is worth at the rate read before the build
+ * (`redeemLimit`), so a redemption of interest can never reach into the principal.
  */
 export async function redeemFromVenus(
   deps: TradeDeps,
@@ -313,6 +336,9 @@ export async function redeemFromVenus(
   },
 ): Promise<RedeemResult> {
   const amount = toUnits(args.amountUsd, 18);
+  // Before the build: interest accrued after this read makes each vToken worth more USDT, so the
+  // API's answer can only burn fewer vTokens than the amount is worth at this rate (redeemLimit).
+  const rate = await deps.chain.exchangeRate(args.market.vToken);
   let build;
   try {
     build = await buildDeFi(deps.client, 'redeem', {
@@ -342,13 +368,11 @@ export async function redeemFromVenus(
   }
   const call = decodeVenusCall(redeem.data);
   if (call.fn !== 'redeem') return fail('DEFI_WRONG_CALL', `REDEEM is ${call.fn}()`);
-  const rate = await deps.chain.exchangeRate(args.market.vToken);
-  const worth = underlyingFromVTokens(call.amount, rate);
-  const oneVToken = underlyingFromVTokens(1n, rate) + 1n;
-  if (call.amount > args.planVTokens || worth > amount + oneVToken) {
+  const limit = redeemLimit(amount, rate);
+  if (call.amount > args.planVTokens || call.amount > limit) {
     return fail(
       'DEFI_REDEEM_TOO_LARGE',
-      `REDEEM burns ${call.amount} vTokens (≈ ${worth} units) for ${amount}; the plan holds ${args.planVTokens}`,
+      `REDEEM burns ${call.amount} vTokens (≈ ${underlyingFromVTokens(call.amount, rate)} units) for ${amount}: at most ${limit}, and the plan holds ${args.planVTokens}`,
     );
   }
 

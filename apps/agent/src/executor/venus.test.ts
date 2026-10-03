@@ -5,9 +5,10 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import type { SimulationResult } from '@yieldvest/binance';
 import { BSC_USDT, decodeApprove, decodeVenusCall, encodeApprove } from '@yieldvest/chain';
 import { createDb, lastOutboxNonce, type Db } from '@yieldvest/db';
-import { getAddress, type Hex } from 'viem';
+import { encodeFunctionData, getAddress, parseAbi, type Hex } from 'viem';
 import { afterAll, describe, expect, it } from 'vitest';
 import { agentTestUrl } from '../../test/db.js';
 import {
@@ -20,7 +21,8 @@ import {
   transferLog,
 } from '../../test/harness.js';
 import type { TradeDeps } from './trade.js';
-import { depositPrincipal, discoverVenusUsdt, redeemFromVenus } from './venus.js';
+import { simulateAfterApproval } from './trade.js';
+import { depositPrincipal, discoverVenusUsdt, redeemFromVenus, redeemLimit } from './venus.js';
 
 const FIXTURES = path.join(import.meta.dirname, '..', '..', '..', '..', 'fixtures');
 const VUSDT = getAddress('0xfD5840Cd36d94D7229439859C0112a4185BC0255');
@@ -126,6 +128,7 @@ function world(mode: 'simulate' | 'live', db?: Db, startNonce = 0) {
   };
   return {
     deps,
+    api,
     chain,
     simulated,
     market: { investmentId: INVESTMENT, vToken: VUSDT },
@@ -267,6 +270,115 @@ describe('redeemFromVenus (simulate)', () => {
   });
 });
 
+describe('simulateAfterApproval (PD-07)', () => {
+  const allowance: SimulationResult = {
+    status: 'FAILED',
+    failReason: 'execution reverted: BEP20: transfer amount exceeds allowance',
+    balanceChanges: [],
+    allowanceChanges: [],
+  };
+  const ok: SimulationResult = { ...allowance, status: 'SUCCESS', failReason: '' };
+  const runs = (...results: SimulationResult[]) => {
+    let i = 0;
+    return {
+      run: () => Promise.resolve(results[Math.min(i++, results.length - 1)] ?? ok),
+      count: () => i,
+    };
+  };
+  const waits: number[] = [];
+  const deps = { log: () => undefined, sleep: (ms: number) => (waits.push(ms), Promise.resolve()) };
+
+  it('simulates again, twice at most, when only the allowance just mined is missing', async () => {
+    const lagging = runs(allowance, ok);
+    expect(await simulateAfterApproval(deps, true, lagging.run)).toMatchObject(ok);
+    expect(lagging.count()).toBe(2);
+    const stuck = runs(allowance);
+    expect(await simulateAfterApproval(deps, true, stuck.run)).toMatchObject(allowance);
+    expect(stuck.count()).toBe(3);
+    expect(waits).toEqual([1_500, 1_500, 1_500]);
+  });
+
+  it('takes the first answer without an approval of its own, or for any other revert', async () => {
+    const noApproval = runs(allowance, ok);
+    expect(await simulateAfterApproval(deps, false, noApproval.run)).toMatchObject(allowance);
+    expect(noApproval.count()).toBe(1);
+    const other = runs({ ...allowance, failReason: 'execution reverted: math error' }, ok);
+    expect(await simulateAfterApproval(deps, true, other.run)).toMatchObject({
+      failReason: 'execution reverted: math error',
+    });
+    expect(other.count()).toBe(1);
+  });
+});
+
+/** vUSDT exchangeRateStored on chain at block 123664140 (dx/LOG.md 2026-09-24 00:49). */
+const RATE_0924 = 265115854764046092440821898n;
+/** One accrual of the stored rate, as measured on 10/3 (two moved it 3.4e-8 in 80 blocks). */
+const ACCRUAL = (RATE_0924 * 17n) / 1_000_000_000n;
+
+describe('the redeem bound at the real rate (PD-07)', () => {
+  const redeemOf = (vTokens: bigint) => ({
+    ...REDEEM,
+    dataList: REDEEM.dataList.map((item) => ({
+      ...item,
+      data: encodeFunctionData({
+        abi: parseAbi(['function redeem(uint256 redeemTokens) returns (uint256)']),
+        functionName: 'redeem',
+        args: [vTokens],
+      }),
+    })),
+  });
+  const redeemAt = async (rate: bigint, build = REDEEM, planVTokens = REDEEM_VTOKENS) => {
+    const w = world('simulate');
+    w.chain.exchangeRate = () => Promise.resolve(rate);
+    w.setRedeem(build);
+    return redeemFromVenus(w.deps, {
+      planId: 'p',
+      cycleId: null,
+      market: w.market,
+      amountUsd: '1',
+      planVTokens,
+    });
+  };
+
+  it('the recorded build burns what 1 USDT is worth at the stored rate of that minute', () => {
+    expect(REDEEM_VTOKENS).toBe((ONE_USDT * 10n ** 18n) / RATE_0924);
+    // Rounded up, plus one part per million, plus one vToken.
+    expect(redeemLimit(ONE_USDT, RATE_0924)).toBe(REDEEM_VTOKENS + 1n + 3_771n + 1n);
+    expect(() => redeemLimit(ONE_USDT, 0n)).toThrow(/positive/);
+  });
+
+  it('accepts the build when interest accrued between the API’s read and ours, either way', async () => {
+    // Ours older than the API's (the usual order: we read before the build), the same, or newer
+    // by one accrual up to thirty (the API's node behind ours). The old bound — one vToken over the
+    // amount at a rate read after the build — refused a $1 redeem at the first accrual.
+    for (const rate of [
+      RATE_0924 - ACCRUAL,
+      RATE_0924,
+      RATE_0924 + ACCRUAL,
+      RATE_0924 + 30n * ACCRUAL,
+    ]) {
+      expect(await redeemAt(rate)).toMatchObject({ kind: 'simulated', vTokens: REDEEM_VTOKENS });
+    }
+  });
+
+  it('still refuses calldata beyond one part per million, or beyond the plan’s own vTokens', async () => {
+    const twoPpm = REDEEM_VTOKENS + REDEEM_VTOKENS / 500_000n;
+    expect(await redeemAt(RATE_0924, redeemOf(twoPpm), 10n ** 12n)).toMatchObject({
+      kind: 'failed',
+      code: 'DEFI_REDEEM_TOO_LARGE',
+    });
+    // A node more than about sixty accruals behind ours is refused too: nothing is signed.
+    expect(await redeemAt(RATE_0924 + 70n * ACCRUAL)).toMatchObject({
+      kind: 'failed',
+      code: 'DEFI_REDEEM_TOO_LARGE',
+    });
+    expect(await redeemAt(RATE_0924, REDEEM, REDEEM_VTOKENS - 1n)).toMatchObject({
+      kind: 'failed',
+      code: 'DEFI_REDEEM_TOO_LARGE',
+    });
+  });
+});
+
 const url = agentTestUrl;
 
 describe.skipIf(!url)('Venus live path on Postgres (fake chain)', () => {
@@ -320,5 +432,55 @@ describe.skipIf(!url)('Venus live path on Postgres (fake chain)', () => {
       usdtReceived: ONE_USDT,
       vTokensBurned: REDEEM_VTOKENS,
     });
+  });
+
+  it('simulates the deposit again while the API’s node has not seen the approval yet', async () => {
+    const { insertPlan } = await import('@yieldvest/db');
+    const planId = `T-${Date.now()}-venus-lag`;
+    planIds.push(planId);
+    await insertPlan(db, {
+      id: planId,
+      ownerKind: 'house',
+      mode: 'yield',
+      ticker: 'QQQ',
+      issuerPreference: ['bstocks'],
+      cadence: 'weekly',
+      window: 'regular_session',
+      maxPerBuyUsd: '5',
+      maxDailyUsd: '5',
+      status: 'paused',
+      nextDueAt: '2026-09-28T13:32:00.000Z',
+    });
+    const last = await lastOutboxNonce(db, 56, HOUSE);
+    const w = world('live', db, last === undefined ? 0 : last + 1);
+    const lines: string[] = [];
+    const waits: number[] = [];
+    const deps: TradeDeps = {
+      ...w.deps,
+      log: (line) => lines.push(line),
+      sleep: (ms) => (waits.push(ms), Promise.resolve()),
+    };
+    // The approval is mined on our node; the API simulates the deposit on one a block behind.
+    const simulateRoute = w.api.routes['/api/v1/dex/pre-transaction/simulate'];
+    let behind = true;
+    w.api.routes['/api/v1/dex/pre-transaction/simulate'] = (u, body) => {
+      const data = (body as { evmTx: { data: string } }).evmTx.data;
+      if (data.startsWith('0xa0712d68') && behind) {
+        behind = false;
+        return {
+          status: 'FAILED',
+          failReason: 'execution reverted: BEP20: transfer amount exceeds allowance',
+          balanceChanges: [],
+          allowanceChanges: [],
+        };
+      }
+      return simulateRoute?.(u, body);
+    };
+    expect(
+      await depositPrincipal(deps, { planId, market: w.market, amountUsd: '1' }),
+    ).toMatchObject({ kind: 'deposited', usdtSpent: ONE_USDT });
+    expect(waits).toEqual([1_500]);
+    expect(lines.join('\n')).toMatch(/right after our approval was mined/);
+    expect(w.chain.sent.map((tx) => tx.data.slice(0, 10))).toEqual(['0x095ea7b3', '0xa0712d68']);
   });
 });

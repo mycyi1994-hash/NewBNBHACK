@@ -35,7 +35,7 @@ const dataState = {
   required: ['tape', 'sampledAt'],
   properties: {
     tape: { enum: ['LIVE', 'STALE', 'UNAVAILABLE'] },
-    sampledAt: nullable(str('When the tape run the decision used was sampled')),
+    sampledAt: nullable(str('When the market recording the decision used was sampled')),
   },
 };
 
@@ -134,7 +134,7 @@ const schemas: Record<string, Schema> = {
   },
   NextAnswer: {
     description:
-      'What the plan’s wallet should do now, decided by the deterministic engine (decideCycle) from the worker’s tape and the wallet’s on-chain position. No calldata, never a signature.',
+      'What the plan’s wallet should do now, decided by Yieldvest’s deterministic rules from its latest market recording and the wallet’s on-chain position. No calldata, never a signature.',
     oneOf: [
       {
         type: 'object',
@@ -286,7 +286,7 @@ export function openApiDocument(serverUrl: string) {
       title: 'Yieldvest API',
       version: '1.0.0',
       description:
-        'Buy tokenized US stocks on BSC with the interest of a USDT deposit, only in the US regular session, under hard caps, with a receipt and a one-sentence reason for every action. The web reads what the worker recorded and queues work; it never signs and never calls the Binance Web3 API. Skill plans (mode C) run in the user’s own Binance Agentic Wallet: /next answers with `baw` commands, /report is checked against the chain.',
+        'Buy tokenized US stocks on BSC with the interest of a USDT deposit, only in the US regular session, under hard caps, with a receipt and a one-sentence reason for every action. The website reads what the Yieldvest agent recorded and queues work for it; it never signs and never calls the Binance Web3 API. Skill plans (mode C) run in the user’s own Binance Agentic Wallet: /next answers with `baw` commands, /report is checked against the chain.',
     },
     servers: [{ url: serverUrl }],
     components: {
@@ -311,9 +311,9 @@ export function openApiDocument(serverUrl: string) {
       '/api/health': open('The web process answers'),
       '/api/judge/smoke': {
         get: {
-          summary: 'Everything a judge’s visit depends on, in one read',
+          summary: 'Service health: everything a visit depends on, in one read',
           description:
-            'Database, the worker’s last tick, the Web3 API as the worker last saw it, BSC RPC, house balances, last receipt, tape. green / degraded (200) or red (503).',
+            'Database, the agent’s last run, the Web3 API as the agent last saw it, BSC RPC, Yieldvest’s own balances (with the Wallet API’s view of them beside the chain read, informational), last receipt, market recording. green / degraded (200) or red (503).',
           responses: {
             200: json({ type: 'object' }, 'green or degraded'),
             503: json({ type: 'object' }, 'red'),
@@ -322,7 +322,7 @@ export function openApiDocument(serverUrl: string) {
       },
       '/api/judge/session': {
         post: {
-          summary: 'Check a judge code and start a session',
+          summary: 'Check an invite code and start a trial session',
           requestBody: body('JudgeSessionBody'),
           responses: {
             200: json(
@@ -355,9 +355,9 @@ export function openApiDocument(serverUrl: string) {
       },
       '/api/plans': {
         post: {
-          summary: 'Create a plan: a judge sandbox plan, or a skill plan with its token',
+          summary: 'Create a plan: an invite trial plan, or a skill plan with its token',
           description:
-            'With a judge session: JudgePlanBody (at most the sandbox cap, paused until its first run). With owner "skill": SkillPlanBody; the answer carries the bearer token once.',
+            'With an invite session: JudgePlanBody (at most the trial cap, paused until its first run). With owner "skill": SkillPlanBody; the answer carries the bearer token once.',
           security: [{ judgeSession: [] }, {}],
           requestBody: {
             required: true,
@@ -423,7 +423,7 @@ export function openApiDocument(serverUrl: string) {
       },
       '/api/plans/{id}/run': {
         post: {
-          summary: 'Judge Mode “buy now”: queue a run for the worker',
+          summary: 'Trial “buy now”: queue a run for the agent',
           security: judge,
           parameters: [idParam],
           requestBody: body('RunBody', false),
@@ -517,6 +517,8 @@ export function openApiDocument(serverUrl: string) {
       '/api/receipts': {
         get: {
           summary: 'Receipt feed: every on-chain action with its one-line reason',
+          description:
+            'Each receipt carries `indexed`: the Binance Web3 Wallet API’s status of the transaction (transaction-detail-by-txhash) once the worker has read it, and whether it agrees with the BSC receipt — which stays the record. Null until read.',
           parameters: [
             { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100 } },
           ],
@@ -529,7 +531,7 @@ export function openApiDocument(serverUrl: string) {
       '/api/instruments': open(
         'The verified registry: addresses from the RWA API, checked on chain',
       ),
-      '/api/tape/latest': open('The latest tape run, LIVE / STALE / UNAVAILABLE'),
+      '/api/tape/latest': open('The latest market recording, LIVE / STALE / UNAVAILABLE'),
       '/api/dx/metrics': {
         get: {
           summary: 'Per-endpoint calls, p50/p95, result codes, regions, first sightings',
@@ -539,14 +541,15 @@ export function openApiDocument(serverUrl: string) {
       },
       '/api/dx/tape': {
         get: {
-          summary: 'Tape aggregates for /dx: session gap, price impact by size, issuers',
+          summary:
+            'Market recording aggregates for /dx: session gap, price impact by size, issuers',
           parameters: [days],
           responses: { 200: json({ type: 'object' }, 'Aggregates'), 503: unavailable },
         },
       },
       '/api/compare': {
         get: {
-          summary: 'bStocks against Ondo for one stock, from the latest tape run',
+          summary: 'bStocks against Ondo for one stock, from the latest market recording',
           description:
             'Per issuer: status, on-chain price per share, US price and gap, venue minimum, full address, and for each tape quote size the shares it was worth, the price per share in it and its price impact (or the code it was refused with). Per size: which quote was worth more shares. Without `ticker`: the tickers and the issuers that sell each. Facts with their data state; never a pick.',
           parameters: queryParams(CompareQuery),
@@ -561,7 +564,8 @@ export function openApiDocument(serverUrl: string) {
       },
       '/api/preflight': {
         get: {
-          summary: 'Would Yieldvest buy this right now? decideCycle on the latest tape, read-only',
+          summary:
+            'Would Yieldvest buy this right now? Its rules on the latest market recording, read-only',
           description:
             'Runs the agent’s engine for a fixed-amount plan that does not exist yet, once per issuer — the answer GET /api/plans/{id}/next would give such a skill plan — and lists every rule’s input against its limit with its read time: data age (seconds), guardian, session, amount vs minimum (USD), token status, price gap (%), price impact (%). A buy needs a guardian check within 15 minutes. Creates nothing and returns no command.',
           parameters: queryParams(PreflightQuery),

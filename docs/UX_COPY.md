@@ -4,6 +4,8 @@ Author: Minseo Kang. Rule: every UI string uses a key from this document. When n
 
 > **Human decision, 9/27 (DECISIONS D-26): the web UI is English only.** Since D-27 (9/27) this document is English only as well: each line reads `` `key`: text ``, and the Korean column is gone.
 
+> **Human request, 10/3 (DECISIONS D-35): copy for real customers, not a hackathon or an MVP.** The trial is opened with an **invite code** (never "judge code"); a purchase is **tested on-chain** before it is sent (never "dry run"); a simulate-mode site says it runs in **preview mode**; a token is a **token** (never "piece"); no internal names on screen (worker, tape, decideCycle, `baw` commands). The keys did not change, only their text, so the code and the API paths stay as they are.
+
 ## 1. Principles
 1. The reader does not know crypto. Use the words in the §2 table.
 2. One decision per screen. Buttons are verbs.
@@ -25,6 +27,9 @@ Author: Minseo Kang. Rule: every UI string uses a key from this document. When n
 | tx / transaction | receipt |
 | on-chain | recorded on-chain (only when needed) |
 | ref price | reference price (platform) |
+| piece | token — only for the token itself (its multiplier, Details); amounts stay in shares |
+| dry run / simulation | tested on-chain (preview mode when a site signs nothing) |
+| judge code | invite code |
 
 ## 3. Copy by screen
 
@@ -34,7 +39,7 @@ Author: Minseo Kang. Rule: every UI string uses a key from this document. When n
 - `home.status.live`: Live · `home.status.stale`: {min} min old · `home.status.unavailable`: Unavailable ({reason})
 - `home.market.regular`: US regular session · closes {close}
 - `home.market.closed`: US market closed · opens {open}
-- `home.cta.judge`: Try it with a judge code
+- `home.cta.judge`: Try it with an invite code
 - `home.cta.skill`: Start with my AI assistant
 - `home.house.card.title`: A plan Yieldvest runs itself
 - `home.house.principal`: Principal in the interest account
@@ -43,8 +48,8 @@ Author: Minseo Kang. Rule: every UI string uses a key from this document. When n
 - `home.house.next`: Next buy
 
 ### 3.2 Judge Mode
-- `judge.code.title`: Enter your judge code
-- `judge.code.hint`: One code covers up to ${cap}. Funds come from Yieldvest's own wallet.
+- `judge.code.title`: Enter your invite code
+- `judge.code.hint`: Each invite covers up to ${cap} of purchases on BNB Chain, paid for and held by Yieldvest. You choose, and you can follow every step and receipt.
 - `judge.pick.title`: Which stock should we collect?
 - `judge.pick.sector`: Or pick a sector
 - `judge.pick.issuer.auto`: Issuer chosen automatically ({issuer})
@@ -57,8 +62,8 @@ Author: Minseo Kang. Rule: every UI string uses a key from this document. When n
 - `judge.window.anytime`: Buy even when the market is closed (price may differ from reference)
 - `judge.preview.title`: Here is what will happen
 - `judge.preview.line`: You pay ${usd} and receive about {shares} shares of {ticker}. Network fee about ${fee}. {gap}% vs reference.
-- `judge.preview.simulated`: Dry-run on-chain · success
-- `judge.preview.failed`: The dry-run failed: {reason}. No funds moved.
+- `judge.preview.simulated`: Tested on-chain · passed
+- `judge.preview.failed`: The on-chain test failed: {reason}. No funds moved.
 - `judge.run.cta`: Buy now
 - `judge.run.progress.{approve|swap|confirm}`: Allowing… / Buying… / Confirming…
 - `judge.done.title`: Done
@@ -95,7 +100,7 @@ Author: Minseo Kang. Rule: every UI string uses a key from this document. When n
 | `why.skipped.daily_cap` | Daily limit (${daily}) reached. Tomorrow. |
 | `why.skipped.guardian` | Guardian stopped the plan: {rule}. Principal moved back to the wallet. |
 | `why.skipped.no_liquidity` | No liquidity for {ticker} right now. |
-| `why.failed.simulation` | Dry-run failed ({code}). No funds moved. |
+| `why.failed.simulation` | The on-chain test failed ({code}). No funds moved. |
 | `why.failed.onchain` | The transaction failed ({code}). Only the network fee was spent. |
 
 ## 5. Risk disclosure (full text; shown when yield mode is turned on, and on `/risk`)
@@ -121,7 +126,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `nav.risk`: Risks
 - `footer.risk`: Yieldvest is not a bank. You can lose principal.
 - `footer.apis`: Built on the Binance Web3 API · BNB Chain
-- `footer.simulate`: Every buy is dry-run on-chain before it runs.
+- `footer.simulate`: Every purchase is tested on-chain before it is sent.
 - `footer.github`: Source code (GitHub)
 - `common.confirm`: Continue
 - `common.cancel`: Cancel
@@ -139,7 +144,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `outcome.SKIPPED`: Skipped
 - `outcome.FAILED`: Failed
 - `outcome.interest_only`: Interest only
-- `outcome.simulated`: Dry run
+- `outcome.simulated`: Preview
 - `outcome.running`: In progress
 - `outcome.deposit`: Put in the interest account
 - `outcome.redeem`: Taken out of the interest account
@@ -159,16 +164,16 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `home.feed.empty`: Nothing recorded yet.
 - `home.insight.title`: How much more does it cost when the market is closed?
 - `home.insight.summary`: Over the last 7 days, off-hours prices differed from the real stock price by {offhours}% on average ({regular}% in regular hours).
-- `home.insight.source`: Recorded every 10 minutes from our Frankfurt server
+- `home.insight.source`: Recorded every 10 minutes
 - `home.insight.more`: More in Data →
 - `home.stocks.title`: Stocks you can collect
 - `home.stocks.price`: Price per share
 - `home.stocks.where`: Where to buy
 - `home.stocks.min`: Minimum order ${min}
 - `home.stocks.only_ondo`: Only on Ondo · minimum order ${min}
-- `home.stocks.multiplier`: Each piece is about {m} real shares (it changes slightly with dividends).
+- `home.stocks.multiplier`: Each token is about {m} shares (it changes slightly with dividends).
 - `home.trust.title`: Why you can check us
-- `home.trust.simulate`: Every buy is dry-run on-chain first
+- `home.trust.simulate`: Every purchase is tested on-chain first
 - `home.trust.caps`: Limits: ${perTx} per buy · ${daily} per day
 - `home.trust.keys`: Our server never holds your wallet keys
 - `home.counter.asof`: Read on-chain at {time}
@@ -185,7 +190,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `plan.status.paused`: Paused
 - `plan.status.stopped`: Stopped
 - `plan.owner.house`: Run by Yieldvest
-- `plan.owner.judge`: Judge trial
+- `plan.owner.judge`: Invite trial
 - `plan.owner.skill`: My AI assistant
 - `plan.paused.awaiting_funding`: Starts once funded
 - `plan.paused.awaiting_run`: Waiting for its first run
@@ -195,8 +200,8 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `plan.paused.expired`: Ended after 7 days
 - `plan.paused.stopped_by_owner`: Stopped by its owner
 - `plan.paused.done`: Ended after its one buy
-- `plan.paused.code_disabled`: Paused: its judge code was turned off
-- `plan.paused.needs_review`: Paused until a person checks its last transaction
+- `plan.paused.code_disabled`: Paused: its invite code was turned off
+- `plan.paused.needs_review`: Paused while our team reviews its last transaction
 - `plan.paused.redeemed`: Paused: its principal was taken out of the interest account
 - `plan.paused.operator_redeem`: Paused: the Yieldvest team took its principal out of the interest account
 - `plan.paused.paused_by_operator`: Paused by the Yieldvest team
@@ -206,7 +211,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `plan.summary.average`: Average price ${avg}
 - `plan.holdings.title`: Shares held
 - `plan.holdings.line`: {ticker} {shares} shares · avg ${avg}
-- `plan.holdings.multiplier`: 1 piece = {m} shares
+- `plan.holdings.multiplier`: 1 token = {m} shares
 - `plan.guardian.metrics`: What it watches
 - `plan.guardian.utilization`: Interest account utilization {value}% (limit 95%)
 - `plan.guardian.usdt`: USDT price ${value} (floor $0.99)
@@ -225,46 +230,46 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `plan.stop.done`: Stopped
 
 ### 7.4 Try it
-- `judge.step.code`: Code
+- `judge.step.code`: Invite
 - `judge.step.pick`: Stock
 - `judge.step.mode`: How & how much
 - `judge.step.preview`: Preview
 - `judge.step.run`: Run
 - `judge.step.done`: Receipt
-- `judge.code.error.bad`: That code doesn't match
-- `judge.code.error.exhausted`: This code has used its limit
-- `judge.error.daily_cap`: Today's limit across all codes is reached — your code still has ${remaining}. Try again after 00:00 UTC.
-- `judge.code.remaining`: ${remaining} left on this code
-- `judge.pick.venue_min`: Only on Ondo with a ${min} minimum, above this code's ${cap} limit
+- `judge.code.error.bad`: That invite code isn't valid
+- `judge.code.error.exhausted`: This invite has used its limit
+- `judge.error.daily_cap`: Today's trial budget is used up — your invite still has ${remaining}. Try again after 00:00 UTC.
+- `judge.code.remaining`: ${remaining} left on your invite
+- `judge.pick.venue_min`: Only on Ondo, whose ${min} minimum is above your invite's ${cap} limit
 - `judge.window.regular.closed`: Buys automatically at the next open, {open}
 - `judge.window.anytime.closed`: Buys right away · half the limit (${half})
 - `judge.amount.custom`: Custom
 - `judge.yield.amount`: Amount to put in the interest account
 - `judge.yield.note`: Interest is recorded as it accrues. Buys made with interest show on Yieldvest's own plan.
 - `judge.risk.check`: I understand
-- `judge.preview.cta`: Dry-run it
-- `judge.preview.waiting`: Our server is dry-running it on-chain…
+- `judge.preview.cta`: Test it on-chain
+- `judge.preview.waiting`: Testing it on-chain…
 - `judge.preview.deposit`: Puts ${usd} in the interest account.
 - `judge.details.issuer`: Issuer
-- `judge.details.pieces`: Pieces to receive
+- `judge.details.pieces`: Tokens to receive
 - `judge.details.min`: Minimum received
 - `judge.details.contract`: Contract address
-- `judge.run.waiting`: Our server is on it…
-- `judge.done.plan_note`: This plan keeps running for 7 days. Come back to see its history.
+- `judge.run.waiting`: Working on it…
+- `judge.done.plan_note`: Your trial plan keeps running for 7 days. Come back any time to see its history.
 - `judge.done.deferred_note`: When it buys, it shows in the plan history.
 - `judge.done.deposited`: Put ${usd} in the interest account.
-- `judge.done.simulated`: The server is in simulation mode, so nothing was bought. Only the dry-run was recorded.
+- `judge.done.simulated`: This site runs in preview mode, so nothing was bought. Only the on-chain test was recorded.
 - `judge.done.confirming`: Waiting for the blockchain record. It shows in the plan history once confirmed.
 - `judge.done.approval_pending`: The exact approval is still being confirmed, so nothing was put in yet. Try again in a minute.
-- `judge.preview.approval_first`: Dry-run on-chain · the exact approval passes. The buy is dry-run again right after it, before anything is signed.
+- `judge.preview.approval_first`: Tested on-chain · the exact-amount approval passes. The purchase is tested again right after it, before anything is signed.
 - `judge.done.not_started`: This plan has not started, so it will not try again by itself.
-- `judge.done.deposit_simulated`: Dry-run on-chain · the exact approval and the deposit pass. The server is in simulation mode, so nothing was put in.
-- `judge.done.deposit_approval_first`: Dry-run on-chain · the exact approval passes. The deposit is dry-run again right after it, before anything is signed. The server is in simulation mode, so nothing was put in.
+- `judge.done.deposit_simulated`: Tested on-chain · the exact-amount approval and the deposit pass. This site runs in preview mode, so nothing was put in.
+- `judge.done.deposit_approval_first`: Tested on-chain · the exact-amount approval passes. The deposit is tested again right after it, before anything is signed. This site runs in preview mode, so nothing was put in.
 - `judge.done.outbox_busy`: An earlier transaction is still settling, so nothing was signed. Try again in a few minutes.
 - `judge.done.locked`: This plan is busy with another run, so nothing was signed. Try again in a minute.
-- `judge.done.review`: A person has to check this plan's last transaction before anything else runs. The plan is paused until then.
+- `judge.done.review`: Our team is reviewing this plan's last transaction. The plan is paused until then, and nothing else runs.
 - `judge.done.stopped`: This plan is stopped. Nothing was bought.
-- `judge.job.still_queued`: The worker has not finished this yet. It may still run: check the plan history in a few minutes.
+- `judge.job.still_queued`: This is still being processed and may still run. Check the plan history in a few minutes.
 - `judge.summary.title`: Summary
 - `judge.summary.window`: When
 - `judge.plan.link`: View plan history →
@@ -281,7 +286,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `skill.example.assistant`: Assistant
 - `skill.example.1`: Start Yieldvest. Collect $5 of NVDA every week.
 - `skill.example.2`: Before we start, here are the risks. You can lose principal. Do you agree?
-- `skill.example.3`: I'll buy $5 of NVDA now. The dry-run succeeded. Go ahead?
+- `skill.example.3`: I'll buy $5 of NVDA now. The on-chain test passed. Go ahead?
 - `skill.example.4`: Yes
 - `skill.example.5`: Done. The receipt is recorded.
 - `skill.rules.title`: Rules the assistant follows
@@ -292,11 +297,11 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `skill.rules.5`: It passes error messages on as they are.
 - `skill.api`: API reference for developers (OpenAPI)
 - `dx.title`: Data
-- `dx.sub`: Numbers we measured from our real calls to the Binance Web3 API.
+- `dx.sub`: How the market data behind every decision performs, measured from our own calls to the Binance Web3 API.
 - `dx.summary.calls`: API calls
 - `dx.summary.error_rate`: Error rate
 - `dx.summary.p95`: p95 latency
-- `dx.summary.tape`: Tape quotes
+- `dx.summary.tape`: Recorded quotes
 - `dx.endpoints.title`: By endpoint
 - `dx.regions.title`: Latency by region
 - `dx.col.module`: Module
@@ -371,7 +376,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `invest.sub`: Tokenized stocks on BNB Chain
 - `invest.funding`: Funding · `invest.funding.contribution`: Contribution · `invest.funding.interest`: Earned interest
 - `invest.target`: Target · `invest.min`: Minimum buy
-- `invest.limit`: Code limit · `invest.limit.left`: Left on this code
+- `invest.limit`: Invite limit · `invest.limit.left`: Left on your invite
 - `invest.when`: When · {window}
 - `invest.panel.eyebrow`: Plan preview · `invest.panel.title`: {funding} → {ticker}
 - `invest.process`: Your steps
@@ -388,7 +393,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `activity.stat.purchases`: Purchases · `activity.stat.bought`: Total invested · `activity.stat.receipts`: Receipts on-chain
 - `activity.stat.last`: Last purchase {time}
 - `activity.status.recorded`: Recorded
-- `activity.event.bought`: {ticker} purchased · `activity.event.simulated`: {ticker} dry run
+- `activity.event.bought`: {ticker} purchased · `activity.event.simulated`: {ticker} preview
 - `activity.event.deferred`: {ticker} waiting · `activity.event.skipped`: {ticker} skipped
 - `activity.event.failed`: {ticker} failed · `activity.event.running`: {ticker} in progress
 - `receipt.latest`: Latest receipt · `receipt.eyebrow`: Receipt · `receipt.details.title`: Receipt details
@@ -410,14 +415,14 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `trace.caption`: Started {start} · finished {end}
 - `trace.caption.open`: Started {start} · still open
 - `trace.inputs`: Read the market · `trace.inputs.body`: {n} venues checked · {mode}
-- `trace.mode.live`: Live · `trace.mode.simulate`: Dry run only
+- `trace.mode.live`: Live · `trace.mode.simulate`: Preview only
 - `trace.quote`: Quote · `trace.quote.body`: Quote for ${usd} · `trace.quote.error`: Quote refused ({code})
 - `trace.requote`: New quote
 - `trace.execute`: Decide to buy · `trace.execute.body`: Buy ${usd}
 - `trace.reserve`: Reserve within the limits · `trace.reserve.refused`: Refused: over today's limit
 - `trace.redeem`: Take out interest · `trace.redeem.body`: ${usd} taken out of the interest account
 - `trace.approve`: Allow the exact amount · `trace.approve.existing`: Allowance already in place
-- `trace.simulated`: Dry-run on-chain · `trace.bought`: Bought · recorded on-chain
+- `trace.simulated`: Tested on-chain · `trace.bought`: Bought · recorded on-chain
 - `trace.awaiting`: Waiting for the blockchain record · `trace.anomaly`: Needs review
 - `trace.decided`: Decision
 - `plan.summary`: Plan summary · `plan.contribution`: Per buy · `plan.limits.title`: Limits
@@ -427,7 +432,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 
 - `invest.tools`: Before you buy · `invest.tools.check`: Would it buy right now? · `invest.tools.compare`: bStocks or Ondo?
 - `check.title`: Would it buy right now?
-- `check.sub`: The agent's own rules, run on its latest market data, for a plan you haven't made yet. Nothing is created or bought.
+- `check.sub`: Yieldvest's own rules, run on the latest market data, for a plan you haven't made yet. Nothing is created or bought.
 - `check.form.ticker`: Stock · `check.form.issuer`: Token · `check.form.issuer.both`: Both tokens · `check.form.usd`: Amount per buy (USDT) · `check.form.window`: When · `check.form.submit`: Check now
 - `check.empty`: Pick a stock and an amount to see what the rules say right now.
 - `check.verdict.buy`: Would buy about {shares} shares for ${usd} now.
@@ -461,7 +466,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 - `check.read.impact.halved`: {value}% · limit {limit}% · halved to ${usd}
 - `check.read.none`: Not read
 - `check.shared.title`: For every token
-- `check.note`: The same engine as the agent (decideCycle) on the same data as its last market recording. A real plan decides again when it runs.
+- `check.note`: The same rules your plan follows, on the latest market data. A real plan checks again at the moment it runs.
 - `check.cta.compare`: Compare bStocks and Ondo
 - `compare.title`: bStocks or Ondo?
 - `compare.sub`: The same US stock from two issuers, side by side, from our last market recording.
@@ -496,7 +501,7 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 > Author: coding agent (10/2). Copy for `/wallet`, a person's own wallet read on chain, a human asked for on 10/2. Drafts until a person confirms them. Every number comes from one block's chain reading or the worker's recorded price, each with its state.
 
 - `wallet.title`: Your stocks, in shares
-- `wallet.sub`: Paste a BNB Smart Chain address — your Binance Wallet's, or your Agentic Wallet's (baw wallet address). We only read the chain: nothing is signed, nothing is stored.
+- `wallet.sub`: Paste a BNB Smart Chain address from your Binance Wallet or your Agentic Wallet. We only read the chain: nothing is signed, nothing is stored.
 - `wallet.form.address`: Wallet address (BNB Smart Chain) · `wallet.form.submit`: Show my stocks
 - `wallet.empty`: Enter an address to see the tokenized stocks it holds, counted in real shares.
 - `wallet.error.address`: That is not a BNB Smart Chain address: 0x and 40 characters.
@@ -516,3 +521,23 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 
 - `agent.card`: The agent's ERC-8004 registration file
 - `agent.registered`: Registered on BNB Smart Chain as ERC-8004 agent #{id}
+
+### 7.10 The Wallet API on receipts (DECISIONS D-34)
+> Author: coding agent (10/3). One small line under a receipt link in the activity feed, once the worker has read the transaction's final status from the Binance Web3 Wallet API (transaction-detail-by-txhash) after its BSC receipt settled it. `{status}` is the API's own word (success or fail), quoted; `{fee}` is the fee it reports in BNB. The BSC receipt stays the record. Drafts until a person confirms them.
+
+- `receipt.indexed.agrees`: Independently confirmed by Binance Web3
+- `receipt.indexed.fee`: fee {fee} BNB
+- `receipt.indexed.differs`: Binance Web3 reports "{status}" — the BNB Chain receipt is the record
+
+### 7.11 A cycle closed after review (PD-07)
+> Author: coding agent (10/3). The reason line of a cycle an operator closed with `pnpm plan:status --close-review` after checking its transactions on BscScan (RUNBOOK §3.7): a swap that confirmed with no tokens arriving, or a cycle interrupted after signing with no recorded decision. Its receipts, shown with it, say what moved. Drafts until a person confirms them.
+
+- `why.closed.review`: Held for review, then closed by our team after checking its transactions on BscScan.
+
+### 7.12 The first screen before the first receipt (DECISIONS D-34, PD-06)
+> Author: coding agent (10/3). While no plan has bought on-chain yet, the Overview's receipt panel shows what the agent would do right now for Yieldvest's own fixed-amount plan, from the same check as "Would it buy right now?" (`/check`) on the latest market recording, with that recording's state. The verdict lines are §7.7's. Drafts until a person confirms them.
+
+- `home.now.eyebrow`: Right now
+- `home.now.title`: Would it buy {ticker} now?
+- `home.now.note`: Yieldvest's own plan, decided by the same rules as yours on the latest market data. Receipts appear here once a plan buys on-chain.
+- `home.now.rules`: See every rule it checked

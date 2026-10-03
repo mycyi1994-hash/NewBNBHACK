@@ -12,6 +12,7 @@ export * from './market.js';
 export * from './operator.js';
 export * from './public-error.js';
 export * from './registry.js';
+export * from './review.js';
 export * from './runtime.js';
 export * from './scheduler.js';
 export * from './settlement.js';

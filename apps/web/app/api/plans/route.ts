@@ -127,7 +127,7 @@ async function handlePOST(request: Request): Promise<Response> {
     return problem(400, 'unknown_ticker', `${body.ticker} is not in the registry`);
   const amount = units(body.amountUsd);
   const cap = String(config.caps.sandboxMaxPerPlanUsd);
-  if (amount > units(cap)) return problem(400, 'over_cap', `a judge plan is at most $${cap}`);
+  if (amount > units(cap)) return problem(400, 'over_cap', `a trial plan is at most $${cap}`);
   if (body.mode === 'safe' && amount < units(String(config.caps.minBuyUsd))) {
     return problem(400, 'below_min', `the smallest buy is $${config.caps.minBuyUsd}`);
   }

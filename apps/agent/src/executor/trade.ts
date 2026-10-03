@@ -41,6 +41,40 @@ export interface TradeDeps {
   now: () => Date;
   /** Runs before anything is signed and may refuse by throwing (a cycle renews its plan lock). */
   beforeSign?: () => Promise<void>;
+  /** Waits between simulations (simulateAfterApproval); real time when absent. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** A simulation that reverted for want of an allowance. */
+const ALLOWANCE_REVERT = /allowance/i;
+/** Simulations after the first, and the wait before each (PD-07). */
+const RESIMULATIONS = 2;
+const RESIMULATE_AFTER_MS = 1_500;
+
+/**
+ * Runs a simulation; when an approval was mined moments ago in this same run and the simulation
+ * reverts for want of that allowance, runs it again — twice, 1.5 s apart. Our RPC answers with the
+ * approval's receipt as soon as it holds the block, and the Transaction API may simulate on a node
+ * a block behind it (PD-07). Nothing is signed until a simulation passes; any other result stands.
+ */
+export async function simulateAfterApproval(
+  deps: Pick<TradeDeps, 'log' | 'sleep'>,
+  justApproved: boolean,
+  run: () => Promise<SimulationResult>,
+): Promise<SimulationResult> {
+  let result = await run();
+  for (let attempt = 1; attempt <= RESIMULATIONS; attempt++) {
+    if (!justApproved || result.status === 'SUCCESS') break;
+    if (!ALLOWANCE_REVERT.test(result.failReason ?? '')) break;
+    deps.log(
+      `simulate: "${result.failReason}" right after our approval was mined — again in ${RESIMULATE_AFTER_MS / 1000} s`,
+    );
+    await (deps.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms))))(
+      RESIMULATE_AFTER_MS,
+    );
+    result = await run();
+  }
+  return result;
 }
 
 export type Failure = {
@@ -240,6 +274,8 @@ export async function performSwap(
     quote: QuoteObservation;
     route: QuoteRoute;
     spender: Hex;
+    /** This cycle's own approval was mined moments ago (simulateAfterApproval). */
+    justApproved?: boolean;
   },
 ): Promise<SwapResult> {
   const { quote, route, instrument } = args;
@@ -288,7 +324,9 @@ export async function performSwap(
   const call = { from: deps.house, to: tx.to, value: '0', data: tx.data };
   let simulation: SimulationResult;
   try {
-    simulation = await simulateCall(deps.client, call);
+    simulation = await simulateAfterApproval(deps, args.justApproved === true, () =>
+      simulateCall(deps.client, call),
+    );
   } catch (error) {
     if (error instanceof BinanceApiError) return apiFailure('simulate swap', error);
     throw error;

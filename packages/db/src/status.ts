@@ -1,12 +1,14 @@
 /**
- * worker_status: the worker's last tick, tape run, house balances and the Venus market it verified
- * (read by the web, which never calls the Binance Web3 API itself).
+ * worker_status: the worker's last tick, tape run, house balances (from the chain, and as the Wallet
+ * API reports them) and the Venus market it verified (read by the web, which never calls the
+ * Binance Web3 API itself).
  */
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from './index.js';
 import { workerStatus } from './schema.js';
 
-export type WorkerStatusKey = 'tick' | 'tape' | 'house' | 'venus';
+/** `house_index`: the house balances as the Wallet API reports them, beside the RPC read (D-34). */
+export type WorkerStatusKey = 'tick' | 'tape' | 'house' | 'house_index' | 'venus';
 
 export async function writeWorkerStatus(
   db: Db,

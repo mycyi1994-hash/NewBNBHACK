@@ -19,6 +19,7 @@ Key issued → first signed call: 14 minutes. Not recorded yet (people): the tim
 
 - All 19 documentation entries of 09-23 to 09-26 re-checked on 10-01, each with its public URL, section and current text: 13 still present, 4 found on the API reference (not proven to be changes), 2 changed — LOG 10-01 16:40.
 - New on 10-01: 40314's "confirmation flag" that the Broadcast body does not have; 40102 with two messages; a "v1.1" renumbering missing from the changelog — LOG 10-01 16:52 (three entries).
+- 10-03: the changelog's 2026-09-30 entry now has the 40470 → 40490 renumbering and the DeFi page lists only 40490 (still no "v1.1" label) — LOG 10-03 04:26.
 - Others: multiplier functions not in the docs (LOG 09-24 00:41); the Uniswap v4 addresses page rate-limits a script (LOG 09-30 02:08); `baw` prints tokenized stocks in shares, undocumented (LOG 10-01 05:12); the public RWA list repeats tickers per chain (LOG 10-01 06:04).
 
 ## 3. API pitfalls
@@ -32,6 +33,8 @@ Key issued → first signed call: 14 minutes. Not recorded yet (people): the tim
 | quoteId lifetime (docs match) | `/swap` at once: 96 ms; 35 s later: 40401 | LOG 09-24 00:52 |
 | Error HTTP status differs by page | HTTP 200 for every Market error vs 401/429 at the gateway | LOG 09-23 17:58 |
 | Connector vs docs | header names, `simulateTransactions` requires three txs, a signed GET body | LOG 09-23 17:51, 17:53 (two) |
+| One parameter, two conventions | `excludeRiskToken`: `true` excludes on GET all-token-balances, `"0"` excludes (and `"1"` includes) on POST token-balances | LOG 10-03 04:21 |
+| An exact-amount redeem is converted at the API's own read of the stored rate (undocumented); the rate jumps when the market is touched | 1 USDT → floor(1e36 / stored rate) vTokens; 2 moves in 80 blocks, 3.37e-8 together; our 1-vToken check refused a correct $1 redeem (ours) | LOG 10-03 05:19 |
 | Latency | Frankfurt 2–4× Korea; per-endpoint p50/p95 come from `pnpm dx:metrics` on the production database (`dx/metrics.md`, not generated yet) | LOG 09-24 02:31 |
 
 ## 4. AI stack feedback
@@ -55,7 +58,7 @@ Not recorded yet (people): a signed-in `baw` run (M0-09, REPLAN R9), session exp
 | `statusInfo` differs by issuer | bStocks: `marketStatus`, `nextOpen`, `nextClose` null | LOG 09-24 00:45 |
 | Hookless Uniswap v4 pools on BSC | the same NVIDIA exposure priced from 205 to 228 USD across pools; the three NVDAB pools have no active liquidity | LOG 09-30 02:11; `pnpm lp:market` |
 | Transfers through the v4 PoolManager | bStocks and Ondo NVIDIA tokens move freely, no fee on transfer | LOG 09-30 02:38 |
-| Regular session vs off-hours (tape) | not summarized yet: `tape_samples` on the production database (`/dx`, `dx/tape-summary.md`) | DX_PROTOCOL §3.4 |
+| Regular session vs off-hours (tape) | not summarized yet: `pnpm tape:summary` writes `dx/tape-summary.md` from `tape_samples` on the production database (also `/dx`) | DX_PROTOCOL §3.4 |
 
 ## 6. Redesign suggestions (candidates; people choose)
 
@@ -77,3 +80,7 @@ From REPLAN §7: (1) the Agentic Wallet session makes unattended runs impossible
 | `baw`: units and the multiplier in its JSON; `wallet status` failing when signed out | LOG 10-01 05:12, 06:19 |
 | An event index for BSC v4 pools, or a larger free log range | LOG 09-30 02:10 |
 | The 40314 confirmation field on Broadcast | LOG 10-01 16:52 |
+| The SDK README to say the registry stores the agent URI on chain (gas per KB), and that `registerAgent` sends two transactions | LOG 10-02 14:17 |
+| One convention for `excludeRiskToken` on the two balance endpoints | LOG 10-03 04:21 |
+| Changelog version labels that match the error page's "v1.1" | LOG 10-03 04:26 |
+| How an exact-amount redeem becomes vTokens (the rate read at build time, floored), or the rate and block returned with the calldata | LOG 10-03 05:19 |

@@ -683,6 +683,7 @@ async function cycleBody(
         quote: decision.quote,
         route,
         spender: approval.spender,
+        justApproved: approval.sent !== undefined,
       });
       switch (swap.kind) {
         case 'requote': {

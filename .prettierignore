@@ -6,6 +6,8 @@ fixtures/
 pnpm-lock.yaml
 packages/db/drizzle/
 **/.next/
+**/.open-next/
+**/.wrangler/
 **/next-env.d.ts
 .claude/worktrees/
 # Standalone Vite design preview is checked by its own build/test job.

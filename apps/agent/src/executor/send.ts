@@ -10,6 +10,7 @@ import { BinanceApiError, broadcastSigned } from '@yieldvest/binance';
 import type { BinanceClient } from '@yieldvest/binance';
 import { BSC_CHAIN_ID, signableTx } from '@yieldvest/chain';
 import {
+  getPlan,
   isoTime,
   lastOutboxNonce,
   markOutbox,
@@ -23,6 +24,9 @@ import type { Signer } from './signer.js';
 
 /** SPEC §5.8: poll the receipt for at most three minutes. */
 export const RECEIPT_TIMEOUT_MS = 180_000;
+
+/** A row not settled yet: only from these does a status move (markOutbox's compare-and-set). */
+const UNSETTLED = ['SIGNED', 'PENDING'] as const;
 
 export interface SendDeps {
   client: BinanceClient;
@@ -116,10 +120,17 @@ async function broadcast(deps: SendDeps, raw: Hex, txHash: Hex): Promise<Broadca
       };
     }
     deps.log(`send: Transaction API broadcast failed (${error.code ?? error.kind}); trying RPC`);
-    // Whether the Transaction API answered at all (an error envelope) — or may have relayed the
-    // bytes before failing (no response, a gateway page).
-    return broadcastByRpc(deps, raw, error.kind === 'api');
+    // Whether the Transaction API refused the bytes itself — a 4xxxx answer (40431, 40001) — or
+    // may have relayed them before failing: no response, a gateway page, or a server error
+    // (50000, 50001) that can come after the relay.
+    return broadcastByRpc(deps, raw, error.kind === 'api' && refusedByApi(error.code));
   }
+}
+
+/** A business code in the 4xxxx range: the API turned the request down; 5xxxx is its own failure. */
+function refusedByApi(code: number | string | null): boolean {
+  const n = typeof code === 'number' ? code : Number(code);
+  return Number.isInteger(n) && n >= 40000 && n < 50000;
 }
 
 async function broadcastByRpc(deps: SendDeps, raw: Hex, apiAnswered: boolean): Promise<Broadcast> {
@@ -192,19 +203,35 @@ export async function sendTransaction(deps: SendDeps, req: SendRequest): Promise
   }
   if (!sent.ok) {
     if (sent.definite) {
-      await markOutbox(deps.db, txHash, { status: 'FAILED', error: sent.reason, attempted: true });
-      return { state: 'not_sent', txHash, reason: sent.reason };
+      // Released only while still SIGNED: bytes another process sent meanwhile are not "not sent".
+      if (
+        await markOutbox(
+          deps.db,
+          txHash,
+          { status: 'FAILED', error: sent.reason, attempted: true },
+          ['SIGNED'],
+        )
+      ) {
+        return { state: 'not_sent', txHash, reason: sent.reason };
+      }
+      deps.log(`send: ${txHash} was settled by another process meanwhile — tracked, not released`);
+      return { state: 'pending', txHash, broadcastVia: 'unknown' };
     }
-    await markOutbox(deps.db, txHash, {
-      status: 'PENDING',
-      broadcastVia: 'unknown',
-      error: sent.reason,
-      attempted: true,
-    });
+    await markOutbox(
+      deps.db,
+      txHash,
+      { status: 'PENDING', broadcastVia: 'unknown', error: sent.reason, attempted: true },
+      UNSETTLED,
+    );
     deps.log(`send: ${txHash} may or may not have gone out (${sent.reason}) — left PENDING`);
     return { state: 'pending', txHash, broadcastVia: 'unknown' };
   }
-  await markOutbox(deps.db, txHash, { status: 'PENDING', broadcastVia: sent.via, attempted: true });
+  await markOutbox(
+    deps.db,
+    txHash,
+    { status: 'PENDING', broadcastVia: sent.via, attempted: true },
+    UNSETTLED,
+  );
   return settle(deps, txHash, sent.via, RECEIPT_TIMEOUT_MS);
 }
 
@@ -229,10 +256,15 @@ export async function settle(
     return { state: 'pending', txHash, broadcastVia };
   }
   if (receipt.status === 'success') {
-    await markOutbox(deps.db, txHash, { status: 'CONFIRMED' });
+    await markOutbox(deps.db, txHash, { status: 'CONFIRMED' }, UNSETTLED);
     return { state: 'confirmed', txHash, broadcastVia, receipt };
   }
-  await markOutbox(deps.db, txHash, { status: 'FAILED', error: 'receipt status 0 (reverted)' });
+  await markOutbox(
+    deps.db,
+    txHash,
+    { status: 'FAILED', error: 'receipt status 0 (reverted)' },
+    UNSETTLED,
+  );
   return { state: 'reverted', txHash, broadcastVia, receipt };
 }
 
@@ -252,9 +284,16 @@ export interface Reconciliation {
  * know (a crash before the broadcast, a dropped transaction) are sent again unchanged, except swap
  * bytes whose quote went stale. A row is never marked FAILED on a guess: a nonce used with no
  * receipt for ours, or a stale swap, stays PENDING and goes to a human (SPEC §5.8, RUNBOOK §3.4).
+ *
+ * A row whose plan's lock is held belongs to the process sending it (every signer holds its plan's
+ * lock from signing to settling; every caller reconciles before it takes a lock): it is left to
+ * that process and counted as pending, so its bytes are never sent around its broadcast — a
+ * compliance refusal there stays final (D-13). A process that died lets its lock lapse
+ * (LOCK_TTL_MS), and the row is settled here then. Every write is a compare-and-set on SIGNED or
+ * PENDING, so a status another process recorded meanwhile is never written over.
  */
 export async function reconcileOutbox(
-  deps: Pick<SendDeps, 'chain' | 'db' | 'log'>,
+  deps: Pick<SendDeps, 'chain' | 'db' | 'log'> & { now?: () => Date },
   options: { from: string; waitMs?: number },
 ): Promise<Reconciliation> {
   const result: Reconciliation = {
@@ -267,8 +306,15 @@ export async function reconcileOutbox(
   const own = (await unsettledOutbox(deps.db)).filter(
     (row) => row.fromAddress.toLowerCase() === options.from.toLowerCase(),
   );
+  const now = deps.now ?? (() => new Date());
   for (const row of own) {
     const hash = row.txHash as Hex;
+    const plan = row.planId ? await getPlan(deps.db, row.planId) : undefined;
+    if (plan?.lockUntil && Date.parse(isoTime(plan.lockUntil)) > now().getTime()) {
+      deps.log(`reconcile: ${hash} is being sent by the holder of ${plan.id}'s lock — left to it`);
+      result.pending.push(hash);
+      continue;
+    }
     const age = Date.now() - Date.parse(isoTime(row.createdAt));
     const mined = await deps.chain.receipt(hash);
     if (mined) {
@@ -277,6 +323,7 @@ export async function reconcileOutbox(
         deps.db,
         hash,
         ok ? { status: 'CONFIRMED' } : { status: 'FAILED', error: 'receipt status 0 (reverted)' },
+        UNSETTLED,
       );
       (ok ? result.confirmed : result.failed).push(hash);
       continue;
@@ -290,6 +337,7 @@ export async function reconcileOutbox(
           deps.db,
           hash,
           ok ? { status: 'CONFIRMED' } : { status: 'FAILED', error: 'receipt status 0 (reverted)' },
+          UNSETTLED,
         );
         (ok ? result.confirmed : result.failed).push(hash);
         continue;
@@ -329,14 +377,15 @@ export async function reconcileOutbox(
           deps.log(`reconcile: resend of ${hash} refused — ${message}`);
         }
       }
-      await markOutbox(deps.db, hash, {
-        status: 'PENDING',
-        broadcastVia: row.broadcastVia ?? 'rpc',
-        attempted: true,
-      });
+      await markOutbox(
+        deps.db,
+        hash,
+        { status: 'PENDING', broadcastVia: row.broadcastVia ?? 'rpc', attempted: true },
+        UNSETTLED,
+      );
       result.rebroadcast.push(hash);
     } else if (row.status === 'SIGNED') {
-      await markOutbox(deps.db, hash, { status: 'PENDING', broadcastVia: 'unknown' });
+      await markOutbox(deps.db, hash, { status: 'PENDING', broadcastVia: 'unknown' }, UNSETTLED);
     }
     const settled = await settle(deps, hash, row.broadcastVia ?? 'rpc', options.waitMs ?? 30_000);
     if (settled.state === 'confirmed') result.confirmed.push(hash);

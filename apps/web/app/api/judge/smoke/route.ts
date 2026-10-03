@@ -1,7 +1,8 @@
 /**
  * GET /api/judge/smoke (SPEC §8.2, TASKS M2-12): everything a judge's visit depends on, in one
  * read — database, the worker's last tick, the Web3 API as the worker last saw it (the web never
- * calls it), BSC RPC, the house balances, the last receipt and the tape. `status` is green when
+ * calls it), BSC RPC, the house balances (and the Wallet API's view of them, D-34), the last
+ * receipt and the tape. `status` is green when
  * every check passes, degraded when something is stale, red when something is down (HTTP 503).
  */
 import { fromUnits } from '@yieldvest/core';
@@ -22,6 +23,29 @@ const API_FRESH_MS = 30 * 60_000;
 /** Integer units the worker wrote as a string; anything else reads as zero. */
 const units = (value: unknown): bigint =>
   typeof value === 'string' && /^\d+$/.test(value) ? BigInt(value) : 0n;
+
+/**
+ * The house balances as the Wallet API reported them beside the chain read (DECISIONS D-34), and
+ * whether each agrees with it. Informational: the chain is the record, so a disagreement or a
+ * failed read never changes the check's state. Null until the worker has asked.
+ */
+function walletApiView(value: Record<string, unknown> | undefined) {
+  if (!value) return null;
+  if (typeof value.error === 'string') return { read: false, at: value.at };
+  const amount = (v: unknown) =>
+    typeof v === 'string' && /^\d+$/.test(v) ? fromUnits(BigInt(v), 18) : null;
+  const agrees = (
+    typeof value.agrees === 'object' && value.agrees !== null ? value.agrees : {}
+  ) as Record<string, unknown>;
+  const flag = (v: unknown) => (typeof v === 'boolean' ? v : null);
+  return {
+    read: true,
+    usdt: amount(value.usdtUnits),
+    bnb: amount(value.bnbWei),
+    agrees: { usdt: flag(agrees.usdt), bnb: flag(agrees.bnb) },
+    at: value.at,
+  };
+}
 
 /**
  * Runs one check. A failure is reported as a label only: error messages can carry a database host
@@ -143,14 +167,16 @@ async function databaseChecks(db: Db, now: Date, checks: Record<string, Check>):
       };
 
   const house = await readWorkerStatus(db, 'house');
+  const walletApi = walletApiView((await readWorkerStatus(db, 'house_index'))?.value);
   checks.house = !house
-    ? { state: 'degraded', detail: { reason: 'no balance recorded' } }
+    ? { state: 'degraded', detail: { reason: 'no balance recorded', walletApi } }
     : {
         state: 'green',
         detail: {
           usdt: fromUnits(units(house.value.usdtUnits), 18),
           bnb: fromUnits(units(house.value.bnbWei), 18),
           at: house.value.at,
+          walletApi,
         },
       };
 

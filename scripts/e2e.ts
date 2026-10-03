@@ -25,6 +25,7 @@ import { processJobs } from '@yieldvest/agent';
 import {
   createDb,
   getPlan,
+  insertPlan,
   insertTapeSamples,
   migrateDb,
   readWorkerStatus,
@@ -106,30 +107,30 @@ async function judgeFlow(run: Run, code: string, ticker: string) {
   const { page, base, log, check } = run;
   await page.goto(`${base}/invest`, { waitUntil: 'networkidle' });
   await check('invest, no code yet');
-  await page.getByRole('textbox', { name: 'Enter your judge code' }).fill(code);
+  await page.getByRole('textbox', { name: 'Enter your invite code' }).fill(code);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('button', { name: 'Dry-run it' }).waitFor({ timeout: STEP_MS });
+  await page.getByRole('button', { name: 'Test it on-chain' }).waitFor({ timeout: STEP_MS });
   log('code accepted, the sandbox limit is shown');
 
   await page.getByRole('button', { name: ticker }).first().click();
   const planId = await planCreatedBy(run, () =>
-    page.getByRole('button', { name: 'Dry-run it' }).click(),
+    page.getByRole('button', { name: 'Test it on-chain' }).click(),
   );
   log(`plan ${planId} created for ${ticker}`);
 
   const dialog = page.getByRole('dialog');
-  await dialog.getByText('the exact approval passes').waitFor({ timeout: STEP_MS });
-  await check('dry-run dialog');
-  log('dry run on chain: the exact approval passes, the buy is checked again before signing');
+  await dialog.getByText('the exact-amount approval passes').waitFor({ timeout: STEP_MS });
+  await check('on-chain test dialog');
+  log('tested on-chain: the exact-amount approval passes, the buy is tested again before signing');
 
   await dialog.getByRole('button', { name: 'Buy now' }).click();
-  await dialog.getByText('The server is in simulation mode').waitFor({ timeout: STEP_MS });
+  await dialog.getByText('This site runs in preview mode').waitFor({ timeout: STEP_MS });
   await check('done dialog');
-  // A dry run starts nothing: the dialog must not promise seven days of buying.
+  // A preview starts nothing: the dialog must not promise seven days of buying.
   if ((await dialog.getByText('keeps running for 7 days').count()) > 0) {
-    throw new Error('the done dialog says the plan keeps running after a dry run');
+    throw new Error('the done dialog says the plan keeps running after a preview');
   }
-  log('buy now: the worker ran the cycle, the server says it only simulates');
+  log('buy now: the agent ran the cycle, the site says it runs in preview mode');
 
   await page.goto(`${base}/plans/${planId}`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Stop this plan' }).click();
@@ -199,7 +200,7 @@ async function yieldFlow(run: Run, venus: ReturnType<typeof withVenus>) {
 
   const planId = await depositDryRun(
     run,
-    'The deposit is dry-run again right after it, before anything is signed',
+    'The deposit is tested again right after it, before anything is signed',
     'deposit',
   );
   log(
@@ -213,7 +214,7 @@ async function yieldFlow(run: Run, venus: ReturnType<typeof withVenus>) {
     await turnOnYield(page);
     const failed = await depositDryRun(
       run,
-      'The dry-run failed: execution reverted: mint is paused',
+      'The on-chain test failed: execution reverted: mint is paused',
       'failed deposit',
     );
     log(`deposit of plan ${failed}: its failing dry run is shown as a failure`);
@@ -234,11 +235,32 @@ const TOKENS_PER_USD = 4_442_430_800_471_653n;
 async function withFeatureData<T>(
   db: Db,
   database: string,
-  instrumentId: string,
+  instrument: { id: string; ticker: string },
   run: () => Promise<T>,
 ): Promise<T> {
+  const instrumentId = instrument.id;
   const now = new Date().toISOString();
   const before = await readWorkerStatus(db, 'venus');
+  // The house's fixed-amount plan on the test stock, as db:seed writes H-SAFE (paused until the
+  // house wallet is funded): the first screen shows its verdict before any receipt (PD-06).
+  const sql = postgres(database, { max: 1, onnotice: () => {} });
+  await sql`delete from plans where id = 'H-SAFE'`;
+  await insertPlan(db, {
+    id: 'H-SAFE',
+    ownerKind: 'house',
+    ownerRef: null,
+    mode: 'safe',
+    ticker: instrument.ticker,
+    issuerPreference: ['bstocks', 'ondo'],
+    contributionUsd: '5',
+    cadence: 'daily',
+    window: 'regular_session',
+    maxPerBuyUsd: '5',
+    maxDailyUsd: '5',
+    status: 'paused',
+    pausedReason: 'awaiting_funding',
+    nextDueAt: now,
+  });
   await insertTapeSamples(
     db,
     [5, 50, 500].map((sizeUsd) => ({
@@ -271,10 +293,10 @@ async function withFeatureData<T>(
     apyDisplay: '3.16%',
     verifiedAt: now,
   });
-  const sql = postgres(database, { max: 1, onnotice: () => {} });
   try {
     return await run();
   } finally {
+    await sql`delete from plans where id = 'H-SAFE'`;
     await sql`delete from tape_samples where instrument_id = ${instrumentId}`;
     if (before) await writeWorkerStatus(db, 'venus', before.value);
     else await sql`delete from worker_status where key = 'venus'`;
@@ -291,6 +313,25 @@ async function withFeatureData<T>(
  */
 async function featureFlow(run: Run, ticker: string) {
   const { page, base, log, check } = run;
+  // The first screen before any receipt (PD-06): the agent's verdict on the house plan right now.
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  const now = page.locator('.now-panel');
+  await now.waitFor({ timeout: STEP_MS });
+  const eyebrow = (await now.locator('.eyebrow').innerText()).trim();
+  const title = (await now.locator('h3').innerText()).trim();
+  const answer = (await now.locator('.now-verdict .pill').innerText()).trim();
+  if (!/^right now$/i.test(eyebrow) || title !== `Would it buy ${ticker} now?`) {
+    throw new Error(`the first screen says "${eyebrow}" / "${title}", not the agent's verdict`);
+  }
+  if (!/^Would (buy about|wait|skip|stop)/.test(answer)) {
+    throw new Error(`the first screen answers "${answer}", not one of the engine's verdicts`);
+  }
+  if ((await now.locator(`a[href^="/check?ticker=${ticker}&usd=5"]`).count()) !== 1) {
+    throw new Error('the first screen does not link to every rule on /check');
+  }
+  await check('home before the first receipt');
+  log(`home: no receipt yet, so the agent's verdict on its own plan — "${answer}"`);
+
   await page.goto(`${base}/check?ticker=${ticker}&usd=5`, { waitUntil: 'networkidle' });
   const verdict = page.locator('.check-verdict').first();
   await verdict.waitFor({ timeout: STEP_MS });
@@ -489,7 +530,9 @@ if (!flags.ok || problem !== null) {
       };
       const safe = await judgeFlow(run, codes[index] ?? '', ticker);
       const deposits = await yieldFlow(run, venus);
-      await withFeatureData(db, database, instrumentId, () => featureFlow(run, ticker));
+      await withFeatureData(db, database, { id: instrumentId, ticker }, () =>
+        featureFlow(run, ticker),
+      );
       // What the pages said, from the database: the first plan is stopped; the yield plans still
       // wait for their first run, with no principal (a dry run deposits nothing).
       const stopped = await getPlan(db, safe);
@@ -532,7 +575,9 @@ if (!flags.ok || problem !== null) {
     process.exitCode = 1;
   } else {
     log('PASS: Judge Mode end to end in simulate mode, at 375 and 1280 px');
-    log('      and the pre-flight check, issuer comparison, calculator, wallet view and MCP block');
+    log(
+      '      and the first screen, pre-flight check, issuer comparison, calculator, wallet view and MCP block',
+    );
     log('      0 page or console errors, 0 sideways scrolls');
   }
 }

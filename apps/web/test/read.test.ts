@@ -103,7 +103,7 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-06T15:00:00.000Z') });
     const empty = await call(tapeLatest, { path: '/api/tape/latest' });
     expect(empty.status).toBe(503);
-    expect(empty.body).toEqual({ state: 'UNAVAILABLE', reason: 'no tape samples yet' });
+    expect(empty.body).toEqual({ state: 'UNAVAILABLE', reason: 'no market data recorded yet' });
 
     const old = minutesAgo(25);
     await writeTape(db, instrument, old);
@@ -169,6 +169,13 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
       bnbWei: '5000000000000000',
       at: new Date().toISOString(),
     });
+    // The Wallet API's view of the same balances (D-34): BNB lags the chain here.
+    await writeWorkerStatus(db, 'house_index', {
+      usdtUnits: '12500000000000000000',
+      bnbWei: '4000000000000000',
+      agrees: { usdt: true, bnb: false },
+      at: new Date().toISOString(),
+    });
     await insertApiCall(db, {
       ts: minutesAgo(2),
       region: 'fra',
@@ -202,9 +209,29 @@ describe.skipIf(!webTestUrl)('public read routes', () => {
       worker: { state: 'green', detail: { mode: 'simulate', errorCount: 0, errorSources: [] } },
       web3api: { state: 'green', detail: { endpoint: `${marker}/smoke`, latencyMs: 180 } },
       rpc: { state: 'green', detail: { block: '62000000' } },
-      house: { state: 'green', detail: { usdt: '12.5', bnb: '0.005' } },
+      house: {
+        // A disagreement is shown, never a health problem: the chain is the record.
+        state: 'green',
+        detail: {
+          usdt: '12.5',
+          bnb: '0.005',
+          walletApi: {
+            read: true,
+            usdt: '12.5',
+            bnb: '0.004',
+            agrees: { usdt: true, bnb: false },
+          },
+        },
+      },
       receipts: { state: 'green', detail: { last: { txHash: hash, kind: 'swap' } } },
       tape: { state: 'green', detail: { state: 'LIVE' } },
+    });
+    const at = new Date().toISOString();
+    await writeWorkerStatus(db, 'house_index', { error: 'not read', at });
+    const unread = await call<Smoke>(smoke, { path: '/api/judge/smoke' });
+    expect(unread.body.checks.house).toMatchObject({
+      state: 'green',
+      detail: { walletApi: { read: false, at } },
     });
 
     // A tick with errors is degraded; the messages (hosts, keys) stay in the worker's log.

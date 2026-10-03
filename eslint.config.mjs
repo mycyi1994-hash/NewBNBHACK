@@ -47,6 +47,9 @@ export default defineConfig(
     ignores: [
       '**/node_modules/**',
       '**/.next/**',
+      // The Cloudflare Workers build of apps/web (pnpm cf:build) and wrangler's local state.
+      '**/.open-next/**',
+      '**/.wrangler/**',
       '**/dist/**',
       '**/coverage/**',
       '**/next-env.d.ts',

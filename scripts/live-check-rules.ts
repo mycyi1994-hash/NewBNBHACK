@@ -11,8 +11,22 @@ export interface Check {
   detail: string;
 }
 
-/** Codes the Binance Web3 API uses for region and compliance blocks (DECISIONS V-11). */
-const REGION_CODES = new Set(['40301', '40302', '40303', '40304']);
+/**
+ * Codes the Binance Web3 API uses for region and compliance blocks (DECISIONS V-11): region, VPN
+ * and IP (40301–40304), KYT on an address or its funds (40311–40314), KYT before a broadcast
+ * (40434). Each is final for the transaction it refused (D-13): a live test stops on any of them.
+ */
+const REGION_CODES = new Set([
+  '40301',
+  '40302',
+  '40303',
+  '40304',
+  '40311',
+  '40312',
+  '40313',
+  '40314',
+  '40434',
+]);
 const MINUTE = 60_000;
 
 export interface LiveCheckFacts {
@@ -30,6 +44,8 @@ export interface LiveCheckFacts {
   yield: Plan | undefined;
   /** Hashes the house signed that are not settled yet. */
   unsettled: string[];
+  /** H-SAFE's and H-YIELD's cycles held for review: each blocks its plan until closed (PD-07). */
+  held: { planId: string; cycleId: number }[];
   worker: {
     tick?: { at: string; mode: string };
     tapeSlotAt?: string;
@@ -101,6 +117,16 @@ export function liveChecks(f: LiveCheckFacts): { checks: Check[]; go: boolean } 
     f.unsettled.length > 0
       ? `unsettled: ${f.unsettled.join(', ')} — nothing new signs until these settle`
       : 'settled',
+  );
+
+  add(
+    'review',
+    f.held.length > 0 ? 'fail' : 'ok',
+    f.held.length > 0
+      ? `held for review: ${f.held.map((h) => `${h.planId} cycle #${h.cycleId}`).join(', ')} — ` +
+          'every cycle of the plan waits on it; check it on BscScan, then pnpm plan:status ' +
+          '--plan <id> --close-review <cycle> (RUNBOOK §3.7)'
+      : 'no cycle held',
   );
 
   if (!f.house) {

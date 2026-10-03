@@ -126,15 +126,25 @@ export function ReceiptLinks({ t, item }: { t: T; item: ActivityItem }) {
   return (
     <div className="link-row">
       {item.receipts.map((r) => (
-        <a
-          key={r.txHash}
-          className="receipt-link"
-          href={r.explorerUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {t(RECEIPT_LINK[r.kind] ?? 'receipt.view')}
-        </a>
+        <span key={r.txHash} className="receipt-ref">
+          <a
+            className="receipt-link"
+            href={r.explorerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t(RECEIPT_LINK[r.kind] ?? 'receipt.view')}
+          </a>
+          {r.indexed ? (
+            <small className="receipt-index">
+              {r.indexed.agrees
+                ? r.indexed.txFee
+                  ? `${t('receipt.indexed.agrees')} · ${t('receipt.indexed.fee', { fee: r.indexed.txFee })}`
+                  : t('receipt.indexed.agrees')
+                : t('receipt.indexed.differs', { status: r.indexed.txStatus })}
+            </small>
+          ) : null}
+        </span>
       ))}
     </div>
   );

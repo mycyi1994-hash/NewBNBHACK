@@ -14,7 +14,8 @@ import { locale } from '../../lib/i18n/server';
 import { context } from '../../lib/server/context';
 import { TOOLS } from '../../lib/server/mcp';
 
-const INSTALL = `git clone --depth 1 ${REPO_URL} yieldvest-src && mkdir -p ~/.claude/skills && cp -r yieldvest-src/skills/yieldvest ~/.claude/skills/`;
+/** The `skills` CLI the Binance Skills Hub installs with: owner/repo, our skill, Claude Code, global. */
+const INSTALL = `npx skills add ${REPO_URL.replace('https://github.com/', '')} --skill yieldvest -g -a claude-code -y`;
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await locale();

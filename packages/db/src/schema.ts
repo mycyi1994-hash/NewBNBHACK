@@ -268,6 +268,13 @@ export const receipts = pgTable(
     blockNumber: text('block_number'),
     /** 'success' | 'failed' (status 0 on chain). */
     status: text('status').notNull(),
+    /**
+     * The Wallet API's view of the transaction (DECISIONS D-34, transaction-detail-by-txhash),
+     * checked after the BSC receipt settled it: { state: 'indexed', txStatus, txFee, height,
+     * agrees, checkedAt } or { state: 'not_indexed', tries, checkedAt }. Null until checked. The
+     * BSC receipt (status above) stays the record.
+     */
+    indexed: jsonb('indexed'),
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (table) => [

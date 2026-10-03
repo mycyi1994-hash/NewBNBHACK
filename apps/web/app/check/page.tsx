@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { Icon } from '../../components/Icon';
 import { ruleName, sessionText, windowText } from '../../components/plan-text';
 import { Toolbar } from '../../components/Toolbar';
+import { DECISION_TONE, retryLine, verdictLine } from '../../components/verdict';
 import {
   BlockTitle,
   DataTable,
@@ -19,12 +20,11 @@ import {
   StateBadge,
   tapeState,
   Unavailable,
-  whyText,
   type Tone,
 } from '../../components/ui';
 import { issuerName, money, timeText } from '../../lib/format';
 import { locale } from '../../lib/i18n/server';
-import { isCopyKey, type Lang, type T } from '../../lib/i18n/translate';
+import type { Lang, T } from '../../lib/i18n/translate';
 import { comparableTickers } from '../../lib/server/compare';
 import { context } from '../../lib/server/context';
 import {
@@ -52,13 +52,6 @@ const STATE_TONE: Record<Check['state'], Tone> = {
   block: 'fail',
   unknown: 'skip',
   na: 'neutral',
-};
-
-const DECISION_TONE: Record<IssuerVerdict['decision'], Tone> = {
-  buy: 'ok',
-  wait: 'wait',
-  skip: 'skip',
-  failed: 'fail',
 };
 
 /** What a rule read, in words (UX_COPY §7.7). */
@@ -158,25 +151,6 @@ function Rules({
   );
 }
 
-function verdictLine(t: T, lang: Lang, tz: string, verdict: IssuerVerdict): string[] {
-  if (verdict.decision === 'buy') {
-    return [
-      t('check.verdict.buy', {
-        shares: verdict.estimate?.shares,
-        usd: money(verdict.spendUsd ?? null),
-      }),
-    ];
-  }
-  const head = t(`check.verdict.${verdict.decision}`);
-  const why = whyText(t, lang, tz, verdict.why);
-  if (why) return [head, why];
-  if (verdict.reason) {
-    const key = `check.reason.${verdict.reason}`;
-    return [head, isCopyKey(key) ? t(key) : t('check.reason.other', { reason: verdict.reason })];
-  }
-  return [head];
-}
-
 function Verdict({
   t,
   lang,
@@ -190,17 +164,14 @@ function Verdict({
 }) {
   const name = issuerName(verdict.issuer) ?? verdict.issuer;
   const [head, reason] = verdictLine(t, lang, tz, verdict);
+  const retry = retryLine(t, lang, tz, verdict, reason);
   return (
     <section className="page-block check-verdict" aria-label={`${name} · ${verdict.symbol}`}>
       <BlockTitle aside={<Pill tone={DECISION_TONE[verdict.decision]}>{head}</Pill>}>
         {name} · {verdict.symbol}
       </BlockTitle>
       {reason ? <p className="check-why">{reason}</p> : null}
-      {verdict.retryAt ? (
-        <p className="method-note">
-          {t('check.retry', { time: timeText(verdict.retryAt, lang, tz) })}
-        </p>
-      ) : null}
+      {retry ? <p className="method-note">{retry}</p> : null}
       <Rules t={t} lang={lang} tz={tz} checks={verdict.checks} of={`${name} · ${verdict.symbol}`} />
     </section>
   );
@@ -277,7 +248,11 @@ function Shared({
     <Panel eyebrow={t('check.shared.title')} title={t('check.rules.title')} badge={false}>
       {answer ? (
         <>
-          <StateBadge t={t} data={tapeState(answer.data, 'no tape samples yet')} now={now} />
+          <StateBadge
+            t={t}
+            data={tapeState(answer.data, 'no market data recorded yet')}
+            now={now}
+          />
           <Ledger
             rows={answer.checks.map((check) => [
               ruleText(t, check),

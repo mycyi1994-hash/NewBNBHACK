@@ -7,6 +7,7 @@ import {
 import { BSC_USDT } from '@yieldvest/chain';
 import { describe, expect, it } from 'vitest';
 import {
+  activationRefusal,
   buyProblem,
   cycleExitCode,
   cycleReportText,
@@ -393,5 +394,14 @@ describe('whenSettledAndLocked (yield:deposit --live, audit S9)', () => {
     const sign = () => Promise.reject(new Error('rpc down'));
     await expect(whenSettledAndLocked(s, sign)).rejects.toThrow('rpc down');
     expect(calls).toEqual(['reconcile', 'lock', 'release']);
+  });
+});
+
+describe('activationRefusal (PD-07)', () => {
+  it('refuses a plan with a cycle held for review, naming it and the way out', () => {
+    expect(activationRefusal('H-SAFE', [])).toBeUndefined();
+    const text = activationRefusal('H-SAFE', [12, 15]);
+    expect(text).toContain('cycle #12, #15 held for review');
+    expect(text).toContain('pnpm plan:status --plan H-SAFE --close-review 12 (RUNBOOK §3.7)');
   });
 });

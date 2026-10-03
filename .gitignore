@@ -26,6 +26,13 @@ packages/rwa-lp/cache/
 packages/rwa-lp/broadcast/
 packages/rwa-lp/deployments/rehearsal/
 
+# Cloudflare Workers build of apps/web (OpenNext, G2-2) and wrangler's local state. .dev.vars holds
+# the secrets of a local preview (wrangler dev), like .env.
+.open-next/
+.wrangler/
+.dev.vars
+.dev.vars.*
+
 # local
 .DS_Store
 *.log

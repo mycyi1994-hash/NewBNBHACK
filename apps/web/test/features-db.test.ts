@@ -17,6 +17,7 @@ import {
   writeWorkerStatus,
   type InstrumentRow,
 } from '@yieldvest/db';
+import type { Plan } from '@yieldvest/core';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET as compareRoute } from '../app/api/compare/route';
@@ -24,6 +25,7 @@ import { POST as mcpRoute } from '../app/api/mcp/route';
 import { GET as preflightRoute } from '../app/api/preflight/route';
 import { GET as projectionRoute } from '../app/api/projection/route';
 import { resetContext } from '../lib/server/context';
+import { houseNowFor, houseSafePlan } from '../lib/server/house-now';
 import { webTestUrl } from './db';
 import { call, cleanup, randomAddress, testInstrument, writeTape } from './harness';
 
@@ -162,6 +164,67 @@ describe.skipIf(!webTestUrl)('read-only feature routes and the MCP server (D-31)
       decision: 'skip',
       why: { key: 'why.skipped.guardian.hold' },
     });
+  });
+
+  it('tells the first screen what the house plan would do now, its first-choice token first (PD-06)', async () => {
+    const plan: Plan = {
+      id: 'H-SAFE',
+      owner: { kind: 'house' },
+      mode: 'safe',
+      target: { type: 'ticker', ticker: bstocks.ticker },
+      issuerPreference: ['ondo', 'bstocks'],
+      principalUsd: '0',
+      contributionUsd: '6',
+      cadence: 'daily',
+      window: 'regular_session',
+      limits: { maxPerBuyUsd: '6', maxDailyUsd: '6' },
+      status: 'paused',
+      pausedReason: 'awaiting_funding',
+      createdAt: ago(60),
+      nextDueAt: ago(-60),
+    };
+    // Nobody checked the guardian yet: it would wait, and says why, on its first-choice token.
+    const waiting = await houseNowFor(db, plan, '5', NOW);
+    expect(waiting).toMatchObject({
+      plan: {
+        id: 'H-SAFE',
+        ticker: bstocks.ticker,
+        status: 'paused',
+        pausedReason: 'awaiting_funding',
+      },
+      preflight: { usd: '6', data: { state: 'LIVE' } },
+      verdict: { issuer: 'ondo', decision: 'wait', reason: 'guardian_unchecked' },
+    });
+    await tick(ago(3));
+    expect((await houseNowFor(db, plan, '5', NOW))?.verdict).toMatchObject({
+      issuer: 'ondo',
+      decision: 'buy',
+      spendUsd: '6',
+    });
+    // A stock the registry does not have: nothing to say (the panel stays the empty one).
+    expect(
+      await houseNowFor(db, { ...plan, target: { type: 'ticker', ticker: 'NOPE' } }, '5', NOW),
+    ).toBeUndefined();
+  });
+
+  it('picks H-SAFE, else the first house fixed-amount plan not stopped (PD-06)', () => {
+    const base = {
+      owner: { kind: 'house' },
+      mode: 'safe',
+      target: { type: 'ticker', ticker: 'NVDA' },
+      status: 'active',
+    } as unknown as Plan;
+    const plan = (over: Partial<Plan>): Plan => ({ ...base, ...over });
+    expect(houseSafePlan([plan({ id: 'H-OTHER' }), plan({ id: 'H-SAFE' })])?.id).toBe('H-SAFE');
+    expect(
+      houseSafePlan([
+        plan({ id: 'H-YIELD', mode: 'yield' }),
+        plan({ id: 'J-1', owner: { kind: 'judge', code: 'x' } }),
+        plan({ id: 'H-OLD', status: 'stopped' }),
+        plan({ id: 'H-TWO' }),
+      ])?.id,
+    ).toBe('H-TWO');
+    expect(houseSafePlan([plan({ id: 'H-YIELD', mode: 'yield' })])).toBeUndefined();
   });
 
   it('GET /api/preflight refuses amounts a skill plan could not have, and unknown tickers', async () => {

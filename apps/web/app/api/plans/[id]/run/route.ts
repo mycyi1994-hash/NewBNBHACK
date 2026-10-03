@@ -44,7 +44,7 @@ async function handlePOST(
       return problem(
         400,
         'over_cap',
-        `a judge deposit is at most $${config.caps.sandboxMaxPerPlanUsd}`,
+        `a trial deposit is at most $${config.caps.sandboxMaxPerPlanUsd}`,
       );
     }
     // One code, one sandbox cap: its spend and the principal its plans hold, together.

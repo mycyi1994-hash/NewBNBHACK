@@ -13,6 +13,12 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   headers: () => Promise.resolve([{ source: '/:path*', headers: SECURITY_HEADERS }]),
+  // Not bundled by Next, so the Cloudflare build (OpenNext, G2-2) bundles postgres.js's own
+  // `workerd` build (cloudflare:sockets) rather than its Node build: there every TLS connection
+  // (Neon's sslmode=require) failed with ERR_OPTION_NOT_IMPLEMENTED "The
+  // options.rejectUnauthorized option is not implemented". An external package must resolve from
+  // apps/web, hence postgres in its dependencies.
+  serverExternalPackages: ['postgres'],
   // Workspace packages ship TypeScript sources (exports → src/*.ts) with NodeNext `.js` imports.
   transpilePackages: [
     '@yieldvest/binance',

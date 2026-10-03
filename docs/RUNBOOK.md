@@ -67,6 +67,12 @@ Execution mode: `EXECUTION_MODE=simulate` (the default) signs nothing. `live` si
 - A skill plan's principal is in the user's wallet, so the worker never redeems it (`redeemPlanPosition` owner check, test "never redeems a skill plan's position from the house wallet").
 - Clearing is automatic (when the inputs read normal again). After it clears, a human turns paused house plans back on with `plan:status --activate`.
 
+### 3.7 A cycle held for review (PD-07)
+- Symptoms: Telegram `[yieldvest] <plan> cycle #<n> needs review: …` (a swap confirmed and no tokens arrived) or `… was interrupted after signing with no recorded decision`; the plan is paused (`needs_review`) and every cycle of it answers `outbox_busy`. `pnpm live:check` shows `review ✗ held for review: <plan> cycle #<n>`, and `pnpm plan:status --plan <plan> --activate` refuses with the cycle's number.
+- Check: the cycle's transactions — `select tx_hash, kind, status, nonce from tx_outbox where cycle_id = <n>;` — each on BscScan: what left the house wallet and what arrived. Write the UTC time, the hashes and what you found into `dx/LOG.md` (fund decisions = human).
+- Close it once every one of them is mined or settled (`CONFIRMED` or `FAILED`; while one is `SIGNED` or `PENDING` the close is refused and §3.4 applies): `pnpm plan:status --plan <plan> --close-review <n>` → it lists the transactions and asks for `y`. The cycle ends FAILED `CLOSED_AFTER_REVIEW` ("Held for review. A person checked its transactions on BscScan and closed it."), its cap reservation counts as spent, and the plan stays paused (`paused_by_operator`). A confirmed transaction of the cycle that is not written down yet is applied by the next tick like any finished cycle's late transaction; a swap with no recorded decision stays a human's to write down.
+- Then `pnpm plan:status --plan <plan> --activate` when you want it to run again.
+
 ## 4. Changing caps (limits) — a human's explicit "yes" comes first (CLAUDE.md rule 5)
 
 1. Write the new value and the reason in the conversation or in an issue, and get approval.
@@ -84,7 +90,7 @@ Execution mode: `EXECUTION_MODE=simulate` (the default) signs nothing. `live` si
 ## 6. Deploy
 
 - Worker: `fly deploy -a yieldvest-agent` (the Dockerfile fails the build if `.env*` is present). After the deploy, check the config-validation line in the log.
-- Web: Vercel (`apps/web`, build `pnpm --filter @yieldvest/web build`). env: `DATABASE_URL`, `SESSION_SECRET` (32 characters or more), `JUDGE_CODES`, `NEXT_PUBLIC_APP_URL`. The web holds no house key and no API key.
+- Web: **Cloudflare Workers** since 10/3 (DECISIONS D-36, §6.3); Vercel stays the fallback (`apps/web`, build `pnpm --filter @yieldvest/web build`). env: `DATABASE_URL`, `SESSION_SECRET` (32 characters or more), `JUDGE_CODES` (the invite codes), `NEXT_PUBLIC_APP_URL`. The web holds no house key and no API key.
 - Always after a deploy: `pnpm smoke --url https://<web>`, `pnpm ui:check --url https://<web>` (375/1440px, English only, no CSP violations), `pnpm qa:check --url https://<web>` (accessibility, keyboard, motion, phone performance).
 - After 10/9: hotfixes only.
 
@@ -112,6 +118,18 @@ The agent's identity on the BSC registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539
 6. In the same worker shell: `AGENT_ID=<id> pnpm agent:register --site https://<web> --broadcast` → `y`: `setAgentURI` writes the file with its registry entry (the SDK's second phase).
 7. Check, any time: `AGENT_ID=<id> pnpm agent:register --site https://<web>` prints `current: agent <id> on chain holds the site's file byte for byte`. Then `unset AGENT_IDENTITY_PRIVATE_KEY` and leave the shell. Record the two tx hashes in TASKS M2-10.
 
+## 6.3 The web on Cloudflare Workers (D-36)
+
+The Worker is `yieldvest` (`apps/web/wrangler.jsonc`, built with the OpenNext adapter), at https://yieldvest.gana003.workers.dev. It signs nothing and holds no wallet or Binance key: it reads the database the Fly worker writes and queues jobs for it.
+
+First deployed 10/3 06:33 UTC (version `ba4cc52b-cead-4205-9da2-5e836f8e970f`, TASKS PD-09): every page and route answers; until step 2, every data view reads "Unavailable (no database)" and `pnpm smoke` is red on `database` only.
+
+1. Deploy (any machine with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in its environment): `pnpm --filter @yieldvest/web cf:deploy` (it builds first). Only the `yieldvest` Worker changes.
+2. Secrets, once, by a human — never in the repo or a chat: `cd apps/web && npx wrangler secret put DATABASE_URL` (the production Neon URL — the same database the worker writes), then `SESSION_SECRET` (32+ random characters) and `JUDGE_CODES` (the invite codes, comma-separated; the judges' code goes in the submission form). Or: Cloudflare dashboard → Workers & Pages → `yieldvest` → Settings → Variables and Secrets. The cap variables (`HOUSE_MAX_PER_TX_USD`, `SANDBOX_MAX_PER_PLAN_USD`, `DAILY_SPEND_CAP_USD`, `MIN_BUY_USD`, `MAX_PRINCIPAL_USD`) must equal the worker's (§4); unset, both use the defaults.
+3. Check: `pnpm smoke --url https://yieldvest.gana003.workers.dev` (database, worker, web3api, rpc, house, receipts and tape green or degraded with a reason), then `pnpm ui:check` and `pnpm qa:check` with the same `--url`.
+4. Then: the repository variable `YIELDVEST_APP_URL` (Settings → Secrets and variables → Actions) turns the 30-minute monitor on; `pnpm agent:register --site https://yieldvest.gana003.workers.dev` (§6.2). The README's "Live:" line already points at the Worker.
+5. Rollback: `npx wrangler rollback` in `apps/web` (the previous version), or `npx wrangler deployments list` to pick one.
+
 ## 7. Command list
 
 | Command | Purpose |
@@ -119,7 +137,7 @@ The agent's identity on the BSC registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539
 | `pnpm smoke [--url] [--strict] [--alert]` | Check everything judging depends on, in one go |
 | `pnpm ui:check [--url] [--out dir]` | 9 screens × Korean and US browsers × 375/1440px: horizontal scroll, page errors, CSP violations, non-English text (D-26) |
 | `pnpm qa:check [--url] [--only a11y,keyboard,motion,perf]` | 9 screens: axe-core WCAG 2.1 A/AA at 375/1440px (serious or critical fails), skip link by keyboard, looping motion pauses and reduced motion stops it, phone profile (4× CPU, 150 ms / 1.6 Mbps) LCP, CLS, TBT and JS size (M3-02) |
-| `pnpm plan:status [--plan id --activate/--pause]` | List plans, turn them on, turn them off |
+| `pnpm plan:status [--plan id --activate/--pause \| --close-review <cycle>]` | List plans, turn them on, turn them off; close a cycle held for review after checking it (§3.7) |
 | `pnpm plan:set --plan <id> [--contribution] [--per-buy] [--daily] [--cadence] [--window]` | Change a house plan's amounts and cadence within the caps (an active plan needs `y`) |
 | `pnpm live:check [--usd 1]` | Check before a live trade (read-only, no Web3 API calls) → GO / NO-GO |
 | `pnpm cycle:once --plan <id> [--live]` | 1 cycle (simulation first; live needs `y`) |
@@ -127,6 +145,7 @@ The agent's identity on the BSC registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539
 | `pnpm yield:redeem --plan <id> [--live] \| --record <tx>` | Redeem a yield plan's whole position (preview first; live needs `y`) |
 | `pnpm agent:register [--site <url>] [--broadcast]` | The agent's ERC-8004 identity: register, then write the file with its id (dry run first; `--broadcast` needs `y`), §6.2 |
 | `pnpm dx:metrics` · `pnpm dx:events` | DX metrics, new findings |
+| `pnpm tape:summary [--days 30]` | The tape's numbers for the DX report: refusals, price impact, the gap to the US price, codes and token statuses → `dx/tape-summary.md` |
 | `pnpm receipts:table` | README receipts table |
 | `pnpm db:migrate` · `pnpm db:seed` · `pnpm db:rollback <tag> --yes` | DB |
 | `pnpm alert:test` | Send one test Telegram alert |

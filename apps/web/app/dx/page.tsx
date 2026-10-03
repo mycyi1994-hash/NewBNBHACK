@@ -198,7 +198,7 @@ export default async function DxPage() {
               }))}
             />
           ) : (
-            unavailable(tape.ok ? 'no tape yet' : tape.reason)
+            unavailable(tape.ok ? 'no market data recorded yet' : tape.reason)
           )}
           {tape.ok ? <Method t={t} method={tape.value.method} /> : null}
         </section>
@@ -215,7 +215,7 @@ export default async function DxPage() {
               }))}
             />
           ) : (
-            unavailable(tape.ok ? 'no tape yet' : tape.reason)
+            unavailable(tape.ok ? 'no market data recorded yet' : tape.reason)
           )}
         </section>
       </div>
@@ -234,7 +234,7 @@ export default async function DxPage() {
             ])}
           />
         ) : (
-          unavailable(tape.ok ? 'no tape yet' : tape.reason)
+          unavailable(tape.ok ? 'no market data recorded yet' : tape.reason)
         )}
       </section>
 
