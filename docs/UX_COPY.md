@@ -528,3 +528,11 @@ guaranteed · guarantee · risk-free · safe yield · safe return · principal p
 > Author: coding agent (10/3). The reason line of a cycle an operator closed with `pnpm plan:status --close-review` after checking its transactions on BscScan (RUNBOOK §3.7): a swap that confirmed with no tokens arriving, or a cycle interrupted after signing with no recorded decision. Its receipts, shown with it, say what moved. Drafts until a person confirms them.
 
 - `why.closed.review`: Held for review. A person checked its transactions on BscScan and closed it.
+
+### 7.12 The first screen before the first receipt (DECISIONS D-34, PD-06)
+> Author: coding agent (10/3). While no plan has bought on-chain yet, the Overview's receipt panel shows what the agent would do right now for Yieldvest's own fixed-amount plan, from the same check as "Would it buy right now?" (`/check`) on the latest market recording, with that recording's state. The verdict lines are §7.7's. Drafts until a person confirms them.
+
+- `home.now.eyebrow`: The agent, right now
+- `home.now.title`: Would it buy {ticker} now?
+- `home.now.note`: Yieldvest's own plan, decided by the agent's rules on its latest market data. No purchase yet: receipts appear here once a plan buys on-chain.
+- `home.now.rules`: See every rule it checked

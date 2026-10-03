@@ -25,6 +25,7 @@ import { processJobs } from '@yieldvest/agent';
 import {
   createDb,
   getPlan,
+  insertPlan,
   insertTapeSamples,
   migrateDb,
   readWorkerStatus,
@@ -234,11 +235,32 @@ const TOKENS_PER_USD = 4_442_430_800_471_653n;
 async function withFeatureData<T>(
   db: Db,
   database: string,
-  instrumentId: string,
+  instrument: { id: string; ticker: string },
   run: () => Promise<T>,
 ): Promise<T> {
+  const instrumentId = instrument.id;
   const now = new Date().toISOString();
   const before = await readWorkerStatus(db, 'venus');
+  // The house's fixed-amount plan on the test stock, as db:seed writes H-SAFE (paused until the
+  // house wallet is funded): the first screen shows its verdict before any receipt (PD-06).
+  const sql = postgres(database, { max: 1, onnotice: () => {} });
+  await sql`delete from plans where id = 'H-SAFE'`;
+  await insertPlan(db, {
+    id: 'H-SAFE',
+    ownerKind: 'house',
+    ownerRef: null,
+    mode: 'safe',
+    ticker: instrument.ticker,
+    issuerPreference: ['bstocks', 'ondo'],
+    contributionUsd: '5',
+    cadence: 'daily',
+    window: 'regular_session',
+    maxPerBuyUsd: '5',
+    maxDailyUsd: '5',
+    status: 'paused',
+    pausedReason: 'awaiting_funding',
+    nextDueAt: now,
+  });
   await insertTapeSamples(
     db,
     [5, 50, 500].map((sizeUsd) => ({
@@ -271,10 +293,10 @@ async function withFeatureData<T>(
     apyDisplay: '3.16%',
     verifiedAt: now,
   });
-  const sql = postgres(database, { max: 1, onnotice: () => {} });
   try {
     return await run();
   } finally {
+    await sql`delete from plans where id = 'H-SAFE'`;
     await sql`delete from tape_samples where instrument_id = ${instrumentId}`;
     if (before) await writeWorkerStatus(db, 'venus', before.value);
     else await sql`delete from worker_status where key = 'venus'`;
@@ -291,6 +313,25 @@ async function withFeatureData<T>(
  */
 async function featureFlow(run: Run, ticker: string) {
   const { page, base, log, check } = run;
+  // The first screen before any receipt (PD-06): the agent's verdict on the house plan right now.
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  const now = page.locator('.now-panel');
+  await now.waitFor({ timeout: STEP_MS });
+  const eyebrow = (await now.locator('.eyebrow').innerText()).trim();
+  const title = (await now.locator('h3').innerText()).trim();
+  const answer = (await now.locator('.now-verdict .pill').innerText()).trim();
+  if (!/the agent, right now/i.test(eyebrow) || title !== `Would it buy ${ticker} now?`) {
+    throw new Error(`the first screen says "${eyebrow}" / "${title}", not the agent's verdict`);
+  }
+  if (!/^Would (buy about|wait|skip|stop)/.test(answer)) {
+    throw new Error(`the first screen answers "${answer}", not one of the engine's verdicts`);
+  }
+  if ((await now.locator(`a[href^="/check?ticker=${ticker}&usd=5"]`).count()) !== 1) {
+    throw new Error('the first screen does not link to every rule on /check');
+  }
+  await check('home before the first receipt');
+  log(`home: no receipt yet, so the agent's verdict on its own plan — "${answer}"`);
+
   await page.goto(`${base}/check?ticker=${ticker}&usd=5`, { waitUntil: 'networkidle' });
   const verdict = page.locator('.check-verdict').first();
   await verdict.waitFor({ timeout: STEP_MS });
@@ -489,7 +530,9 @@ if (!flags.ok || problem !== null) {
       };
       const safe = await judgeFlow(run, codes[index] ?? '', ticker);
       const deposits = await yieldFlow(run, venus);
-      await withFeatureData(db, database, instrumentId, () => featureFlow(run, ticker));
+      await withFeatureData(db, database, { id: instrumentId, ticker }, () =>
+        featureFlow(run, ticker),
+      );
       // What the pages said, from the database: the first plan is stopped; the yield plans still
       // wait for their first run, with no principal (a dry run deposits nothing).
       const stopped = await getPlan(db, safe);
@@ -532,7 +575,9 @@ if (!flags.ok || problem !== null) {
     process.exitCode = 1;
   } else {
     log('PASS: Judge Mode end to end in simulate mode, at 375 and 1280 px');
-    log('      and the pre-flight check, issuer comparison, calculator, wallet view and MCP block');
+    log(
+      '      and the first screen, pre-flight check, issuer comparison, calculator, wallet view and MCP block',
+    );
     log('      0 page or console errors, 0 sideways scrolls');
   }
 }

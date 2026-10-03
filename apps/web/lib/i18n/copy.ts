@@ -609,6 +609,11 @@ export const COPY = {
     'receipt.indexed.differs': 'Binance Web3 API says "{status}" — the BSC receipt is the record',
     'why.closed.review':
       'Held for review. A person checked its transactions on BscScan and closed it.',
+    'home.now.eyebrow': 'The agent, right now',
+    'home.now.title': 'Would it buy {ticker} now?',
+    'home.now.note':
+      "Yieldvest's own plan, decided by the agent's rules on its latest market data. No purchase yet: receipts appear here once a plan buys on-chain.",
+    'home.now.rules': 'See every rule it checked',
   },
 } as const;
 

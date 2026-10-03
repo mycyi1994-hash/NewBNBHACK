@@ -5,18 +5,32 @@
  * Every value is read from the database or the chain; what cannot be read says why (rule 4).
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { EmptyReceiptPanel, ReceiptPanel } from '../components/activity/items';
 import { AutoRefresh, MoneyFlow, ProgressStrip } from '../components/design';
 import { Icon } from '../components/Icon';
 import { AnimatedText } from '../components/motion';
 import { pausedText, planName, statusText } from '../components/plan-text';
 import { Toolbar } from '../components/Toolbar';
-import { SectionHeading, Status, SummaryStrip, Unavailable, type Tone } from '../components/ui';
-import { grouped, money, moneyFine, timeText } from '../lib/format';
+import {
+  Ledger,
+  Panel,
+  Pill,
+  SectionHeading,
+  StateBadge,
+  Status,
+  SummaryStrip,
+  tapeState,
+  Unavailable,
+  type Tone,
+} from '../components/ui';
+import { DECISION_TONE, retryLine, verdictLine } from '../components/verdict';
+import { grouped, issuerName, money, moneyFine, timeText } from '../lib/format';
 import { locale } from '../lib/i18n/server';
 import type { Lang, T } from '../lib/i18n/translate';
 import { activityFeed, type ActivityItem } from '../lib/server/activity';
 import { context } from '../lib/server/context';
+import { houseNow, type HouseNow } from '../lib/server/house-now';
 import { houseStory, type HouseStory } from '../lib/server/overview';
 import { settle, type Settled } from '../lib/server/settle';
 
@@ -40,6 +54,11 @@ export default async function OverviewPage() {
       ])
     : [noDatabase, noDatabase];
   const latest = feed.ok ? latestBuy(feed.value) : null;
+  // Before the first receipt, the panel shows the agent deciding (PD-06) instead of an empty one.
+  const decision =
+    db && feed.ok && !latest
+      ? await settle('database', () => houseNow(db, String(config.caps.minBuyUsd), now))
+      : null;
 
   return (
     <>
@@ -52,12 +71,89 @@ export default async function OverviewPage() {
         </section>
         {latest ? (
           <ReceiptPanel t={t} lang={lang} tz={tz} item={latest} eyebrow={t('receipt.latest')} />
+        ) : decision?.ok && decision.value ? (
+          <NowPanel t={t} lang={lang} tz={tz} now={now} value={decision.value} />
         ) : (
           <EmptyReceiptPanel t={t} eyebrow={t('receipt.latest')} />
         )}
       </div>
       <NextBuy t={t} house={house} />
     </>
+  );
+}
+
+/**
+ * What the agent would do right now for the house's fixed-amount plan (PD-06): /check's verdict
+ * on the latest market recording, with that recording's state and the way to every rule.
+ */
+function NowPanel({
+  t,
+  lang,
+  tz,
+  now,
+  value,
+}: {
+  t: T;
+  lang: Lang;
+  tz: string;
+  now: Date;
+  value: HouseNow;
+}) {
+  const { plan, preflight, verdict } = value;
+  const [head, reason] = verdictLine(t, lang, tz, verdict);
+  const retry = retryLine(t, lang, tz, verdict, reason);
+  const rules = `/check?${new URLSearchParams({
+    ticker: plan.ticker,
+    usd: preflight.usd,
+    window: plan.window,
+  }).toString()}`;
+  return (
+    <Panel
+      eyebrow={t('home.now.eyebrow')}
+      title={t('home.now.title', { ticker: plan.ticker })}
+      waiting
+      className="now-panel"
+    >
+      <p className="now-verdict">
+        <Pill tone={DECISION_TONE[verdict.decision]}>{head}</Pill>
+      </p>
+      {reason ? <p className="check-why">{reason}</p> : null}
+      {retry ? <p className="method-note">{retry}</p> : null}
+      <Ledger
+        rows={[
+          [
+            t('receipt.plan'),
+            plan.status === 'active'
+              ? planName(t, plan)
+              : `${planName(t, plan)} · ${pausedText(t, plan.pausedReason) ?? statusText(t, plan.status)}`,
+          ],
+          [
+            t('check.form.issuer'),
+            `${issuerName(verdict.issuer) ?? verdict.issuer} · ${verdict.symbol}`,
+          ],
+          [
+            t('check.rule.data'),
+            <StateBadge
+              key="data"
+              t={t}
+              data={tapeState(preflight.data, 'no tape samples yet')}
+              now={now}
+            />,
+          ],
+        ]}
+      />
+      <p className="panel-note">{t('home.now.note')}</p>
+      <div className="link-row">
+        <Link className="text-link" href={rules}>
+          {t('home.now.rules')}
+          <Icon name="arrow" size={16} />
+        </Link>
+      </div>
+      <Link className="button dark wide" href="/invest">
+        {t('home.cta.judge')}
+        <Icon name="arrow" size={18} />
+      </Link>
+    </Panel>
   );
 }
 

@@ -40,7 +40,7 @@ Read-only, from the worker's latest market recording, each with its data state (
 
 ## What Yieldvest ran itself
 
-`pnpm receipts:table` builds this table from the DB (time · plan · action · outcome/reason · receipt). **Currently 0 receipts** — topping up the house wallet and switching to live are waiting on the humans' money decisions (REPLAN R1–R4). They get pasted here as they come in.
+`pnpm receipts:table` builds this table from the DB (time · plan · action · outcome/reason · receipt). **Currently 0 receipts** — topping up the house wallet and switching to live are waiting on the humans' money decisions (REPLAN R1–R4). They get pasted here as they come in. Until the first one, the Overview's receipt panel shows **the agent deciding right now** for its own $5 plan — `/check`'s verdict on the latest market recording, with the recording's state and a link to every rule (PD-06); each receipt, once there, carries the Binance Web3 Wallet API's own status of its transaction under the BSC link (PD-05).
 
 ## Verify it yourself
 
