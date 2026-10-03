@@ -146,9 +146,9 @@ Score anchors. We play the judge and score our own submission. Any item under 7 
 ## 6. Submission checklist (official "What to Submit")
 
 - [ ] A working project: at least 1 Binance Web3 API module. Agentic Wallet/Wallet Skills is optional (weighted in scoring); 7 or more modules is our own target
-- [ ] Public repo. Stating a license is a separate recommendation (not a required item listed in the official What to Submit)
+- [x] Public repo (10/3: GitHub reports `mycyi1994-hash/NewBNBHACK` public). Stating a license is a separate recommendation (not a required item listed in the official What to Submit); no LICENSE file yet — a human decision
 - [ ] Demo video ≤ 4 min (strongly recommended)
-- [ ] Deployment link, or instructions a judge can follow
+- [x] Deployment link, or instructions a judge can follow (10/3: https://yieldvest.gana003.workers.dev, TASKS PD-09; on the production data after `pnpm cf:activate`, PD-10. Instructions: `docker compose up`, README)
 - [ ] Developer Experience Report (submitted through the official template form) — 7 sections: Onboarding / Documentation issues / API pitfalls / AI stack feedback / Tokenized-stock specifics / Redesign suggestions / Requested capabilities
 - [ ] Registration completed (free API, higher rate limits)
 - [ ] Plan to stay live throughout the judging window (`docs/PLAN.md` §8 operations runbook)
