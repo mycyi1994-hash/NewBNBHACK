@@ -166,13 +166,13 @@ function Progress({ steps, startedAt }: { steps: StepKey[]; startedAt: number })
 
 /* ---------- chat ---------- */
 
-function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
-  prefill?: string; auto?: boolean; quotes: Quote[]; vault: VaultInfo | null;
+function Chat({ seed, active, quotes, vault, onCreate, onExecuted }: {
+  seed: { text: string; n: number } | null; active: boolean; quotes: Quote[]; vault: VaultInfo | null;
   onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void;
 }) {
   const { t, lang } = useT();
   const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [draft, setDraft] = useState(auto ? '' : prefill ?? '');
+  const [draft, setDraft] = useState('');
   const [plan, setPlan] = useState<Plan | null>(null);
   const [goal, setGoal] = useState('');
   const [busy, setBusy] = useState<{ steps: StepKey[]; at: number } | null>(null);
@@ -272,12 +272,15 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
     if (!q || q.role !== 'you' || busy) return;
     const base = msgs.slice(0, i - 1);
     setMsgs(base);
+    // A retried "execute" message is still a trade: it gets the same confirm dialog as a typed one.
+    if (EXECUTE_WORDS.test(q.text) && vault?.configured) { setConfirm(q.text); return; }
     void send(q.text, base);
   };
 
   // Esc stops a reply; "/" jumps to the input from anywhere on the page (ChatGPT / Perplexity shortcuts).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!active) return;
       const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
       if (e.key === 'Escape' && busy && !busy.steps.includes('execute') && !confirm) stop();
       else if (e.key === '/' && !typing && !confirm) { e.preventDefault(); input.current?.focus(); }
@@ -286,10 +289,17 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
     return () => document.removeEventListener('keydown', onKey);
   });
 
-  const sentAuto = useRef(false);
+  // A goal sent from the trade-screen dock joins this conversation; it does not wipe it (ChatGPT keeps history).
+  const seen = useRef(0);
   useEffect(() => {
-    if (auto && prefill && !sentAuto.current) { sentAuto.current = true; ask(prefill); }
+    if (!seed || seed.n === seen.current) return;
+    seen.current = seed.n;
+    if (seed.text) ask(seed.text); else input.current?.focus();
   });
+  useEffect(() => { if (active) input.current?.focus(); }, [active]);
+
+  /** ChatGPT "New chat": clear the conversation and the plan. */
+  const newChat = () => { if (busy) return; setMsgs([]); setPlan(null); setGoal(''); setDraft(''); setTypingIdx(null); input.current?.focus(); };
 
   // Stop is offered while Moa thinks, but not once a trade is on its way to the vault (it may already be on-chain).
   const canStop = !!busy && !busy.steps.includes('execute');
@@ -344,7 +354,11 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
           <>
             <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
               <div className="chat-col">
-                <div className="event"><span className="event-dot" /> {t.started} <span className="event-time">{time(msgs[0].at)}</span></div>
+                <div className="event"><span className="event-dot" /> {t.started} <span className="event-time">{time(msgs[0].at)}</span>
+                  <button className="new-chat" onClick={newChat} disabled={!!busy} data-tip={t.newChatTip}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><path d="M11.5 2.5 13.5 4.5 7 11l-2.7.7.7-2.7 6.5-6.5zM3 13.5h10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>{t.newChat}
+                  </button>
+                </div>
                 {msgs.map((m, i) => (
                   <div key={i} className={`msg ${m.role}`}>
                     {m.role === 'moa' && <span className="orb md" aria-hidden />}
@@ -577,6 +591,7 @@ export default function App() {
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
   const [view, setView] = useState<View>({ name: 'trade' });
+  const [seed, setSeed] = useState<{ text: string; n: number } | null>(null);
   const quotes = useQuotes();
   const { vault, reloadVault } = useVault();
   const { bots, add, remove } = useBots();
@@ -592,18 +607,18 @@ export default function App() {
         <Sidebar view={view} go={go} botCount={bots.length} vault={vault} />
         <main className="main">
           <Topbar title={title} quotes={quotes} />
-          {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onAsk={(p) => go({ name: 'chat', prefill: p, auto: !!p })} />}
-          {view.name === 'chat' && (
+          {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onAsk={(p) => { setSeed((x) => ({ text: p, n: (x?.n ?? 0) + 1 })); go({ name: 'chat' }); }} />}
+          {/* Chat stays mounted so the conversation survives page changes; it is only hidden. */}
+          <div className="chat-host" hidden={view.name !== 'chat'}>
             <Chat
-              key={(view.prefill ?? '') + String(view.auto)}
-              prefill={view.prefill}
-              auto={view.auto}
+              seed={seed}
+              active={view.name === 'chat'}
               quotes={quotes}
               vault={vault}
               onExecuted={(x) => { record(x); reloadVault(); }}
               onCreate={(goal, plan) => { const b = add({ name: botName(plan), goal, plan }); go({ name: 'bot', id: b.id }); }}
             />
-          )}
+          </div>
           {view.name === 'bots' && <Bots bots={bots} go={go} execs={execs} />}
           {view.name === 'bot' && current && <BotDetail bot={current} execs={execs} vault={vault} onDelete={() => { remove(current.id); go({ name: 'bots' }); }} />}
         </main>
