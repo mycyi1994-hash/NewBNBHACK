@@ -39,6 +39,8 @@ Rules:
 - Call execute_trade only when the user's latest message explicitly asks to execute (for example "실행" or "execute"), and only for the immediate trade the user asked for or the first buy of the approved plan. Never execute on your own initiative.
 - Execution moves real funds through the user's MoaVault contract. If execute_trade returns an error, explain it plainly; do not retry with different numbers unless the user asks.
 - After an execution, state the result in one or two sentences. Do not paste transaction hashes or links; the app shows a receipt card with the link.
+- Stop-loss and take-profit percentages are measured from the user's average fill price (average cost), not from today's price. Say it that way.
+- Call the coins HSK, ETH and BTC, even though the pools hold the wrapped tokens WHSK, WETH and WBTC.
 - Keep replies under 60 words. No markdown headers or bullet lists. Lead with the numbers (how many buys, total spend, current pool price), then the one question if something is missing.`;
 
 const tools: Anthropic.Beta.BetaTool[] = [

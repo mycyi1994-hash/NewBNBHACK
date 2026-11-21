@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
+import { createChart, ColorType, LineType, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
 import * as cex from './cex.ts';
 import { EXPLORER, POOLS, poolDetail, type PoolDetail } from './dex.ts';
 import { ASSETS, type Asset } from './intent.ts';
@@ -46,18 +46,18 @@ function PriceChart({ data }: { data: ChartData }) {
       if (series.current) c.removeSeries(series.current);
       series.current = data.kind === 'candles'
         ? c.addCandlestickSeries({ upColor: C.up, downColor: C.down, borderVisible: false, wickUpColor: C.up, wickDownColor: C.down })
-        : c.addAreaSeries({ lineColor: C.line, topColor: 'rgba(215,219,224,0.12)', bottomColor: 'rgba(215,219,224,0)', lineWidth: 2 });
+        : c.addAreaSeries({ lineColor: C.line, topColor: 'rgba(215,219,224,0.12)', bottomColor: 'rgba(215,219,224,0)', lineWidth: 2, lineType: LineType.WithSteps, pointMarkersVisible: true, pointMarkersRadius: 3 });
       kind.current = data.kind;
     }
     if (data.kind === 'candles') (series.current as ISeriesApi<'Candlestick'>).setData(data.data.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
-    else (series.current as ISeriesApi<'Area'>).setData(data.data.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
+    else { (series.current as ISeriesApi<'Area'>).setData(data.data.map((d) => ({ ...d, time: d.time as UTCTimestamp }))); c.timeScale().fitContent(); }
   }, [data]);
 
   return <div ref={box} className="chart" />;
 }
 
-function Stat({ label, value, cls }: { label: string; value: string; cls?: string }) {
-  return <div className="stat"><span>{label}</span><b className={cls}>{value}</b></div>;
+function Stat({ label, value, cls, tip }: { label: string; value: string; cls?: string; tip?: string }) {
+  return <div className="stat" title={tip}><span className={tip ? 'has-tip' : undefined}>{label}</span><b className={cls}>{value}</b></div>;
 }
 
 /* ---------- data hooks ---------- */
@@ -111,8 +111,8 @@ function useDex(asset: Asset) {
 function OrderBook({ book, t, tape }: { book: Book | null; t: cex.Ticker | null; tape: cex.Trade[] }) {
   const { t: s } = useT();
   const [tab, setTab] = useState<'book' | 'trades'>('book');
-  const asks = book ? book.asks.slice(0, 10) : [];
-  const bids = book ? book.bids.slice(0, 10) : [];
+  const asks = book ? book.asks.slice(0, 7) : [];
+  const bids = book ? book.bids.slice(0, 7) : [];
   const max = Math.max(1, ...asks.map((x) => x.qty), ...bids.map((x) => x.qty));
   return (
     <section className="panel book">
@@ -163,7 +163,7 @@ function Swaps({ detail }: { detail: PoolDetail | null }) {
       <div className="panel-tabs"><span className="tab-label on">{s.recentSwaps}</span></div>
       <div className="book-body">
         <div className="cols four"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
-        {detail?.swaps.slice(0, 22).map((x) => (
+        {detail?.swaps.slice(0, 12).map((x) => (
           <a key={x.tx + x.block} className="lvl four" href={`${EXPLORER}/tx/${x.tx}`} target="_blank" rel="noreferrer">
             <span className={x.side === 'buy' ? 'pos' : 'neg'}>{x.side === 'buy' ? s.buy : s.sell}</span>
             <span>{fmtPrice(x.price)}</span>
@@ -178,38 +178,9 @@ function Swaps({ detail }: { detail: PoolDetail | null }) {
   );
 }
 
-/* ---------- strategy order form ---------- */
-
-function StrategyForm({ onAsk }: { onAsk: (p: string) => void }) {
-  const { t } = useT();
-  const [kind, setKind] = useState<number | null>(null);
-  const [draft, setDraft] = useState('');
-  const submit = () => { const v = draft.trim(); if (v) onAsk(v); };
-  return (
-    <section className="panel order">
-      <div className="panel-head"><span>{t.orderTitle}</span></div>
-      <div className="type-tabs" role="tablist">
-        {t.starters.map((s, i) => (
-          <button key={s.title} role="tab" aria-selected={i === kind} className={i === kind ? 'on' : ''} title={s.sub}
-            onClick={() => { setKind(i); setDraft(s.prompt); }}>{s.title}</button>
-        ))}
-      </div>
-      <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
-        <label className="field">
-          <span>{t.instructions}</span>
-          <textarea rows={4} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t.dockPlaceholder}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }} />
-        </label>
-        <button className="btn-primary wide" type="submit" disabled={!draft.trim()}>{t.ask}</button>
-      </form>
-      <p className="hint">{t.askNote}</p>
-    </section>
-  );
-}
-
 /* ---------- page ---------- */
 
-export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string) => void; quotes: Quote[]; vault: VaultInfo | null }) {
+export default function Trade({ quotes, vault }: { quotes: Quote[]; vault: VaultInfo | null }) {
   const { t: s } = useT();
   const [venue, setVenue] = useState<Venue>('cex');
   const [interval, setIv] = useState<cex.Interval>('15m');
@@ -231,7 +202,7 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
   const dexBtc = asset === 'BTC' ? d.detail?.price : undefined;
 
   return (
-    <div className="trade">
+    <div className="trade fade-in">
       <div className="ticker">
         <div className="venue" role="tablist" aria-label="Venue">
           <button role="tab" aria-selected={venue === 'cex'} className={venue === 'cex' ? 'on' : ''} onClick={() => setVenue('cex')}>{s.cex}<small>{s.cexSub}</small></button>
@@ -239,12 +210,12 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
         </div>
         {venue === 'cex' ? (
           <>
-            <div className="sym"><span className="coin coin-btc" /><b>BTCUSDT</b><span className="tag">{s.perpetual}</span></div>
+            <div className="sym"><span className="coin coin-btc" /><b>BTCUSDT</b><span className="tag" title={s.tipPerp}>{s.perpetual}</span></div>
             <div className={`last ${up ? 'pos' : 'neg'}`}>{c.t ? usd(c.t.last, 1) : '—'}</div>
             <div className="stats">
               <Stat label={s.change24h} value={c.t ? `${up ? '+' : ''}${chg.toFixed(2)}%` : '—'} cls={up ? 'pos' : 'neg'} />
-              <Stat label={s.mark} value={c.mi ? usd(c.mi.mark, 1) : '—'} />
-              <Stat label={s.index} value={c.mi ? usd(c.mi.index, 1) : '—'} />
+              <Stat label={s.mark} tip={s.tipMark} value={c.mi ? usd(c.mi.mark, 1) : '—'} />
+              <Stat label={s.index} tip={s.tipIndex} value={c.mi ? usd(c.mi.index, 1) : '—'} />
               <Stat label={s.high24h} value={c.t ? usd(c.t.high, 1) : '—'} />
               <Stat label={s.low24h} value={c.t ? usd(c.t.low, 1) : '—'} />
               <Stat label={s.vol24h} value={c.t ? `${compact(c.t.volContracts * cex.CONTRACT_BTC)} BTC` : '—'} />
@@ -270,28 +241,28 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
       </div>
 
       <div className="trade-grid">
-        <section className="panel chart-panel">
-          <div className="panel-tabs">
+        <div className="col-main">
+          <section className="panel chart-panel">
+            <div className="panel-tabs">
+              {venue === 'cex'
+                ? (['1m', '15m', '1h', '4h'] as cex.Interval[]).map((iv) => <button key={iv} className={iv === interval ? 'on' : ''} aria-pressed={iv === interval} onClick={() => setIv(iv)}>{iv}</button>)
+                : <span className="tab-label">{s.poolLine} · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer">{p.pool.slice(0, 6)}…{p.pool.slice(-4)}</a></span>}
+              <span className="status-dot on push">{s.live}</span>
+            </div>
             {venue === 'cex'
-              ? (['1m', '15m', '1h', '4h'] as cex.Interval[]).map((iv) => <button key={iv} className={iv === interval ? 'on' : ''} aria-pressed={iv === interval} onClick={() => setIv(iv)}>{iv}</button>)
-              : <span className="tab-label">{s.poolLine} · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer">{p.pool.slice(0, 6)}…{p.pool.slice(-4)}</a></span>}
-            <span className="status-dot on push">{s.live}</span>
-          </div>
-          {venue === 'cex'
-            ? (c.candles.length ? <PriceChart data={{ kind: 'candles', data: c.candles }} /> : <div className="chart-empty muted">{s.loadingCandles}</div>)
-            : (line.length > 1 ? <PriceChart data={{ kind: 'line', data: line }} /> : <div className="chart-empty muted">{d.detail ? s.fewSwaps : s.readingChain}</div>)}
-          {venue === 'cex' && dexBtc !== undefined && c.t && (
-            <div className="chart-foot">{s.dexVsPerp(usd(dexBtc, 0), `${dexBtc >= c.t.last ? '+' : ''}${((dexBtc / c.t.last - 1) * 100).toFixed(2)}%`)}</div>
-          )}
-        </section>
-
-        {venue === 'cex' ? <OrderBook book={c.book} t={c.t} tape={c.tape} /> : <Swaps detail={d.detail} />}
-
-        <aside className="side">
-          <StrategyForm onAsk={onAsk} />
-          <VaultPanel vault={vault} />
+              ? (c.candles.length ? <PriceChart key="candles" data={{ kind: 'candles', data: c.candles }} /> : <div className="chart-empty muted">{s.loadingCandles}</div>)
+              : (line.length > 1 ? <PriceChart key={'line' + asset} data={{ kind: 'line', data: line }} /> : <div className="chart-empty muted">{d.detail ? s.fewSwaps : s.readingChain}</div>)}
+            {venue === 'cex' && dexBtc !== undefined && c.t && (
+              <div className="chart-foot">{s.dexVsPerp(usd(dexBtc, 0), `${dexBtc >= c.t.last ? '+' : ''}${((dexBtc / c.t.last - 1) * 100).toFixed(2)}%`)}</div>
+            )}
+            {venue === 'dex' && d.detail && d.detail.swaps.length < 6 && <div className="chart-foot">{s.fewSwapsNote(d.detail.swaps.length)}</div>}
+          </section>
           <SpreadTable quotes={quotes} />
-        </aside>
+        </div>
+        <div className="col-side">
+          <VaultPanel vault={vault} />
+          {venue === 'cex' ? <OrderBook book={c.book} t={c.t} tape={c.tape} /> : <Swaps detail={d.detail} />}
+        </div>
       </div>
       <p className="data-note">{s.dataNote}</p>
     </div>

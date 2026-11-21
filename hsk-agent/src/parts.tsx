@@ -3,9 +3,23 @@ import type { Quote } from './market.ts';
 import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 
-export interface VaultInfo { configured: boolean; vault?: string; explorerUrl?: string; localFork?: boolean; usdtBalance?: string; remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string }
+export interface VaultInfo { configured: boolean; unreachable?: boolean;vault?: string; explorerUrl?: string; localFork?: boolean; usdtBalance?: string; remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string }
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+/** Moa's mark: a stack of coins being collected ("모아" means "collect"). */
+export function MoaGlyph({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 22 22" aria-hidden className="moa-glyph">
+      <rect x="2.5" y="14.5" width="17" height="5" rx="2.5" fill="currentColor" />
+      <rect x="4.5" y="8.75" width="14" height="5" rx="2.5" fill="currentColor" opacity="0.72" />
+      <rect x="7" y="3" width="9.5" height="5" rx="2.5" fill="currentColor" opacity="0.45" />
+    </svg>
+  );
+}
+
+/** Pools hold wrapped tokens; people know the coin. WHSK → HSK, WETH → ETH, WBTC → BTC. */
+export const coinName = (sym?: string) => (sym ?? '').replace(/^W(HSK|ETH|BTC)$/, '$1');
 
 /** Vault facts as key/value rows, like the balance block of an order form. */
 export function VaultPanel({ vault }: { vault: VaultInfo | null }) {
@@ -13,7 +27,7 @@ export function VaultPanel({ vault }: { vault: VaultInfo | null }) {
   return (
     <section className="panel">
       <div className="panel-head"><span>{t.vaultTitle}</span>
-        {vault?.configured ? <span className="status-dot on">{vault.localFork ? t.localFork : 'HSK Chain'}</span> : <span className="status-dot">{t.vaultNone}</span>}
+        {vault?.configured ? <span className="status-dot on" title={vault.localFork ? t.tipFork : undefined}>{vault.localFork ? t.localFork : 'HSK Chain'}</span> : <span className="status-dot">{vault?.unreachable ? t.vaultDown : t.vaultNone}</span>}
       </div>
       {vault?.configured && vault.vault ? (
         <dl className="kv">
@@ -43,7 +57,7 @@ export function SpreadTable({ quotes }: { quotes: Quote[] }) {
     <section className="panel">
       <div className="panel-head"><span>{t.spreadTitle}</span><span className="status-dot on">{t.live}</span></div>
       <table className="grid-table">
-        <thead><tr><th>{t.colAsset}</th><th className="r">{t.colPool}</th><th className="r">{t.colGap}</th></tr></thead>
+        <thead><tr><th>{t.colAsset}</th><th className="r">{t.colPool}</th><th className="r" title={t.tipGate}>{t.colGap}</th></tr></thead>
         <tbody>
           {quotes.length === 0 && <tr><td colSpan={3} className="muted">{t.readingChain}</td></tr>}
           {quotes.map((q) => (
