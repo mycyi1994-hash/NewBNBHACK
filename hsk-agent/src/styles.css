@@ -493,3 +493,39 @@ a.tape-row:hover { text-decoration: none; }
 .feed-foot .fork-badge { font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { .dots i, .fade-up { animation: none; } }
 @media (max-width: 1180px) { .dock.feed-dock { height: auto; min-height: 0; } .feed { max-height: 420px; } }
+
+/* ---------- order book ladder + trades, side by side (Binance / Kraken layout) ---------- */
+.book-card { padding: 16px 18px 14px; }
+.book-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 560px)); justify-content: space-evenly; gap: 28px; }
+.pane-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.pane-head b { font-size: 14px; }
+.pane-head .muted { font-size: 12px; }
+.ladder, .tape-pane { min-width: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.lad-cols, .lad-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); column-gap: 12px; }
+.lad-cols { font-size: 11.5px; padding: 0 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.lad-cols > span:not(:first-child), .lad-row > span:not(:first-child):not(.lad-bar) { text-align: right; }
+.ladder .lad-row > span.px { text-align: left; }
+.lad-row { position: relative; padding: 3px 8px; border-radius: 6px; line-height: 18px; transition: background-color .12s ease; }
+.lad-row > span { position: relative; }
+.lad-row:hover { background: #f6f4f1; }
+.lad-bar { position: absolute !important; right: 0; top: 2px; bottom: 2px; border-radius: 5px; transition: width .35s ease; }
+.lad-row.ask .lad-bar { background: rgba(220, 38, 38, .085); }
+.lad-row.bid .lad-bar { background: rgba(22, 163, 74, .09); }
+.lad-mid { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 8px; margin: 4px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.lad-mid b { font-size: 17px; letter-spacing: -0.01em; }
+.lad-mid .muted { font-size: 12px; }
+.pressure { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 10px; padding: 0 8px; font-size: 12px; font-weight: 600; }
+.pressure-bar { height: 6px; border-radius: 99px; background: rgba(220, 38, 38, .55); overflow: hidden; }
+.pressure-bar span { display: block; height: 100%; background: rgba(22, 163, 74, .7); border-radius: 99px 0 0 99px; transition: width .4s ease; }
+.tape-pane { border-left: 1px solid var(--line); padding-left: 28px; }
+.lad-row.trade { padding-top: 2.5px; padding-bottom: 2.5px; }
+.flash-pos { animation: flash-pos 1.2s ease-out; }
+.flash-neg { animation: flash-neg 1.2s ease-out; }
+@keyframes flash-pos { from { background: rgba(22, 163, 74, .18); } }
+@keyframes flash-neg { from { background: rgba(220, 38, 38, .16); } }
+@media (prefers-reduced-motion: reduce) { .flash-pos, .flash-neg { animation: none; } }
+@media (max-width: 760px) {
+  .book-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .tape-pane { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 14px; }
+  .tape-pane .lad-row.trade:nth-of-type(n+12) { display: none; }
+}
