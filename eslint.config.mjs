@@ -58,6 +58,8 @@ export default defineConfig(
       '.claude/worktrees/**',
       // Independent Vite design preview, validated by the frontend-preview CI job.
       'frontend-preview/**',
+      // Separate HSK Chain hackathon app (Moa), built and tested on its own.
+      'hsk-agent/**',
     ],
   },
   js.configs.recommended,
