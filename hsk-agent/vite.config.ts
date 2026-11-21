@@ -45,13 +45,17 @@ function moaApi(env: Record<string, string>): Plugin {
   };
 }
 
+const HK = { target: 'https://api-glb.hashkey.com', changeOrigin: true, rewrite: (p: string) => p.replace(/^\/hk/, '') };
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   if (env.MOA_EFFORT && !process.env.MOA_EFFORT) process.env.MOA_EFFORT = env.MOA_EFFORT;
   return {
     base: './',
     plugins: [moaApi(env)],
-    server: { host: '127.0.0.1', port: 5180, strictPort: true },
-    preview: { host: '127.0.0.1', port: 4180, strictPort: true },
+    // HashKey Global goes through this server too, so a browser extension or network rule that blocks
+    // api-glb.hashkey.com in the browser does not leave the trade screen empty.
+    server: { host: '127.0.0.1', port: 5180, strictPort: true, proxy: { '/hk': HK } },
+    preview: { host: '127.0.0.1', port: 4180, strictPort: true, proxy: { '/hk': HK } },
   };
 });

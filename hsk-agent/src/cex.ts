@@ -11,10 +11,23 @@ export interface Trade { t: number; price: number; qty: number; buyerIsMaker: bo
 export interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
 export type Interval = '1m' | '15m' | '1h' | '4h';
 
+/** Same-origin proxy first (vite dev/preview), then the public API directly (static hosting). */
+const SOURCES = ['./hk', BASE];
+let working: string | undefined;
+
 async function get<T>(path: string): Promise<T> {
-  const r = await fetch(BASE + path);
-  if (!r.ok) throw new Error(`HashKey Global HTTP ${r.status}`);
-  return (await r.json()) as T;
+  let last: unknown;
+  for (const base of working ? [working] : SOURCES) {
+    try {
+      const r = await fetch(base + path);
+      if (!r.ok) throw new Error(`HashKey Global HTTP ${r.status}`);
+      const j = (await r.json()) as T;
+      working = base;
+      return j;
+    } catch (e) { last = e; }
+  }
+  working = undefined;
+  throw last instanceof Error ? last : new Error(String(last));
 }
 
 export async function ticker(): Promise<Ticker> {
