@@ -5,7 +5,7 @@ import { EXPLORER, POOLS, poolDetail, type PoolDetail } from './dex.ts';
 import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
-import { SpreadTable, VaultPanel, type VaultInfo } from './parts.tsx';
+import { MoaGlyph, SpreadTable, VaultPanel, type VaultInfo } from './parts.tsx';
 
 type Venue = 'cex' | 'dex';
 type Book = { bids: cex.Level[]; asks: cex.Level[] };
@@ -31,9 +31,11 @@ function PriceChart({ data }: { data: ChartData }) {
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: C.bg }, textColor: C.text, fontFamily: 'Inter Variable, system-ui, sans-serif', fontSize: 11 },
       grid: { vertLines: { color: C.grid }, horzLines: { color: C.grid } },
-      rightPriceScale: { borderColor: C.border },
+      rightPriceScale: { borderColor: C.border, scaleMargins: { top: 0.12, bottom: 0.08 } },
       timeScale: { borderColor: C.border, timeVisible: true, secondsVisible: false },
       crosshair: { mode: 0 },
+      // Same number format as the rest of the app: 64,000 not 64000.00.
+      localization: { priceFormatter: (p: number) => p.toLocaleString('en-US', { maximumFractionDigits: p < 1 ? 5 : p < 100 ? 3 : 0 }) },
     });
     chart.current = c;
     return () => { c.remove(); chart.current = null; series.current = null; kind.current = null; };
@@ -252,12 +254,15 @@ export default function Trade({ quotes, vault }: { quotes: Quote[]; vault: Vault
             {venue === 'cex'
               ? (c.candles.length ? <PriceChart key="candles" data={{ kind: 'candles', data: c.candles }} /> : <div className="chart-empty muted">{s.loadingCandles}</div>)
               : (line.length > 1 ? <PriceChart key={'line' + asset} data={{ kind: 'line', data: line }} /> : <div className="chart-empty muted">{d.detail ? s.fewSwaps : s.readingChain}</div>)}
-            {venue === 'cex' && dexBtc !== undefined && c.t && (
-              <div className="chart-foot">{s.dexVsPerp(usd(dexBtc, 0), `${dexBtc >= c.t.last ? '+' : ''}${((dexBtc / c.t.last - 1) * 100).toFixed(2)}%`)}</div>
+            {venue === 'cex' && (
+              <div className="chart-foot split">
+                <span>{dexBtc !== undefined && c.t ? s.dexVsPerp(usd(dexBtc, 0), `${dexBtc >= c.t.last ? '+' : ''}${((dexBtc / c.t.last - 1) * 100).toFixed(2)}%`) : ''}</span>
+                <button className="bridge" onClick={() => { setAsset('HSK'); setVenue('dex'); }} title={s.bridgeTip}><MoaGlyph size={14} />{s.bridge} →</button>
+              </div>
             )}
             {venue === 'dex' && d.detail && d.detail.swaps.length < 6 && <div className="chart-foot">{s.fewSwapsNote(d.detail.swaps.length)}</div>}
           </section>
-          <SpreadTable quotes={quotes} />
+          <SpreadTable quotes={quotes} onPick={(a) => { setAsset(a); setVenue('dex'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
         </div>
         <div className="col-side">
           <VaultPanel vault={vault} />

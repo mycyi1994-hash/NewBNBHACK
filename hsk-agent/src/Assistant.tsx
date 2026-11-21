@@ -113,10 +113,20 @@ export default function Assistant({ quotes, vault, seed, open, onClose, onCreate
   const end = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
+  const lastReply = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    // A new reply is read from its first line: bring its header to the top. Anything else (progress,
+    // a new plan state, the user's own message) goes to the end.
     // Recent Chromium returns a Promise from scrollIntoView; an effect must not return it.
-    void end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [msgs, busy, plan, createdId]);
+    const last = msgs[msgs.length - 1];
+    // Scroll only the panel: scrollIntoView would also move the page behind it.
+    const box = body.current;
+    if (!box) return;
+    const top = !busy && last?.role === 'moa' && lastReply.current ? lastReply.current.offsetTop - 12 : box.scrollHeight;
+    box.scrollTo({ top, behavior: 'smooth' });
+  }, [msgs, busy]);
+  useEffect(() => { if (createdId) body.current?.scrollTo({ top: body.current.scrollHeight, behavior: 'smooth' }); }, [createdId]);
 
   useEffect(() => {
     if (!seed) return;
@@ -209,7 +219,7 @@ export default function Assistant({ quotes, vault, seed, open, onClose, onCreate
         </div>
       </header>
 
-      <div className="as-body">
+      <div className="as-body" ref={body}>
         {msgs.length === 0 && !busy ? (
           <div className="as-empty fade-in">
             <h2 className="as-hero">{t.heroTitle}</h2>
@@ -235,7 +245,7 @@ export default function Assistant({ quotes, vault, seed, open, onClose, onCreate
         ) : (
           <>
             {msgs.map((m, i) => (
-              <div key={i} className={`msg ${m.role} fade-in`}>
+              <div key={i} className={`msg ${m.role} fade-in`} ref={i === msgs.length - 1 ? lastReply : undefined}>
                 {m.role === 'moa' && <div className="msg-meta"><MoaMark /><b>Moa</b><time>{time(m.at)}</time></div>}
                 <div className="msg-text">{m.text}</div>
                 {m.execs?.map((x, k) => <Receipt key={k} x={x} at={m.at} />)}
@@ -252,7 +262,7 @@ export default function Assistant({ quotes, vault, seed, open, onClose, onCreate
                   <>
                     <PlanSteps steps={plan.steps} />
                     {plan.missing.length > 0 && <div className="needs">{t.needs} {plan.missing[0]}</div>}
-                    <ul className="guards"><li>{t.guard1}</li><li>{t.guard2}</li><li>{t.guard3}</li></ul>
+                    <ul className="guards"><li>{t.guard1}</li><li>{t.guard2(((vault?.maxSlippageBps ?? 150) / 100).toFixed(1))}</li><li>{t.guard3}</li></ul>
                   </>
                 )}
                 {createdId ? (

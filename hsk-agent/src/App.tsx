@@ -124,7 +124,7 @@ function Bots({ bots, go, execs, ask }: { bots: Bot[]; go: (v: View) => void; ex
                   <tr key={b.id} tabIndex={0} onClick={() => go({ name: 'bot', id: b.id })} onKeyDown={(e) => { if (e.key === 'Enter') go({ name: 'bot', id: b.id }); }}>
                     <td className="strong">{b.name}</td>
                     <td className="muted ellipsis">{b.goal}</td>
-                    <td className="progress-cell">{budget !== undefined && <span className="mini-bar" aria-hidden><span style={{ width: `${Math.min(100, (spent / budget) * 100)}%` }} /></span>}<span>${spent.toFixed(0)}{budget !== undefined ? <span className="muted"> / ${budget.toFixed(0)}</span> : null}</span></td>
+                    <td className="progress-cell">{budget !== undefined && <CoinRow fill={spent / budget} count={(() => { const a = b.plan.steps.find((x): x is Extract<Step, { kind: 'accumulate' }> => x.kind === 'accumulate'); return a ? scheduleOf(a).buys : undefined; })()} />}<span>${spent.toFixed(0)}{budget !== undefined ? <span className="muted"> / ${budget.toFixed(0)}</span> : null}</span></td>
                     <td className="r"><StatusChip fills={botExecs(b, execs).filter((x) => x.ok).length} /></td>
                   </tr>
                 );
@@ -134,6 +134,7 @@ function Bots({ bots, go, execs, ask }: { bots: Bot[]; go: (v: View) => void; ex
         ) : null}
         {bots.length ? <div className="panel-foot muted">{t.botsHint}</div> : (
           <div className="empty">
+            <span className="empty-mark"><MoaGlyph size={40} /></span>
             <div className="empty-title">{t.noBots}</div>
             <div className="muted">{t.noBotsSub}</div>
             <button className="btn-soft" onClick={ask}>{t.newBot}</button>
@@ -146,9 +147,34 @@ function Bots({ bots, go, execs, ask }: { bots: Bot[]; go: (v: View) => void; ex
 
 const frac = (t: Strings, f: number) => (f === 1 ? t.all : f === 0.5 ? t.half : Math.abs(f - 1 / 3) < 1e-9 ? t.third : `${Math.round(f * 100)}%`);
 
+/** "모아" means collect: a stack of coins that fills toward the budget. */
+function CoinStack({ fill }: { fill: number }) {
+  const n = 8, on = Math.round(Math.min(1, Math.max(0, fill)) * n);
+  return (
+    <div className="coin-stack" aria-hidden>
+      {Array.from({ length: n }, (_, i) => <span key={i} className={n - i <= on ? 'on' : ''} style={{ marginLeft: (i % 2) * 4 }} />)}
+    </div>
+  );
+}
+
+/** One coin per planned buy (up to 20); filled ones are the share of the budget already spent. */
+function CoinRow({ fill, count }: { fill: number; count?: number }) {
+  const n = Math.min(20, Math.max(1, count ?? 10)), on = Math.max(fill > 0 ? 1 : 0, Math.round(Math.min(1, fill) * n));
+  return <span className="coin-row" aria-hidden>{Array.from({ length: n }, (_, i) => <span key={i} className={i < on ? 'on' : ''} />)}</span>;
+}
+
+function DeleteButton({ onDelete }: { onDelete: () => void }) {
+  const { t } = useT();
+  const [sure, setSure] = useState(false);
+  useEffect(() => { if (!sure) return; const x = setTimeout(() => setSure(false), 4000); return () => clearTimeout(x); }, [sure]);
+  return sure
+    ? <button className="btn-soft danger" onClick={onDelete}>{t.confirmDelete}</button>
+    : <button className="btn-soft" onClick={() => setSure(true)}>{t.delete}</button>;
+}
+
 function StatusChip({ fills }: { fills: number }) {
   const { t } = useT();
-  return fills > 0 ? <span className="status manual">{t.manual}</span> : <span className="status draft">{t.draft}</span>;
+  return fills > 0 ? <span className="status manual" title={t.manualTip}>{t.manual}</span> : <span className="status draft">{t.draft}</span>;
 }
 
 /** Average fill price per asset from successful buys (USDT paid / coins received). */
@@ -158,7 +184,7 @@ function avgFill(mine: Execution[], asset: string): number | undefined {
   return got > 0 ? paid / got : undefined;
 }
 
-function BotDetail({ bot, onDelete, execs, vault, back }: { bot: Bot; onDelete: () => void; execs: Execution[]; vault: VaultInfo | null; back: () => void }) {
+function BotDetail({ bot, onDelete, execs, vault, back, onRun }: { bot: Bot; onDelete: () => void; execs: Execution[]; vault: VaultInfo | null; back: () => void; onRun: (text: string) => void }) {
   const { t } = useT();
   const mine = botExecs(bot, execs).slice().sort((a, b) => a.at - b.at);
   const buys = mine.filter((x) => x.ok && x.side === 'buy');
@@ -166,9 +192,11 @@ function BotDetail({ bot, onDelete, execs, vault, back }: { bot: Bot; onDelete: 
   const budget = botBudget(bot);
   const acc = bot.plan.steps.find((s): s is Extract<Step, { kind: 'accumulate' }> => s.kind === 'accumulate');
   const totalBuys = acc ? scheduleOf(acc).buys : undefined;
+  const collected = buys.filter((x) => x.asset === acc?.asset).reduce((s, x) => s + Number(x.amountOut), 0);
   const stamp = (at: number) => new Date(at).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   const upcoming: string[] = [];
+  const nextBuy = acc?.perBuyUsd !== undefined && (totalBuys === undefined || buys.length < totalBuys) ? { usd: acc.perBuyUsd, asset: acc.asset } : undefined;
   if (acc?.perBuyUsd !== undefined && (totalBuys === undefined || buys.length < totalBuys)) upcoming.push(t.tlNext(String(acc.perBuyUsd), acc.asset));
   for (const s of bot.plan.steps) {
     if (s.kind !== 'stopLoss' && s.kind !== 'takeProfit') continue;
@@ -185,7 +213,7 @@ function BotDetail({ bot, onDelete, execs, vault, back }: { bot: Bot; onDelete: 
           <h1>{bot.name} <StatusChip fills={buys.length} /></h1>
           <p className="muted">{t.created} {new Date(bot.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
         </div>
-        <button className="btn-soft" onClick={onDelete}>{t.delete}</button>
+        <DeleteButton onDelete={onDelete} />
       </div>
       <div className="detail-grid">
         <div className="detail-main">
@@ -212,14 +240,25 @@ function BotDetail({ bot, onDelete, execs, vault, back }: { bot: Bot; onDelete: 
                   </li>
                 );
               })}
-              {upcoming.map((u, i) => <li key={'u' + i} className="next"><span className="tl-dot" /><div><span>{u}</span></div></li>)}
+              {upcoming.map((u, i) => (
+                <li key={'u' + i} className="next"><span className="tl-dot" /><div><span>{u}</span>
+                  {i === 0 && nextBuy && vault?.configured && <button className="btn-soft sm run" onClick={() => onRun(t.runNextPrompt(buys.length + 1, nextBuy.usd, nextBuy.asset))}>{t.runNext(buys.length + 1)} →</button>}
+                </div></li>
+              ))}
             </ol>
           </section>
         </div>
         <div className="detail-side">
           <section className="panel pad-lg">
-            <div className="label">{t.progress}</div>
-            <div className="big-num">${spent.toFixed(2)}</div>
+            <div className="collected">
+              <CoinStack fill={budget ? spent / budget : 0} />
+              <div>
+                <div className="label">{t.collected}</div>
+                <div className="big-num">{collected > 0 ? collected.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '0'} <small>{acc?.asset ?? ''}</small></div>
+              </div>
+            </div>
+            <div className="label top-gap">{t.progress}</div>
+            <div className="spent-num">${spent.toFixed(2)}</div>
             <div className="muted">{budget !== undefined ? t.spent(spent.toFixed(2), budget.toFixed(0)) : t.spentOpen(spent.toFixed(2))}</div>
             {budget !== undefined && <div className="bar" aria-hidden><span style={{ width: `${Math.min(100, (spent / budget) * 100)}%` }} /></div>}
             {totalBuys !== undefined && <div className="muted small-text top-gap-sm">{t.buysDone(buys.length, totalBuys)}</div>}
@@ -269,7 +308,7 @@ export default function App() {
           <main className="main">
             {view.name === 'trade' && <Trade quotes={quotes} vault={vault} />}
             {view.name === 'bots' && <Bots bots={bots} go={go} execs={execs} ask={() => ask()} />}
-            {view.name === 'bot' && current && <BotDetail bot={current} execs={execs} vault={vault} back={() => go({ name: 'bots' })} onDelete={() => { remove(current.id); go({ name: 'bots' }); }} />}
+            {view.name === 'bot' && current && <BotDetail onRun={(text) => ask(text)} bot={current} execs={execs} vault={vault} back={() => go({ name: 'bots' })} onDelete={() => { remove(current.id); go({ name: 'bots' }); }} />}
           </main>
           <Assistant
             quotes={quotes}

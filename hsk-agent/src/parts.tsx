@@ -3,7 +3,7 @@ import type { Quote } from './market.ts';
 import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 
-export interface VaultInfo { configured: boolean; unreachable?: boolean;vault?: string; explorerUrl?: string; localFork?: boolean; usdtBalance?: string; remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string }
+export interface VaultInfo { configured: boolean; maxSlippageBps?: number; unreachable?: boolean;vault?: string; explorerUrl?: string; localFork?: boolean; usdtBalance?: string; remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string }
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
@@ -51,20 +51,21 @@ export function VaultPanel({ vault }: { vault: VaultInfo | null }) {
 }
 
 /** HSKSwap pool price against spot, numbers only. */
-export function SpreadTable({ quotes }: { quotes: Quote[] }) {
+export function SpreadTable({ quotes, onPick }: { quotes: Quote[]; onPick?: (asset: Quote['asset']) => void }) {
   const { t } = useT();
   return (
     <section className="panel">
-      <div className="panel-head"><span>{t.spreadTitle}</span><span className="status-dot on">{t.live}</span></div>
+      <div className="panel-head"><span>{t.spreadTitle} <span className="muted head-sub">{t.spreadSub}</span></span><span className="status-dot on">{t.live}</span></div>
       <table className="grid-table">
-        <thead><tr><th>{t.colAsset}</th><th className="r">{t.colPool}</th><th className="r" title={t.tipGate}>{t.colGap}</th></tr></thead>
+        <thead><tr><th>{t.colAsset}</th><th className="r">{t.colPool}</th><th className="r" title={t.tipGate}><span className="has-tip">{t.colGap}</span></th>{onPick && <th />}</tr></thead>
         <tbody>
           {quotes.length === 0 && <tr><td colSpan={3} className="muted">{t.readingChain}</td></tr>}
           {quotes.map((q) => (
-            <tr key={q.asset}>
+            <tr key={q.asset} tabIndex={onPick ? 0 : undefined} onClick={onPick ? () => onPick(q.asset) : undefined} onKeyDown={onPick ? (e) => { if (e.key === 'Enter') onPick(q.asset); } : undefined}>
               <td><span className={`coin coin-${q.asset.toLowerCase()}`} />{q.asset}</td>
               <td className="r">{q.pool !== undefined ? fmtPrice(q.pool) : '—'}</td>
               <td className={`r ${q.gap === undefined ? '' : q.gap > 0 ? 'pos' : 'neg'}`}>{q.gap !== undefined ? `${q.gap > 0 ? '+' : ''}${(q.gap * 100).toFixed(2)}%` : '—'}</td>
+              {onPick && <td className="r open-cell">{t.openPool} →</td>}
             </tr>
           ))}
         </tbody>

@@ -41,7 +41,7 @@ Rules:
 - After an execution, state the result in one or two sentences. Do not paste transaction hashes or links; the app shows a receipt card with the link.
 - Stop-loss and take-profit percentages are measured from the user's average fill price (average cost), not from today's price. Say it that way.
 - Call the coins HSK, ETH and BTC, even though the pools hold the wrapped tokens WHSK, WETH and WBTC.
-- Keep replies under 60 words. No markdown headers or bullet lists. Lead with the numbers (how many buys, total spend, current pool price), then the one question if something is missing.`;
+- Keep replies to two short sentences (under 40 words). The app shows the plan card and the fill receipt, so do not repeat their details. No markdown headers or bullet lists. Lead with the key number, then the one question if something is missing.`;
 
 const tools: Anthropic.Beta.BetaTool[] = [
   {
