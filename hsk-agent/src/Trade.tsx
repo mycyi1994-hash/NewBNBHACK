@@ -6,6 +6,7 @@ import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import type { VaultInfo } from './parts.tsx';
+import Strategies from './Strategies.tsx';
 import MoaFeed from './MoaFeed.tsx';
 
 type Venue = 'cex' | 'dex';
@@ -97,10 +98,10 @@ function useCex(interval: cex.Interval) {
   return { t, book, tape, candles, mi, err };
 }
 
-function CexPanel({ dexBtc }: { dexBtc?: number }) {
+function CexPanel({ dexBtc, quotes, onAsk }: { dexBtc?: number; quotes: Quote[]; onAsk: (prompt: string) => void }) {
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>('15m');
-  const { t, book, tape, candles, mi, err } = useCex(interval);
+  const { t, tape, candles, mi, err } = useCex(interval);
   const chg = t ? (t.last / t.open - 1) * 100 : 0;
   const up = chg >= 0;
 
@@ -142,81 +143,10 @@ function CexPanel({ dexBtc }: { dexBtc?: number }) {
         )}
       </section>
 
-      <section className="card book-card">
-        <div className="book-grid">
-          <OrderLadder book={book} t={t} mark={mi?.mark} />
-          <TradeTape tape={tape} />
-        </div>
-      </section>
+      <Strategies quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onAsk={onAsk} />
     </>
   );
 }
-
-/** Exchange-style ladder: asks above, last price in the middle, bids below; bars show cumulative depth. */
-function OrderLadder({ book, t, mark }: { book: { bids: cex.Level[]; asks: cex.Level[] } | null; t: cex.Ticker | null; mark?: number }) {
-  const { t: s } = useT();
-  const asks = book ? book.asks.slice(0, 8) : [];
-  const bids = book ? book.bids.slice(0, 8) : [];
-  const cum = (xs: cex.Level[]) => { let c = 0; return xs.map((l) => (c += l.qty)); };
-  const askCum = cum(asks), bidCum = cum(bids);
-  const maxCum = Math.max(askCum[askCum.length - 1] ?? 0, bidCum[bidCum.length - 1] ?? 0, 1);
-  const bidTotal = bidCum[bidCum.length - 1] ?? 0, askTotal = askCum[askCum.length - 1] ?? 0;
-  const bidShare = bidTotal + askTotal > 0 ? Math.round((bidTotal / (bidTotal + askTotal)) * 100) : 50;
-  const up = t ? t.last >= t.open : true;
-  const spread = t ? t.ask - t.bid : 0;
-  const btc = (q: number) => (q * cex.CONTRACT_BTC).toFixed(3);
-  const row = (l: cex.Level, c: number, side: 'ask' | 'bid') => (
-    <div key={side + l.price} className={`lad-row ${side}`}>
-      <span className="lad-bar" style={{ width: `${(c / maxCum) * 100}%` }} />
-      <span className={`px ${side === 'bid' ? 'pos' : 'neg'}`}>{usd(l.price, 1)}</span>
-      <span>{btc(l.qty)}</span>
-      <span className="muted">{btc(c)}</span>
-    </div>
-  );
-  return (
-    <div className="ladder" aria-label={s.orderBook}>
-      <div className="pane-head"><b>{s.orderBook}</b><span className="muted">{t ? `${s.spread} ${usd(spread, 1)} · ${((spread / t.last) * 100).toFixed(3)}%` : ''}</span></div>
-      <div className="lad-cols muted"><span>{s.priceUsdt}</span><span>{s.size}</span><span>{s.total}</span></div>
-      <div className="lad-side">{asks.map((l, i) => ({ l, c: askCum[i] })).reverse().map(({ l, c }) => row(l, c, 'ask'))}</div>
-      <div className="lad-mid">
-        <b className={up ? 'pos' : 'neg'}>{t ? `${usd(t.last, 1)} ${arrow(up)}` : '—'}</b>
-        {mark !== undefined && <span className="muted">{s.mark} {usd(mark, 1)}</span>}
-      </div>
-      <div className="lad-side">{bids.map((l, i) => row(l, bidCum[i], 'bid'))}</div>
-      <div className="pressure" aria-label={`${s.bidsLabel} ${bidShare}% / ${s.asksLabel} ${100 - bidShare}%`}>
-        <span className="pos">{s.bidsLabel} {bidShare}%</span>
-        <span className="pressure-bar"><span style={{ width: `${bidShare}%` }} /></span>
-        <span className="neg">{100 - bidShare}% {s.asksLabel}</span>
-      </div>
-    </div>
-  );
-}
-
-/** Recent trades; rows that just arrived flash once. */
-function TradeTape({ tape }: { tape: cex.Trade[] }) {
-  const { t: s } = useT();
-  const seen = useRef<Set<string>>(new Set());
-  const first = useRef(true);
-  const key = (x: cex.Trade) => `${x.t}-${x.price}-${x.qty}`;
-  const fresh = new Set(first.current ? [] : tape.filter((x) => !seen.current.has(key(x))).map(key));
-  useEffect(() => { if (tape.length) { first.current = false; tape.forEach((x) => seen.current.add(key(x))); } }, [tape]);
-  const clock = (ms: number) => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  return (
-    <div className="tape-pane" aria-label={s.recentTrades}>
-      <div className="pane-head"><b>{s.recentTrades}</b><span className="live"><span className="live-dot" /> {s.live}</span></div>
-      <div className="lad-cols muted"><span>{s.priceUsdt}</span><span>{s.size}</span><span>{s.time}</span></div>
-      {tape.length === 0 && [0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="lad-row"><span className="skel" style={{ width: 70 }} /><span /><span /></div>)}
-      {tape.map((x) => (
-        <div key={key(x)} className={`lad-row trade ${fresh.has(key(x)) ? (x.buyerIsMaker ? 'flash-neg' : 'flash-pos') : ''}`}>
-          <span className={x.buyerIsMaker ? 'neg' : 'pos'}>{usd(x.price, 1)}</span>
-          <span>{(x.qty * cex.CONTRACT_BTC).toFixed(3)}</span>
-          <span className="muted">{clock(x.t)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 
 /* ---------- DEX: HSKSwap on HSK Chain ---------- */
 
@@ -303,7 +233,7 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
           <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
         </div>
         {venue === 'cex'
-          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} />
+          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onAsk={(p) => onAsk(p)} />
           : <DexPanel asset={asset} setAsset={setAsset} detail={detail} err={dexErr} />}
         <p className="muted small">{t.dataNote}</p>
       </div>

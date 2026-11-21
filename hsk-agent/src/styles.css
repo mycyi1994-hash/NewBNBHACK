@@ -529,3 +529,33 @@ a.tape-row:hover { text-decoration: none; }
   .tape-pane { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 14px; }
   .tape-pane .lad-row.trade:nth-of-type(n+12) { display: none; }
 }
+
+/* ---------- Moa strategy picks (under the chart) ---------- */
+.strat-card { padding: 18px; }
+.strat-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.strat-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.strat-head p { margin: 4px 0 0; font-size: 13px; }
+.strat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.strat { position: relative; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: #fff; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.strat:hover { border-color: var(--line-strong); box-shadow: 0 6px 20px rgba(0, 0, 0, .05); }
+.strat.best { border-color: #cbbcf6; background: linear-gradient(180deg, #faf8ff 0%, #fff 55%); box-shadow: 0 8px 24px rgba(109, 76, 224, .1); }
+.strat header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.strat header b { font-size: 14.5px; }
+.best-tag { position: absolute; top: -10px; left: 14px; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; border-radius: 99px; padding: 2px 9px; }
+.sig { margin-left: auto; font-size: 11.5px; font-weight: 700; border-radius: 99px; padding: 2px 9px; }
+.sig-good { background: #dcfce7; color: #15803d; }
+.sig-neutral { background: var(--side); color: var(--ink-2); }
+.sig-wait { background: #fff4e5; color: #b45309; }
+.strat-rule { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+.strat-now, .strat-bt { display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.5; }
+.strat .label { font-size: 11.5px; font-weight: 600; color: var(--ink-3); text-transform: none; }
+.strat-now { background: var(--side); border-radius: 10px; padding: 9px 11px; }
+.strat-bt { font-variant-numeric: tabular-nums; }
+.strat-bt.muted { font-size: 12px; }
+.bt-row { display: flex; justify-content: space-between; gap: 8px; }
+.bt-delta { font-weight: 700; font-size: 13.5px; }
+.strat .btn-ghost.wide { margin-top: auto; width: 100%; padding: 9px 12px; font-weight: 600; }
+.strat.best .btn-ghost.wide { background: var(--ink); color: #fff; border-color: var(--ink); }
+.strat.best .btn-ghost.wide:hover { background: var(--brand); border-color: var(--brand); }
+.strat-foot { margin: 12px 0 0; font-size: 11.5px; }
+@media (max-width: 1100px) { .strat-grid { grid-template-columns: minmax(0, 1fr); } }
