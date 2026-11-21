@@ -6,6 +6,10 @@ import { useBots, useExecutions, type Bot, type Execution } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
 import Trade from './Trade.tsx';
 import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
+import { CopyButton, Modal, RichText, ToastProvider, useToast } from './ui.tsx';
+
+/** Same words the server checks before it lets Moa trade. */
+const EXECUTE_WORDS = /(실행|execute)/i;
 
 type View = { name: 'trade' } | { name: 'chat'; prefill?: string; auto?: boolean } | { name: 'bots' } | { name: 'bot'; id: string };
 type StepKey = 'thinking' | 'market' | 'plan' | 'execute' | 'writing';
@@ -181,10 +185,31 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
     void end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [msgs, busy]);
 
+  const toast = useToast();
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const abort = useRef<AbortController | null>(null);
+
+  /** A message that can move money gets a confirm step first (ChatGPT-style dialog). */
+  const ask = (text: string) => {
+    const tx = text.trim();
+    if (!tx || busy) return;
+    if (EXECUTE_WORDS.test(tx) && vault?.configured) { setConfirm(tx); return; }
+    void send(tx);
+  };
+
+  const stop = () => {
+    abort.current?.abort();
+    abort.current = null;
+    setBusy(null);
+    setMsgs((cur) => [...cur, { role: 'moa', text: t.stopped, at: Date.now() }]);
+  };
+
   const send = async (text: string) => {
     const tx = text.trim();
     if (!tx || busy) return;
     setDraft('');
+    const ctrl = new AbortController();
+    abort.current = ctrl;
     const history = [...msgs, { role: 'you' as const, text: tx, at: Date.now() }];
     setMsgs(history);
     setBusy({ steps: ['thinking'], at: Date.now() });
@@ -198,6 +223,7 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ history: history.map((m) => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text })) }),
+        signal: ctrl.signal,
       });
       if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
       const reader = r.body.getReader();
@@ -225,6 +251,7 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
       }
       throw new Error('stream ended without a result');
     } catch {
+      if (ctrl.signal.aborted) return; // the user pressed stop; nothing more to show
       // No server (static hosting) or the API failed: fall back to the on-device parser, clearly marked.
       const merged = plan && plan.missing.length && goal ? `${goal}, ${tx}` : tx;
       const p = parseIntent(merged);
@@ -234,18 +261,41 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
 
   const sentAuto = useRef(false);
   useEffect(() => {
-    if (auto && prefill && !sentAuto.current) { sentAuto.current = true; void send(prefill); }
+    if (auto && prefill && !sentAuto.current) { sentAuto.current = true; ask(prefill); }
   });
 
+  // Stop is offered while Moa thinks, but not once a trade is on its way to the vault (it may already be on-chain).
+  const canStop = !!busy && !busy.steps.includes('execute');
   const composer = (big: boolean) => (
-    <form className={`composer${big ? ' big' : ''}`} onSubmit={(e) => { e.preventDefault(); void send(draft); }}>
+    <form className={`composer${big ? ' big' : ''}`} onSubmit={(e) => { e.preventDefault(); ask(draft); }}>
       <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={big ? t.heroPlaceholder : t.replyPlaceholder} aria-label="Message Moa" autoFocus />
-      <button className="btn-primary" type="submit" disabled={!draft.trim() || !!busy}>{t.send} <span className="kbd">↵</span></button>
+      {busy ? (
+        <button className="send-btn stop" type="button" onClick={stop} disabled={!canStop} aria-label={t.stop} title={t.stop}>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor" /></svg>
+        </button>
+      ) : (
+        <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.send} title={`${t.send} (Enter)`}>
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+      )}
     </form>
   );
 
   return (
     <div className="chat-layout">
+      {confirm && (
+        <Modal
+          title={t.confirmTitle}
+          onClose={() => setConfirm(null)}
+          actions={<>
+            <button className="btn-ghost" onClick={() => setConfirm(null)}>{t.cancel}</button>
+            <button className="btn-primary" onClick={() => { const x = confirm; setConfirm(null); void send(x); }}>{t.executeBtn}</button>
+          </>}
+        >
+          <p className="modal-quote">“{confirm}”</p>
+          <p>{t.confirmBody(vault?.maxTradeUsdt ?? '?', vault?.remainingTodayUsdt ?? '?')}</p>
+        </Modal>
+      )}
       <div className="chat-main">
         {!started ? (
           <div className="hero">
@@ -255,7 +305,7 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
             {composer(true)}
             <div className="starter-row">
               {t.starters.map((s, i) => (
-                <button key={s.title} className="starter" onClick={() => void send(s.prompt)}>
+                <button key={s.title} className="starter" onClick={() => ask(s.prompt)}>
                   <span className={`feature-icon sm ${['peach', 'lilac', 'sky', 'mint'][i]}`} aria-hidden>{['◔', '◈', '◍', '◎'][i]}</span>
                   <span><b>{s.title}</b><span className="muted">{s.sub}</span></span>
                 </button>
@@ -272,10 +322,15 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
                     {m.role === 'moa' && <span className="orb md" aria-hidden />}
                     <div className={`bubble ${m.role}`}>
                       <div className="bubble-head">{m.role === 'moa' ? 'Moa' : t.you}<span>{time(m.at)}</span></div>
-                      <div className="bubble-text">{m.role === 'moa' && i === typingIdx ? <Typing text={m.text} onDone={() => setTypingIdx(null)} /> : m.text}</div>
+                      <div className="bubble-text">{m.role === 'moa' && i === typingIdx ? <Typing text={m.text} onDone={() => setTypingIdx(null)} /> : m.role === 'moa' ? <RichText text={m.text} /> : m.text}</div>
                       {m.execs?.map((x, k) => <Receipt key={k} x={x} />)}
                       {m.offline && <div className="offline">{t.offline}</div>}
                     </div>
+                    {m.role === 'moa' && i !== typingIdx && (
+                      <div className="msg-actions">
+                        <CopyButton text={m.text} label={t.copy} done={t.copied} />
+                      </div>
+                    )}
                   </div>
                 ))}
                 {busy && (
@@ -299,7 +354,7 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
             {plan.missing.length > 0 && <div className="needs">{t.needs} {plan.missing[0]}</div>}
             <div className="panel-label">{t.guardrails}</div>
             <ul className="guards"><li>{t.guard1}</li><li>{t.guard2}</li><li>{t.guard3}</li></ul>
-            <button className="btn-primary wide" disabled={plan.missing.length > 0} onClick={() => onCreate(goal, plan)}>{t.createBot}</button>
+            <button className="btn-primary wide" disabled={plan.missing.length > 0} onClick={() => { onCreate(goal, plan); toast(t.botCreatedToast); }}>{t.createBot}</button>
           </>
         ) : (
           <MoaSees quotes={quotes} />
@@ -393,11 +448,25 @@ function Bots({ bots, go, execs }: { bots: Bot[]; go: (v: View) => void; execs: 
 function BotDetail({ bot, onDelete, execs, vault }: { bot: Bot; onDelete: () => void; execs: Execution[]; vault: VaultInfo | null }) {
   const { t } = useT();
   const [tab, setTab] = useState<'overview' | 'activity'>('overview');
+  const [askDelete, setAskDelete] = useState(false);
+  const toast = useToast();
   const mine = botExecs(bot, execs);
   const spent = mine.filter((x) => x.ok && x.side === 'buy').reduce((s, x) => s + x.amount, 0);
   const budget = botBudget(bot);
   return (
     <div className="page narrow">
+      {askDelete && (
+        <Modal
+          title={t.deleteTitle}
+          onClose={() => setAskDelete(false)}
+          actions={<>
+            <button className="btn-ghost" onClick={() => setAskDelete(false)}>{t.cancel}</button>
+            <button className="btn-danger" onClick={() => { setAskDelete(false); onDelete(); toast(t.botDeleted); }}>{t.delete}</button>
+          </>}
+        >
+          <p><b>{bot.name}</b> {t.deleteBody}</p>
+        </Modal>
+      )}
       <div className="card-head">
         <div className="row-gap">
           <span className="bot-avatar lg" aria-hidden>{bot.name.slice(0, 1)}</span>
@@ -408,7 +477,7 @@ function BotDetail({ bot, onDelete, execs, vault }: { bot: Bot; onDelete: () => 
         </div>
         <div className="row-gap">
           <span className="status draft">{t.draft}</span>
-          <button className="btn-ghost" onClick={onDelete}>{t.delete}</button>
+          <button className="btn-ghost danger" onClick={() => setAskDelete(true)}>{t.delete}</button>
         </div>
       </div>
       <div className="tabs" role="tablist">
@@ -486,6 +555,7 @@ export default function App() {
 
   return (
     <LangContext.Provider value={{ lang, t, setLang }}>
+      <ToastProvider>
       <div className="app">
         <Sidebar view={view} go={go} botCount={bots.length} vault={vault} />
         <main className="main">
@@ -507,6 +577,7 @@ export default function App() {
         </main>
         <TabBar view={view} go={go} botCount={bots.length} />
       </div>
+      </ToastProvider>
     </LangContext.Provider>
   );
 }

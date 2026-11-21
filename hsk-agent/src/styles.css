@@ -314,3 +314,59 @@ a.tape-row:hover { background: #fbfaf9; }
   .act-row { grid-template-columns: 10px 1fr; }
   .act-row > span:nth-child(n+3), .act-row > a { grid-column: 2; }
 }
+
+/* ---------- interactions (ChatGPT / Perplexity / Hume AI patterns on Mobbin) ---------- */
+/* Everything clickable shows a hand cursor and reacts on hover and press. */
+a, button, [role='tab'], .bot-row, .starter, .chip, .nav-item, a.tape-row { cursor: pointer; }
+button:disabled, button[aria-disabled='true'] { cursor: not-allowed; }
+button { transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .08s ease; }
+button:active:not(:disabled) { transform: scale(.97); }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.starter, .chip, .bot-row { transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.starter:hover, .bot-row:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, .05); }
+.nav-item:active, .chip:active, .starter:active { transform: scale(.98); }
+
+/* Round send / stop button inside the composer (ChatGPT) */
+.send-btn { width: 36px; height: 36px; flex: none; border: 0; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; align-self: center; }
+.send-btn:hover:not(:disabled) { background: var(--brand); }
+.send-btn:disabled { background: #e8e6e3; color: #8a857e; opacity: 1; }
+.send-btn.stop { background: var(--ink); }
+.send-btn.stop:disabled { background: #e8e6e3; color: #8a857e; }
+
+/* Small icon buttons and the action row under a Moa reply (ChatGPT / Hume) */
+.icon-btn { width: 30px; height: 30px; border: 0; background: transparent; border-radius: 8px; color: var(--ink-3); display: inline-grid; place-items: center; font-size: 13px; }
+.icon-btn:hover { background: var(--hover); color: var(--ink); }
+.icon-btn.sm { width: 26px; height: 26px; }
+.msg.moa { flex-wrap: wrap; }
+.msg-actions { flex-basis: 100%; display: flex; gap: 2px; padding-left: 42px; margin-top: -6px; opacity: .55; transition: opacity .15s ease; }
+.msg:hover .msg-actions, .msg-actions:focus-within { opacity: 1; }
+
+/* Replies render real lists */
+.rich p { margin: 0 0 8px; white-space: pre-wrap; }
+.rich p:last-child { margin-bottom: 0; }
+.rich ul { margin: 4px 0 8px; padding-left: 20px; }
+.rich li { margin: 3px 0; }
+
+/* Confirm dialog (ChatGPT): dimmed backdrop, small centred card, Cancel + primary */
+.modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(23, 23, 23, .28); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; animation: fade-in .15s ease; }
+.modal { width: min(440px, 100%); background: #fff; border-radius: 18px; box-shadow: 0 24px 60px rgba(0, 0, 0, .18); padding: 18px 20px 16px; animation: pop-in .18s cubic-bezier(.2, .8, .2, 1); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.modal-head h2 { font-size: 16px; font-weight: 650; margin: 0; }
+.modal-body { font-size: 14px; line-height: 1.55; color: var(--ink-2); }
+.modal-body p { margin: 0 0 10px; }
+.modal-quote { background: var(--side); border-radius: 10px; padding: 10px 12px; color: var(--ink); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.btn-danger { background: #dc2626; color: #fff; border: 0; border-radius: 99px; padding: 9px 16px; font-size: 13.5px; font-weight: 600; }
+.btn-danger:hover { background: #b91c1c; }
+.btn-ghost.danger { color: #b91c1c; }
+.btn-ghost.danger:hover { background: #fef2f2; border-color: #fecaca; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+
+/* Toasts (Perplexity, top right) */
+.toasts { position: fixed; top: 62px; right: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 9px 8px 9px 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .12); font-size: 13.5px; animation: pop-in .18s ease; }
+.toast-check { width: 20px; height: 20px; border-radius: 50%; background: #dcfce7; color: #15803d; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .modal, .modal-backdrop, .toast { animation: none; } button:active:not(:disabled) { transform: none; } }
+@media (max-width: 1000px) { .toasts { top: auto; bottom: calc(var(--tabbar) + 12px); left: 12px; right: 12px; } .msg-actions { padding-left: 0; } }
+.rich strong { font-weight: 650; }

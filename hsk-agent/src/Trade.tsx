@@ -260,7 +260,9 @@ function MoaDock({ onAsk, quotes, vault }: { onAsk: (p: string) => void; quotes:
       <form className="dock-input" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) onAsk(draft.trim()); }}>
         <textarea rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t.dockPlaceholder} aria-label={t.askMoa}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (draft.trim()) onAsk(draft.trim()); } }} />
-        <button className="btn-primary" type="submit" disabled={!draft.trim()}>{t.ask} <span className="kbd">↵</span></button>
+        <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} title={`${t.ask} (Enter)`}>
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
       </form>
       <div className="dock-starters">
         {t.starters.map((s, i) => (

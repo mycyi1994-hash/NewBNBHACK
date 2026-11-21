@@ -55,6 +55,11 @@ const en = {
   localFork: 'local test fork',
   feedDown: 'Feed unavailable:',
   dexVsPerp: (price: string, pct: string) => `HSKSwap WBTC is ${price}, ${pct} vs this perpetual.`,
+  stop: 'Stop', stopped: 'Stopped. Nothing was sent to your vault.', copy: 'Copy', copied: 'Copied',
+  cancel: 'Cancel', executeBtn: 'Execute trade', confirmTitle: 'Trade from your vault?',
+  confirmBody: (per: string, left: string) => `Moa will swap on HSKSwap from your vault. Limits still apply: up to $${per} per trade, $${left} left today.`,
+  botCreatedToast: 'Bot created', botDeleted: 'Bot deleted',
+  deleteTitle: 'Delete this bot?', deleteBody: 'and its plan will be removed from this browser. Trades already on HSK Chain stay there.',
 };
 
 const ko: typeof en = {
@@ -109,6 +114,11 @@ const ko: typeof en = {
   localFork: '로컬 테스트 포크',
   feedDown: '시세를 불러올 수 없어요:',
   dexVsPerp: (price, pct) => `HSKSwap WBTC는 ${price}로, 이 무기한 선물 대비 ${pct}예요.`,
+  stop: '멈추기', stopped: '멈췄어요. 볼트로 보낸 거래는 없어요.', copy: '복사', copied: '복사했어요',
+  cancel: '취소', executeBtn: '거래 실행', confirmTitle: '볼트에서 거래할까요?',
+  confirmBody: (per, left) => `Moa가 내 볼트에서 HSKSwap으로 스왑해요. 한도는 그대로 적용돼요: 1회 최대 $${per}, 오늘 남은 한도 $${left}.`,
+  botCreatedToast: '봇을 만들었어요', botDeleted: '봇을 삭제했어요',
+  deleteTitle: '이 봇을 삭제할까요?', deleteBody: '봇과 계획이 이 브라우저에서 지워져요. 이미 HSK 체인에 기록된 거래는 그대로 남아요.',
 };
 
 export const STRINGS = { en, ko };
