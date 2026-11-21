@@ -8,8 +8,6 @@ export interface Bot {
   goal: string;
   plan: Plan;
   createdAt: number;
-  /** Start of the conversation that made this bot; fills from then on belong to it. */
-  since?: number;
   status: 'draft';
 }
 
