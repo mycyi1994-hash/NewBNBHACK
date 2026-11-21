@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { botName, describe, parseIntent, scheduleOf, type Plan, type Step } from './intent.ts';
 import { fmtPrice, loadQuotes, type Quote } from './market.ts';
-import { GREETING, reply } from './moa.ts';
+import { reply } from './moa.ts';
 import { useBots, useExecutions, type Bot, type Execution } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
 import Trade from './Trade.tsx';
-import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
+import { SpreadTable, VaultPanel, type VaultInfo } from './parts.tsx';
 
 type View = { name: 'trade' } | { name: 'chat'; prefill?: string; auto?: boolean } | { name: 'bots' } | { name: 'bot'; id: string };
 type StepKey = 'thinking' | 'market' | 'plan' | 'execute' | 'writing';
@@ -48,94 +48,71 @@ const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
 /* ---------- shell ---------- */
 
-function Sidebar({ view, go, botCount, vault }: { view: View; go: (v: View) => void; botCount: number; vault: VaultInfo | null }) {
-  const { t } = useT();
-  const item = (label: string, v: View, icon: string, active: boolean, badge?: number) => (
-    <button className={`nav-item${active ? ' active' : ''}`} onClick={() => go(v)} aria-current={active ? 'page' : undefined}>
-      <span className="nav-icon" aria-hidden>{icon}</span>
-      {label}
-      {badge ? <span className="nav-badge">{badge}</span> : null}
-    </button>
-  );
+function Logo() {
   return (
-    <aside className="sidebar">
-      <div className="brand"><span className="orb sm" aria-hidden /> moa</div>
-      <div className="nav-label">{t.navMarkets}</div>
-      {item(t.navTrade, { name: 'trade' }, '∿', view.name === 'trade')}
-      <div className="nav-label">{t.navAssistant}</div>
-      {item(t.navAsk, { name: 'chat' }, '✦', view.name === 'chat')}
-      <div className="nav-label">{t.navAutomations}</div>
-      {item(t.navBots, { name: 'bots' }, '◎', view.name === 'bots' || view.name === 'bot', botCount)}
-      <div className="sidebar-foot">
-        <div className="net"><span className="live-dot" /> HSK Chain</div>
-        {vault && <div className="foot-note">{vault.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone}</div>}
-      </div>
-    </aside>
+    <span className="logo" aria-label="Moa">
+      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><rect width="20" height="20" rx="4" fill="currentColor" /><path d="M5 14V6l5 5 5-5v8" fill="none" stroke="var(--bg)" strokeWidth="2" strokeLinejoin="round" /></svg>
+      MOA
+    </span>
   );
 }
 
-function TabBar({ view, go, botCount }: { view: View; go: (v: View) => void; botCount: number }) {
-  const { t } = useT();
-  const tab = (label: string, v: View, icon: string, active: boolean, badge?: number) => (
-    <button className={`tab${active ? ' on' : ''}`} onClick={() => go(v)} aria-current={active ? 'page' : undefined}>
-      <span className="tab-icon" aria-hidden>{icon}</span>{label}{badge ? <span className="nav-badge">{badge}</span> : null}
-    </button>
-  );
-  return (
-    <nav className="tabbar" aria-label="Main">
-      {tab(t.navTrade, { name: 'trade' }, '∿', view.name === 'trade')}
-      {tab(t.navAsk, { name: 'chat' }, '✦', view.name === 'chat')}
-      {tab(t.navBots, { name: 'bots' }, '◎', view.name === 'bots' || view.name === 'bot', botCount)}
-    </nav>
-  );
-}
-
-function Topbar({ title, quotes }: { title: string; quotes: Quote[] }) {
+function TopNav({ view, go, botCount, quotes, vault }: { view: View; go: (v: View) => void; botCount: number; quotes: Quote[]; vault: VaultInfo | null }) {
   const { t, lang, setLang } = useT();
   const hsk = quotes.find((q) => q.asset === 'HSK');
+  const link = (label: string, v: View, active: boolean, badge?: number) => (
+    <button className={`nav-link${active ? ' on' : ''}`} onClick={() => go(v)} aria-current={active ? 'page' : undefined}>
+      {label}{badge ? <span className="count">{badge}</span> : null}
+    </button>
+  );
   return (
-    <header className="topbar">
-      <div className="topbar-title"><span className="brand mobile-only"><span className="orb sm" aria-hidden /> moa</span><span className="desktop-only">{title}</span></div>
-      <div className="topbar-right">
-        {hsk?.pool !== undefined && <span className="pill">HSK {fmtPrice(hsk.pool)}</span>}
-        <button className="pill lang" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} aria-label="Switch language">{t.langLabel}</button>
+    <header className="topnav">
+      <Logo />
+      <nav className="nav-links desktop-only" aria-label="Main">
+        {link(t.navTrade, { name: 'trade' }, view.name === 'trade')}
+        {link(t.navAsk, { name: 'chat' }, view.name === 'chat')}
+        {link(t.navBots, { name: 'bots' }, view.name === 'bots' || view.name === 'bot', botCount)}
+      </nav>
+      <div className="nav-right">
+        {hsk?.pool !== undefined && <span className="nav-quote"><span>HSK</span>{fmtPrice(hsk.pool)}</span>}
+        <span className="status-dot on desktop-only">HSK Chain</span>
+        {vault?.configured && <span className="nav-quote desktop-only"><span>{t.vaultTitle}</span>{Number(vault.usdtBalance).toFixed(2)} USDT</span>}
+        <button className="btn-ghost sm" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} aria-label="Switch language">{t.langLabel}</button>
       </div>
     </header>
   );
 }
 
-/* ---------- shared Moa pieces ---------- */
-
-/** Reveals text a few characters at a time, like someone typing. */
-function Typing({ text, onDone }: { text: string; onDone: () => void }) {
-  const [n, setN] = useState(0);
-  const done = useRef(onDone);
-  done.current = onDone;
-  useEffect(() => {
-    const step = Math.max(2, Math.round(text.length / 90));
-    const tm = setInterval(() => setN((v) => {
-      const next = Math.min(text.length, v + step);
-      if (next === text.length) { clearInterval(tm); done.current(); }
-      return next;
-    }), 16);
-    return () => clearInterval(tm);
-  }, [text]);
-  return <>{text.slice(0, n)}<span className="caret" aria-hidden /></>;
+function TabBar({ view, go, botCount }: { view: View; go: (v: View) => void; botCount: number }) {
+  const { t } = useT();
+  const tab = (label: string, v: View, active: boolean, badge?: number) => (
+    <button className={`tab${active ? ' on' : ''}`} onClick={() => go(v)} aria-current={active ? 'page' : undefined}>
+      {label}{badge ? <span className="count">{badge}</span> : null}
+    </button>
+  );
+  return (
+    <nav className="tabbar" aria-label="Main">
+      {tab(t.navTrade, { name: 'trade' }, view.name === 'trade')}
+      {tab(t.navAsk, { name: 'chat' }, view.name === 'chat')}
+      {tab(t.navBots, { name: 'bots' }, view.name === 'bots' || view.name === 'bot', botCount)}
+    </nav>
+  );
 }
 
+/* ---------- shared Moa pieces ---------- */
+
+/** A fill confirmation, laid out like an exchange's order receipt. */
 function Receipt({ x }: { x: Exec }) {
   const { t } = useT();
   const side = x.request.side === 'buy' ? t.buy : t.sell;
-  return x.ok ? (
-    <div className="receipt ok">
-      <div className="receipt-head"><span className="dot ok" /> {t.executed}</div>
-      <div className="receipt-line">{side} {x.request.asset}: {x.amountIn} {x.tokenIn} → {Number(x.amountOut).toPrecision(6)} {x.tokenOut}</div>
-      <a href={x.explorerUrl} target="_blank" rel="noreferrer">{short(x.txHash)} ↗</a>
-    </div>
-  ) : (
-    <div className="receipt bad">
-      <div className="receipt-head"><span className="dot bad" /> {t.notExecuted}</div>
-      <div className="receipt-line">{side} {x.request.asset} {x.request.amount}: {x.reason}</div>
+  return (
+    <div className={`receipt ${x.ok ? 'ok' : 'bad'}`}>
+      <span className="receipt-status">{x.ok ? t.executed : t.notExecuted}</span>
+      <span className={x.request.side === 'buy' ? 'pos' : 'neg'}>{side} {x.request.asset}</span>
+      {x.ok
+        ? <span className="receipt-line">{x.amountIn} {x.tokenIn} → {Number(x.amountOut).toPrecision(6)} {x.tokenOut}</span>
+        : <span className="receipt-line">${x.request.amount} · {x.reason}</span>}
+      {x.ok && <a href={x.explorerUrl} target="_blank" rel="noreferrer">{short(x.txHash)} ↗</a>}
     </div>
   );
 }
@@ -146,8 +123,9 @@ function Progress({ steps, startedAt }: { steps: StepKey[]; startedAt: number })
   useEffect(() => { const i = setInterval(() => tick((v) => v + 1), 1000); return () => clearInterval(i); }, []);
   const secs = Math.round((Date.now() - startedAt) / 1000);
   return (
-    <div className="bubble moa progress" role="status" aria-live="polite">
-      <ol>
+    <div className="log-row moa progress" role="status" aria-live="polite">
+      <div className="log-meta"><b>Moa</b><time>{secs}s</time></div>
+      <ol className="log-body">
         {steps.map((s, i) => (
           <li key={i} className={i === steps.length - 1 ? 'now' : 'done'}>
             <span className="pmark" aria-hidden>{i === steps.length - 1 ? <span className="spinner" /> : '✓'}</span>
@@ -155,7 +133,6 @@ function Progress({ steps, startedAt }: { steps: StepKey[]; startedAt: number })
           </li>
         ))}
       </ol>
-      <span className="elapsed">{secs}s</span>
     </div>
   );
 }
@@ -172,7 +149,6 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [goal, setGoal] = useState('');
   const [busy, setBusy] = useState<{ steps: StepKey[]; at: number } | null>(null);
-  const [typingIdx, setTypingIdx] = useState<number | null>(null);
   const end = useRef<HTMLDivElement>(null);
   const started = msgs.length > 0;
 
@@ -191,7 +167,7 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
     const finish = (m: Msg, p: Plan | null, g: string) => {
       if (p && p.steps.length) { setPlan(p); setGoal(g); }
       setBusy(null);
-      setMsgs((cur) => { setTypingIdx(cur.length); return [...cur, m]; });
+      setMsgs((cur) => [...cur, m]);
     };
     try {
       const r = await fetch('/api/moa', {
@@ -246,65 +222,59 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
 
   return (
     <div className="chat-layout">
-      <div className="chat-main">
+      <section className="panel chat-main">
+        <div className="panel-head"><span>{t.heroTitle}</span>{started && <span className="muted">{t.started} {time(msgs[0].at)}</span>}</div>
         {!started ? (
           <div className="hero">
-            <span className="orb xl breathe" aria-hidden />
-            <h1>{t.heroTitle}</h1>
-            <p className="muted">{lang === 'ko' ? t.dockSub : GREETING}</p>
+            <p className="hero-sub">{t.heroSub}</p>
             {composer(true)}
-            <div className="starter-row">
-              {t.starters.map((s, i) => (
-                <button key={s.title} className="starter" onClick={() => void send(s.prompt)}>
-                  <span className={`feature-icon sm ${['peach', 'lilac', 'sky', 'mint'][i]}`} aria-hidden>{['◔', '◈', '◍', '◎'][i]}</span>
-                  <span><b>{s.title}</b><span className="muted">{s.sub}</span></span>
-                </button>
-              ))}
-            </div>
+            <table className="grid-table templates">
+              <tbody>
+                {t.starters.map((s) => (
+                  <tr key={s.title} onClick={() => void send(s.prompt)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') void send(s.prompt); }}>
+                    <td className="tpl-name">{s.title}</td>
+                    <td className="muted">{s.sub}</td>
+                    <td className="tpl-prompt">{s.prompt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <>
             <div className="chat-scroll">
-              <div className="chat-col">
-                <div className="event"><span className="event-dot" /> {t.started} <span className="event-time">{time(msgs[0].at)}</span></div>
-                {msgs.map((m, i) => (
-                  <div key={i} className={`msg ${m.role}`}>
-                    {m.role === 'moa' && <span className="orb md" aria-hidden />}
-                    <div className={`bubble ${m.role}`}>
-                      <div className="bubble-head">{m.role === 'moa' ? 'Moa' : t.you}<span>{time(m.at)}</span></div>
-                      <div className="bubble-text">{m.role === 'moa' && i === typingIdx ? <Typing text={m.text} onDone={() => setTypingIdx(null)} /> : m.text}</div>
-                      {m.execs?.map((x, k) => <Receipt key={k} x={x} />)}
-                      {m.offline && <div className="offline">{t.offline}</div>}
-                    </div>
+              {msgs.map((m, i) => (
+                <div key={i} className={`log-row ${m.role}`}>
+                  <div className="log-meta"><b>{m.role === 'moa' ? 'Moa' : t.you}</b><time>{time(m.at)}</time></div>
+                  <div className="log-body">
+                    <div className="log-text">{m.text}</div>
+                    {m.execs?.map((x, k) => <Receipt key={k} x={x} />)}
+                    {m.offline && <div className="offline">{t.offline}</div>}
                   </div>
-                ))}
-                {busy && (
-                  <div className="msg moa">
-                    <span className="orb md spin" aria-hidden />
-                    <Progress steps={busy.steps} startedAt={busy.at} />
-                  </div>
-                )}
-                <div ref={end} />
-              </div>
+                </div>
+              ))}
+              {busy && <Progress steps={busy.steps} startedAt={busy.at} />}
+              <div ref={end} />
             </div>
-            <div className="chat-col bottom">{composer(false)}</div>
+            <div className="chat-bottom">{composer(false)}</div>
           </>
         )}
-      </div>
-      <aside className="plan-panel">
-        {plan ? (
-          <>
-            <div className="panel-label">{t.plan}</div>
-            <PlanSteps steps={plan.steps} />
-            {plan.missing.length > 0 && <div className="needs">{t.needs} {plan.missing[0]}</div>}
-            <div className="panel-label">{t.guardrails}</div>
-            <ul className="guards"><li>{t.guard1}</li><li>{t.guard2}</li><li>{t.guard3}</li></ul>
-            <button className="btn-primary wide" disabled={plan.missing.length > 0} onClick={() => onCreate(goal, plan)}>{t.createBot}</button>
-          </>
-        ) : (
-          <MoaSees quotes={quotes} />
-        )}
-        <TrustCard vault={vault} />
+      </section>
+      <aside className="side">
+        <section className="panel">
+          <div className="panel-head"><span>{t.plan}</span></div>
+          {plan ? (
+            <div className="pad">
+              <PlanSteps steps={plan.steps} />
+              {plan.missing.length > 0 && <div className="needs">{t.needs} {plan.missing[0]}</div>}
+              <div className="sub-label">{t.guardrails}</div>
+              <ul className="guards"><li>{t.guard1}</li><li>{t.guard2}</li><li>{t.guard3}</li></ul>
+              <button className="btn-primary wide" disabled={plan.missing.length > 0} onClick={() => onCreate(goal, plan)}>{t.createBot}</button>
+            </div>
+          ) : <p className="pad muted">{t.noPlan}</p>}
+        </section>
+        <VaultPanel vault={vault} />
+        <SpreadTable quotes={quotes} />
       </aside>
     </div>
   );
@@ -345,23 +315,23 @@ const botExecs = (bot: Bot, execs: Execution[]) => execs.filter((x) => x.at >= b
 function BotList({ bots, go, execs }: { bots: Bot[]; go: (v: View) => void; execs: Execution[] }) {
   const { t } = useT();
   return (
-    <div className="bot-list">
-      {bots.map((b) => {
-        const spent = botExecs(b, execs).filter((x) => x.ok && x.side === 'buy').reduce((s, x) => s + x.amount, 0);
-        const budget = botBudget(b);
-        return (
-          <button key={b.id} className="bot-row" onClick={() => go({ name: 'bot', id: b.id })}>
-            <span className="bot-avatar" aria-hidden>{b.name.slice(0, 1)}</span>
-            <span className="bot-text">
-              <span className="bot-name">{b.name}</span>
-              <span className="muted ellipsis">{b.goal}</span>
-              {budget !== undefined && <span className="mini-bar" aria-hidden><span style={{ width: `${Math.min(100, (spent / budget) * 100)}%` }} /></span>}
-            </span>
-            <span className="status draft">{t.draft}</span>
-          </button>
-        );
-      })}
-    </div>
+    <table className="grid-table bots-table">
+      <thead><tr><th>{t.colBot}</th><th>{t.colGoal}</th><th className="r">{t.colSpent}</th><th className="r">{t.colStatus}</th></tr></thead>
+      <tbody>
+        {bots.map((b) => {
+          const spent = botExecs(b, execs).filter((x) => x.ok && x.side === 'buy').reduce((s, x) => s + x.amount, 0);
+          const budget = botBudget(b);
+          return (
+            <tr key={b.id} tabIndex={0} onClick={() => go({ name: 'bot', id: b.id })} onKeyDown={(e) => { if (e.key === 'Enter') go({ name: 'bot', id: b.id }); }}>
+              <td className="strong">{b.name}</td>
+              <td className="muted ellipsis">{b.goal}</td>
+              <td className="r">${spent.toFixed(2)}{budget !== undefined ? <span className="muted"> / ${budget.toFixed(0)}</span> : null}</td>
+              <td className="r"><span className="status draft">{t.draft}</span></td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -379,10 +349,9 @@ function Bots({ bots, go, execs }: { bots: Bot[]; go: (v: View) => void; execs: 
       <section className="card">
         {bots.length ? <BotList bots={bots} go={go} execs={execs} /> : (
           <div className="empty">
-            <span className="orb lg breathe" aria-hidden />
             <div className="empty-title">{t.noBots}</div>
             <div className="muted">{t.noBotsSub}</div>
-            <button className="btn-primary" onClick={() => go({ name: 'chat' })}>{t.askMoa}</button>
+            <button className="btn-ghost" onClick={() => go({ name: 'chat' })}>{t.navAsk}</button>
           </div>
         )}
       </section>
@@ -400,7 +369,6 @@ function BotDetail({ bot, onDelete, execs, vault }: { bot: Bot; onDelete: () => 
     <div className="page narrow">
       <div className="card-head">
         <div className="row-gap">
-          <span className="bot-avatar lg" aria-hidden>{bot.name.slice(0, 1)}</span>
           <div>
             <h1 className="hello">{bot.name}</h1>
             <p className="muted">{t.created} {new Date(bot.createdAt).toLocaleDateString('en-US')}</p>
@@ -481,15 +449,13 @@ export default function App() {
   const { bots, add, remove } = useBots();
   const { execs, record } = useExecutions();
   const current = useMemo(() => (view.name === 'bot' ? bots.find((b) => b.id === view.id) : undefined), [view, bots]);
-  const title = { trade: t.navTrade, chat: t.navAsk, bots: t.navBots, bot: current?.name ?? t.navBots }[view.name];
   const go = (v: View) => { setView(v); window.scrollTo(0, 0); };
 
   return (
     <LangContext.Provider value={{ lang, t, setLang }}>
       <div className="app">
-        <Sidebar view={view} go={go} botCount={bots.length} vault={vault} />
+        <TopNav view={view} go={go} botCount={bots.length} quotes={quotes} vault={vault} />
         <main className="main">
-          <Topbar title={title} quotes={quotes} />
           {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onAsk={(p) => go({ name: 'chat', prefill: p, auto: !!p })} />}
           {view.name === 'chat' && (
             <Chat
