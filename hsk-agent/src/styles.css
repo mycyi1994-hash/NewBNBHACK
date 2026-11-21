@@ -530,98 +530,29 @@ a.tape-row:hover { text-decoration: none; }
   .tape-pane .lad-row.trade:nth-of-type(n+12) { display: none; }
 }
 
-/* ---------- Under the chart: one surface, three columns split by rules (no nested cards) ---------- */
-.board-wrap { container-type: inline-size; }
-.board { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); background: #fff; border: 1px solid var(--line); border-radius: 18px; }
-.board-col { padding: 20px 22px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
-.board-col + .board-col { border-left: 1px solid var(--line); }
-.board-foot { grid-column: 1 / -1; margin: 0; padding: 12px 22px 14px; border-top: 1px solid var(--line); font-size: 11.5px; }
-.col-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; }
-.col-head h3 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
-.col-note, .col-foot { font-size: 12px; }
-.col-foot { margin: auto 0 0; }
-.warn { color: #b45309; }
-.text-link { border: 0; background: none; padding: 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--brand-ink); }
-.text-link:hover { text-decoration: underline; }
-
-/* coin switch: quiet text segments */
+/* ---------- Strategy picks under the chart: five tiles; a tap makes Moa explain it on the right ---------- */
+.strats { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px 22px 14px; }
+.strats-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.strats-head h3 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.strats-head p { margin: 4px 0 0; font-size: 13px; }
 .coin-switch { display: inline-flex; gap: 2px; background: var(--side); border-radius: 99px; padding: 3px; }
-.coin-switch button { border: 0; background: none; border-radius: 99px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; color: var(--ink-3); }
+.coin-switch button { border: 0; background: none; border-radius: 99px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; color: var(--ink-3); }
 .coin-switch button:hover:not(.on) { color: var(--ink); }
 .coin-switch button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
 
-/* 1. strategy rows */
-.strat-list { list-style: none; margin: 0 -10px; padding: 0; }
-.strat-list li + li { border-top: 1px solid var(--line); }
-.strat-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; border: 0; background: none; text-align: left; padding: 11px 10px; border-radius: 12px; font: inherit; color: var(--ink); }
-.strat-row:hover { background: #faf9f7; }
-.open .strat-row { background: none; }
-.sr-name { font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
-.sr-best { font-style: normal; font-size: 11px; font-weight: 700; color: var(--brand-ink); background: var(--brand-soft); border-radius: 99px; padding: 1px 8px; }
-.sr-value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.sig { font-size: 11.5px; font-weight: 700; border-radius: 99px; padding: 3px 9px; white-space: nowrap; }
+.strat-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.tile { position: relative; display: flex; flex-direction: column; gap: 8px; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 16px; padding: 14px 14px 12px; font: inherit; color: var(--ink); min-height: 150px; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease, background-color .15s ease; }
+.tile:hover { border-color: var(--line-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, .06); transform: translateY(-1px); }
+.tile.on { border-color: var(--brand); background: #fbfaff; box-shadow: 0 0 0 3px var(--brand-soft); }
+.tile-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tile-top b { font-size: 14px; font-weight: 650; }
+.tile-line { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.tile-num { margin-top: auto; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+.tile-num strong { font-size: 22px; font-weight: 750; letter-spacing: -0.02em; }
+.tile-num small { font-size: 11.5px; color: var(--ink-3); }
+.tile-best { position: absolute; top: -9px; right: 14px; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; border-radius: 99px; padding: 2px 9px; }
+.sig { font-size: 11.5px; font-weight: 700; border-radius: 99px; padding: 2px 8px; white-space: nowrap; }
 .sig-good { background: #dcfce7; color: #15803d; }
 .sig-neutral { background: var(--side); color: var(--ink-2); }
 .sig-wait { background: #fff4e5; color: #b45309; }
-.strat-detail { padding: 0 10px 14px; display: flex; flex-direction: column; gap: 10px; animation: fade-up .25s cubic-bezier(.2, .8, .2, 1) both; }
-.sd-caption { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
-.mini-lines { display: block; width: 100%; height: 64px; }
-.mini-legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-top: -4px; }
-.mini-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.mini-legend span::before { content: ''; width: 12px; border-top: 2px solid #6d4ce0; }
-.mini-legend .lg-p::before { border-top: 1.5px dashed #b9b3ab; }
-.meter-track { position: relative; height: 6px; border-radius: 99px; background: linear-gradient(90deg, #bbf7d0, #f1efec 50%, #fed7aa); }
-.meter-track span { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2.5px solid var(--ink); transform: translate(-50%, -50%); transition: left .4s ease; }
-.meter-labels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11.5px; color: var(--ink-3); }
-.sd-today { margin: 0; font-size: 13px; color: var(--ink-2); }
-.sd-cta { align-self: flex-start; padding: 9px 16px !important; }
-
-/* 2. vault and bots */
-.vault-big { font-size: 30px; font-weight: 750; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.vault-big small { font-size: 14px; font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
-.spend-line { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
-.track { display: block; height: 6px; border-radius: 99px; background: var(--side); overflow: hidden; }
-.track > span { display: block; height: 100%; border-radius: 99px; background: var(--brand); transition: width .4s ease; }
-.vault-rule { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
-.bots-mini { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 4px; }
-.bm-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-.bm-empty { margin: 0; font-size: 12.5px; line-height: 1.5; }
-.bm-row { display: grid; grid-template-columns: minmax(0, 1fr) 70px auto; align-items: center; gap: 10px; border: 0; background: none; text-align: left; padding: 7px 8px; margin: 0 -8px; border-radius: 10px; font: inherit; font-size: 13px; color: var(--ink); }
-.bm-row:hover { background: #faf9f7; }
-.bm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.bm-num { font-variant-numeric: tabular-nums; font-size: 12.5px; }
-
-/* 3. HSKSwap pools */
-.pool-rows { display: flex; flex-direction: column; margin: 0 -8px; }
-.pool-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 0; background: none; text-align: left; padding: 10px 8px; border-radius: 12px; font: inherit; color: var(--ink); font-variant-numeric: tabular-nums; }
-.pool-row + .pool-row { border-top: 1px solid var(--line); border-radius: 0; }
-.pool-row:hover { background: #faf9f7; border-radius: 12px; }
-.pr-coin { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; }
-.pr-coin .coin::before { width: 16px; height: 16px; }
-.pr-price { display: flex; flex-direction: column; font-size: 13.5px; font-weight: 600; }
-.pr-price small { font-size: 11.5px; font-weight: 400; }
-.pr-gap { display: inline-flex; align-items: center; gap: 10px; }
-.pr-gap b { min-width: 52px; text-align: right; font-size: 13px; }
-.gapbar { position: relative; width: 56px; height: 6px; border-radius: 99px; background: var(--side); }
-.gapbar::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line-strong); }
-.gapbar span { position: absolute; top: 0; bottom: 0; }
-.gapbar .neg-side { right: 50%; background: #22c55e; border-radius: 99px 0 0 99px; }
-.gapbar .pos-side { left: 50%; background: #fb923c; border-radius: 0 99px 99px 0; }
-
-@container (max-width: 1000px) {
-  /* strategies get the full width on top; vault and pools sit side by side below */
-  .board { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .board-col:nth-child(1) { grid-column: 1 / -1; }
-  .board-col:nth-child(2) { border-left: 0; border-top: 1px solid var(--line); }
-  .board-col:nth-child(3) { border-top: 1px solid var(--line); }
-}
-@container (max-width: 640px) {
-  .board { grid-template-columns: minmax(0, 1fr); }
-  .board-col + .board-col { border-left: 0; border-top: 1px solid var(--line); }
-}
-
-.col-head h3, .sr-name, .sr-best { white-space: nowrap; }
-.bm-row { grid-template-columns: minmax(80px, 1fr) minmax(40px, 70px) auto; }
-
-/* narrow pool column: drop the bar, keep the number */
-@container (max-width: 820px) { .gapbar { display: none; } }
+.strats-foot { margin: 12px 0 0; font-size: 11.5px; }

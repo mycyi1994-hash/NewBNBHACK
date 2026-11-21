@@ -14,7 +14,7 @@ const NOTABLE = 0.003;      // a pool more than 0.3% away from Gate is worth men
 const MOVE = 0.005;         // a 0.5 percentage-point change in the gap triggers a new note
 const QUIET_MS = 120_000;   // at most one unprompted note every 2 minutes
 
-export default function MoaFeed({ quotes, vault, onAsk }: { quotes: Quote[]; vault: VaultInfo | null; onAsk: (prompt: string, context?: string) => void }) {
+export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quote[]; vault: VaultInfo | null; onAsk: (prompt: string, context?: string) => void; inject?: { n: number; text: string; follow: string[] } | null }) {
   const { t, lang } = useT();
   const [notes, setNotes] = useState<Note[]>([]);
   const [typing, setTyping] = useState(false);
@@ -71,6 +71,9 @@ export default function MoaFeed({ quotes, vault, onAsk }: { quotes: Quote[]; vau
 
   // Re-greet in the other language when the user switches it.
   useEffect(() => { if (greeted.current) { greeted.current = false; setNotes([]); } }, [lang]);
+
+  // A strategy tapped under the chart: Moa explains it here.
+  useEffect(() => { if (inject) say({ text: inject.text, follow: inject.follow }, 450); }, [inject?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const el = feed.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, [notes, typing]);
   useEffect(() => { const el = input.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; }, [draft]);

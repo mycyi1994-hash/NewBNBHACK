@@ -6,7 +6,7 @@ import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import type { VaultInfo } from './parts.tsx';
-import Board, { type BotSummary } from './Strategies.tsx';
+import StrategyGrid, { type StratNote } from './Strategies.tsx';
 import MoaFeed from './MoaFeed.tsx';
 
 type Venue = 'cex' | 'dex';
@@ -98,9 +98,7 @@ function useCex(interval: cex.Interval) {
   return { t, book, tape, candles, mi, err };
 }
 
-interface BoardLinks { vault: VaultInfo | null; bots: BotSummary[]; onOpenBots: () => void; onOpenBot: (id: string) => void; onOpenPool: (a: Asset) => void }
-
-function CexPanel({ dexBtc, quotes, onAsk, links }: { dexBtc?: number; quotes: Quote[]; onAsk: (prompt: string) => void; links: BoardLinks }) {
+function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]; onPick: (n: StratNote) => void }) {
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>('15m');
   const { t, tape, candles, mi, err } = useCex(interval);
@@ -145,7 +143,7 @@ function CexPanel({ dexBtc, quotes, onAsk, links }: { dexBtc?: number; quotes: Q
         )}
       </section>
 
-      <Board quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onAsk={onAsk} {...links} />
+      <StrategyGrid quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onPick={onPick} />
     </>
   );
 }
@@ -210,9 +208,10 @@ function DexPanel({ asset, setAsset, detail, err }: { asset: Asset; setAsset: (a
 
 /* ---------- page ---------- */
 
-export default function Trade({ onAsk, quotes, vault, bots, onOpenBots, onOpenBot }: { onAsk: (prompt: string, context?: string) => void; quotes: Quote[]; vault: VaultInfo | null; bots: BotSummary[]; onOpenBots: () => void; onOpenBot: (id: string) => void }) {
+export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string, context?: string) => void; quotes: Quote[]; vault: VaultInfo | null }) {
   const { t } = useT();
   const [venue, setVenue] = useState<Venue>('cex');
+  const [note, setNote] = useState<StratNote | null>(null);
   const [asset, setAsset] = useState<Asset>('BTC');
   const [detail, setDetail] = useState<PoolDetail | null>(null);
   const [dexErr, setDexErr] = useState<string | null>(null);
@@ -235,12 +234,11 @@ export default function Trade({ onAsk, quotes, vault, bots, onOpenBots, onOpenBo
           <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
         </div>
         {venue === 'cex'
-          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onAsk={(p) => onAsk(p)}
-            links={{ vault, bots, onOpenBots, onOpenBot, onOpenPool: (a) => { setAsset(a); setVenue('dex'); window.scrollTo({ top: 0, behavior: 'smooth' }); } }} />
+          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onPick={(n) => { setNote(n); if (window.innerWidth <= 1180) document.querySelector('.feed-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} />
           : <DexPanel asset={asset} setAsset={setAsset} detail={detail} err={dexErr} />}
         <p className="muted small">{t.dataNote}</p>
       </div>
-      <MoaFeed onAsk={onAsk} quotes={quotes} vault={vault} />
+      <MoaFeed onAsk={onAsk} quotes={quotes} vault={vault} inject={note} />
     </div>
   );
 }
