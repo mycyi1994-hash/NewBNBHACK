@@ -71,7 +71,7 @@ a { color: var(--brand-ink); }
 .pill.lang:hover { border-color: var(--brand); color: var(--brand-ink); }
 
 /* ---------- common ---------- */
-.page { padding: 30px 48px 60px; max-width: 1120px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.page { padding: 30px 48px 60px; max-width: 1400px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 .page.narrow { max-width: 980px; }
 .hello { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin: 0; }
 .muted { color: var(--ink-3); font-size: 13.5px; margin: 0; line-height: 1.5; }
@@ -112,7 +112,7 @@ a { color: var(--brand-ink); }
 .mint { background: linear-gradient(135deg, #8de0b6, #3fbf86); }
 
 /* ---------- trade page ---------- */
-.trade-page { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; padding: 20px 24px 40px; max-width: 1560px; width: 100%; margin: 0 auto; align-items: start; }
+.trade-page { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 24vw, 460px); gap: 18px; padding: 20px 24px 40px; width: 100%; align-items: start; }
 .trade-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .segmented { display: inline-flex; align-self: flex-start; align-items: center; gap: 4px; background: var(--side); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
 .segmented button { border: 0; background: none; border-radius: 9px; padding: 8px 16px; font-weight: 700; font-size: 14px; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; }
@@ -133,8 +133,8 @@ a { color: var(--brand-ink); }
 .stat { display: flex; flex-direction: column; font-size: 13.5px; font-variant-numeric: tabular-nums; gap: 2px; }
 .stat .muted { font-size: 12px; }
 .chart-card { padding: 12px 14px; }
-.chart { width: 100%; }
-.chart-empty { height: 340px; display: grid; place-items: center; }
+.chart { width: 100%; height: clamp(340px, calc(100vh - 420px), 820px); }
+.chart-empty { height: clamp(340px, calc(100vh - 420px), 820px); display: grid; place-items: center; }
 .chart-toolbar { display: flex; gap: 4px; align-items: center; margin-bottom: 8px; font-size: 13px; }
 .chart-toolbar button { border: 0; background: none; border-radius: 7px; padding: 5px 11px; font-size: 13px; color: var(--ink-3); font-weight: 600; }
 .chart-toolbar button.on { background: var(--side); color: var(--ink); }

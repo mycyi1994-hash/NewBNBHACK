@@ -17,11 +17,12 @@ const arrow = (up: boolean) => (up ? '▲' : '▼');
 
 type ChartData = { kind: 'candles'; data: cex.Candle[] } | { kind: 'line'; data: { time: number; value: number }[] };
 
-function PriceChart({ data, height = 340 }: { data: ChartData; height?: number }) {
+function PriceChart({ data }: { data: ChartData }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Area'> | null>(null);
   const kind = useRef<ChartData['kind'] | null>(null);
+  const fittedFrom = useRef<number | null>(null);
 
   useEffect(() => {
     if (!box.current) return;
@@ -30,7 +31,7 @@ function PriceChart({ data, height = 340 }: { data: ChartData; height?: number }
       layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#6b665f', fontFamily: 'Inter Variable, system-ui, sans-serif', fontSize: 11 },
       grid: { vertLines: { color: '#f3f1ee' }, horzLines: { color: '#f3f1ee' } },
       rightPriceScale: { borderColor: '#e8e6e3' },
-      timeScale: { borderColor: '#e8e6e3', timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: '#e8e6e3', timeVisible: true, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
       crosshair: { mode: 1 },
     });
     chart.current = c;
@@ -49,9 +50,12 @@ function PriceChart({ data, height = 340 }: { data: ChartData; height?: number }
     }
     if (data.kind === 'candles') (series.current as ISeriesApi<'Candlestick'>).setData(data.data.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
     else (series.current as ISeriesApi<'Area'>).setData(data.data.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
+    // Fill the chart width on a new series or interval; live refreshes keep the user's zoom.
+    const first = data.data[0]?.time;
+    if (first !== undefined && fittedFrom.current !== first) { c.timeScale().fitContent(); fittedFrom.current = first; }
   }, [data]);
 
-  return <div ref={box} className="chart" style={{ height }} />;
+  return <div ref={box} className="chart" />;
 }
 
 function Stat({ label, value, cls }: { label: string; value: string; cls?: string }) {
