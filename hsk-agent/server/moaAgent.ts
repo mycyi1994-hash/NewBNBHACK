@@ -105,7 +105,10 @@ async function marketSnapshot(cfg: ExecConfig) {
   };
 }
 
-export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[]): Promise<MoaResult> {
+export type MoaStep = 'thinking' | 'market' | 'plan' | 'execute' | 'writing';
+export type MoaEvent = { type: 'step'; step: MoaStep; detail?: string };
+
+export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[], onEvent: (e: MoaEvent) => void = () => {}): Promise<MoaResult> {
   const client = new Anthropic({ apiKey });
   const lastUser = [...history].reverse().find((t) => t.role === 'user')?.content ?? '';
   const executionAllowed = EXECUTE_WORDS.test(lastUser);
@@ -113,6 +116,7 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
   const result: MoaResult = { reply: '', executions: [], model: MODEL };
 
   for (let i = 0; i < 6; i++) {
+    onEvent({ type: 'step', step: i === 0 ? 'thinking' : 'writing' });
     const response = await client.beta.messages.create({
       model: MODEL,
       max_tokens: 16000,
@@ -140,8 +144,10 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
       let isError = false;
       try {
         if (u.name === 'get_market') {
+          onEvent({ type: 'step', step: 'market' });
           content = JSON.stringify(await marketSnapshot(cfg));
         } else if (u.name === 'propose_plan') {
+          onEvent({ type: 'step', step: 'plan' });
           const input = u.input as { steps: PlanStep[]; missing: string[] };
           result.plan = { steps: input.steps ?? [], missing: input.missing ?? [] };
           content = 'Plan shown to the user in the plan panel.';
@@ -154,6 +160,7 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
             isError = true;
             content = 'Refused by the server: only one execution per user message.';
           } else {
+            onEvent({ type: 'step', step: 'execute', detail: `${input.side} ${input.amount} ${input.side === 'buy' ? 'USDT of ' : ''}${input.asset}` });
             const r = await executeTrade(cfg, input);
             result.executions.push({ ...r, request: { asset: input.asset, side: input.side, amount: input.amount } });
             isError = !r.ok;

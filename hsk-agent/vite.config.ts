@@ -20,7 +20,18 @@ function moaApi(env: Record<string, string>): Plugin {
         for await (const chunk of req) raw += chunk;
         const { history } = JSON.parse(raw) as { history: { role: 'user' | 'assistant'; content: string }[] };
         const { runMoa } = await import('./server/moaAgent.ts');
-        return send(200, await runMoa(env.ANTHROPIC_API_KEY, cfg, history.slice(-20)));
+        // NDJSON stream: real progress steps while Claude works, then the final result
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/x-ndjson');
+        res.setHeader('cache-control', 'no-cache');
+        const write = (o: unknown) => res.write(JSON.stringify(o) + '\n');
+        try {
+          const result = await runMoa(env.ANTHROPIC_API_KEY, cfg, history.slice(-20), write);
+          write({ type: 'done', result });
+        } catch (e) {
+          write({ type: 'error', error: e instanceof Error ? e.message : String(e) });
+        }
+        return res.end();
       }
       return send(404, { error: 'not found' });
     } catch (e) {

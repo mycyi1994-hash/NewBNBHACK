@@ -177,8 +177,33 @@ export function scheduleOf(s: AccumulateStep): { buys?: number; totalUsd?: numbe
 
 const pct = (f: number) => (f === 1 ? 'all' : f === 0.5 ? 'half' : Math.abs(f - 1 / 3) < 1e-9 ? 'a third' : f === 0.25 ? 'a quarter' : `${Math.round(f * 100)}%`);
 
-/** One line per step, in plain English. */
-export function describe(step: Step): string {
+const pctKo = (f: number) => (f === 1 ? '전부' : f === 0.5 ? '절반' : Math.abs(f - 1 / 3) < 1e-9 ? '1/3' : f === 0.25 ? '1/4' : `${Math.round(f * 100)}%`);
+const everyKo = { hour: '매시간', day: '매일', week: '매주' } as const;
+
+function describeKo(step: Step): string {
+  switch (step.kind) {
+    case 'accumulate': {
+      const parts: string[] = [];
+      if (step.perBuyUsd !== undefined && step.every) parts.push(`${everyKo[step.every]} $${step.perBuyUsd}씩`);
+      if (step.durationDays !== undefined) parts.push(`${step.durationDays}일 동안`);
+      if (step.deadline) parts.push(`${step.deadline}까지`);
+      if (step.targetQty !== undefined) parts.push(`${step.targetQty.toLocaleString('en-US')}개 목표`);
+      if (step.maxPrice !== undefined) parts.push(`$${step.maxPrice} 이하일 때만`);
+      if (step.budgetUsd !== undefined) parts.push(`예산 $${step.budgetUsd}`);
+      return `${step.asset} 모으기${parts.length ? ': ' + parts.join(', ') : ''}`;
+    }
+    case 'stopLoss':
+      return `평단보다 ${step.dropPct}% 떨어지면 ${step.asset} ${pctKo(step.sellFraction)} 매도`;
+    case 'takeProfit':
+      return `평단보다 ${step.risePct}% 오르면 ${step.asset} ${pctKo(step.sellFraction)} 매도`;
+    case 'earn':
+      return step.what === 'idle USDT' ? '놀고 있는 USDT를 HSK 체인 예치처에 넣기' : '모은 코인을 HSK 체인 예치처에 넣기';
+  }
+}
+
+/** One line per step, in English (default) or Korean. */
+export function describe(step: Step, lang: 'en' | 'ko' = 'en'): string {
+  if (lang === 'ko') return describeKo(step);
   switch (step.kind) {
     case 'accumulate': {
       const parts: string[] = [];

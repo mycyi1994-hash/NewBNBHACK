@@ -1,0 +1,120 @@
+// UI strings in English and Korean. Moa's own replies follow the language the user writes in.
+import { createContext, useContext } from 'react';
+
+export type Lang = 'en' | 'ko';
+
+const en = {
+  navMarkets: 'MARKETS', navTrade: 'Trade', navAssistant: 'ASSISTANT', navAsk: 'Ask Moa', navAutomations: 'AUTOMATIONS', navBots: 'Bots',
+  preview: 'Preview',
+  vaultNone: 'No vault connected · execution off',
+  vaultOn: (addr: string, bal: string, left: string) => `Vault ${addr} · ${bal} USDT · $${left} left today`,
+  cex: 'CEX', cexSub: 'HashKey Global', dex: 'DEX', dexSub: 'HSK Chain · HSKSwap',
+  perpetual: 'Perpetual', usdtMargined: 'HashKey Global · USDT-margined',
+  change24h: '24h change', mark: 'Mark', index: 'Index', high24h: '24h high', low24h: '24h low', vol24h: '24h volume',
+  live: 'Live', orderBook: 'Order book', recentTrades: 'Recent trades', recentSwaps: 'Recent swaps',
+  price: 'Price', size: 'Size (BTC)', time: 'Time', side: 'Side', amount: 'Amount', when: 'When', buy: 'Buy', sell: 'Sell',
+  spread: 'spread', loadingCandles: 'Loading candles…', readingChain: 'Reading HSK Chain…',
+  poolLine: 'Pool price from every swap in the last 24 hours', fewSwaps: 'Fewer than two swaps in 24 hours.', noSwaps: 'No swaps in the last 24 hours.',
+  swaps24h: '24h swaps', block: 'Block', poolOf: (s: string) => `Pool ${s}`, poolUsdt: 'Pool USDT',
+  dataNote: 'Market data: HashKey Global public API and HSK Chain mainnet (chain 177).',
+  dockHi: "Hi, I'm Moa.",
+  dockSub: 'Tell me the result you want. I collect, protect and grow your coins on HSKSwap, inside limits your vault enforces.',
+  dockPlaceholder: 'e.g. Collect $10 of HSK every day for 2 weeks',
+  ask: 'Ask', askMoa: 'Ask Moa',
+  starters: [
+    { title: 'Collect', sub: 'Buy a little at a time', prompt: 'Collect $10 of HSK every day for 2 weeks, sell half if it drops 15%' },
+    { title: 'Protect', sub: 'Stop-loss, take-profit', prompt: 'If HSK falls 15%, sell half' },
+    { title: 'Earn', sub: 'Put idle USDT to work', prompt: 'Buy $25 of ETH every week for 2 months, take a third at +30%, then stake idle USDT' },
+    { title: 'Set a goal', sub: 'Say the result you want', prompt: 'Accumulate 5,000 HSK by Dec 31 under 0.08, budget $400' },
+  ],
+  seesTitle: 'What Moa sees now', seesInLine: 'In line with exchanges', seesPricey: 'Pool is pricey: wait to buy', seesCheap: 'Pool is cheap: good time to collect',
+  seesNote: 'HSKSwap pool price vs Gate spot.',
+  trustTitle: 'Your money, your rules',
+  trust1: 'Funds sit in your vault contract. Only you can withdraw.',
+  trust2: 'Moa trades only when you say “execute” (실행).',
+  trust3: (t: string, d: string) => `Hard limits: $${t} per trade, $${d} per day.`,
+  trust3none: 'Limits are set when you connect a vault.',
+  heroTitle: 'What should Moa do with your money?',
+  heroPlaceholder: 'Collect 5,000 HSK by Dec 31, stop if it drops 15%…',
+  replyPlaceholder: 'Reply to Moa…', send: 'Send', you: 'You', started: 'Conversation started',
+  steps: { thinking: 'Reading your message', market: 'Checking live prices on HSK Chain', plan: 'Drafting your plan', execute: 'Sending the trade to your vault', writing: 'Writing the reply' },
+  plan: 'Plan', guardrails: 'Guardrails', needs: 'Needs your answer:', createBot: 'Create bot',
+  guard1: 'Trades only on HSKSwap, only the coins in this plan', guard2: 'Skips a buy when the pool is far above the exchange price', guard3: 'Asks you before anything outside the plan',
+  executed: 'Executed on HSK Chain', notExecuted: 'Not executed',
+  offline: 'Offline mode: Moa’s AI is not reachable, so this reply came from the on-device parser.',
+  tags: { accumulate: 'Collect', stopLoss: 'Protect', takeProfit: 'Take profit', earn: 'Earn' },
+  bots: 'Bots', botsSub: 'Each bot owns one goal and keeps working on it.', newBot: '+ New bot', noBots: 'No bots yet',
+  noBotsSub: 'Tell Moa a goal like “Collect $10 of HSK every day for 2 weeks”.',
+  draft: 'Draft', created: 'Created', delete: 'Delete', overview: 'Overview', activity: 'Activity', goal: 'Goal',
+  progress: 'Progress', spent: (a: string, b: string) => `$${a} of $${b} spent`, spentOpen: (a: string) => `$${a} spent so far`,
+  nextRun: 'Next run', nextRunOff: 'Automatic runs start once your vault is live on HSK mainnet. Until then, say “execute” in Ask Moa to run a step now.',
+  limits: 'Vault limits', perTrade: 'Per trade', perDay: 'Per day', leftToday: 'Left today', balance: 'USDT in vault', noVault: 'No vault connected on this server.',
+  noTrades: 'No trades yet', noTradesSub: 'Every buy and sell for this bot appears here with Moa’s reason and the HSK Chain transaction.',
+  langLabel: '한국어',
+};
+
+const ko: typeof en = {
+  navMarkets: '마켓', navTrade: '트레이드', navAssistant: '어시스턴트', navAsk: 'Moa에게 묻기', navAutomations: '자동화', navBots: '봇',
+  preview: '미리보기',
+  vaultNone: '볼트 미연결 · 실행 꺼짐',
+  vaultOn: (addr, bal, left) => `볼트 ${addr} · ${bal} USDT · 오늘 남은 한도 $${left}`,
+  cex: 'CEX', cexSub: 'HashKey Global', dex: 'DEX', dexSub: 'HSK 체인 · HSKSwap',
+  perpetual: '무기한', usdtMargined: 'HashKey Global · USDT 마진',
+  change24h: '24시간 변동', mark: '마크', index: '인덱스', high24h: '24시간 고가', low24h: '24시간 저가', vol24h: '24시간 거래량',
+  live: '실시간', orderBook: '호가', recentTrades: '최근 체결', recentSwaps: '최근 스왑',
+  price: '가격', size: '수량 (BTC)', time: '시간', side: '구분', amount: '금액', when: '시각', buy: '매수', sell: '매도',
+  spread: '스프레드', loadingCandles: '캔들을 불러오는 중…', readingChain: 'HSK 체인을 읽는 중…',
+  poolLine: '최근 24시간 모든 스왑 기준 풀 가격', fewSwaps: '24시간 동안 스왑이 두 건 미만이에요.', noSwaps: '최근 24시간 동안 스왑이 없어요.',
+  swaps24h: '24시간 스왑', block: '블록', poolOf: (s) => `풀 ${s}`, poolUsdt: '풀 USDT',
+  dataNote: '시세 출처: HashKey Global 공개 API, HSK 체인 메인넷(체인 177).',
+  dockHi: '안녕하세요, Moa예요.',
+  dockSub: '원하는 결과를 말해 주세요. 볼트가 지키는 한도 안에서 HSKSwap으로 코인을 모으고, 지키고, 불려드려요.',
+  dockPlaceholder: '예: HSK를 2주 동안 매일 10달러씩 모아줘',
+  ask: '보내기', askMoa: 'Moa에게 묻기',
+  starters: [
+    { title: '모으기', sub: '조금씩 나눠 사기', prompt: 'HSK를 2주 동안 매일 10달러씩 모아줘. 15% 빠지면 절반 팔아줘' },
+    { title: '지키기', sub: '손절과 익절', prompt: 'HSK가 15% 떨어지면 절반 팔아줘' },
+    { title: '불리기', sub: '놀고 있는 USDT 굴리기', prompt: 'ETH를 두 달 동안 매주 25달러씩 사고, 30% 오르면 1/3 익절해줘. 남는 USDT는 예치해줘' },
+    { title: '목표 정하기', sub: '원하는 결과만 말하기', prompt: '12월 31일까지 HSK 5,000개를 0.08 이하로 모아줘. 예산은 400달러' },
+  ],
+  seesTitle: 'Moa가 지금 보는 것', seesInLine: '거래소와 비슷한 가격', seesPricey: '풀이 비싸요: 매수 대기', seesCheap: '풀이 싸요: 모으기 좋은 때',
+  seesNote: 'HSKSwap 풀 가격과 Gate 현물 가격 비교.',
+  trustTitle: '내 돈, 내 규칙',
+  trust1: '돈은 내 볼트 컨트랙트에 있어요. 출금은 나만 할 수 있어요.',
+  trust2: 'Moa는 “실행”이라고 말할 때만 거래해요.',
+  trust3: (t, d) => `고정 한도: 1회 $${t}, 하루 $${d}.`,
+  trust3none: '볼트를 연결하면 한도가 정해져요.',
+  heroTitle: 'Moa가 내 돈으로 무엇을 할까요?',
+  heroPlaceholder: '12월 31일까지 HSK 5,000개 모으고, 15% 빠지면 멈춰줘…',
+  replyPlaceholder: 'Moa에게 답하기…', send: '보내기', you: '나', started: '대화 시작',
+  steps: { thinking: '메시지를 읽는 중', market: 'HSK 체인 실시간 가격 확인 중', plan: '계획 작성 중', execute: '볼트로 거래 보내는 중', writing: '답변 작성 중' },
+  plan: '계획', guardrails: '안전장치', needs: '답이 필요해요:', createBot: '봇 만들기',
+  guard1: 'HSKSwap에서, 계획에 있는 코인만 거래해요', guard2: '풀이 거래소보다 많이 비싸면 매수를 건너뛰어요', guard3: '계획 밖의 일은 먼저 물어봐요',
+  executed: 'HSK 체인에서 체결됨', notExecuted: '실행되지 않음',
+  offline: '오프라인 모드: Moa AI에 연결할 수 없어서 기기 안의 해석기로 답했어요.',
+  tags: { accumulate: '모으기', stopLoss: '지키기', takeProfit: '익절', earn: '불리기' },
+  bots: '봇', botsSub: '봇 하나가 목표 하나를 맡아서 끝까지 해요.', newBot: '+ 새 봇', noBots: '아직 봇이 없어요',
+  noBotsSub: 'Moa에게 “HSK를 2주 동안 매일 10달러씩 모아줘”처럼 목표를 말해 보세요.',
+  draft: '초안', created: '만든 날', delete: '삭제', overview: '개요', activity: '활동', goal: '목표',
+  progress: '진행률', spent: (a, b) => `$${b} 중 $${a} 사용`, spentOpen: (a) => `지금까지 $${a} 사용`,
+  nextRun: '다음 실행', nextRunOff: '볼트가 HSK 메인넷에 올라가면 자동 실행이 시작돼요. 그전에는 Moa에게 “실행”이라고 말하면 바로 한 단계를 실행해요.',
+  limits: '볼트 한도', perTrade: '1회', perDay: '하루', leftToday: '오늘 남은 한도', balance: '볼트 USDT', noVault: '이 서버에 연결된 볼트가 없어요.',
+  noTrades: '아직 거래가 없어요', noTradesSub: '이 봇의 매수·매도가 Moa의 이유, HSK 체인 거래 기록과 함께 여기에 쌓여요.',
+  langLabel: 'English',
+};
+
+export const STRINGS = { en, ko };
+export type Strings = typeof en;
+export const LangContext = createContext<{ lang: Lang; t: Strings; setLang: (l: Lang) => void }>({ lang: 'en', t: en, setLang: () => {} });
+export const useT = () => useContext(LangContext);
+
+export function initialLang(): Lang {
+  try {
+    const saved = localStorage.getItem('moa.lang');
+    if (saved === 'en' || saved === 'ko') return saved;
+  } catch { /* storage unavailable */ }
+  return typeof navigator !== 'undefined' && navigator.language.startsWith('ko') ? 'ko' : 'en';
+}
+export function saveLang(l: Lang) {
+  try { localStorage.setItem('moa.lang', l); } catch { /* storage unavailable */ }
+}
