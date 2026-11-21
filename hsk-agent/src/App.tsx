@@ -3,26 +3,21 @@ import { botName, describe, parseIntent, scheduleOf, type Plan, type Step } from
 import { fmtPrice, loadQuotes, type Quote } from './market.ts';
 import { EXAMPLES, GREETING, reply } from './moa.ts';
 import { useBots, type Bot } from './store.ts';
+import Trade from './Trade.tsx';
 
-type View = { name: 'home' } | { name: 'chat'; prefill?: string } | { name: 'bots' } | { name: 'bot'; id: string } | { name: 'markets' };
+type View = { name: 'trade' } | { name: 'chat'; prefill?: string; auto?: boolean } | { name: 'bots' } | { name: 'bot'; id: string };
 interface Msg { role: 'moa' | 'you'; text: string; at: number }
 
 function useQuotes() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let alive = true;
-    const tick = () => loadQuotes().then((q) => { if (alive) { setQuotes(q); setLoading(false); } });
+    const tick = () => loadQuotes().then((q) => alive && setQuotes(q));
     tick();
     const t = setInterval(tick, 30_000);
     return () => { alive = false; clearInterval(t); };
   }, []);
-  return { quotes, loading };
-}
-
-function greeting() {
-  const h = new Date().getHours();
-  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  return quotes;
 }
 
 const time = (t: number) => new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -40,13 +35,12 @@ function Sidebar({ view, go, botCount }: { view: View; go: (v: View) => void; bo
   return (
     <aside className="sidebar">
       <div className="brand"><span className="brand-dot" aria-hidden /> moa</div>
-      {item('Home', { name: 'home' }, '⌂', view.name === 'home')}
+      <div className="nav-label">MARKETS</div>
+      {item('Trade', { name: 'trade' }, '∿', view.name === 'trade')}
       <div className="nav-label">ASSISTANT</div>
       {item('Ask Moa', { name: 'chat' }, '✦', view.name === 'chat')}
       <div className="nav-label">AUTOMATIONS</div>
       {item('Bots', { name: 'bots' }, '◎', view.name === 'bots' || view.name === 'bot', botCount)}
-      <div className="nav-label">DATA</div>
-      {item('Markets', { name: 'markets' }, '∿', view.name === 'markets')}
       <div className="sidebar-foot">
         <div className="net"><span className="live-dot" /> HSK Chain · mainnet</div>
         <div className="foot-note">Execution not enabled yet</div>
@@ -68,144 +62,124 @@ function Topbar({ title, quotes }: { title: string; quotes: Quote[] }) {
   );
 }
 
-/* ---------- home ---------- */
-
-const FEATURES = [
-  { title: 'Collect', sub: 'Buy a little at a time', color: 'peach', icon: '◔', prompt: EXAMPLES[0] },
-  { title: 'Protect', sub: 'Stop-loss and take-profit', color: 'lilac', icon: '◈', prompt: 'If HSK falls 15%, sell half' },
-  { title: 'Earn', sub: 'Put idle USDT to work', color: 'sky', icon: '◍', prompt: 'Stake idle USDT' },
-  { title: 'Set a goal', sub: 'Say the result you want', color: 'mint', icon: '◎', prompt: EXAMPLES[1] },
-  { title: 'Ask anything', sub: 'Prices, plans, why', color: 'rose', icon: '✦', prompt: '' },
-];
-
-function Home({ go, quotes, loading, bots }: { go: (v: View) => void; quotes: Quote[]; loading: boolean; bots: Bot[] }) {
-  return (
-    <div className="page">
-      <h1 className="hello">{greeting()}</h1>
-      <div className="feature-row">
-        {FEATURES.map((f) => (
-          <button key={f.title} className="feature" onClick={() => go({ name: 'chat', prefill: f.prompt })}>
-            <span className={`feature-icon ${f.color}`} aria-hidden>{f.icon}</span>
-            <span className="feature-title">{f.title}</span>
-            <span className="feature-sub">{f.sub}</span>
-          </button>
-        ))}
-      </div>
-
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2>Markets on HSKSwap</h2>
-            <p className="muted">Pool price on HSK Chain next to the exchange price. Refreshes every 30 seconds.</p>
-          </div>
-          <button className="btn-ghost" onClick={() => go({ name: 'markets' })}>Details</button>
-        </div>
-        <QuoteTable quotes={quotes} loading={loading} />
-      </section>
-
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2>Your bots</h2>
-            <p className="muted">Each bot owns one goal and works on it until it is done.</p>
-          </div>
-          <button className="btn-dark" onClick={() => go({ name: 'chat' })}>+ New bot</button>
-        </div>
-        {bots.length === 0 ? (
-          <div className="empty">
-            <div className="empty-title">No bots yet</div>
-            <div className="muted">Tell Moa a goal like “{EXAMPLES[0]}”.</div>
-          </div>
-        ) : (
-          <BotList bots={bots} go={go} />
-        )}
-      </section>
-    </div>
-  );
-}
-
-function QuoteTable({ quotes, loading }: { quotes: Quote[]; loading: boolean }) {
-  if (loading) return <div className="muted pad">Reading HSK Chain…</div>;
-  return (
-    <table className="table">
-      <thead>
-        <tr><th>Asset</th><th>HSKSwap pool</th><th>Exchange (Gate)</th><th>24h</th><th>Gap</th></tr>
-      </thead>
-      <tbody>
-        {quotes.map((q) => (
-          <tr key={q.asset}>
-            <td><span className={`coin coin-${q.asset.toLowerCase()}`}>{q.asset}</span></td>
-            <td>{q.pool !== undefined ? `$${fmtPrice(q.pool)}` : <Unavailable why={q.poolSource} />}</td>
-            <td>{q.exchange !== undefined ? `$${fmtPrice(q.exchange)}` : <Unavailable why={q.exchangeSource} />}</td>
-            <td className={q.exchangeChange24h !== undefined && q.exchangeChange24h < 0 ? 'neg' : 'pos'}>
-              {q.exchangeChange24h !== undefined ? `${q.exchangeChange24h > 0 ? '+' : ''}${q.exchangeChange24h.toFixed(2)}%` : '—'}
-            </td>
-            <td>{q.gap !== undefined ? <span className={`gap ${Math.abs(q.gap) >= 0.006 ? 'gap-wide' : ''}`}>{q.gap > 0 ? '+' : ''}{(q.gap * 100).toFixed(2)}%</span> : '—'}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function Unavailable({ why }: { why: Quote['poolSource'] }) {
-  return <span className="unavail" title={why.state === 'unavailable' ? why.reason : ''}>Unavailable</span>;
-}
-
 /* ---------- chat ---------- */
 
-function Chat({ prefill, quotes, onCreate }: { prefill?: string; quotes: Quote[]; onCreate: (goal: string, plan: Plan) => void }) {
-  const [msgs, setMsgs] = useState<Msg[]>([{ role: 'moa', text: GREETING, at: Date.now() }]);
-  const [draft, setDraft] = useState(prefill ?? '');
+const STARTERS = [
+  { title: 'Collect', sub: 'Buy a little at a time', color: 'peach', icon: '◔', prompt: EXAMPLES[0] },
+  { title: 'Protect', sub: 'Stop-loss, take-profit', color: 'lilac', icon: '◈', prompt: 'If HSK falls 15%, sell half' },
+  { title: 'Earn', sub: 'Put idle USDT to work', color: 'sky', icon: '◍', prompt: EXAMPLES[2] },
+  { title: 'Set a goal', sub: 'Say the result you want', color: 'mint', icon: '◎', prompt: EXAMPLES[1] },
+];
+
+/** Reveals text a few characters at a time, like someone typing. */
+function Typing({ text, onDone }: { text: string; onDone: () => void }) {
+  const [n, setN] = useState(0);
+  const done = useRef(onDone);
+  done.current = onDone;
+  useEffect(() => {
+    const step = Math.max(2, Math.round(text.length / 90));
+    const t = setInterval(() => setN((v) => {
+      const next = Math.min(text.length, v + step);
+      if (next === text.length) { clearInterval(t); done.current(); }
+      return next;
+    }), 16);
+    return () => clearInterval(t);
+  }, [text]);
+  return <>{text.slice(0, n)}<span className="caret" aria-hidden /></>;
+}
+
+function Chat({ prefill, auto, quotes, onCreate }: { prefill?: string; auto?: boolean; quotes: Quote[]; onCreate: (goal: string, plan: Plan) => void }) {
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [draft, setDraft] = useState(auto ? '' : prefill ?? '');
   const [plan, setPlan] = useState<Plan | null>(null);
   const [goal, setGoal] = useState('');
+  const [thinking, setThinking] = useState(false);
+  const [typingIdx, setTypingIdx] = useState<number | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  const started = msgs.length > 0;
+
   useEffect(() => {
     // Recent Chromium returns a Promise from scrollIntoView; an effect must not return it.
-    void end.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [msgs]);
+    void end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [msgs, thinking]);
 
   const send = (text: string) => {
     const t = text.trim();
-    if (!t) return;
+    if (!t || thinking) return;
     const merged = plan && plan.missing.length && goal ? `${goal}, ${t}` : t;
     const p = parseIntent(merged);
-    setGoal(p.steps.length ? merged : goal);
-    if (p.steps.length) setPlan(p);
-    setMsgs((m) => [...m, { role: 'you', text: t, at: Date.now() }, { role: 'moa', text: reply(p, quotes), at: Date.now() }]);
     setDraft('');
+    setMsgs((m) => [...m, { role: 'you', text: t, at: Date.now() }]);
+    setThinking(true);
+    setTimeout(() => {
+      setGoal(p.steps.length ? merged : goal);
+      if (p.steps.length) setPlan(p);
+      setThinking(false);
+      setMsgs((m) => { setTypingIdx(m.length); return [...m, { role: 'moa', text: reply(p, quotes), at: Date.now() }]; });
+    }, 650);
   };
+
+  const sentAuto = useRef(false);
+  useEffect(() => {
+    if (auto && prefill && !sentAuto.current) { sentAuto.current = true; send(prefill); }
+  });
+
+  const composer = (big: boolean) => (
+    <form className={`composer${big ? ' big' : ''}`} onSubmit={(e) => { e.preventDefault(); send(draft); }}>
+      <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={big ? 'Collect 5,000 HSK by Dec 31, stop if it drops 15%…' : 'Reply to Moa…'} aria-label="Message Moa" autoFocus />
+      <button className="btn-dark" type="submit" disabled={!draft.trim() || thinking}>Send <span className="kbd">↵</span></button>
+    </form>
+  );
 
   return (
     <div className="chat-layout">
       <div className="chat-main">
-        <div className="chat-scroll">
-          <div className="event"><span className="event-dot ok" /> Conversation started <span className="event-time">{time(msgs[0].at)}</span></div>
-          {msgs.map((m, i) => (
-            <div key={i} className={`bubble ${m.role}`}>
-              <div className="bubble-head">{m.role === 'moa' ? 'Moa' : 'You'}<span>{time(m.at)}</span></div>
-              <div>{m.text}</div>
+        {!started ? (
+          <div className="hero">
+            <span className="moa-avatar xl" aria-hidden />
+            <h1>What should Moa do with your money?</h1>
+            <p className="muted">{GREETING}</p>
+            {composer(true)}
+            <div className="starter-row">
+              {STARTERS.map((s) => (
+                <button key={s.title} className="starter" onClick={() => send(s.prompt)}>
+                  <span className={`feature-icon sm ${s.color}`} aria-hidden>{s.icon}</span>
+                  <span><b>{s.title}</b><span className="muted">{s.sub}</span></span>
+                </button>
+              ))}
             </div>
-          ))}
-          {msgs.length === 1 && (
-            <div className="examples">
-              {EXAMPLES.map((e) => <button key={e} className="chip" onClick={() => send(e)}>{e}</button>)}
-            </div>
-          )}
-          <div ref={end} />
-        </div>
-        <div className="tip"><b>Tip:</b> say the result you want, not the steps. “Collect 5,000 HSK by Dec 31” works better than “buy HSK”.</div>
-        <form className="composer" onSubmit={(e) => { e.preventDefault(); send(draft); }}>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Tell Moa a goal…" aria-label="Message Moa" />
-          <button className="btn-dark" type="submit" disabled={!draft.trim()}>Send <span className="kbd">↵</span></button>
-        </form>
-      </div>
-      <aside className="plan-panel">
-        <div className="panel-label">Plan</div>
-        {!plan ? (
-          <div className="panel-empty">Moa turns your goal into steps here. Nothing runs until you create a bot.</div>
+          </div>
         ) : (
           <>
+            <div className="chat-scroll">
+              <div className="chat-col">
+                <div className="event"><span className="event-dot ok" /> Conversation started <span className="event-time">{time(msgs[0].at)}</span></div>
+                {msgs.map((m, i) => (
+                  <div key={i} className={`msg ${m.role}`}>
+                    {m.role === 'moa' && <span className="moa-avatar" aria-hidden />}
+                    <div className={`bubble ${m.role}`}>
+                      <div className="bubble-head">{m.role === 'moa' ? 'Moa' : 'You'}<span>{time(m.at)}</span></div>
+                      <div>{m.role === 'moa' && i === typingIdx ? <Typing text={m.text} onDone={() => setTypingIdx(null)} /> : m.text}</div>
+                    </div>
+                  </div>
+                ))}
+                {thinking && (
+                  <div className="msg moa">
+                    <span className="moa-avatar pulse" aria-hidden />
+                    <div className="bubble moa thinking"><span /><span /><span /> <em>Moa is checking HSK Chain…</em></div>
+                  </div>
+                )}
+                <div ref={end} />
+              </div>
+            </div>
+            <div className="chat-col bottom">{composer(false)}</div>
+          </>
+        )}
+      </div>
+      <aside className="plan-panel">
+        {plan ? (
+          <>
+            <div className="panel-label">Plan</div>
             <PlanSteps steps={plan.steps} />
             {plan.missing.length > 0 && <div className="needs">Needs your answer: {plan.missing[0]}</div>}
             <div className="panel-label">Guardrails</div>
@@ -216,9 +190,33 @@ function Chat({ prefill, quotes, onCreate }: { prefill?: string; quotes: Quote[]
             </ul>
             <button className="btn-dark wide" disabled={plan.missing.length > 0} onClick={() => onCreate(goal, plan)}>Create bot</button>
           </>
+        ) : (
+          <MoaSees quotes={quotes} />
         )}
       </aside>
     </div>
+  );
+}
+
+function MoaSees({ quotes }: { quotes: Quote[] }) {
+  return (
+    <>
+      <div className="panel-label"><span className="live-dot" /> What Moa sees now</div>
+      <div className="sees">
+        {quotes.length === 0 && <div className="muted">Reading HSK Chain…</div>}
+        {quotes.map((q) => (
+          <div key={q.asset} className="sees-row">
+            <span className={`coin coin-${q.asset.toLowerCase()}`}>{q.asset}</span>
+            <span className="sees-price">{q.pool !== undefined ? `$${fmtPrice(q.pool)}` : 'Unavailable'}</span>
+            {q.gap !== undefined && <span className={`gap ${Math.abs(q.gap) >= 0.006 ? 'gap-wide' : ''}`}>{q.gap > 0 ? '+' : ''}{(q.gap * 100).toFixed(2)}%</span>}
+            <span className="sees-take muted">
+              {q.gap === undefined ? '' : Math.abs(q.gap) < 0.003 ? 'In line with exchanges' : q.gap > 0 ? 'Pool is pricey: wait to buy' : 'Pool is cheap: good time to collect'}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="muted small">HSKSwap pool price vs Gate spot. Your plan appears here once you tell Moa a goal.</p>
+    </>
   );
 }
 
@@ -268,7 +266,7 @@ function Bots({ bots, go }: { bots: Bot[]; go: (v: View) => void }) {
         </div>
         <button className="btn-dark" onClick={() => go({ name: 'chat' })}>+ New bot</button>
       </div>
-      <section className="card">{bots.length ? <BotList bots={bots} go={go} /> : <div className="empty"><div className="empty-title">No bots yet</div><div className="muted">Create one from Ask Moa.</div></div>}</section>
+      <section className="card">{bots.length ? <BotList bots={bots} go={go} /> : <div className="empty"><div className="empty-title">No bots yet</div><div className="muted">Tell Moa a goal like “{EXAMPLES[0]}”.</div></div>}</section>
     </div>
   );
 }
@@ -308,46 +306,32 @@ function BotDetail({ bot, onDelete }: { bot: Bot; onDelete: () => void }) {
   );
 }
 
-/* ---------- markets ---------- */
-
-function Markets({ quotes, loading }: { quotes: Quote[]; loading: boolean }) {
-  return (
-    <div className="page">
-      <h1 className="hello">Markets</h1>
-      <section className="card">
-        <QuoteTable quotes={quotes} loading={loading} />
-        <p className="muted small">Pool price is read directly from each HSKSwap pool contract on HSK Chain mainnet (chain 177). Exchange price is Gate spot. Gap = pool ÷ exchange − 1; HSKSwap charges 0.3% per swap.</p>
-      </section>
-    </div>
-  );
-}
-
 /* ---------- app ---------- */
 
 export default function App() {
-  const [view, setView] = useState<View>({ name: 'home' });
-  const { quotes, loading } = useQuotes();
+  const [view, setView] = useState<View>({ name: 'trade' });
+  const quotes = useQuotes();
   const { bots, add, remove } = useBots();
   const current = useMemo(() => (view.name === 'bot' ? bots.find((b) => b.id === view.id) : undefined), [view, bots]);
-  const title = { home: 'Home', chat: 'Ask Moa', bots: 'Bots', bot: current?.name ?? 'Bot', markets: 'Markets' }[view.name];
+  const title = { trade: 'Trade', chat: 'Ask Moa', bots: 'Bots', bot: current?.name ?? 'Bot' }[view.name];
 
   return (
     <div className="app">
       <Sidebar view={view} go={setView} botCount={bots.length} />
       <main className="main">
         <Topbar title={title} quotes={quotes} />
-        {view.name === 'home' && <Home go={setView} quotes={quotes} loading={loading} bots={bots} />}
+        {view.name === 'trade' && <Trade onAsk={(p) => setView({ name: 'chat', prefill: p, auto: !!p })} />}
         {view.name === 'chat' && (
           <Chat
-            key={view.prefill ?? 'blank'}
+            key={(view.prefill ?? '') + String(view.auto)}
             prefill={view.prefill}
+            auto={view.auto}
             quotes={quotes}
             onCreate={(goal, plan) => { const b = add({ name: botName(plan), goal, plan }); setView({ name: 'bot', id: b.id }); }}
           />
         )}
         {view.name === 'bots' && <Bots bots={bots} go={setView} />}
         {view.name === 'bot' && current && <BotDetail bot={current} onDelete={() => { remove(current.id); setView({ name: 'bots' }); }} />}
-        {view.name === 'markets' && <Markets quotes={quotes} loading={loading} />}
       </main>
     </div>
   );
