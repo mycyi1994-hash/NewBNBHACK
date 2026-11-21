@@ -1,18 +1,21 @@
-// Moa strategy picks under the chart, Revolut-style: tabs for the strategies, one big pick with a single number,
-// one visual and one button. Rules are plain arithmetic on live data; nothing here is a model guess.
-// - Smart DCA: buy more below the 20-day average; backtested on 90 days of Gate daily candles vs plain DCA.
-// - HSKSwap discount buy: live pool price vs Gate (no pool history, so a live gauge instead of a backtest).
-// - Futures mood: HashKey perp mark vs index and the buyer share of recent trades (live gauge).
+// The area under the chart: one surface split into three columns by rules, not cards
+// (Frontier Design rubric: avoid "everything in a card", stray labels and arrow glyphs).
+//   1. Strategy picks: three rows; the open row shows one small visual, today's line and a plan button.
+//   2. My vault and bots: balance, today's spend against the vault cap, running bots.
+//   3. HSKSwap pools: pool price vs Gate for HSK / ETH / BTC; a row opens that pool.
+// Every number is computed from live data; a source without history says so instead of inventing a backtest.
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import { ASSETS } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import type { Trade } from './cex.ts';
+import type { VaultInfo } from './parts.tsx';
 
 type Signal = 'good' | 'neutral' | 'wait';
 type Id = 'smart' | 'discount' | 'mood';
 interface Daily { time: number; close: number }
+export interface BotSummary { id: string; name: string; spent: number; budget?: number }
 
 const PAIR: Record<Asset, string> = { HSK: 'HSK_USDT', ETH: 'ETH_USDT', BTC: 'BTC_USDT' };
 const cache = new Map<Asset, Promise<Daily[]>>();
@@ -30,6 +33,7 @@ function gateDaily(asset: Asset): Promise<Daily[]> {
 
 const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const pct = (v: number, d = 2) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(d)}%`;
 
 /** $10 a day for the last 90 days: plain DCA vs "more below the 20-day average" (x0.5 … x2), with running average costs. */
 function backtest(days: Daily[]) {
@@ -50,62 +54,46 @@ function backtest(days: Daily[]) {
   return { plain, smart, better: smart[n - 1] / plain[n - 1] - 1, mult: clamp(ma20 / last, 0.5, 2), vsMa: last / ma20 - 1 };
 }
 
-/** Two running average-cost lines; the smart one is filled. */
-function CostChart({ smart, plain, labels }: { smart: number[]; plain: number[]; labels: [string, string] }) {
-  const W = 600, H = 150, pad = 8;
+function CostLines({ smart, plain }: { smart: number[]; plain: number[] }) {
+  const W = 300, H = 64, pad = 4;
   const all = [...smart, ...plain];
-  const lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
-  const pt = (v: number, i: number, n: number) => `${(i / (n - 1)) * W},${pad + (1 - (v - lo) / span) * (H - pad * 2)}`;
-  const line = (xs: number[]) => xs.map((v, i) => pt(v, i, xs.length)).join(' ');
+  const lo = Math.min(...all), span = Math.max(...all) - lo || 1;
+  const line = (xs: number[]) => xs.map((v, i) => `${(i / (xs.length - 1)) * W},${pad + (1 - (v - lo) / span) * (H - pad * 2)}`).join(' ');
   return (
-    <div className="cost-chart">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`${labels[0]} / ${labels[1]}`}>
-        <defs>
-          <linearGradient id="smartFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="#6d4ce0" stopOpacity=".18" />
-            <stop offset="1" stopColor="#6d4ce0" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <polygon points={`0,${H} ${line(smart)} ${W},${H}`} fill="url(#smartFill)" />
-        <polyline points={line(plain)} fill="none" stroke="#b9b3ab" strokeWidth="2" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" />
-        <polyline points={line(smart)} fill="none" stroke="#6d4ce0" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="cost-legend">
-        <span><i className="lg-smart" />{labels[0]}</span>
-        <span><i className="lg-plain" />{labels[1]}</span>
-      </div>
-    </div>
+    <svg className="mini-lines" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden>
+      <polyline points={line(plain)} fill="none" stroke="#b9b3ab" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+      <polyline points={line(smart)} fill="none" stroke="#6d4ce0" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 
-/** Where today's value sits between "buy" and "wait" zones. */
-function Gauge({ value, min, max, left, right, mark }: { value: number; min: number; max: number; left: string; right: string; mark: string }) {
+function Meter({ value, min, max, left, right }: { value: number; min: number; max: number; left: string; right: string }) {
   const pos = clamp((value - min) / (max - min), 0, 1) * 100;
   return (
-    <div className="gauge">
-      <div className="gauge-track"><span className="gauge-mark" style={{ left: `${pos}%` }}><b>{mark}</b></span></div>
-      <div className="gauge-labels"><span className="pos">{left}</span><span className="muted">0</span><span className="warn">{right}</span></div>
+    <div className="meter" aria-hidden>
+      <div className="meter-track"><span style={{ left: `${pos}%` }} /></div>
+      <div className="meter-labels"><span>{left}</span><span>{right}</span></div>
     </div>
   );
 }
 
-export default function Strategies({ quotes, mark, index, tape, onAsk }: {
-  quotes: Quote[]; mark?: number; index?: number; tape: Trade[]; onAsk: (prompt: string) => void;
+export default function Board({ quotes, mark, index, tape, vault, bots, onAsk, onOpenBots, onOpenBot, onOpenPool }: {
+  quotes: Quote[]; mark?: number; index?: number; tape: Trade[]; vault: VaultInfo | null; bots: BotSummary[];
+  onAsk: (prompt: string) => void; onOpenBots: () => void; onOpenBot: (id: string) => void; onOpenPool: (a: Asset) => void;
 }) {
   const { t } = useT();
   const [asset, setAsset] = useState<Asset>('ETH');
   const [days, setDays] = useState<Daily[] | null>(null);
-  const [err, setErr] = useState(false);
-  const [picked, setPicked] = useState<Id | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState<Id | null>(null);
 
   useEffect(() => {
     let alive = true;
-    setDays(null); setErr(false);
-    gateDaily(asset).then((d) => alive && setDays(d), () => alive && setErr(true));
+    setDays(null); setFailed(false);
+    gateDaily(asset).then((d) => alive && setDays(d), () => alive && setFailed(true));
     return () => { alive = false; };
   }, [asset]);
 
-  const pct = (v: number, d = 2) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(d)}%`;
   const bt = days ? backtest(days) : null;
   const q = quotes.find((x) => x.asset === asset);
   const gap = q?.gap;
@@ -119,69 +107,118 @@ export default function Strategies({ quotes, mark, index, tape, onAsk }: {
   };
   const order: Id[] = ['smart', 'discount', 'mood'];
   const rank = (s: Signal) => (s === 'good' ? 2 : s === 'neutral' ? 1 : 0);
-  const recommended = [...order].sort((a, b) => rank(signal[b]) - rank(signal[a]))[0];
-  const id = picked ?? recommended;
-  const name: Record<Id, string> = { smart: t.s2Name, discount: t.s1Name, mood: t.s3Name };
+  const best = [...order].sort((a, b) => rank(signal[b]) - rank(signal[a]))[0];
+  const current = open ?? best;
 
-  let big: string = '—', bigLabel = '', sub = '', today = '', visual: ReactNode = <div className="skel-block strat-visual-skel" />, prompt = '';
-  if (id === 'smart') {
-    bigLabel = t.bigAvg; sub = t.subSmart(asset); prompt = t.s2Prompt(asset);
-    if (bt) {
-      big = pct(bt.better);
-      today = t.s2Now(pct(bt.vsMa, 1), `×${bt.mult.toFixed(2)}`);
-      visual = <CostChart smart={bt.smart} plain={bt.plain} labels={[`${t.btSmart} $${fmtPrice(bt.smart[bt.smart.length - 1])}`, `${t.btPlain} $${fmtPrice(bt.plain[bt.plain.length - 1])}`]} />;
-    } else if (err) { today = t.stratNoData; visual = null; }
-  } else if (id === 'discount') {
-    bigLabel = t.bigGap; sub = t.subDiscount(asset); prompt = t.s1Prompt(asset);
-    if (gap !== undefined) {
-      big = pct(gap);
-      today = t.s1Now(asset, q?.pool !== undefined ? `$${fmtPrice(q.pool)}` : '—', pct(gap));
-      visual = <Gauge value={gap} min={-0.02} max={0.02} left={t.zoneCheap} right={t.zoneWait} mark={pct(gap)} />;
-    }
-  } else {
-    bigLabel = t.bigBasis; sub = t.subMood; prompt = t.s3Prompt;
-    if (basis !== undefined) {
-      big = pct(basis, 3);
-      today = t.s3Now(pct(basis, 3), buyShare === undefined ? '—' : `${Math.round(buyShare * 100)}%`);
-      visual = <Gauge value={basis} min={-0.002} max={0.002} left={t.zoneFear} right={t.zoneHot} mark={pct(basis, 3)} />;
-    }
-  }
+  const rows: Record<Id, { name: string; value: string; caption: string; today: string; visual: ReactNode; prompt: string }> = {
+    smart: {
+      name: t.s2Name, value: bt ? pct(bt.better) : failed ? '—' : '…', caption: t.capSmart(asset),
+      today: bt ? t.s2Now(pct(bt.vsMa, 1), `×${bt.mult.toFixed(2)}`) : failed ? t.stratNoData : '',
+      visual: bt ? <><CostLines smart={bt.smart} plain={bt.plain} /><div className="mini-legend"><span className="lg-s">{t.lgSmart} ${fmtPrice(bt.smart[bt.smart.length - 1])}</span><span className="lg-p">{t.lgPlain} ${fmtPrice(bt.plain[bt.plain.length - 1])}</span></div></> : null,
+      prompt: t.s2Prompt(asset),
+    },
+    discount: {
+      name: t.s1Name, value: gap === undefined ? '—' : pct(gap), caption: t.capDiscount(asset),
+      today: gap === undefined ? '' : t.s1Now(asset, q?.pool !== undefined ? `$${fmtPrice(q.pool)}` : '—', pct(gap)),
+      visual: gap === undefined ? null : <Meter value={gap} min={-0.02} max={0.02} left={t.zoneCheap} right={t.zoneWait} />,
+      prompt: t.s1Prompt(asset),
+    },
+    mood: {
+      name: t.s3Name, value: basis === undefined ? '—' : pct(basis, 3), caption: t.capMood,
+      today: basis === undefined ? '' : t.s3Now(pct(basis, 3), buyShare === undefined ? '—' : `${Math.round(buyShare * 100)}%`),
+      visual: basis === undefined ? null : <Meter value={basis} min={-0.002} max={0.002} left={t.zoneFear} right={t.zoneHot} />,
+      prompt: t.s3Prompt,
+    },
+  };
+
+  const spentToday = vault?.configured ? Math.max(0, Number(vault.maxDailyUsdt) - Number(vault.remainingTodayUsdt)) : 0;
+  const dayCap = vault?.configured ? Number(vault.maxDailyUsdt) : 0;
 
   return (
-    <section className="card strat-card" aria-label={t.stratTitle}>
-      <div className="strat-top">
-        <div className="strat-title"><span className="orb sm" aria-hidden /> {t.stratTitle}</div>
-        <div className="coin-switch" role="tablist" aria-label={t.stratAsset}>
-          {ASSETS.map((a) => (
-            <button key={a} role="tab" aria-selected={a === asset} className={a === asset ? 'on' : ''} onClick={() => setAsset(a)}>
-              <span className={`coin coin-${a.toLowerCase()}`} />{a}
+    <section className="board-wrap" aria-label={t.stratTitle}>
+      <div className="board">
+      {/* 1. strategies */}
+      <div className="board-col">
+        <div className="col-head">
+          <h3>{t.stratTitle}</h3>
+          <div className="coin-switch" role="tablist" aria-label={t.stratAsset}>
+            {ASSETS.map((a) => <button key={a} role="tab" aria-selected={a === asset} className={a === asset ? 'on' : ''} onClick={() => setAsset(a)}>{a}</button>)}
+          </div>
+        </div>
+        <ul className="strat-list">
+          {order.map((k) => {
+            const r = rows[k];
+            const isOpen = k === current;
+            return (
+              <li key={k} className={isOpen ? 'open' : ''}>
+                <button className="strat-row" aria-expanded={isOpen} onClick={() => setOpen(k)}>
+                  <span className="sr-name">{r.name}{k === best && rank(signal[k]) === 2 && <em className="sr-best">{t.stratRec}</em>}</span>
+                  <span className={`sr-value ${k === 'smart' && bt && bt.better < 0 ? 'pos' : ''}`}>{r.value}</span>
+                  <span className={`sig sig-${signal[k]}`}>{t.sig[signal[k]]}</span>
+                </button>
+                {isOpen && (
+                  <div className="strat-detail">
+                    <p className="sd-caption">{r.caption}</p>
+                    {r.visual}
+                    {r.today && <p className="sd-today">{r.today}</p>}
+                    <button className="btn-primary sd-cta" onClick={() => onAsk(r.prompt)}>{t.planIt}</button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {/* 2. vault and bots */}
+      <div className="board-col">
+        <div className="col-head"><h3>{t.boardVault}</h3>{vault?.localFork && <span className="fork-badge">{t.localFork}</span>}</div>
+        {vault?.configured ? (
+          <>
+            <div className="vault-big">{Number(vault.usdtBalance).toLocaleString('en-US', { maximumFractionDigits: 2 })}<small> USDT</small></div>
+            <div className="spend-line">
+              <span>{t.spentTodayOf(spentToday.toFixed(0), String(dayCap))}</span>
+              <span className="track"><span style={{ width: `${dayCap ? Math.min(100, (spentToday / dayCap) * 100) : 0}%` }} /></span>
+            </div>
+            <p className="vault-rule">{t.trust3(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?')}</p>
+          </>
+        ) : <p className="muted vault-rule">{t.vaultNone}</p>}
+        <div className="bots-mini">
+          <div className="bm-head"><span>{t.navBots}</span>{bots.length > 0 && <button className="text-link" onClick={onOpenBots}>{t.allBots}</button>}</div>
+          {bots.length === 0 ? <p className="muted bm-empty">{t.noBotsShort}</p> : bots.slice(0, 3).map((b) => (
+            <button key={b.id} className="bm-row" onClick={() => onOpenBot(b.id)}>
+              <span className="bm-name">{b.name}</span>
+              <span className="track"><span style={{ width: `${b.budget ? Math.min(100, (b.spent / b.budget) * 100) : 0}%` }} /></span>
+              <span className="bm-num">${b.spent.toFixed(0)}{b.budget !== undefined && <span className="muted"> / ${b.budget.toFixed(0)}</span>}</span>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="strat-tabs" role="tablist">
-        {order.map((k) => (
-          <button key={k} role="tab" aria-selected={k === id} className={k === id ? 'on' : ''} onClick={() => setPicked(k)}>
-            {name[k]}{k === recommended && rank(signal[k]) === 2 && <span className="rec">✦ {t.stratRec}</span>}
-          </button>
-        ))}
-      </div>
-
-      <div className="strat-pick" key={id + asset}>
-        <div className="pick-head">
-          <div>
-            <div className="pick-label">{bigLabel}</div>
-            <div className={`pick-big ${id === 'smart' ? (bt && bt.better < 0 ? 'pos' : '') : ''}`}>{big}</div>
-            <div className="pick-sub muted">{sub}</div>
-          </div>
-          <span className={`sig sig-${signal[id]}`}>{t.sig[signal[id]]}</span>
+      {/* 3. HSKSwap pools */}
+      <div className="board-col">
+        <div className="col-head"><h3>{t.boardPools}</h3><span className="muted col-note">{t.vsGate}</span></div>
+        <div className="pool-rows">
+          {quotes.length === 0 && [0, 1, 2].map((i) => <div key={i} className="pool-row"><span className="skel" style={{ width: '60%' }} /></div>)}
+          {quotes.map((x) => {
+            const g = x.gap;
+            const w = g === undefined ? 0 : Math.min(50, (Math.abs(g) / 0.02) * 50);
+            return (
+              <button key={x.asset} className="pool-row" onClick={() => onOpenPool(x.asset)} data-tip={t.openPoolTip(x.asset)}>
+                <span className="pr-coin"><span className={`coin coin-${x.asset.toLowerCase()}`} />{x.asset}</span>
+                <span className="pr-price">{x.pool !== undefined ? `$${fmtPrice(x.pool)}` : '—'}<small className="muted">{x.exchange !== undefined ? `Gate $${fmtPrice(x.exchange)}` : ''}</small></span>
+                <span className="pr-gap">
+                  <span className="gapbar"><span className={g !== undefined && g < 0 ? 'neg-side' : 'pos-side'} style={{ width: `${w}%` }} /></span>
+                  <b className={g === undefined ? '' : g < 0 ? 'pos' : 'warn'}>{g === undefined ? '—' : pct(g)}</b>
+                </span>
+              </button>
+            );
+          })}
         </div>
-        {visual}
-        {today && <p className="pick-today"><span>{t.stratNow}</span>{today}</p>}
-        <button className="btn-primary wide pick-cta" onClick={() => onAsk(prompt)}>{t.stratPlan}</button>
+        <p className="muted col-foot">{t.poolsFoot}</p>
       </div>
-      <p className="strat-foot muted">{t.stratFoot}</p>
+      <p className="board-foot muted">{t.stratFoot}</p>
+      </div>
     </section>
   );
 }

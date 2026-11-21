@@ -6,7 +6,7 @@ import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import type { VaultInfo } from './parts.tsx';
-import Strategies from './Strategies.tsx';
+import Board, { type BotSummary } from './Strategies.tsx';
 import MoaFeed from './MoaFeed.tsx';
 
 type Venue = 'cex' | 'dex';
@@ -98,7 +98,9 @@ function useCex(interval: cex.Interval) {
   return { t, book, tape, candles, mi, err };
 }
 
-function CexPanel({ dexBtc, quotes, onAsk }: { dexBtc?: number; quotes: Quote[]; onAsk: (prompt: string) => void }) {
+interface BoardLinks { vault: VaultInfo | null; bots: BotSummary[]; onOpenBots: () => void; onOpenBot: (id: string) => void; onOpenPool: (a: Asset) => void }
+
+function CexPanel({ dexBtc, quotes, onAsk, links }: { dexBtc?: number; quotes: Quote[]; onAsk: (prompt: string) => void; links: BoardLinks }) {
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>('15m');
   const { t, tape, candles, mi, err } = useCex(interval);
@@ -143,7 +145,7 @@ function CexPanel({ dexBtc, quotes, onAsk }: { dexBtc?: number; quotes: Quote[];
         )}
       </section>
 
-      <Strategies quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onAsk={onAsk} />
+      <Board quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onAsk={onAsk} {...links} />
     </>
   );
 }
@@ -208,7 +210,7 @@ function DexPanel({ asset, setAsset, detail, err }: { asset: Asset; setAsset: (a
 
 /* ---------- page ---------- */
 
-export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string, context?: string) => void; quotes: Quote[]; vault: VaultInfo | null }) {
+export default function Trade({ onAsk, quotes, vault, bots, onOpenBots, onOpenBot }: { onAsk: (prompt: string, context?: string) => void; quotes: Quote[]; vault: VaultInfo | null; bots: BotSummary[]; onOpenBots: () => void; onOpenBot: (id: string) => void }) {
   const { t } = useT();
   const [venue, setVenue] = useState<Venue>('cex');
   const [asset, setAsset] = useState<Asset>('BTC');
@@ -233,7 +235,8 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
           <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
         </div>
         {venue === 'cex'
-          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onAsk={(p) => onAsk(p)} />
+          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onAsk={(p) => onAsk(p)}
+            links={{ vault, bots, onOpenBots, onOpenBot, onOpenPool: (a) => { setAsset(a); setVenue('dex'); window.scrollTo({ top: 0, behavior: 'smooth' }); } }} />
           : <DexPanel asset={asset} setAsset={setAsset} detail={detail} err={dexErr} />}
         <p className="muted small">{t.dataNote}</p>
       </div>

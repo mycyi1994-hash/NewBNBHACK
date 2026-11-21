@@ -632,7 +632,10 @@ export default function App() {
         <Sidebar view={view} go={go} botCount={bots.length} vault={vault} />
         <main className="main">
           <Topbar title={title} quotes={quotes} />
-          {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onAsk={(p, ctx) => { setSeed((x) => ({ text: p, ctx, n: (x?.n ?? 0) + 1 })); go({ name: 'chat' }); }} />}
+          {view.name === 'trade' && <Trade quotes={quotes} vault={vault}
+            bots={bots.map((b) => ({ id: b.id, name: b.name, spent: botExecs(b, execs).filter((x) => x.ok && x.side === 'buy').reduce((s, x) => s + x.amount, 0), budget: botBudget(b) }))}
+            onOpenBots={() => go({ name: 'bots' })} onOpenBot={(id) => go({ name: 'bot', id })}
+            onAsk={(p, ctx) => { setSeed((x) => ({ text: p, ctx, n: (x?.n ?? 0) + 1 })); go({ name: 'chat' }); }} />}
           {/* Chat stays mounted so the conversation survives page changes; it is only hidden. */}
           <div className="chat-host" hidden={view.name !== 'chat'}>
             <Chat
