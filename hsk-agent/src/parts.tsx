@@ -3,7 +3,7 @@ import type { Quote } from './market.ts';
 import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 
-export interface VaultInfo { configured: boolean; vault?: string; usdtBalance?: string; remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string }
+export interface VaultInfo { configured: boolean; vault?: string; explorerUrl?: string; localFork?: boolean; usdtBalance?: string; remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string }
 
 export function TrustCard({ vault }: { vault: VaultInfo | null }) {
   const { t } = useT();
@@ -15,6 +15,14 @@ export function TrustCard({ vault }: { vault: VaultInfo | null }) {
         <li>{t.trust2}</li>
         <li>{vault?.configured ? t.trust3(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?') : t.trust3none}</li>
       </ul>
+      {vault?.configured && vault.vault && (
+        <div className="trust-vault">
+          {t.vaultContract}{' '}
+          {vault.localFork
+            ? <><code>{vault.vault.slice(0, 6)}…{vault.vault.slice(-4)}</code> <span className="fork-badge">{t.localFork}</span></>
+            : <a href={vault.explorerUrl} target="_blank" rel="noreferrer"><code>{vault.vault.slice(0, 6)}…{vault.vault.slice(-4)}</code> ↗</a>}
+        </div>
+      )}
     </div>
   );
 }

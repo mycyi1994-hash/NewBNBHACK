@@ -7,6 +7,9 @@ import * as cex from '../src/cex.ts';
 import { executeTrade, vaultStatus, type ExecConfig, type TradeResult } from './executor.ts';
 
 export const MODEL = 'claude-sonnet-5-5';
+type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/** Default high (the product owner's choice); MOA_EFFORT overrides it for measurement. */
+const EFFORT: Effort = (['low', 'medium', 'high', 'xhigh', 'max'] as const).find((e) => e === process.env.MOA_EFFORT) ?? 'high';
 const EXECUTE_WORDS = /(실행|execute)/i;
 
 export interface ChatTurn { role: 'user' | 'assistant'; content: string }
@@ -120,7 +123,7 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
     const response = await client.beta.messages.create({
       model: MODEL,
       max_tokens: 16000,
-      output_config: { effort: 'high' },
+      output_config: { effort: EFFORT },
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       system: SYSTEM,

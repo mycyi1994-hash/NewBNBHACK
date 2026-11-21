@@ -51,6 +51,10 @@ const en = {
   limits: 'Vault limits', perTrade: 'Per trade', perDay: 'Per day', leftToday: 'Left today', balance: 'USDT in vault', noVault: 'No vault connected on this server.',
   noTrades: 'No trades yet', noTradesSub: 'Every buy and sell for this bot appears here with Moa’s reason and the HSK Chain transaction.',
   langLabel: '한국어',
+  vaultContract: 'Vault contract',
+  localFork: 'local test fork',
+  feedDown: 'Feed unavailable:',
+  dexVsPerp: (price: string, pct: string) => `HSKSwap WBTC is ${price}, ${pct} vs this perpetual.`,
 };
 
 const ko: typeof en = {
@@ -101,6 +105,10 @@ const ko: typeof en = {
   limits: '볼트 한도', perTrade: '1회', perDay: '하루', leftToday: '오늘 남은 한도', balance: '볼트 USDT', noVault: '이 서버에 연결된 볼트가 없어요.',
   noTrades: '아직 거래가 없어요', noTradesSub: '이 봇의 매수·매도가 Moa의 이유, HSK 체인 거래 기록과 함께 여기에 쌓여요.',
   langLabel: 'English',
+  vaultContract: '볼트 컨트랙트',
+  localFork: '로컬 테스트 포크',
+  feedDown: '시세를 불러올 수 없어요:',
+  dexVsPerp: (price, pct) => `HSKSwap WBTC는 ${price}로, 이 무기한 선물 대비 ${pct}예요.`,
 };
 
 export const STRINGS = { en, ko };

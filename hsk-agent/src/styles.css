@@ -119,7 +119,13 @@ a { color: var(--brand-ink); }
 .segmented button span { font-weight: 500; font-size: 12.5px; color: var(--ink-3); }
 .segmented button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
 .swap-arrows { color: var(--ink-3); font-size: 14px; }
-.market-head { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; padding: 14px 20px; }
+.market-head { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 12px 24px; padding: 14px 20px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(86px, 1fr)); gap: 8px 16px; }
+.market-head > .unavail { grid-column: 1 / -1; }
+.trust-vault { margin-top: 8px; padding-top: 8px; border-top: 1px solid #d5ecdd; font-size: 12.5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.trust-vault a { color: #14532d; }
+.trust-vault code { font-family: ui-monospace, monospace; }
+.fork-badge { background: #fff4d6; color: #7c3a03; border-radius: 99px; padding: 1px 8px; font-size: 12px; }
 .pair { display: flex; align-items: center; gap: 12px; }
 .pair-name { font-weight: 700; font-size: 16px; display: flex; gap: 8px; align-items: center; }
 .tag { font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--side); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
@@ -292,7 +298,8 @@ a.tape-row:hover { background: #fbfaf9; }
   .page { padding: 18px 16px; }
   .trade-page { padding: 14px 16px 24px; }
   .segmented button span { display: none; }
-  .market-head { gap: 12px 18px; padding: 12px 14px; }
+  .market-head { grid-template-columns: auto 1fr; gap: 12px 18px; padding: 12px 14px; }
+  .market-head .stats { grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); }
   .last { font-size: 22px; }
   .book-split { grid-template-columns: 1fr 1fr; gap: 6px 12px; }
   .chat-layout { grid-template-columns: 1fr; height: auto; }

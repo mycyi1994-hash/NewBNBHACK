@@ -228,7 +228,7 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
       // No server (static hosting) or the API failed: fall back to the on-device parser, clearly marked.
       const merged = plan && plan.missing.length && goal ? `${goal}, ${tx}` : tx;
       const p = parseIntent(merged);
-      finish({ role: 'moa', text: reply(p, quotes), at: Date.now(), offline: true }, p, merged);
+      finish({ role: 'moa', text: reply(p, quotes, lang), at: Date.now(), offline: true }, p, merged);
     }
   };
 

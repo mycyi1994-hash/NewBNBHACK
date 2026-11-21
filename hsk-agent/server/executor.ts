@@ -59,6 +59,8 @@ export async function vaultStatus(cfg: ExecConfig) {
   return {
     configured: true as const,
     vault: cfg.vault,
+    explorerUrl: `${cfg.explorer}/address/${cfg.vault}`,
+    localFork: /127\.0\.0\.1|localhost/.test(cfg.rpcUrl),
     maxTradeUsdt: formatUnits(maxTrade as bigint, 6),
     maxDailyUsdt: formatUnits(maxDaily as bigint, 6),
     maxSlippageBps: Number(slippage),

@@ -110,13 +110,15 @@ function CexPanel({ dexBtc }: { dexBtc?: number }) {
           </div>
         </div>
         <div className={`last ${up ? 'pos' : 'neg'}`}>{t ? usd(t.last, 1) : '—'}</div>
-        <Stat label={s.change24h} value={t ? `${arrow(up)} ${up ? '+' : ''}${chg.toFixed(2)}%` : '—'} cls={up ? 'pos' : 'neg'} />
-        <Stat label={s.mark} value={mi ? usd(mi.mark, 1) : '—'} />
-        <Stat label={s.index} value={mi ? usd(mi.index, 1) : '—'} />
-        <Stat label={s.high24h} value={t ? usd(t.high, 1) : '—'} />
-        <Stat label={s.low24h} value={t ? usd(t.low, 1) : '—'} />
-        <Stat label={s.vol24h} value={t ? `${compact(t.volContracts * cex.CONTRACT_BTC)} BTC · $${compact(t.volUsdt)}` : '—'} />
-        {err && <span className="unavail">Feed unavailable: {err}</span>}
+        <div className="stats">
+          <Stat label={s.change24h} value={t ? `${arrow(up)} ${up ? '+' : ''}${chg.toFixed(2)}%` : '—'} cls={up ? 'pos' : 'neg'} />
+          <Stat label={s.mark} value={mi ? usd(mi.mark, 1) : '—'} />
+          <Stat label={s.index} value={mi ? usd(mi.index, 1) : '—'} />
+          <Stat label={s.high24h} value={t ? usd(t.high, 1) : '—'} />
+          <Stat label={s.low24h} value={t ? usd(t.low, 1) : '—'} />
+          <Stat label={s.vol24h} value={t ? `${compact(t.volContracts * cex.CONTRACT_BTC)} BTC` : '—'} />
+        </div>
+        {err && <span className="unavail">{s.feedDown} {err}</span>}
       </div>
 
       <section className="card chart-card">
@@ -130,7 +132,7 @@ function CexPanel({ dexBtc }: { dexBtc?: number }) {
         {dexBtc !== undefined && t && (
           <div className="moa-note">
             <span className="orb sm" aria-hidden />
-            {`HSKSwap WBTC $${usd(dexBtc, 0)} · ${dexBtc >= t.last ? '▲ +' : '▼ '}${((dexBtc / t.last - 1) * 100).toFixed(2)}% vs this perpetual`}
+            {s.dexVsPerp(`$${usd(dexBtc, 0)}`, `${dexBtc >= t.last ? '▲ +' : '▼ '}${((dexBtc / t.last - 1) * 100).toFixed(2)}%`)}
           </div>
         )}
       </section>
@@ -207,11 +209,13 @@ function DexPanel({ asset, setAsset, detail, err }: { asset: Asset; setAsset: (a
           </div>
         </div>
         <div className="last">{detail ? `$${fmtPrice(detail.price)}` : '—'}</div>
-        <Stat label={s.poolOf(p.symbol)} value={detail ? compact(detail.reserveBase) : '—'} />
-        <Stat label={s.poolUsdt} value={detail ? `$${compact(detail.reserveUsdt)}` : '—'} />
-        <Stat label={s.swaps24h} value={detail ? String(detail.swaps.length) : '—'} />
-        <Stat label={s.vol24h} value={detail ? `$${compact(vol)}` : '—'} />
-        <Stat label={s.block} value={detail ? detail.head.toLocaleString('en-US') : '—'} />
+        <div className="stats">
+          <Stat label={s.poolOf(p.symbol)} value={detail ? compact(detail.reserveBase) : '—'} />
+          <Stat label={s.poolUsdt} value={detail ? `$${compact(detail.reserveUsdt)}` : '—'} />
+          <Stat label={s.swaps24h} value={detail ? String(detail.swaps.length) : '—'} />
+          <Stat label={s.vol24h} value={detail ? `$${compact(vol)}` : '—'} />
+          <Stat label={s.block} value={detail ? detail.head.toLocaleString('en-US') : '—'} />
+        </div>
         {err && <span className="unavail">{err}</span>}
       </div>
       <section className="card chart-card">

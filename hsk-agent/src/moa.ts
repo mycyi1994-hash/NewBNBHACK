@@ -3,7 +3,27 @@ import { scheduleOf, type Plan } from './intent.ts';
 import type { Quote } from './market.ts';
 import { fmtPrice } from './market.ts';
 
-export function reply(plan: Plan, quotes: Quote[]): string {
+/** Offline reply in Korean (used when the AI server is unreachable). */
+function replyKo(plan: Plan, quotes: Quote[]): string {
+  if (plan.steps.length === 0) return '목표를 말해 주세요. 예: “HSK를 2주 동안 매일 10달러씩 모아줘, 15% 빠지면 절반 팔아줘.”';
+  const lines: string[] = ['계획을 오른쪽에 정리했어요.'];
+  for (const s of plan.steps) {
+    if (s.kind !== 'accumulate') continue;
+    const sch = scheduleOf(s);
+    if (sch.buys !== undefined && sch.totalUsd !== undefined) lines.push(`총 ${sch.buys}번, $${sch.totalUsd.toLocaleString('en-US')}를 써요.`);
+    const q = quotes.find((x) => x.asset === s.asset);
+    if (q?.pool !== undefined && q.gap !== undefined) {
+      const g = q.gap * 100;
+      lines.push(`지금 HSKSwap의 ${s.asset}는 $${fmtPrice(q.pool)}로 ${Math.abs(g) < 0.3 ? '거래소와 비슷해요.' : g > 0 ? `거래소보다 ${g.toFixed(1)}% 비싸서 조금 기다리는 게 좋아요.` : `거래소보다 ${(-g).toFixed(1)}% 싸요. 모으기 좋은 때예요.`}`);
+    }
+  }
+  if (plan.missing.length) lines.push('빠진 정보가 있어요. 금액과 주기, 또는 기한을 알려 주세요.');
+  else lines.push('확인하고 봇을 만들면 시작해요.');
+  return lines.join(' ');
+}
+
+export function reply(plan: Plan, quotes: Quote[], lang: 'en' | 'ko' = 'en'): string {
+  if (lang === 'ko') return replyKo(plan, quotes);
   if (plan.steps.length === 0) return plan.missing[0];
   const lines: string[] = [];
   const kinds = new Set(plan.steps.map((s) => s.kind));
