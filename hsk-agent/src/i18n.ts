@@ -60,6 +60,8 @@ const en = {
   confirmBody: (per: string, left: string) => `Moa will swap on HSKSwap from your vault. Limits still apply: up to $${per} per trade, $${left} left today.`,
   botCreatedToast: 'Bot created', botDeleted: 'Bot deleted',
   deleteTitle: 'Delete this bot?', deleteBody: 'and its plan will be removed from this browser. Trades already on HSK Chain stay there.',
+  retry: 'Try again', stopLocked: 'The trade is already on its way', toLatest: 'Jump to latest', more: 'More',
+  copyAddress: 'Copy address', addressCopied: 'Address copied',
 };
 
 const ko: typeof en = {
@@ -119,6 +121,8 @@ const ko: typeof en = {
   confirmBody: (per, left) => `Moa가 내 볼트에서 HSKSwap으로 스왑해요. 한도는 그대로 적용돼요: 1회 최대 $${per}, 오늘 남은 한도 $${left}.`,
   botCreatedToast: '봇을 만들었어요', botDeleted: '봇을 삭제했어요',
   deleteTitle: '이 봇을 삭제할까요?', deleteBody: '봇과 계획이 이 브라우저에서 지워져요. 이미 HSK 체인에 기록된 거래는 그대로 남아요.',
+  retry: '다시 시도', stopLocked: '거래가 이미 볼트로 넘어갔어요', toLatest: '최신 메시지로', more: '더보기',
+  copyAddress: '주소 복사', addressCopied: '주소를 복사했어요',
 };
 
 export const STRINGS = { en, ko };

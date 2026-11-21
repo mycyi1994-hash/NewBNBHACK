@@ -6,7 +6,7 @@ import { useBots, useExecutions, type Bot, type Execution } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
 import Trade from './Trade.tsx';
 import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
-import { CopyButton, Modal, RichText, ToastProvider, useToast } from './ui.tsx';
+import { CopyButton, Menu, Modal, RichText, ToastProvider, useToast } from './ui.tsx';
 
 /** Same words the server checks before it lets Moa trade. */
 const EXECUTE_WORDS = /(실행|execute)/i;
@@ -102,7 +102,7 @@ function Topbar({ title, quotes }: { title: string; quotes: Quote[] }) {
       <div className="topbar-title"><span className="brand mobile-only"><span className="orb sm" aria-hidden /> moa</span><span className="desktop-only">{title}</span></div>
       <div className="topbar-right">
         {hsk?.pool !== undefined && <span className="pill">HSK {fmtPrice(hsk.pool)}</span>}
-        <button className="pill lang" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} aria-label="Switch language">{t.langLabel}</button>
+        <button className="pill lang" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} aria-label="Switch language" data-tip={lang === 'en' ? '한국어로 보기' : 'View in English'}>{t.langLabel}</button>
       </div>
     </header>
   );
@@ -178,12 +178,18 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
   const [busy, setBusy] = useState<{ steps: StepKey[]; at: number } | null>(null);
   const [typingIdx, setTypingIdx] = useState<number | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const [atBottom, setAtBottom] = useState(true);
   const started = msgs.length > 0;
 
-  useEffect(() => {
-    // Recent Chromium returns a Promise from scrollIntoView; an effect must not return it.
-    void end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [msgs, busy]);
+  // Follow new messages only while the reader is at the bottom; if they scrolled up, offer a jump button instead.
+  const toBottom = (smooth = true) => { const el = scroller.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); };
+  useEffect(() => { if (atBottom) toBottom(); }, [msgs, busy, typingIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onScroll = () => { const el = scroller.current; if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80); };
+
+  // The input grows with its text, up to a limit (ChatGPT).
+  useEffect(() => { const el = input.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 180)}px`; }, [draft]);
 
   const toast = useToast();
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -204,13 +210,14 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
     setMsgs((cur) => [...cur, { role: 'moa', text: t.stopped, at: Date.now() }]);
   };
 
-  const send = async (text: string) => {
+  const send = async (text: string, base: Msg[] = msgs) => {
     const tx = text.trim();
     if (!tx || busy) return;
     setDraft('');
+    setAtBottom(true);
     const ctrl = new AbortController();
     abort.current = ctrl;
-    const history = [...msgs, { role: 'you' as const, text: tx, at: Date.now() }];
+    const history = [...base, { role: 'you' as const, text: tx, at: Date.now() }];
     setMsgs(history);
     setBusy({ steps: ['thinking'], at: Date.now() });
     const finish = (m: Msg, p: Plan | null, g: string) => {
@@ -259,6 +266,26 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
     }
   };
 
+  /** Regenerate: drop the reply and the question it answered, then ask again (ChatGPT). */
+  const retry = (i: number) => {
+    const q = msgs[i - 1];
+    if (!q || q.role !== 'you' || busy) return;
+    const base = msgs.slice(0, i - 1);
+    setMsgs(base);
+    void send(q.text, base);
+  };
+
+  // Esc stops a reply; "/" jumps to the input from anywhere on the page (ChatGPT / Perplexity shortcuts).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
+      if (e.key === 'Escape' && busy && !busy.steps.includes('execute') && !confirm) stop();
+      else if (e.key === '/' && !typing && !confirm) { e.preventDefault(); input.current?.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  });
+
   const sentAuto = useRef(false);
   useEffect(() => {
     if (auto && prefill && !sentAuto.current) { sentAuto.current = true; ask(prefill); }
@@ -268,13 +295,14 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
   const canStop = !!busy && !busy.steps.includes('execute');
   const composer = (big: boolean) => (
     <form className={`composer${big ? ' big' : ''}`} onSubmit={(e) => { e.preventDefault(); ask(draft); }}>
-      <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={big ? t.heroPlaceholder : t.replyPlaceholder} aria-label="Message Moa" autoFocus />
+      <textarea ref={input} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={big ? t.heroPlaceholder : t.replyPlaceholder} aria-label="Message Moa" autoFocus
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); ask(draft); } }} />
       {busy ? (
-        <button className="send-btn stop" type="button" onClick={stop} disabled={!canStop} aria-label={t.stop} title={t.stop}>
+        <button className="send-btn stop" type="button" onClick={stop} disabled={!canStop} aria-label={t.stop} data-tip={canStop ? `${t.stop} (Esc)` : t.stopLocked}>
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor" /></svg>
         </button>
       ) : (
-        <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.send} title={`${t.send} (Enter)`}>
+        <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.send} data-tip={`${t.send} (Enter)`}>
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
       )}
@@ -314,7 +342,7 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
           </div>
         ) : (
           <>
-            <div className="chat-scroll">
+            <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
               <div className="chat-col">
                 <div className="event"><span className="event-dot" /> {t.started} <span className="event-time">{time(msgs[0].at)}</span></div>
                 {msgs.map((m, i) => (
@@ -329,6 +357,7 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
                     {m.role === 'moa' && i !== typingIdx && (
                       <div className="msg-actions">
                         <CopyButton text={m.text} label={t.copy} done={t.copied} />
+                        {m.offline && <button className="icon-btn sm" onClick={() => retry(i)} aria-label={t.retry} data-tip={t.retry}><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v3h-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
                       </div>
                     )}
                   </div>
@@ -342,7 +371,10 @@ function Chat({ prefill, auto, quotes, vault, onCreate, onExecuted }: {
                 <div ref={end} />
               </div>
             </div>
-            <div className="chat-col bottom">{composer(false)}</div>
+            <div className="chat-col bottom">
+              {!atBottom && <button className="jump" onClick={() => toBottom()} aria-label={t.toLatest} data-tip={t.toLatest}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
+              {composer(false)}
+            </div>
           </>
         )}
       </div>
@@ -477,7 +509,7 @@ function BotDetail({ bot, onDelete, execs, vault }: { bot: Bot; onDelete: () => 
         </div>
         <div className="row-gap">
           <span className="status draft">{t.draft}</span>
-          <button className="btn-ghost danger" onClick={() => setAskDelete(true)}>{t.delete}</button>
+          <Menu label={t.more} items={[{ label: t.delete, danger: true, onSelect: () => setAskDelete(true) }]} />
         </div>
       </div>
       <div className="tabs" role="tablist">

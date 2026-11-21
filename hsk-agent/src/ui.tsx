@@ -77,7 +77,7 @@ export function CopyButton({ text, label, done }: { text: string; label: string;
     <button
       className="icon-btn sm"
       aria-label={label}
-      title={label}
+      data-tip={label}
       onClick={() => {
         const ok = () => { setOk(true); toast(done); setTimeout(() => setOk(false), 1500); };
         // Clipboard API first; older or locked-down browsers fall back to a hidden textarea.
@@ -94,6 +94,61 @@ export function CopyButton({ text, label, done }: { text: string; label: string;
       {ok
         ? <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
         : <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><rect x="5" y="5" width="8.5" height="8.5" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M10.5 3.5V3a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>}
+    </button>
+  );
+}
+
+/* ---------- overflow menu (ChatGPT "⋯") ---------- */
+
+export interface MenuItem { label: string; danger?: boolean; onSelect: () => void }
+
+export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const first = root.current?.querySelector<HTMLButtonElement>('[role="menuitem"]');
+    first?.focus();
+    const onDown = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      const list = [...(root.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
+      const i = list.indexOf(document.activeElement as HTMLButtonElement);
+      if (e.key === 'Escape') { setOpen(false); root.current?.querySelector<HTMLButtonElement>('.menu-trigger')?.focus(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  return (
+    <div className="menu" ref={root}>
+      <button className="icon-btn menu-trigger" aria-label={label} data-tip={open ? undefined : label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><circle cx="3.5" cy="8" r="1.4" fill="currentColor" /><circle cx="8" cy="8" r="1.4" fill="currentColor" /><circle cx="12.5" cy="8" r="1.4" fill="currentColor" /></svg>
+      </button>
+      {open && (
+        <div className="menu-list" role="menu">
+          {items.map((it) => (
+            <button key={it.label} role="menuitem" className={it.danger ? 'danger' : ''} onClick={() => { setOpen(false); it.onSelect(); }}>
+              {it.danger && <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- address that copies on click ---------- */
+
+export function CopyAddress({ value, label, done }: { value: string; label: string; done: string }) {
+  const toast = useToast();
+  return (
+    <button className="addr" data-tip={value} aria-label={`${label}: ${value}`}
+      onClick={() => { void navigator.clipboard?.writeText(value).then(() => toast(done), () => undefined); }}>
+      <code>{value.slice(0, 6)}…{value.slice(-4)}</code>
+      <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden><rect x="5" y="5" width="8.5" height="8.5" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M10.5 3.5V3a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
     </button>
   );
 }

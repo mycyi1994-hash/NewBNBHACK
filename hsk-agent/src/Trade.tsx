@@ -35,6 +35,8 @@ function PriceChart({ data }: { data: ChartData }) {
       crosshair: { mode: 1 },
     });
     chart.current = c;
+    // The library adds an unlabeled TradingView attribution link; give it a name for screen readers.
+    box.current.querySelector("a")?.setAttribute("aria-label", "TradingView Lightweight Charts");
     return () => { c.remove(); chart.current = null; series.current = null; kind.current = null; };
   }, []);
 
@@ -132,7 +134,7 @@ function CexPanel({ dexBtc }: { dexBtc?: number }) {
           ))}
           <span className="live"><span className="live-dot" /> {s.live}</span>
         </div>
-        {candles.length ? <PriceChart data={{ kind: 'candles', data: candles }} /> : <div className="chart-empty muted">{s.loadingCandles}</div>}
+        {candles.length ? <PriceChart data={{ kind: 'candles', data: candles }} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
         {dexBtc !== undefined && t && (
           <div className="moa-note">
             <span className="orb sm" aria-hidden />
@@ -209,7 +211,7 @@ function DexPanel({ asset, setAsset, detail, err }: { asset: Asset; setAsset: (a
           <span className={`coin coin-${asset.toLowerCase()} big`} />
           <div>
             <div className="pair-name">{p.symbol}/USDT <span className="tag">HSKSwap · 0.3%</span></div>
-            <div className="muted">Uniswap V3 · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer">{p.pool.slice(0, 6)}…{p.pool.slice(-4)}</a></div>
+            <div className="muted">Uniswap V3 · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></div>
           </div>
         </div>
         <div className="last">{detail ? `$${fmtPrice(detail.price)}` : '—'}</div>
@@ -224,7 +226,7 @@ function DexPanel({ asset, setAsset, detail, err }: { asset: Asset; setAsset: (a
       </div>
       <section className="card chart-card">
         <div className="chart-toolbar"><span className="muted">{s.poolLine}</span><span className="live"><span className="live-dot" /> HSK Chain</span></div>
-        {line.length > 1 ? <PriceChart data={{ kind: 'line', data: line }} /> : <div className="chart-empty muted">{detail ? s.fewSwaps : s.readingChain}</div>}
+        {line.length > 1 ? <PriceChart data={{ kind: 'line', data: line }} /> : detail ? <div className="chart-empty muted">{s.fewSwaps}</div> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.readingChain}</span></div>}
       </section>
       <section className="card book-card">
         <div className="card-title">{s.recentSwaps}</div>

@@ -180,7 +180,7 @@ a.tape-row:hover { background: #fbfaf9; }
 .dock-sees .sees { background: #fff; }
 
 /* ---------- chat ---------- */
-.chat-layout { display: grid; grid-template-columns: 1fr 360px; flex: 1; min-height: 0; height: calc(100vh - 52px); }
+.chat-layout { display: grid; grid-template-columns: 1fr 360px; grid-template-rows: minmax(0, 1fr); flex: none; min-height: 0; height: calc(100vh - 52px); }
 .chat-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .chat-scroll { flex: 1; overflow-y: auto; padding: 28px 24px 12px; }
 .chat-col { width: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
@@ -302,7 +302,7 @@ a.tape-row:hover { background: #fbfaf9; }
   .market-head .stats { grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); }
   .last { font-size: 22px; }
   .book-split { grid-template-columns: 1fr 1fr; gap: 6px 12px; }
-  .chat-layout { grid-template-columns: 1fr; height: auto; }
+  .chat-layout { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
   .chat-main { min-height: calc(100vh - 52px - var(--tabbar)); }
   .plan-panel { border-left: 0; border-top: 1px solid var(--line); }
   .chat-scroll { padding: 18px 16px 8px; }
@@ -370,3 +370,76 @@ button:active:not(:disabled) { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) { .modal, .modal-backdrop, .toast { animation: none; } button:active:not(:disabled) { transform: none; } }
 @media (max-width: 1000px) { .toasts { top: auto; bottom: calc(var(--tabbar) + 12px); left: 12px; right: 12px; } .msg-actions { padding-left: 0; } }
 .rich strong { font-weight: 650; }
+
+/* ---------- hover on every tab and segment (the audit found none) ---------- */
+.segmented button:not(.on):hover { background: rgba(255, 255, 255, .7); color: var(--ink); }
+.chart-toolbar button:not(.on):hover, .seg-mini button:not(.on):hover { background: var(--hover); color: var(--ink); }
+.pair-tabs button:not(.on):hover { border-color: var(--line-strong); background: #fbfaf9; }
+.tabs button:not(.on):hover { color: var(--ink); border-color: var(--line-strong); }
+.nav-item.active:hover { background: #e3e0dc; }
+a { text-decoration-color: transparent; text-underline-offset: 3px; transition: text-decoration-color .15s ease, color .15s ease; }
+a:hover { text-decoration: underline; text-decoration-color: currentColor; }
+a.tape-row:hover { text-decoration: none; }
+.book-row:hover { background: #faf9f7; }
+
+/* ---------- tooltips (ChatGPT: small dark label under the control) ---------- */
+[data-tip] { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip); position: absolute; left: 50%; top: calc(100% + 8px); transform: translate(-50%, -2px);
+  background: #171717; color: #fff; font: 500 12px/1.3 'Inter Variable', system-ui, sans-serif; letter-spacing: 0; text-transform: none;
+  padding: 5px 8px; border-radius: 7px; white-space: nowrap; pointer-events: none; opacity: 0; z-index: 70;
+  transition: opacity .12s ease .35s, transform .12s ease .35s; box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+}
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+.composer [data-tip]::after, .dock-input [data-tip]::after, .chat-col.bottom [data-tip]::after { top: auto; bottom: calc(100% + 8px); }
+.topbar [data-tip]::after { left: auto; right: 0; transform: translate(0, -2px); }
+.topbar [data-tip]:hover::after { transform: translate(0, 0); }
+@media (hover: none) { [data-tip]::after { display: none; } }
+
+/* ---------- composer: auto-growing textarea (ChatGPT) ---------- */
+.composer textarea { flex: 1; border: 0; outline: 0; resize: none; font: inherit; font-size: 15px; line-height: 1.5; background: transparent; min-width: 0; padding: 6px 0; max-height: 180px; }
+.composer.big textarea { font-size: 16px; }
+.composer { align-items: flex-end; }
+.send-btn { align-self: flex-end; }
+.chat-col.bottom { position: relative; }
+
+/* jump-to-latest button (ChatGPT) */
+.jump { position: absolute; left: 50%; top: -48px; transform: translateX(-50%); width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: #fff; color: var(--ink-2); display: grid; place-items: center; box-shadow: 0 4px 14px rgba(0, 0, 0, .1); animation: pop-in .15s ease; }
+.jump:hover { color: var(--ink); border-color: var(--line-strong); }
+
+/* ---------- overflow menu (ChatGPT ⋯) ---------- */
+.menu { position: relative; }
+.menu-trigger { width: 34px; height: 34px; border: 1px solid var(--line); background: #fff; border-radius: 99px; }
+.menu-trigger[aria-expanded='true'] { background: var(--hover); color: var(--ink); }
+.menu-list { position: absolute; right: 0; top: calc(100% + 6px); min-width: 170px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 6px; box-shadow: 0 12px 32px rgba(0, 0, 0, .12); z-index: 40; animation: pop-in .14s ease; }
+.menu-list button { width: 100%; display: flex; align-items: center; gap: 9px; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 9px; font-size: 13.5px; color: var(--ink); }
+.menu-list button:hover, .menu-list button:focus-visible { background: var(--hover); outline: 0; }
+.menu-list button.danger { color: #dc2626; }
+.menu-list button.danger:hover, .menu-list button.danger:focus-visible { background: #fef2f2; }
+
+/* ---------- address chip that copies ---------- */
+.addr { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; padding: 2px 6px; margin: -2px -6px; border-radius: 7px; color: inherit; }
+.addr:hover { background: rgba(20, 83, 45, .08); }
+.addr svg { opacity: .5; }
+.addr:hover svg { opacity: 1; }
+
+/* ---------- loading placeholders (shimmer) ---------- */
+.skel, .skel-block { background: linear-gradient(90deg, #f1efec 0%, #f8f7f5 40%, #f1efec 80%); background-size: 200% 100%; animation: shimmer 1.3s ease-in-out infinite; border-radius: 8px; }
+.skel { display: inline-block; height: 12px; }
+.skel-block { margin: 6px 0; }
+.skel-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 12px; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .skel, .skel-block { animation: none; } [data-tip]::after { transition: none; } }
+
+/* ---------- modal becomes a bottom sheet on phones ---------- */
+@media (max-width: 640px) {
+  .modal-backdrop { place-items: end center; padding: 0; }
+  .modal { width: 100%; border-radius: 20px 20px 0 0; padding: 10px 18px calc(18px + env(safe-area-inset-bottom)); animation: sheet-up .22s cubic-bezier(.2, .8, .2, 1); }
+  .modal::before { content: ''; display: block; width: 36px; height: 4px; border-radius: 99px; background: #d6d2cd; margin: 0 auto 12px; }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions button { width: 100%; padding: 12px; }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+/* the plan column scrolls on its own so the chat keeps its input on screen */
+.plan-panel { overflow-y: auto; min-height: 0; }
