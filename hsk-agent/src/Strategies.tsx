@@ -10,6 +10,7 @@ import type { Asset } from './intent.ts';
 import { ASSETS } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
+import { RollNum, SlidePill } from './motion.tsx';
 import * as cex from './cex.ts';
 import { gateCandles } from './gate.ts';
 import * as I from './indicators.ts';
@@ -263,12 +264,13 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
           <p className="muted">{venue === 'cex' ? t.stratHintCex : t.stratHintDex}</p>
         </div>
         {venue === 'dex' && (
-          <div className="coin-switch" role="tablist" aria-label={t.stratAsset}>
+          <div className="coin-switch has-pill" role="tablist" aria-label={t.stratAsset}>
+            <SlidePill dep={asset} />
             {ASSETS.map((a) => <button key={a} role="tab" aria-selected={a === asset} className={a === asset ? 'on' : ''} onClick={() => setAsset(a)}>{a}</button>)}
           </div>
         )}
       </div>
-      <div className="strat-tiles">
+      <div className="strat-tiles stagger" key={`${venue}-${asset}`}>
         {tiles.map((x) => (
           <button key={x.id} className={`tile${picked === x.id ? ' on' : ''}`} onClick={() => pick(x)} aria-pressed={picked === x.id}>
             <span className="tile-top">
@@ -277,7 +279,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
             </span>
             <span className="tile-line">{x.line}</span>
             <span className="tile-num">
-              <strong className={x.note.good ? 'pos' : x.note.bad ? 'neg' : ''}>{x.note.value}</strong>
+              <RollNum flash={false} className={`tile-val ${x.note.good ? 'pos' : x.note.bad ? 'neg' : ''}`} text={x.note.value} />
               <small>{x.caption}</small>
             </span>
             {x.id === best.id && rank(best.note.signal) === 2 && <span className="tile-best">{t.stratRec}</span>}

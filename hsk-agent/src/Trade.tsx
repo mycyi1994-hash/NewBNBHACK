@@ -7,6 +7,7 @@ import { EXPLORER, POOLS, poolDetail, type PoolDetail } from './dex.ts';
 import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
+import { RollNum, SlidePill } from './motion.tsx';
 import type { VaultInfo } from './parts.tsx';
 import StrategyGrid, { type StratNote } from './Strategies.tsx';
 import MoaFeed, { type MoaContext } from './MoaFeed.tsx';
@@ -159,7 +160,8 @@ function IndMenu({ on, toggle }: { on: Set<Ind>; toggle: (i: Ind) => void }) {
 
 function IntervalBar<T extends string>({ list, value, set, label }: { list: readonly T[]; value: T; set: (v: T) => void; label: (v: T) => string }) {
   return (
-    <div className="iv-group" role="group" aria-label="Interval">
+    <div className="iv-group has-pill" role="group" aria-label="Interval">
+      <SlidePill dep={value} />
       {list.map((iv) => <button key={iv} className={iv === value ? 'on' : ''} aria-pressed={iv === value} onClick={() => set(iv)}>{label(iv)}</button>)}
     </div>
   );
@@ -199,7 +201,7 @@ function useCandles(key: string, latest: (limit: number) => Promise<cex.Candle[]
 }
 
 function Stat({ label, value, cls }: { label: string; value: string; cls?: string }) {
-  return <div className="stat"><span className="muted">{label}</span><span className={cls}>{value}</span></div>;
+  return <div className="stat"><span className="muted">{label}</span><RollNum className={cls} text={value} /></div>;
 }
 
 /* ---------- CEX: HashKey Global BTC/USDT perpetual ---------- */
@@ -261,7 +263,7 @@ function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]
             <div className="muted">{s.usdtMargined}</div>
           </div>
         </div>
-        <div className={`last ${up ? 'pos' : 'neg'}`}>{t ? usd(t.last, 1) : '—'}</div>
+        <div className={`last ${up ? 'pos' : 'neg'}`}><RollNum text={t ? usd(t.last, 1) : '—'} /></div>
         <div className="stats">
           <Stat label={s.change24h} value={t ? `${arrow(up)} ${up ? '+' : ''}${chg.toFixed(2)}%` : '—'} cls={up ? 'pos' : 'neg'} />
           <Stat label={s.mark} value={mi ? usd(mi.mark, 1) : '—'} />
@@ -338,7 +340,7 @@ function DexPanel({ asset, setAsset, detail, err, quotes, onPick }: { asset: Ass
             <div className="muted">Uniswap V3 · 0.3% · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></div>
           </div>
         </div>
-        <div className="last">{detail ? `$${fmtPrice(detail.price)}` : '—'}</div>
+        <div className="last"><RollNum text={detail ? `$${fmtPrice(detail.price)}` : '—'} /></div>
         <div className="stats">
           <Stat label={s.gateSpot} value={gate?.exchange !== undefined ? `$${fmtPrice(gate.exchange)}` : '—'} />
           <Stat label={s.vsGateLabel} value={gap === undefined ? '—' : `${gap > 0 ? '+' : ''}${(gap * 100).toFixed(2)}%`} cls={gap === undefined ? '' : gap < 0 ? 'pos' : 'neg'} />
@@ -399,7 +401,8 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
   return (
     <div className="trade-page">
       <div className="trade-main">
-        <div className="segmented" role="tablist" aria-label="Venue">
+        <div className="segmented has-pill" role="tablist" aria-label="Venue">
+          <SlidePill dep={venue} />
           <button role="tab" aria-selected={venue === 'cex'} className={venue === 'cex' ? 'on' : ''} onClick={() => setVenue('cex')}>{t.cex} <span>{t.cexSub}</span></button>
           <span className="swap-arrows" aria-hidden>⇄</span>
           <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>

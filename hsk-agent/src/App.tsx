@@ -4,6 +4,7 @@ import { fmtPrice, loadQuotes, type Quote } from './market.ts';
 import { GREETING, reply } from './moa.ts';
 import { useBots, useExecutions, type Bot, type Execution } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
+import { RollNum, SlidePill } from './motion.tsx';
 import Trade from './Trade.tsx';
 import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
 import { CopyButton, Menu, Modal, RichText, ToastProvider, useToast } from './ui.tsx';
@@ -117,7 +118,7 @@ function Topbar({ title, quotes }: { title: string; quotes: Quote[] }) {
     <header className="topbar">
       <div className="topbar-title"><span className="brand mobile-only"><span className="orb sm" aria-hidden /> moa</span><span className="desktop-only">{title}</span></div>
       <div className="topbar-right">
-        {hsk?.pool !== undefined && <span className="pill">HSK {fmtPrice(hsk.pool)}</span>}
+        {hsk?.pool !== undefined && <span className="pill">HSK <RollNum text={fmtPrice(hsk.pool)} /></span>}
         <button className="pill lang" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} aria-label="Switch language" data-tip={lang === 'en' ? '한국어로 보기' : 'View in English'}>{t.langLabel}</button>
       </div>
     </header>
@@ -205,7 +206,8 @@ function Chat({ seed, active, quotes, vault, onCreate, onExecuted }: {
   const onScroll = () => { const el = scroller.current; if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80); };
 
   // The input grows with its text, up to a limit (ChatGPT).
-  useEffect(() => { const el = input.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 180)}px`; }, [draft]);
+  // Measure only while visible: a hidden chat reports scrollHeight 0 and would clip the placeholder.
+  useEffect(() => { const el = input.current; if (!el || !active) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 180)}px`; }, [draft, active, msgs.length]);
 
   const toast = useToast();
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -551,7 +553,8 @@ function BotDetail({ bot, onDelete, execs, vault }: { bot: Bot; onDelete: () => 
           <Menu label={t.more} items={[{ label: t.delete, danger: true, onSelect: () => setAskDelete(true) }]} />
         </div>
       </div>
-      <div className="tabs" role="tablist">
+      <div className="tabs has-pill" role="tablist">
+        <SlidePill dep={tab} />
         <button role="tab" aria-selected={tab === 'overview'} className={tab === 'overview' ? 'on' : ''} onClick={() => setTab('overview')}>{t.overview}</button>
         <button role="tab" aria-selected={tab === 'activity'} className={tab === 'activity' ? 'on' : ''} onClick={() => setTab('activity')}>{t.activity} {mine.length ? `(${mine.length})` : ''}</button>
       </div>

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 // Interaction pieces modelled on ChatGPT / Perplexity / Hume AI (Mobbin): confirm modal, toast, copy action,
 // and reply text that renders "- " lines as a real list. Visual style follows the existing Moa theme.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -26,7 +27,7 @@ export function Modal({ title, children, onClose, actions }: { title: string; ch
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = ''; prev?.focus(); };
   }, [onClose]);
-  return (
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" ref={box}>
         <div className="modal-head">
@@ -36,7 +37,8 @@ export function Modal({ title, children, onClose, actions }: { title: string; ch
         <div className="modal-body">{children}</div>
         <div className="modal-actions">{actions}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

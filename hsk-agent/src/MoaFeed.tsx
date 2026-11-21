@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
+import { RollNum } from './motion.tsx';
 import type { VaultInfo } from './parts.tsx';
 import { CopyAddress, CopyButton } from './ui.tsx';
 import type { StratNote } from './Strategies.tsx';
@@ -106,7 +107,7 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
 
         <section className="moa-starts" aria-label={t.stTitle}>
           <div className="moa-sec-title">{t.stTitle}</div>
-          <div className="start-grid">
+          <div className="start-grid stagger">
             {starts.map((s) => (
               <button key={s.title} className="start-card" onClick={() => onAsk(s.prompt, context.label)}>
                 <span className="start-ic"><Icon d={ICONS[s.icon]} /></span>
@@ -167,7 +168,7 @@ function Brief({ quotes, vault }: { quotes: Quote[]; vault: VaultInfo | null }) 
   else body = quotes.map((q) => (
     <div key={q.asset} className="brief-row">
       <span className="brief-coin"><span className={`coin coin-${q.asset.toLowerCase()}`} />{q.asset}</span>
-      <span className="brief-px">{q.pool !== undefined ? `$${fmtPrice(q.pool)}` : '—'}</span>
+      <RollNum className="brief-px" text={q.pool !== undefined ? `$${fmtPrice(q.pool)}` : '—'} />
       {q.gap !== undefined
         ? <span className={`brief-gap ${q.gap <= -0.003 ? 'cheap' : q.gap >= 0.003 ? 'pricey' : ''}`}>{q.gap > 0 ? '+' : ''}{(q.gap * 100).toFixed(2)}%</span>
         : <span className="brief-gap muted">—</span>}
@@ -205,10 +206,10 @@ function Spark({ s }: { s: NonNullable<StratNote['spark']> }) {
   return (
     <svg className="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="price chart">
       <defs><linearGradient id="spk" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#7c5cf0" stopOpacity=".18" /><stop offset="1" stopColor="#7c5cf0" stopOpacity="0" /></linearGradient></defs>
-      <path d={area} fill="url(#spk)" />
+      <path className="area-in" d={area} fill="url(#spk)" />
       {s.ref && <path d={path(s.ref)} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />}
       {s.level !== undefined && <line x1={P} x2={W - P} y1={y(s.level)} y2={y(s.level)} stroke="#dc2626" strokeWidth="1.2" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />}
-      <path d={path(s.closes)} fill="none" stroke="#7c5cf0" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+      <path className="draw" pathLength={1} d={path(s.closes)} fill="none" stroke="#7c5cf0" strokeWidth="2" vectorEffect="non-scaling-stroke" />
       {(s.dots ?? []).map((i) => <circle key={i} cx={x(i)} cy={y(s.closes[i])} r="3.2" fill="#16a34a" stroke="#fff" strokeWidth="1.2" />)}
     </svg>
   );
@@ -227,7 +228,7 @@ function StratCard({ c, onAsk }: { c: StratNote; onAsk: (prompt: string, context
         <span className={`sig sig-${c.signal}`}>{t.sig[c.signal]}</span>
       </div>
       <div className="scard-num">
-        <strong className={c.good ? 'pos' : c.bad ? 'neg' : ''}>{c.value}</strong>
+        <RollNum flash={false} className={`scard-val ${c.good ? 'pos' : c.bad ? 'neg' : ''}`} text={c.value} />
         <span>{c.valueLabel}</span>
       </div>
       {c.spark && (
