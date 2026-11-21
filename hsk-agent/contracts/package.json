@@ -1,0 +1,14 @@
+{
+  "name": "moa-contracts",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "compile": "node scripts/compile.cjs",
+    "test": "node scripts/fork-test.cjs"
+  },
+  "dependencies": {
+    "hardhat": "^2.29.2",
+    "solc": "^0.8.26",
+    "viem": "^2.58.4"
+  }
+}
