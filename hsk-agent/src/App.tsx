@@ -6,7 +6,20 @@ import { useBots, type Bot } from './store.ts';
 import Trade from './Trade.tsx';
 
 type View = { name: 'trade' } | { name: 'chat'; prefill?: string; auto?: boolean } | { name: 'bots' } | { name: 'bot'; id: string };
-interface Msg { role: 'moa' | 'you'; text: string; at: number }
+interface Exec { ok: boolean; reason?: string; txHash?: string; explorerUrl?: string; amountIn?: string; amountOut?: string; tokenIn?: string; tokenOut?: string; request: { asset: string; side: string; amount: number } }
+interface Msg { role: 'moa' | 'you'; text: string; at: number; execs?: Exec[]; offline?: boolean }
+interface ServerStep { kind: Step['kind']; asset?: 'HSK' | 'ETH' | 'BTC'; perBuyUsd?: number; every?: 'hour' | 'day' | 'week'; durationDays?: number; targetQty?: number; deadline?: string; maxPrice?: number; budgetUsd?: number; dropPct?: number; risePct?: number; sellFraction?: number; what?: 'idle USDT' | 'accumulated coins' }
+
+/** The server's plan has optional fields; fill in the shape the plan cards expect. */
+function toStep(s: ServerStep): Step {
+  const asset = s.asset ?? 'HSK';
+  switch (s.kind) {
+    case 'accumulate': return { kind: 'accumulate', asset, perBuyUsd: s.perBuyUsd, every: s.every, durationDays: s.durationDays, targetQty: s.targetQty, deadline: s.deadline, maxPrice: s.maxPrice, budgetUsd: s.budgetUsd };
+    case 'stopLoss': return { kind: 'stopLoss', asset, dropPct: s.dropPct ?? 0, sellFraction: s.sellFraction ?? 1 };
+    case 'takeProfit': return { kind: 'takeProfit', asset, risePct: s.risePct ?? 0, sellFraction: s.sellFraction ?? 1 };
+    default: return { kind: 'earn', what: s.what ?? 'idle USDT' };
+  }
+}
 
 function useQuotes() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -42,11 +55,20 @@ function Sidebar({ view, go, botCount }: { view: View; go: (v: View) => void; bo
       <div className="nav-label">AUTOMATIONS</div>
       {item('Bots', { name: 'bots' }, '◎', view.name === 'bots' || view.name === 'bot', botCount)}
       <div className="sidebar-foot">
-        <div className="net"><span className="live-dot" /> HSK Chain · mainnet</div>
-        <div className="foot-note">Execution not enabled yet</div>
+        <div className="net"><span className="live-dot" /> HSK Chain</div>
+        <VaultFoot />
       </div>
     </aside>
   );
+}
+
+/** Shows whether this server has a vault to execute through, from /api/vault. */
+function VaultFoot() {
+  const [v, setV] = useState<{ configured: boolean; vault?: string; usdtBalance?: string; remainingTodayUsdt?: string } | null>(null);
+  useEffect(() => { fetch('/api/vault').then((r) => r.json()).then(setV).catch(() => setV({ configured: false })); }, []);
+  if (!v) return null;
+  if (!v.configured) return <div className="foot-note">No vault connected: execution off</div>;
+  return <div className="foot-note">Vault {v.vault?.slice(0, 6)}…{v.vault?.slice(-4)} · {Number(v.usdtBalance).toFixed(2)} USDT · ${v.remainingTodayUsdt} left today</div>;
 }
 
 function Topbar({ title, quotes }: { title: string; quotes: Quote[] }) {
@@ -106,17 +128,32 @@ function Chat({ prefill, auto, quotes, onCreate }: { prefill?: string; auto?: bo
   const send = (text: string) => {
     const t = text.trim();
     if (!t || thinking) return;
-    const merged = plan && plan.missing.length && goal ? `${goal}, ${t}` : t;
-    const p = parseIntent(merged);
     setDraft('');
-    setMsgs((m) => [...m, { role: 'you', text: t, at: Date.now() }]);
+    const history = [...msgs, { role: 'you' as const, text: t, at: Date.now() }];
+    setMsgs(history);
     setThinking(true);
-    setTimeout(() => {
-      setGoal(p.steps.length ? merged : goal);
-      if (p.steps.length) setPlan(p);
+    const finish = (m: Msg, p: Plan | null, g: string) => {
+      if (p && p.steps.length) { setPlan(p); setGoal(g); }
       setThinking(false);
-      setMsgs((m) => { setTypingIdx(m.length); return [...m, { role: 'moa', text: reply(p, quotes), at: Date.now() }]; });
-    }, 650);
+      setMsgs((cur) => { setTypingIdx(cur.length); return [...cur, m]; });
+    };
+    fetch('/api/moa', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ history: history.map((m) => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text })) }),
+    })
+      .then(async (r) => {
+        const j = (await r.json()) as { reply?: string; plan?: { steps: ServerStep[]; missing: string[] }; executions?: Exec[]; error?: string };
+        if (!r.ok || !j.reply) throw new Error(j.error ?? `HTTP ${r.status}`);
+        const p = j.plan ? { steps: j.plan.steps.map(toStep), missing: j.plan.missing } : null;
+        finish({ role: 'moa', text: j.reply, at: Date.now(), execs: j.executions?.length ? j.executions : undefined }, p, t);
+      })
+      .catch(() => {
+        // No server (static hosting) or the API failed: fall back to the on-device parser, clearly marked.
+        const merged = plan && plan.missing.length && goal ? `${goal}, ${t}` : t;
+        const p = parseIntent(merged);
+        finish({ role: 'moa', text: reply(p, quotes), at: Date.now(), offline: true }, p, merged);
+      });
   };
 
   const sentAuto = useRef(false);
@@ -159,14 +196,16 @@ function Chat({ prefill, auto, quotes, onCreate }: { prefill?: string; auto?: bo
                     {m.role === 'moa' && <span className="moa-avatar" aria-hidden />}
                     <div className={`bubble ${m.role}`}>
                       <div className="bubble-head">{m.role === 'moa' ? 'Moa' : 'You'}<span>{time(m.at)}</span></div>
-                      <div>{m.role === 'moa' && i === typingIdx ? <Typing text={m.text} onDone={() => setTypingIdx(null)} /> : m.text}</div>
+                      <div className="bubble-text">{m.role === 'moa' && i === typingIdx ? <Typing text={m.text} onDone={() => setTypingIdx(null)} /> : m.text}</div>
+                      {m.execs?.map((x, k) => <Receipt key={k} x={x} />)}
+                      {m.offline && <div className="offline">Offline mode: Moa’s AI is not reachable, so this reply came from the on-device parser.</div>}
                     </div>
                   </div>
                 ))}
                 {thinking && (
                   <div className="msg moa">
                     <span className="moa-avatar pulse" aria-hidden />
-                    <div className="bubble moa thinking"><span /><span /><span /> <em>Moa is checking HSK Chain…</em></div>
+                    <div className="bubble moa thinking"><span /><span /><span /> <em>Moa is thinking…</em></div>
                   </div>
                 )}
                 <div ref={end} />
@@ -194,6 +233,22 @@ function Chat({ prefill, auto, quotes, onCreate }: { prefill?: string; auto?: bo
           <MoaSees quotes={quotes} />
         )}
       </aside>
+    </div>
+  );
+}
+
+function Receipt({ x }: { x: Exec }) {
+  const side = x.request.side === 'buy' ? 'Buy' : 'Sell';
+  return x.ok ? (
+    <div className="receipt ok">
+      <div className="receipt-head"><span className="dot ok" /> Executed on HSK Chain</div>
+      <div className="receipt-line">{side} {x.request.asset}: {x.amountIn} {x.tokenIn} → {Number(x.amountOut).toPrecision(6)} {x.tokenOut}</div>
+      <a href={x.explorerUrl} target="_blank" rel="noreferrer">{x.txHash?.slice(0, 10)}…{x.txHash?.slice(-6)} ↗</a>
+    </div>
+  ) : (
+    <div className="receipt bad">
+      <div className="receipt-head"><span className="dot bad" /> Not executed</div>
+      <div className="receipt-line">{side} {x.request.amount} {x.request.side === 'buy' ? 'USDT of' : ''} {x.request.asset}: {x.reason}</div>
     </div>
   );
 }

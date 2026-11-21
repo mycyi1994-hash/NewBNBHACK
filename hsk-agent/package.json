@@ -10,10 +10,12 @@
     "test": "node --experimental-strip-types --test src/intent.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
     "@fontsource-variable/inter": "^5.2.8",
     "lightweight-charts": "^4.2.3",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "viem": "^2.58.4"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

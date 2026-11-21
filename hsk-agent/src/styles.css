@@ -245,3 +245,14 @@ a.tape-row:hover { background: #fbfaf9; }
   .segmented button span { display: none; }
   .market-head { gap: 14px 20px; }
 }
+
+.bubble-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.offline { margin-top: 8px; font-size: 11.5px; color: var(--ink-3); border-top: 1px dashed var(--line); padding-top: 6px; }
+.receipt { margin-top: 10px; border-radius: 10px; padding: 10px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.receipt.ok { background: #effaf3; border: 1px solid #c9ecd6; }
+.receipt.bad { background: #fff4f2; border: 1px solid #f6d2cb; }
+.receipt-head { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+.receipt a { color: #15803d; font-family: ui-monospace, monospace; font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; }
+.dot.ok { background: #16a34a; }
+.dot.bad { background: #dc2626; }
