@@ -19,7 +19,8 @@ async function get<T>(path: string): Promise<T> {
   let last: unknown;
   for (const base of working ? [working] : SOURCES) {
     try {
-      const r = await fetch(base + path);
+      const r = await fetch(base + path, { signal: AbortSignal.timeout(8000) });
+      if (!(r.headers.get('content-type') ?? '').includes('json') && r.ok) throw new Error('not JSON (no proxy here)');
       if (!r.ok) throw new Error(`HashKey Global HTTP ${r.status}`);
       const j = (await r.json()) as T;
       working = base;

@@ -159,6 +159,20 @@ const en = {
   pdRsi: (a: string) => `Collect ${a} for 30 days with a $10 daily base: double it when RSI is under 35, halve it when RSI is over 65`,
   pcAtr: 'Buy $10 of BTC every day for 2 weeks and sell half if it falls 2 daily ranges below my average cost',
   cardRules: 'How it works', cardPlan: 'Plan this with Moa', cardRisk: 'Risks', cardPrice: 'Price', cardEntries: 'entries',
+  heroQ: 'What should we collect today?', heroSub: 'I watch HSKSwap and the exchanges for you. Tap a strategy under the chart, or tell me a goal.',
+  briefTitle: 'What I see now', briefCoin: 'Coin', briefVsGate: 'vs Gate', briefDown: 'Unavailable', briefNoGate: 'Gate price unavailable',
+  briefVault: (bal: string, left: string) => `Vault ${bal} USDT · $${left} left to spend today · trades only on “execute”`,
+  stTitle: 'Start with', feedClearTip: 'Clear notes', ctxTip: 'Moa answers about this market',
+  stTrend: 'Buy with the trend', stTrendSub: 'Only on days BTC is above its 50-day average',
+  stStop: 'Set a stop-loss', stStopSub: 'Stop placed from BTC’s recent daily range',
+  stMood: 'Read the futures mood', stMoodSub: 'Perp vs index and who is buying', stMoodQ: 'What does the BTC perpetual’s mark vs index say about market mood right now?',
+  stExplain: 'Explain this chart', stExplainSub: 'What the last days mean, in plain words', stExplainQ: (m: string) => `Explain the ${m} chart of the last few days in plain words`,
+  stDaily: 'Collect every day', stDailySub: (a: string) => `$10 of ${a} a day for 2 weeks`,
+  stCheap: 'Buy only when cheap', stCheapSub: 'Skip days HSKSwap is above Gate',
+  stStopSubDex: (a: string) => `Sell half if ${a} drops 15%`, stStopQ: (a: string) => `Sell half of my ${a} if it drops 15%`,
+  stWhy: 'Why do prices differ?', stWhySub: 'HSKSwap vs Gate, explained',
+  stale: 'Delayed', staleAt: (ago: string) => `Delayed · last update ${ago} ago`,
+  ctxCex: 'BTC/USDT perp · HashKey', ctxDex: (s: string) => `${s}/USDT · HSKSwap`,
 };
 
 const ko: typeof en = {
@@ -317,6 +331,20 @@ const ko: typeof en = {
   pdRsi: (a) => `${a}를 30일 동안 하루 $10 기준으로 모아줘. RSI 35 아래면 두 배, 65 위면 절반으로`,
   pcAtr: 'BTC를 2주 동안 매일 $10씩 사고, 평단에서 하루 변동폭 2배만큼 빠지면 절반 팔아줘',
   cardRules: '이렇게 움직여요', cardPlan: 'Moa와 이 전략으로 계획 짜기', cardRisk: '위험 요소', cardPrice: '가격', cardEntries: '진입',
+  heroQ: '오늘은 뭘 모아볼까요?', heroSub: 'HSKSwap이랑 거래소 가격을 대신 지켜보고 있어요. 차트 아래 전략을 누르거나, 목표를 말해 주세요.',
+  briefTitle: '지금 보이는 것', briefCoin: '코인', briefVsGate: 'Gate 대비', briefDown: '불러올 수 없음', briefNoGate: 'Gate 가격 없음',
+  briefVault: (bal, left) => `볼트 ${bal} USDT · 오늘 $${left} 더 쓸 수 있음 · “실행”이라고 할 때만 거래`,
+  stTitle: '이걸로 시작해 보세요', feedClearTip: '메모 지우기', ctxTip: 'Moa가 이 시장 기준으로 답해요',
+  stTrend: '추세 따라 사기', stTrendSub: 'BTC가 50일 평균 위인 날만',
+  stStop: '손절선 잡기', stStopSub: 'BTC 최근 하루 변동폭 기준',
+  stMood: '선물 심리 읽기', stMoodSub: '선물 vs 지수, 누가 사고 있나', stMoodQ: '지금 BTC 선물 마크가격과 지수 차이로 보면 시장 심리가 어때?',
+  stExplain: '이 차트 설명', stExplainSub: '최근 흐름을 쉬운 말로', stExplainQ: (m) => `${m} 최근 며칠 차트를 쉬운 말로 설명해줘`,
+  stDaily: '매일 모으기', stDailySub: (a) => `${a}를 2주 동안 하루 $10씩`,
+  stCheap: '쌀 때만 사기', stCheapSub: 'HSKSwap이 Gate보다 비싼 날은 건너뛰기',
+  stStopSubDex: (a) => `${a}가 15% 빠지면 절반 팔기`, stStopQ: (a) => `${a}가 15% 빠지면 절반 팔아줘`,
+  stWhy: '왜 가격이 달라?', stWhySub: 'HSKSwap과 Gate 차이 설명',
+  stale: '지연', staleAt: (ago) => `지연 · ${ago} 전 마지막 업데이트`,
+  ctxCex: 'BTC/USDT 무기한 · HashKey', ctxDex: (s) => `${s}/USDT · HSKSwap`,
 };
 
 export const STRINGS = { en, ko };

@@ -540,7 +540,12 @@ a.tape-row:hover { text-decoration: none; }
 .coin-switch button:hover:not(.on) { color: var(--ink); }
 .coin-switch button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
 
-.strat-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.strats { container-type: inline-size; }
+.strat-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.strat-tiles > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; min-height: 0; }
+@container (min-width: 620px) { .strat-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .strat-tiles > .tile:last-child:nth-child(odd) { grid-column: auto; min-height: 150px; } }
+@container (min-width: 900px) { .strat-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@container (min-width: 1300px) { .tile { padding: 18px 18px 16px; min-height: 172px; } .tile-top b { font-size: 15.5px; } .tile-line { font-size: 13.5px; } .tile-num strong { font-size: 28px; } .tile-num small { font-size: 12.5px; } }
 .tile { position: relative; display: flex; flex-direction: column; gap: 8px; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 16px; padding: 14px 14px 12px; font: inherit; color: var(--ink); min-height: 150px; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease, background-color .15s ease; }
 .tile:hover { border-color: var(--line-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, .06); transform: translateY(-1px); }
 .tile.on { border-color: var(--brand); background: #fbfaff; box-shadow: 0 0 0 3px var(--brand-soft); }
@@ -614,3 +619,61 @@ a.tape-row:hover { text-decoration: none; }
 .scard-cta .btn-ghost { padding: 10px 16px; font-size: 14px; }
 .note-text { font-size: 15px; }
 .chart-toolbar { position: relative; z-index: 5; }
+
+/* ---------- Moa panel v2: hero, live brief, start cards, context composer ---------- */
+.feed { gap: 22px; padding: 22px 20px 12px; }
+.feed-clear { margin-left: 6px; border: 0; background: none; color: var(--ink-3); border-radius: 8px; width: 30px; height: 30px; display: grid; place-items: center; }
+.feed-clear:hover { background: var(--side); color: var(--ink); }
+.moa-hero { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 6px 2px 0; }
+.moa-hero .orb.lg { width: 44px; height: 44px; }
+.moa-hero h2 { margin: 4px 0 0; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.025em; }
+.moa-hero p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
+.moa-sec-title { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 650; color: var(--ink-2); margin-bottom: 10px; }
+.brief-state { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--ink-3); }
+.brief-state.live { color: #15803d; }
+.brief-state.live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+.brief-state.down { color: #b45309; }
+.brief-box { border: 1px solid var(--line); border-radius: 16px; background: #fff; padding: 6px 14px 12px; }
+.brief-cols, .brief-row { display: grid; grid-template-columns: 1.1fr 1fr .8fr 1.4fr; align-items: center; gap: 8px; }
+.brief-cols { font-size: 11.5px; color: var(--ink-3); padding: 8px 0 6px; border-bottom: 1px solid var(--line); }
+.brief-row { padding: 11px 0; border-bottom: 1px solid #f3f1ee; font-variant-numeric: tabular-nums; }
+.brief-coin { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; font-size: 14px; }
+.brief-coin .coin { width: 18px; height: 18px; }
+.brief-px { font-size: 14px; font-weight: 600; }
+.brief-gap { font-size: 13px; font-weight: 700; }
+.brief-gap.cheap { color: #15803d; }
+.brief-gap.pricey { color: #b45309; }
+.brief-take { font-size: 12px; color: var(--ink-3); text-align: right; }
+.brief-vault { padding-top: 10px; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+.start-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.start-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 13px 14px; font: inherit; color: var(--ink); transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.start-card:hover { border-color: #d9d0fb; box-shadow: 0 6px 18px rgba(109, 76, 224, .08); transform: translateY(-1px); }
+.start-card:active { transform: none; }
+.start-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); margin-bottom: 6px; }
+.start-card b { font-size: 14px; font-weight: 650; }
+.start-card small { font-size: 12.5px; line-height: 1.4; color: var(--ink-3); }
+.feed-composer { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 8px 8px 12px; border-radius: 20px; }
+.composer-row { display: flex; align-items: flex-end; gap: 8px; }
+.ctx-chip { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--side); border-radius: 8px; padding: 4px 9px 4px 6px; margin-top: 2px; }
+.ctx-chip .coin { width: 14px; height: 14px; }
+.ctx-chip[data-tip]::after { top: auto; bottom: calc(100% + 8px); }
+.stale-chip { font-size: 12px; font-weight: 600; color: #b45309; background: #fff4e5; border-radius: 99px; padding: 4px 10px; }
+.live.is-stale { color: #b45309; }
+.live.is-stale .live-dot { background: #f59e0b; animation: none; }
+@media (max-width: 1180px) { .moa-hero h2 { font-size: 21px; } .feed { max-height: 560px; } }
+@media (max-width: 720px) { .moa-brief { display: none; } .moa-hero p { font-size: 13.5px; } }
+.dock.feed-dock { container-type: inline-size; }
+@container (max-width: 500px) {
+  .brief-cols, .brief-row { grid-template-columns: 1.1fr 1fr .9fr; }
+  .brief-take, .brief-cols span:last-child { display: none; }
+}
+@media (max-width: 720px) {
+  .moa-hero { flex-direction: row; align-items: center; gap: 10px; padding: 0; }
+  .moa-hero .orb.lg { width: 30px; height: 30px; }
+  .moa-hero h2 { font-size: 18px; margin: 0; }
+  .moa-hero p { display: none; }
+  .feed { gap: 14px; padding: 14px 14px 8px; }
+  .start-grid { display: flex; overflow-x: auto; gap: 8px; scrollbar-width: none; margin: 0 -14px; padding: 0 14px 2px; scroll-snap-type: x mandatory; }
+  .start-card { flex: 0 0 172px; padding: 11px 12px; scroll-snap-align: start; }
+  .start-ic { display: none; }
+}

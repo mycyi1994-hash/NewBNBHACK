@@ -1,22 +1,37 @@
-// Moa on the right of the trade screen, Grok-style: Moa speaks first, answers sit as plain text (no bubble),
-// each note ends with "↳" follow-ups you can tap. Every number comes from live data (pool vs Gate, vault),
-// never from the model, so Moa can open the conversation instantly and honestly.
-import { useEffect, useRef, useState } from 'react';
-import type { Quote } from './market.ts';
+// Moa on the right of the trade screen.
+// Opens instantly (never waits on data): a short greeting, a live market brief, and "start with" cards
+// for the market you are looking at. Below that, Moa's own notes appear as the market moves, and a tapped
+// strategy arrives as a full card. The composer carries a chip with the market in view, so a question is
+// always about something. Every number comes from live data (pool vs Gate, vault), never from the model.
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
-import { MoaSees, type VaultInfo } from './parts.tsx';
+import type { VaultInfo } from './parts.tsx';
 import { CopyAddress, CopyButton } from './ui.tsx';
 import type { StratNote } from './Strategies.tsx';
 
-interface Note { id: number; at: number; text: string; sees?: boolean; card?: StratNote; follow: string[] }
+export interface MoaContext { venue: 'cex' | 'dex'; label: string; asset: 'HSK' | 'ETH' | 'BTC' }
+interface Note { id: number; at: number; text: string; card?: StratNote; follow: string[] }
 const time = (t: number) => new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-const pct = (g: number) => Math.abs(g * 100).toFixed(1);
-const NOTABLE = 0.003;      // a pool more than 0.3% away from Gate is worth mentioning
 const MOVE = 0.005;         // a 0.5 percentage-point change in the gap triggers a new note
 const QUIET_MS = 120_000;   // at most one unprompted note every 2 minutes
 
-export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quote[]; vault: VaultInfo | null; onAsk: (prompt: string, context?: string) => void; inject?: StratNote | null }) {
-  const { t, lang } = useT();
+const Icon = ({ d }: { d: string }) => (
+  <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden><path d={d} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+const ICONS = {
+  stack: 'M4 13l6 3 6-3M4 9.5l6 3 6-3M10 3l6 3-6 3-6-3 6-3z',
+  tag: 'M3 10.5V4a1 1 0 011-1h6.5L17 9.5 10.5 16 3 10.5zM7 7h.01',
+  shield: 'M10 3l6 2.5v4c0 3.6-2.6 6.4-6 7.5-3.4-1.1-6-3.9-6-7.5v-4L10 3z',
+  chart: 'M3 16h14M5 13l3-4 3 2 4-6',
+  pulse: 'M2 10h4l2-5 4 10 2-5h4',
+  ask: 'M5 15l-2 2V5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5z',
+};
+
+export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
+  quotes: Quote[]; vault: VaultInfo | null; onAsk: (prompt: string, context?: string) => void; inject?: StratNote | null; context: MoaContext;
+}) {
+  const { t } = useT();
   const [notes, setNotes] = useState<Note[]>([]);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
@@ -24,11 +39,9 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
   const input = useRef<HTMLTextAreaElement>(null);
   const lastGap = useRef<Partial<Record<Quote['asset'], number>>>({});
   const lastNoteAt = useRef(0);
-  const greeted = useRef(false);
   const nextId = useRef(1);
 
-  /** Show "Moa is typing…" briefly, then the note (Grok / messenger feel). */
-  const say = (n: Omit<Note, 'id' | 'at'>, delay = 700) => {
+  const say = (n: Omit<Note, 'id' | 'at'>, delay = 600) => {
     setTyping(true);
     setTimeout(() => {
       setTyping(false);
@@ -37,29 +50,8 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
     }, delay);
   };
 
-  // Opening: once prices are in, Moa says what it sees, then what the vault allows.
-  useEffect(() => {
-    const live = quotes.filter((q) => q.gap !== undefined);
-    if (greeted.current || live.length === 0) return;
-    greeted.current = true;
-    live.forEach((q) => { lastGap.current[q.asset] = q.gap; });
-    const cheap = [...live].sort((a, b) => a.gap! - b.gap!)[0];
-    const pricey = [...live].sort((a, b) => b.gap! - a.gap!)[0];
-    const lines = [t.feedHello];
-    if (cheap.gap! < -NOTABLE) lines.push(t.feedCheap(cheap.asset, pct(cheap.gap!)));
-    if (pricey.gap! > NOTABLE) lines.push(t.feedPricey(pricey.asset, pct(pricey.gap!)));
-    if (lines.length === 1) lines.push(t.feedFlat);
-    const focus = cheap.gap! < -NOTABLE ? cheap.asset : 'HSK';
-    say({ text: lines.join(' '), sees: true, follow: [t.fuPlan(focus), t.fuGuard, t.fuWhy] }, 500);
-    setTimeout(() => {
-      if (vault?.configured) say({ text: t.feedVault(Number(vault.usdtBalance).toFixed(0), vault.remainingTodayUsdt ?? '0', vault.maxTradeUsdt ?? '?'), follow: [t.fuBudget] });
-      else say({ text: t.feedNoVault, follow: [t.fuHowVault] });
-    }, 1600);
-  }, [quotes, vault]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Watching: when a pool moves noticeably against Gate, Moa speaks up on its own.
   useEffect(() => {
-    if (!greeted.current) return;
     for (const q of quotes) {
       if (q.gap === undefined) continue;
       const prev = lastGap.current[q.asset];
@@ -70,17 +62,29 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
     }
   }, [quotes]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-greet in the other language when the user switches it.
-  useEffect(() => { if (greeted.current) { greeted.current = false; setNotes([]); } }, [lang]);
+  // A strategy tapped under the chart arrives as a full card.
+  useEffect(() => { if (inject) say({ text: inject.text, card: inject, follow: [] }, 380); }, [inject]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A strategy tapped under the chart: Moa explains it here.
-  useEffect(() => { if (inject) say({ text: inject.text, card: inject, follow: [] }, 450); }, [inject]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => { const el = feed.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, [notes, typing]);
+  useEffect(() => { const el = feed.current; if (el && notes.length) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, [notes, typing]);
   useEffect(() => { const el = input.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; }, [draft]);
 
   const lastText = notes[notes.length - 1]?.text;
-  const submit = () => { const v = draft.trim(); if (v) { onAsk(v, lastText); setDraft(''); } };
+  const submit = () => { const v = draft.trim(); if (v) { onAsk(v, `${context.label}. ${lastText ?? ''}`.trim()); setDraft(''); } };
+
+  const a = context.asset;
+  const starts: { icon: keyof typeof ICONS; title: string; sub: string; prompt: string }[] = context.venue === 'cex'
+    ? [
+      { icon: 'chart', title: t.stTrend, sub: t.stTrendSub, prompt: t.pcTrend },
+      { icon: 'shield', title: t.stStop, sub: t.stStopSub, prompt: t.pcAtr },
+      { icon: 'pulse', title: t.stMood, sub: t.stMoodSub, prompt: t.stMoodQ },
+      { icon: 'ask', title: t.stExplain, sub: t.stExplainSub, prompt: t.stExplainQ(context.label) },
+    ]
+    : [
+      { icon: 'stack', title: t.stDaily, sub: t.stDailySub(a), prompt: t.fuPlan(a) },
+      { icon: 'tag', title: t.stCheap, sub: t.stCheapSub, prompt: t.s1Prompt(a) },
+      { icon: 'shield', title: t.stStop, sub: t.stStopSubDex(a), prompt: t.stStopQ(a) },
+      { icon: 'ask', title: t.stWhy, sub: t.stWhySub, prompt: t.fuWhy },
+    ];
 
   return (
     <aside className="dock feed-dock" aria-label="Moa">
@@ -88,25 +92,44 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
         <span className="orb sm breathe" aria-hidden />
         <b>Moa</b>
         <span className="feed-status"><span className="live-dot" /> {t.feedWatching}</span>
+        {notes.length > 0 && <button className="feed-clear" onClick={() => setNotes([])} data-tip={t.feedClearTip} aria-label={t.feedClearTip}><Icon d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" /></button>}
       </header>
 
       <div className="feed" ref={feed} aria-live="polite">
+        <section className="moa-hero">
+          <span className="orb lg breathe" aria-hidden />
+          <h2>{t.heroQ}</h2>
+          <p>{t.heroSub}</p>
+        </section>
+
+        <Brief quotes={quotes} vault={vault} />
+
+        <section className="moa-starts" aria-label={t.stTitle}>
+          <div className="moa-sec-title">{t.stTitle}</div>
+          <div className="start-grid">
+            {starts.map((s) => (
+              <button key={s.title} className="start-card" onClick={() => onAsk(s.prompt, context.label)}>
+                <span className="start-ic"><Icon d={ICONS[s.icon]} /></span>
+                <b>{s.title}</b>
+                <small>{s.sub}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+
         {notes.map((n) => (
           <article key={n.id} className="note fade-up">
             <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at)}</time></div>
             {n.card ? <StratCard c={n.card} onAsk={onAsk} /> : <p className="note-text">{n.text}</p>}
-            {n.sees && <div className="note-card"><MoaSees quotes={quotes} /></div>}
-            <div className="note-actions"><CopyButton text={n.text} label={t.copy} done={t.copied} /></div>
+            {!n.card && <div className="note-actions"><CopyButton text={n.text} label={t.copy} done={t.copied} /></div>}
             {n.follow.length > 0 && (
               <div className="followups">
-                {n.follow.map((f) => (
-                  <button key={f} className="fu" onClick={() => onAsk(f, n.text)}><span aria-hidden>↳</span>{f}</button>
-                ))}
+                {n.follow.map((f) => <button key={f} className="fu" onClick={() => onAsk(f, n.text)}><span aria-hidden>↳</span>{f}</button>)}
               </div>
             )}
           </article>
         ))}
-        {(typing || notes.length === 0) && (
+        {typing && (
           <div className="note typing-note" role="status">
             <div className="note-meta"><span className="orb xs" aria-hidden /> Moa</div>
             <span className="dots" aria-label={t.feedTyping}><i /><i /><i /></span>
@@ -115,11 +138,14 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
       </div>
 
       <form className="feed-composer" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-        <textarea ref={input} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t.feedPlaceholder} aria-label={t.askMoa}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
-        <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} data-tip={`${t.ask} (Enter)`}>
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        </button>
+        <span className="ctx-chip" data-tip={t.ctxTip}><span className={`coin coin-${context.asset.toLowerCase()}`} />{context.label}</span>
+        <div className="composer-row">
+          <textarea ref={input} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t.feedPlaceholder} aria-label={t.askMoa}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
+          <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} data-tip={`${t.ask} (Enter)`}>
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </div>
       </form>
       <div className="feed-foot">
         <span aria-hidden>🔒</span>
@@ -128,6 +154,42 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
           : t.trust3none}
       </div>
     </aside>
+  );
+}
+
+/** "What Moa sees right now": HSKSwap pools vs Gate and the vault, with LIVE / loading / UNAVAILABLE states. */
+function Brief({ quotes, vault }: { quotes: Quote[]; vault: VaultInfo | null }) {
+  const { t } = useT();
+  const live = quotes.filter((q) => q.gap !== undefined);
+  const down = quotes.length > 0 && live.length === 0;
+  let body: ReactNode;
+  if (quotes.length === 0) body = [0, 1, 2].map((i) => <div key={i} className="brief-row" aria-hidden><span className="skel" style={{ width: 90 }} /><span className="skel" style={{ width: 54 }} /></div>);
+  else body = quotes.map((q) => (
+    <div key={q.asset} className="brief-row">
+      <span className="brief-coin"><span className={`coin coin-${q.asset.toLowerCase()}`} />{q.asset}</span>
+      <span className="brief-px">{q.pool !== undefined ? `$${fmtPrice(q.pool)}` : '—'}</span>
+      {q.gap !== undefined
+        ? <span className={`brief-gap ${q.gap <= -0.003 ? 'cheap' : q.gap >= 0.003 ? 'pricey' : ''}`}>{q.gap > 0 ? '+' : ''}{(q.gap * 100).toFixed(2)}%</span>
+        : <span className="brief-gap muted">—</span>}
+      <span className="brief-take">{q.gap === undefined ? t.briefNoGate : Math.abs(q.gap) < 0.003 ? t.seesInLine : q.gap > 0 ? t.seesPricey : t.seesCheap}</span>
+    </div>
+  ));
+  return (
+    <section className="moa-brief">
+      <div className="moa-sec-title">
+        {t.briefTitle}
+        <span className={`brief-state ${down ? 'down' : quotes.length ? 'live' : ''}`}>{down ? t.briefDown : quotes.length ? t.live : t.stratLoading}</span>
+      </div>
+      <div className="brief-box">
+        <div className="brief-cols"><span>{t.briefCoin}</span><span>HSKSwap</span><span>{t.briefVsGate}</span><span /></div>
+        {body}
+        <div className="brief-vault">
+          {vault?.configured
+            ? t.briefVault(Number(vault.usdtBalance).toFixed(0), vault.remainingTodayUsdt ?? '0')
+            : t.feedNoVault}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -165,7 +227,7 @@ function StratCard({ c, onAsk }: { c: StratNote; onAsk: (prompt: string, context
         <span className={`sig sig-${c.signal}`}>{t.sig[c.signal]}</span>
       </div>
       <div className="scard-num">
-        <strong className={c.good ? 'pos' : ''}>{c.value}</strong>
+        <strong className={c.good ? 'pos' : c.bad ? 'neg' : ''}>{c.value}</strong>
         <span>{c.valueLabel}</span>
       </div>
       {c.spark && (

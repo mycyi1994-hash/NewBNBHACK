@@ -20,7 +20,7 @@ type Bar = cex.Candle;
 
 /** Everything Moa needs to show a strategy card on the right. */
 export interface StratNote {
-  n: number; venue: Venue; name: string; signal: Signal; value: string; valueLabel: string; good: boolean;
+  n: number; venue: Venue; name: string; signal: Signal; value: string; valueLabel: string; good: boolean; bad?: boolean;
   facts: [string, string, string?][]; rules: string[]; text: string; source: string;
   spark?: { closes: number[]; ref?: number[]; refLabel?: string; level?: number; levelLabel?: string; dots?: number[] };
   follow: string[];
@@ -158,7 +158,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
       {
         id: 'trend', line: t.cTrendLine, caption: cap(tr), prompt: t.pcTrend,
         note: {
-          venue, name: t.cTrendName, signal: !tr ? 'neutral' : trOn ? 'good' : 'wait', value: edge(tr), valueLabel: cap(tr), good: !!tr && tr.ret > tr.hold, source: src,
+          venue, name: t.cTrendName, signal: !tr ? 'neutral' : trOn ? 'good' : 'wait', value: edge(tr), valueLabel: cap(tr), good: !!tr && tr.ret > 0, bad: !!tr && tr.ret < 0, source: src,
           facts: tr ? [...posFacts(tr), [t.fNow, trOn ? t.inPos : t.flat]] : [], rules: t.rcTrend,
           text: tr ? t.xcTrend(pct(tr.ret), pct(tr.hold), tr.trades, trOn, pct(last / ma50[ma50.length - 1] - 1)) : t.xNoData,
           spark: tr ? { closes: tail(c), ref: tail(ma50), refLabel: 'MA50', dots: shift(tr.dots) } : undefined,
@@ -167,7 +167,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
       {
         id: 'break', line: t.cBreakLine, caption: cap(bo), prompt: t.pcBreak,
         note: {
-          venue, name: t.cBreakName, signal: !bo ? 'neutral' : boOn ? 'good' : 'neutral', value: edge(bo), valueLabel: cap(bo), good: !!bo && bo.ret > bo.hold, source: src,
+          venue, name: t.cBreakName, signal: !bo ? 'neutral' : boOn ? 'good' : 'neutral', value: edge(bo), valueLabel: cap(bo), good: !!bo && bo.ret > 0, bad: !!bo && bo.ret < 0, source: src,
           facts: bo ? [...posFacts(bo), [t.fHigh20, hi20 ? `$${fmtPrice(hi20)}` : '—']] : [], rules: t.rcBreak,
           text: bo && hi20 ? t.xcBreak(pct(bo.ret), pct(bo.hold), bo.trades, !!boOn, fmtPrice(hi20), pct(hi20 / last - 1)) : t.xNoData,
           spark: bo && hi20 ? { closes: tail(c), level: hi20, levelLabel: t.fHigh20, dots: shift(bo.dots) } : undefined,
@@ -176,7 +176,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
       {
         id: 'rsi', line: t.cRsiLine, caption: cap(rs), prompt: t.pcRsi,
         note: {
-          venue, name: t.cRsiName, signal: rsiNow === undefined ? 'neutral' : rsiNow < 35 ? 'good' : rsiNow > 70 ? 'wait' : 'neutral', value: edge(rs), valueLabel: cap(rs), good: !!rs && rs.ret > rs.hold, source: src,
+          venue, name: t.cRsiName, signal: rsiNow === undefined ? 'neutral' : rsiNow < 35 ? 'good' : rsiNow > 70 ? 'wait' : 'neutral', value: edge(rs), valueLabel: cap(rs), good: !!rs && rs.ret > 0, bad: !!rs && rs.ret < 0, source: src,
           facts: rs && rsiNow !== undefined ? [...posFacts(rs), [t.fRsi, rsiNow.toFixed(0)]] : [], rules: t.rcRsi,
           text: rs && rsiNow !== undefined ? t.xcRsi(pct(rs.ret), pct(rs.hold), rs.trades, rsiNow.toFixed(0), rsOn) : t.xNoData,
           spark: rs ? { closes: tail(c), dots: shift(rs.dots) } : undefined,
@@ -185,7 +185,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
       {
         id: 'mood', line: t.l3, caption: t.capLiveBasis, prompt: t.s3Prompt,
         note: {
-          venue, name: t.s3Name, signal: basis === undefined ? 'neutral' : basis <= -0.0005 ? 'good' : basis >= 0.0008 ? 'wait' : 'neutral', value: basis === undefined ? '—' : pct(basis, 3), valueLabel: t.capLiveBasis, good: basis !== undefined && basis < 0, source: t.srcLive,
+          venue, name: t.s3Name, signal: basis === undefined ? 'neutral' : basis <= -0.0005 ? 'good' : basis >= 0.0008 ? 'wait' : 'neutral', value: basis === undefined ? '—' : pct(basis, 3), valueLabel: t.capLiveBasis, good: false, source: t.srcLive,
           facts: [[t.mark, mark ? `$${fmtPrice(mark)}` : '—'], [t.index, index ? `$${fmtPrice(index)}` : '—'], [t.fBuyers, buy === undefined ? '—' : `${Math.round(buy * 100)}%`]], rules: t.rcMood,
           text: basis === undefined ? t.xNoData : t.x3(pct(basis, 3), buy === undefined ? '—' : `${Math.round(buy * 100)}%`),
         },
@@ -277,7 +277,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
             </span>
             <span className="tile-line">{x.line}</span>
             <span className="tile-num">
-              <strong className={x.note.good ? 'pos' : ''}>{x.note.value}</strong>
+              <strong className={x.note.good ? 'pos' : x.note.bad ? 'neg' : ''}>{x.note.value}</strong>
               <small>{x.caption}</small>
             </span>
             {x.id === best.id && rank(best.note.signal) === 2 && <span className="tile-best">{t.stratRec}</span>}
