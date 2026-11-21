@@ -530,32 +530,49 @@ a.tape-row:hover { text-decoration: none; }
   .tape-pane .lad-row.trade:nth-of-type(n+12) { display: none; }
 }
 
-/* ---------- Moa strategy picks (under the chart) ---------- */
-.strat-card { padding: 18px; }
-.strat-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
-.strat-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
-.strat-head p { margin: 4px 0 0; font-size: 13px; }
-.strat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.strat { position: relative; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: #fff; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
-.strat:hover { border-color: var(--line-strong); box-shadow: 0 6px 20px rgba(0, 0, 0, .05); }
-.strat.best { border-color: #cbbcf6; background: linear-gradient(180deg, #faf8ff 0%, #fff 55%); box-shadow: 0 8px 24px rgba(109, 76, 224, .1); }
-.strat header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.strat header b { font-size: 14.5px; }
-.best-tag { position: absolute; top: -10px; left: 14px; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; border-radius: 99px; padding: 2px 9px; }
-.sig { margin-left: auto; font-size: 11.5px; font-weight: 700; border-radius: 99px; padding: 2px 9px; }
+/* ---------- Moa strategy picks (under the chart), Revolut-style: tabs + one big pick ---------- */
+.strat-card { padding: 20px 22px 16px; }
+.strat-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.strat-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.coin-switch { display: inline-flex; gap: 2px; background: var(--side); border-radius: 99px; padding: 3px; }
+.coin-switch button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; border-radius: 99px; padding: 5px 11px; font-size: 12.5px; font-weight: 600; color: var(--ink-3); }
+.coin-switch button:hover:not(.on) { color: var(--ink); }
+.coin-switch button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+.coin-switch .coin::before { width: 14px; height: 14px; }
+
+.strat-tabs { display: flex; gap: 8px; margin: 16px 0 4px; overflow-x: auto; scrollbar-width: none; }
+.strat-tabs button { flex: none; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 8px 15px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+.strat-tabs button:hover:not(.on) { border-color: var(--line-strong); color: var(--ink); }
+.strat-tabs button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.strat-tabs .rec { font-size: 11px; font-weight: 700; color: var(--brand); background: var(--brand-soft); border-radius: 99px; padding: 1px 7px; }
+.strat-tabs button.on .rec { background: rgba(255, 255, 255, .16); color: #fff; }
+
+.strat-pick { padding-top: 18px; animation: fade-up .28s cubic-bezier(.2, .8, .2, 1) both; }
+.pick-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pick-label { font-size: 12.5px; font-weight: 600; color: var(--ink-3); }
+.pick-big { font-size: 40px; font-weight: 750; letter-spacing: -0.03em; line-height: 1.1; margin: 4px 0 4px; font-variant-numeric: tabular-nums; }
+.pick-sub { font-size: 12.5px; }
+.sig { font-size: 12px; font-weight: 700; border-radius: 99px; padding: 4px 11px; white-space: nowrap; }
 .sig-good { background: #dcfce7; color: #15803d; }
 .sig-neutral { background: var(--side); color: var(--ink-2); }
 .sig-wait { background: #fff4e5; color: #b45309; }
-.strat-rule { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink-2); }
-.strat-now, .strat-bt { display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.5; }
-.strat .label { font-size: 11.5px; font-weight: 600; color: var(--ink-3); text-transform: none; }
-.strat-now { background: var(--side); border-radius: 10px; padding: 9px 11px; }
-.strat-bt { font-variant-numeric: tabular-nums; }
-.strat-bt.muted { font-size: 12px; }
-.bt-row { display: flex; justify-content: space-between; gap: 8px; }
-.bt-delta { font-weight: 700; font-size: 13.5px; }
-.strat .btn-ghost.wide { margin-top: auto; width: 100%; padding: 9px 12px; font-weight: 600; }
-.strat.best .btn-ghost.wide { background: var(--ink); color: #fff; border-color: var(--ink); }
-.strat.best .btn-ghost.wide:hover { background: var(--brand); border-color: var(--brand); }
+
+.cost-chart { margin: 16px 0 6px; }
+.cost-chart svg { display: block; width: 100%; height: 150px; }
+.cost-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.cost-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.cost-legend i { width: 16px; height: 0; border-top: 2.5px solid #6d4ce0; }
+.cost-legend i.lg-plain { border-top: 2px dashed #b9b3ab; }
+.strat-visual-skel { height: 150px; margin: 16px 0 6px; }
+
+.gauge { margin: 26px 0 8px; }
+.gauge-track { position: relative; height: 10px; border-radius: 99px; background: linear-gradient(90deg, #bbf7d0 0%, #f1efec 50%, #fed7aa 100%); }
+.gauge-mark { position: absolute; top: 50%; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid var(--ink); transform: translate(-50%, -50%); box-shadow: 0 2px 8px rgba(0, 0, 0, .15); transition: left .4s ease; }
+.gauge-mark b { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); font-size: 12px; white-space: nowrap; background: var(--ink); color: #fff; border-radius: 7px; padding: 2px 7px; }
+.gauge-labels { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; font-weight: 600; }
+.gauge-labels .warn { color: #b45309; }
+
+.pick-today { display: flex; gap: 10px; align-items: baseline; margin: 12px 0 0; font-size: 13.5px; color: var(--ink-2); }
+.pick-today span { flex: none; font-size: 12px; font-weight: 700; color: var(--brand-ink); background: var(--brand-soft); border-radius: 99px; padding: 2px 9px; }
+.pick-cta { margin-top: 16px !important; padding: 13px !important; font-size: 14.5px !important; }
 .strat-foot { margin: 12px 0 0; font-size: 11.5px; }
-@media (max-width: 1100px) { .strat-grid { grid-template-columns: minmax(0, 1fr); } }
