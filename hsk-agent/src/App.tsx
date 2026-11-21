@@ -8,6 +8,22 @@ import Trade from './Trade.tsx';
 import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
 import { CopyButton, Menu, Modal, RichText, ToastProvider, useToast } from './ui.tsx';
 
+/**
+ * The API conversation must start with the user. When Moa opened the conversation (its note on the trade
+ * screen), fold that note into the user's first message as quoted context instead of sending it as a turn.
+ */
+function toApiHistory(history: { role: 'moa' | 'you'; text: string }[]) {
+  const out: { role: 'user' | 'assistant'; content: string }[] = [];
+  let lead: string[] = [];
+  for (const m of history) {
+    if (!out.length && m.role === 'moa') { lead.push(m.text); continue; }
+    const content = lead.length && m.role === 'you' ? `(Moa said earlier: “${lead.join(' ')}”)\n\n${m.text}` : m.text;
+    lead = [];
+    out.push({ role: m.role === 'you' ? 'user' : 'assistant', content });
+  }
+  return out;
+}
+
 /** Same words the server checks before it lets Moa trade. */
 const EXECUTE_WORDS = /(실행|execute)/i;
 
@@ -167,7 +183,7 @@ function Progress({ steps, startedAt }: { steps: StepKey[]; startedAt: number })
 /* ---------- chat ---------- */
 
 function Chat({ seed, active, quotes, vault, onCreate, onExecuted }: {
-  seed: { text: string; n: number } | null; active: boolean; quotes: Quote[]; vault: VaultInfo | null;
+  seed: { text: string; ctx?: string; n: number } | null; active: boolean; quotes: Quote[]; vault: VaultInfo | null;
   onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void;
 }) {
   const { t, lang } = useT();
@@ -229,7 +245,7 @@ function Chat({ seed, active, quotes, vault, onCreate, onExecuted }: {
       const r = await fetch('/api/moa', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ history: history.map((m) => ({ role: m.role === 'you' ? 'user' : 'assistant', content: m.text })) }),
+        body: JSON.stringify({ history: toApiHistory(history) }),
         signal: ctrl.signal,
       });
       if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
@@ -294,7 +310,16 @@ function Chat({ seed, active, quotes, vault, onCreate, onExecuted }: {
   useEffect(() => {
     if (!seed || seed.n === seen.current) return;
     seen.current = seed.n;
-    if (seed.text) ask(seed.text); else input.current?.focus();
+    if (!seed.text) { input.current?.focus(); return; }
+    // Replying to something Moa said on the trade screen: start the conversation with that note, so the reply has context.
+    if (seed.ctx && msgs.length === 0) {
+      const base: Msg[] = [{ role: 'moa', text: seed.ctx, at: Date.now() }];
+      setMsgs(base);
+      if (EXECUTE_WORDS.test(seed.text) && vault?.configured) setConfirm(seed.text);
+      else void send(seed.text, base);
+      return;
+    }
+    ask(seed.text);
   });
   useEffect(() => { if (active) input.current?.focus(); }, [active]);
 
@@ -591,7 +616,7 @@ export default function App() {
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
   const [view, setView] = useState<View>({ name: 'trade' });
-  const [seed, setSeed] = useState<{ text: string; n: number } | null>(null);
+  const [seed, setSeed] = useState<{ text: string; ctx?: string; n: number } | null>(null);
   const quotes = useQuotes();
   const { vault, reloadVault } = useVault();
   const { bots, add, remove } = useBots();
@@ -607,7 +632,7 @@ export default function App() {
         <Sidebar view={view} go={go} botCount={bots.length} vault={vault} />
         <main className="main">
           <Topbar title={title} quotes={quotes} />
-          {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onAsk={(p) => { setSeed((x) => ({ text: p, n: (x?.n ?? 0) + 1 })); go({ name: 'chat' }); }} />}
+          {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onAsk={(p, ctx) => { setSeed((x) => ({ text: p, ctx, n: (x?.n ?? 0) + 1 })); go({ name: 'chat' }); }} />}
           {/* Chat stays mounted so the conversation survives page changes; it is only hidden. */}
           <div className="chat-host" hidden={view.name !== 'chat'}>
             <Chat

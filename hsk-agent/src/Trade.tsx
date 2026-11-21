@@ -5,7 +5,8 @@ import { EXPLORER, POOLS, poolDetail, type PoolDetail } from './dex.ts';
 import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
-import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
+import type { VaultInfo } from './parts.tsx';
+import MoaFeed from './MoaFeed.tsx';
 
 type Venue = 'cex' | 'dex';
 const usd = (v: number, d = 2) => v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -245,43 +246,9 @@ function DexPanel({ asset, setAsset, detail, err }: { asset: Asset; setAsset: (a
   );
 }
 
-/* ---------- Moa dock ---------- */
-
-function MoaDock({ onAsk, quotes, vault }: { onAsk: (p: string) => void; quotes: Quote[]; vault: VaultInfo | null }) {
-  const { t } = useT();
-  const [draft, setDraft] = useState('');
-  return (
-    <aside className="dock" aria-label="Moa">
-      <div className="dock-hero">
-        <span className="orb lg breathe" aria-hidden />
-        <div>
-          <div className="dock-title">{t.dockHi}</div>
-          <p className="muted">{t.dockSub}</p>
-        </div>
-      </div>
-      <form className="dock-input" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) onAsk(draft.trim()); }}>
-        <textarea rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t.dockPlaceholder} aria-label={t.askMoa}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (draft.trim()) onAsk(draft.trim()); } }} />
-        <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} title={`${t.ask} (Enter)`}>
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        </button>
-      </form>
-      <div className="dock-starters">
-        {t.starters.map((s, i) => (
-          <button key={s.title} className="chip" onClick={() => onAsk(s.prompt)}>
-            <span className={`chip-dot ${['peach', 'lilac', 'sky', 'mint'][i]}`} aria-hidden />{s.title}
-          </button>
-        ))}
-      </div>
-      <TrustCard vault={vault} />
-      <div className="dock-sees"><MoaSees quotes={quotes} /></div>
-    </aside>
-  );
-}
-
 /* ---------- page ---------- */
 
-export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string) => void; quotes: Quote[]; vault: VaultInfo | null }) {
+export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string, context?: string) => void; quotes: Quote[]; vault: VaultInfo | null }) {
   const { t } = useT();
   const [venue, setVenue] = useState<Venue>('cex');
   const [asset, setAsset] = useState<Asset>('BTC');
@@ -310,7 +277,7 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
           : <DexPanel asset={asset} setAsset={setAsset} detail={detail} err={dexErr} />}
         <p className="muted small">{t.dataNote}</p>
       </div>
-      <MoaDock onAsk={onAsk} quotes={quotes} vault={vault} />
+      <MoaFeed onAsk={onAsk} quotes={quotes} vault={vault} />
     </div>
   );
 }

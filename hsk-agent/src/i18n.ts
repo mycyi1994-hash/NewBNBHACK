@@ -63,6 +63,20 @@ const en = {
   newChat: 'New chat', newChatTip: 'Clear this conversation and plan',
   retry: 'Try again', stopLocked: 'The trade is already on its way', toLatest: 'Jump to latest', more: 'More',
   copyAddress: 'Copy address', addressCopied: 'Address copied',
+  feedWatching: 'Watching HSK Chain live', feedTyping: 'Moa is typing', feedPlaceholder: 'Reply to Moa, or tell it a goal…',
+  feedHello: "Hi, I'm Moa. I'm watching HSKSwap and the exchanges for you.",
+  feedCheap: (a: string, p: string) => `Right now ${a} on HSKSwap trades ${p}% below Gate.`,
+  feedPricey: (a: string, p: string) => `${a} is the opposite: ${p}% above Gate.`,
+  feedFlat: 'HSKSwap prices are in line with Gate at the moment.',
+  feedVault: (bal: string, left: string, per: string) => `Your vault holds ${bal} USDT, and you can still spend $${left} today (up to $${per} per trade). I only trade when you say “execute”.`,
+  feedNoVault: 'No vault is connected yet, so I can plan with you but not trade.',
+  feedMoved: (a: string, from: string, to: string) => `Heads-up: ${a} on HSKSwap moved from ${from}% to ${to}% vs Gate.`,
+  feedLimits: (per: string, day: string) => `Vault limits $${per}/trade · $${day}/day · trades only on “execute”`,
+  fuPlan: (a: string) => `Collect $10 of ${a} every day for 2 weeks`,
+  fuGuard: 'Sell half if HSK drops 15%',
+  fuWhy: 'Why is HSKSwap priced differently from Gate?',
+  fuBudget: 'What can I do with today’s remaining limit?',
+  fuHowVault: 'How does the vault keep my money safe?',
 };
 
 const ko: typeof en = {
@@ -125,6 +139,20 @@ const ko: typeof en = {
   newChat: '새 대화', newChatTip: '이 대화와 계획을 지우고 새로 시작',
   retry: '다시 시도', stopLocked: '거래가 이미 볼트로 넘어갔어요', toLatest: '최신 메시지로', more: '더보기',
   copyAddress: '주소 복사', addressCopied: '주소를 복사했어요',
+  feedWatching: 'HSK 체인 실시간으로 보는 중', feedTyping: 'Moa가 입력 중', feedPlaceholder: 'Moa에게 답하거나 목표를 말해 보세요…',
+  feedHello: '안녕하세요, Moa예요. HSKSwap이랑 거래소 가격을 같이 지켜보고 있어요.',
+  feedCheap: (a, p) => `지금 HSKSwap의 ${a}가 Gate보다 ${p}% 싸게 거래되고 있어요.`,
+  feedPricey: (a, p) => `반대로 ${a}는 Gate보다 ${p}% 비싸요.`,
+  feedFlat: '지금은 HSKSwap 가격이 Gate와 거의 같아요.',
+  feedVault: (bal, left, per) => `볼트에 ${bal} USDT가 있고, 오늘은 $${left}까지 더 쓸 수 있어요(1회 최대 $${per}). 거래는 “실행”이라고 하실 때만 해요.`,
+  feedNoVault: '아직 연결된 볼트가 없어서, 계획은 같이 짤 수 있지만 거래는 못 해요.',
+  feedMoved: (a, from, to) => `방금 HSKSwap ${a} 가격이 Gate 대비 ${from}%에서 ${to}%로 움직였어요.`,
+  feedLimits: (per, day) => `볼트 한도 1회 $${per} · 하루 $${day} · “실행”일 때만 거래`,
+  fuPlan: (a) => `${a}를 2주 동안 매일 10달러씩 모아줘`,
+  fuGuard: 'HSK가 15% 빠지면 절반 팔아줘',
+  fuWhy: '왜 HSKSwap 가격이 Gate랑 달라?',
+  fuBudget: '오늘 남은 한도로 뭘 할 수 있어?',
+  fuHowVault: '볼트가 내 돈을 어떻게 지켜?',
 };
 
 export const STRINGS = { en, ko };
