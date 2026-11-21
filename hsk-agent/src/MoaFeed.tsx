@@ -6,15 +6,16 @@ import type { Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { MoaSees, type VaultInfo } from './parts.tsx';
 import { CopyAddress, CopyButton } from './ui.tsx';
+import type { StratNote } from './Strategies.tsx';
 
-interface Note { id: number; at: number; text: string; sees?: boolean; follow: string[] }
+interface Note { id: number; at: number; text: string; sees?: boolean; card?: StratNote; follow: string[] }
 const time = (t: number) => new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 const pct = (g: number) => Math.abs(g * 100).toFixed(1);
 const NOTABLE = 0.003;      // a pool more than 0.3% away from Gate is worth mentioning
 const MOVE = 0.005;         // a 0.5 percentage-point change in the gap triggers a new note
 const QUIET_MS = 120_000;   // at most one unprompted note every 2 minutes
 
-export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quote[]; vault: VaultInfo | null; onAsk: (prompt: string, context?: string) => void; inject?: { n: number; text: string; follow: string[] } | null }) {
+export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quote[]; vault: VaultInfo | null; onAsk: (prompt: string, context?: string) => void; inject?: StratNote | null }) {
   const { t, lang } = useT();
   const [notes, setNotes] = useState<Note[]>([]);
   const [typing, setTyping] = useState(false);
@@ -73,7 +74,7 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
   useEffect(() => { if (greeted.current) { greeted.current = false; setNotes([]); } }, [lang]);
 
   // A strategy tapped under the chart: Moa explains it here.
-  useEffect(() => { if (inject) say({ text: inject.text, follow: inject.follow }, 450); }, [inject?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (inject) say({ text: inject.text, card: inject, follow: [] }, 450); }, [inject]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const el = feed.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, [notes, typing]);
   useEffect(() => { const el = input.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; }, [draft]);
@@ -93,7 +94,7 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
         {notes.map((n) => (
           <article key={n.id} className="note fade-up">
             <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at)}</time></div>
-            <p className="note-text">{n.text}</p>
+            {n.card ? <StratCard c={n.card} onAsk={onAsk} /> : <p className="note-text">{n.text}</p>}
             {n.sees && <div className="note-card"><MoaSees quotes={quotes} /></div>}
             <div className="note-actions"><CopyButton text={n.text} label={t.copy} done={t.copied} /></div>
             {n.follow.length > 0 && (
@@ -127,5 +128,71 @@ export default function MoaFeed({ quotes, vault, onAsk, inject }: { quotes: Quot
           : t.trust3none}
       </div>
     </aside>
+  );
+}
+
+/** Price over the backtest window with the rule's reference line or level and its entries. */
+function Spark({ s }: { s: NonNullable<StratNote['spark']> }) {
+  const W = 320, H = 110, P = 6;
+  const all = [...s.closes, ...(s.ref ?? []).filter(Number.isFinite), ...(s.level !== undefined ? [s.level] : [])];
+  const lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
+  const x = (i: number) => P + (i / (s.closes.length - 1)) * (W - 2 * P);
+  const y = (v: number) => P + (1 - (v - lo) / span) * (H - 2 * P);
+  const path = (xs: number[]) => xs.map((v, i) => (Number.isFinite(v) ? `${i && Number.isFinite(xs[i - 1]) ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}` : '')).join('');
+  const area = `${path(s.closes)}L${x(s.closes.length - 1)},${H}L${x(0)},${H}Z`;
+  return (
+    <svg className="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="price chart">
+      <defs><linearGradient id="spk" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#7c5cf0" stopOpacity=".18" /><stop offset="1" stopColor="#7c5cf0" stopOpacity="0" /></linearGradient></defs>
+      <path d={area} fill="url(#spk)" />
+      {s.ref && <path d={path(s.ref)} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />}
+      {s.level !== undefined && <line x1={P} x2={W - P} y1={y(s.level)} y2={y(s.level)} stroke="#dc2626" strokeWidth="1.2" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />}
+      <path d={path(s.closes)} fill="none" stroke="#7c5cf0" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+      {(s.dots ?? []).map((i) => <circle key={i} cx={x(i)} cy={y(s.closes[i])} r="3.2" fill="#16a34a" stroke="#fff" strokeWidth="1.2" />)}
+    </svg>
+  );
+}
+
+/** A strategy tapped under the chart, laid out as a detail card: verdict, number, chart, facts, rules, actions. */
+function StratCard({ c, onAsk }: { c: StratNote; onAsk: (prompt: string, context?: string) => void }) {
+  const { t } = useT();
+  return (
+    <div className="scard">
+      <div className="scard-head">
+        <div>
+          <h4>{c.name}</h4>
+          <span className="scard-src">{c.venue === 'cex' ? 'CEX' : 'DEX'} · {c.source}</span>
+        </div>
+        <span className={`sig sig-${c.signal}`}>{t.sig[c.signal]}</span>
+      </div>
+      <div className="scard-num">
+        <strong className={c.good ? 'pos' : ''}>{c.value}</strong>
+        <span>{c.valueLabel}</span>
+      </div>
+      {c.spark && (
+        <figure className="scard-chart">
+          <Spark s={c.spark} />
+          <figcaption>
+            <span><i className="k-price" />{t.cardPrice}</span>
+            {c.spark.refLabel && <span><i className="k-ref" />{c.spark.refLabel}</span>}
+            {c.spark.levelLabel && <span><i className="k-level" />{c.spark.levelLabel}</span>}
+            {!!c.spark.dots?.length && <span><i className="k-dot" />{t.cardEntries}</span>}
+          </figcaption>
+        </figure>
+      )}
+      {c.facts.length > 0 && (
+        <dl className="scard-facts">
+          {c.facts.map(([k, v, hint]) => <div key={k}><dt>{k}</dt><dd>{v}</dd>{hint && <small>{hint}</small>}</div>)}
+        </dl>
+      )}
+      <p className="scard-text">{c.text}</p>
+      <div className="scard-rules">
+        <b>{t.cardRules}</b>
+        <ul>{c.rules.map((r) => <li key={r}>{r}</li>)}</ul>
+      </div>
+      <div className="scard-cta">
+        <button className="btn-primary" onClick={() => onAsk(c.follow[0], c.text)}>{t.cardPlan}</button>
+        <button className="btn-ghost" onClick={() => onAsk(c.follow[1], c.text)}>{t.cardRisk}</button>
+      </div>
+    </div>
   );
 }

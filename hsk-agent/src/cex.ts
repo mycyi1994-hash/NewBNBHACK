@@ -9,7 +9,7 @@ export interface Ticker { last: number; open: number; high: number; low: number;
 export interface Level { price: number; qty: number }
 export interface Trade { t: number; price: number; qty: number; buyerIsMaker: boolean }
 export interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
-export type Interval = '1m' | '15m' | '1h' | '4h';
+export type Interval = '1m' | '15m' | '1h' | '4h' | '1d' | '1w';
 
 /** Same-origin proxy first (vite dev/preview), then the public API directly (static hosting). */
 const SOURCES = ['./hk', BASE];
@@ -46,8 +46,9 @@ export async function trades(limit = 20): Promise<Trade[]> {
   return xs.map((x) => ({ t: x.t, price: +x.p, qty: +x.q, buyerIsMaker: x.ibm })).sort((a, b) => b.t - a.t);
 }
 
-export async function klines(interval: Interval, limit = 200): Promise<Candle[]> {
-  const xs = await get<(string | number)[][]>(`/quote/v1/klines?symbol=${PERP}&interval=${interval}&limit=${limit}`);
+/** Candles oldest first. `endTime` (ms) pages back into history. */
+export async function klines(interval: Interval, limit = 500, endTime?: number): Promise<Candle[]> {
+  const xs = await get<(string | number)[][]>(`/quote/v1/klines?symbol=${PERP}&interval=${interval}&limit=${limit}${endTime ? `&endTime=${endTime}` : ''}`);
   return xs.map((k) => ({ time: Math.floor(Number(k[0]) / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
 }
 

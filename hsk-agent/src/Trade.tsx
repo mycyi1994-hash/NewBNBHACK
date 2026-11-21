@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createChart, ColorType, type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
 import * as cex from './cex.ts';
+import * as I from './indicators.ts';
+import { gateCandles, GATE_SECONDS, type GateInterval } from './gate.ts';
 import { EXPLORER, POOLS, poolDetail, type PoolDetail } from './dex.ts';
 import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
@@ -17,14 +19,39 @@ const arrow = (up: boolean) => (up ? '▲' : '▼');
 
 /* ---------- chart ---------- */
 
-type ChartData = { kind: 'candles'; data: cex.Candle[] } | { kind: 'line'; data: { time: number; value: number }[] };
+export type Ind = 'ma' | 'ema' | 'boll' | 'vol' | 'rsi';
+const IND_ALL: Ind[] = ['ma', 'ema', 'boll', 'vol', 'rsi'];
+const MA_COLORS = ['#f59e0b', '#7c5cf0', '#0ea5e9'];
+const RIGHT_BARS = 20;      // empty space to the right of the last candle
+const FIRST_VIEW = 160;     // bars in view on first load; the rest is a scroll/zoom away
 
-function PriceChart({ data }: { data: ChartData }) {
+const line = (times: number[], xs: number[]) => times.map((t, i) => ({ time: t as UTCTimestamp, value: xs[i] })).filter((p) => Number.isFinite(p.value));
+
+function useStoredInds(): [Set<Ind>, (i: Ind) => void] {
+  const [on, setOn] = useState<Set<Ind>>(() => {
+    try { const v = JSON.parse(localStorage.getItem('moa.ind') ?? 'null'); if (Array.isArray(v)) return new Set(v.filter((x) => IND_ALL.includes(x))); } catch { /* storage unavailable */ }
+    return new Set<Ind>(['ma', 'vol']);
+  });
+  const toggle = (i: Ind) => setOn((cur) => {
+    const next = new Set(cur); if (next.has(i)) next.delete(i); else next.add(i);
+    try { localStorage.setItem('moa.ind', JSON.stringify([...next])); } catch { /* storage unavailable */ }
+    return next;
+  });
+  return [on, toggle];
+}
+
+/** Candles with indicator overlays. Scroll left to load older candles (onOlder), 20 bars of room on the right. */
+function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey }: {
+  candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
-  const series = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Area'> | null>(null);
-  const kind = useRef<ChartData['kind'] | null>(null);
-  const fittedFrom = useRef<number | null>(null);
+  const main = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const extra = useRef<ISeriesApi<'Line' | 'Histogram'>[]>([]);
+  const pl = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']> | null>(null);
+  const shownKey = useRef<string | null>(null);
+  const prevFirst = useRef<number | null>(null);
+  const older = useRef(onOlder); older.current = onOlder;
 
   useEffect(() => {
     if (!box.current) return;
@@ -33,33 +60,142 @@ function PriceChart({ data }: { data: ChartData }) {
       layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#6b665f', fontFamily: 'Inter Variable, system-ui, sans-serif', fontSize: 11 },
       grid: { vertLines: { color: '#f3f1ee' }, horzLines: { color: '#f3f1ee' } },
       rightPriceScale: { borderColor: '#e8e6e3' },
-      timeScale: { borderColor: '#e8e6e3', timeVisible: true, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
-      crosshair: { mode: 1 },
+      timeScale: { borderColor: '#e8e6e3', timeVisible: true, secondsVisible: false, rightOffset: RIGHT_BARS, minBarSpacing: 0.5, barSpacing: 7 },
+      crosshair: { mode: 0 },
+      handleScale: { axisPressedMouseMove: { time: true, price: true }, mouseWheel: true, pinch: true },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
     });
     chart.current = c;
-    // The library adds an unlabeled TradingView attribution link; give it a name for screen readers.
-    box.current.querySelector("a")?.setAttribute("aria-label", "TradingView Lightweight Charts");
-    return () => { c.remove(); chart.current = null; series.current = null; kind.current = null; };
+    main.current = c.addCandlestickSeries({ upColor: '#16a34a', downColor: '#dc2626', borderVisible: false, wickUpColor: '#16a34a', wickDownColor: '#dc2626' });
+    box.current.querySelector('a')?.setAttribute('aria-label', 'TradingView Lightweight Charts');
+    // Near the left edge: ask for older candles.
+    c.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (r && r.from < 30) older.current?.(); });
+    return () => { c.remove(); chart.current = null; main.current = null; extra.current = []; pl.current = null; };
   }, []);
 
   useEffect(() => {
-    const c = chart.current;
-    if (!c) return;
-    if (kind.current !== data.kind) {
-      if (series.current) c.removeSeries(series.current);
-      series.current = data.kind === 'candles'
-        ? c.addCandlestickSeries({ upColor: '#16a34a', downColor: '#dc2626', borderVisible: false, wickUpColor: '#16a34a', wickDownColor: '#dc2626' })
-        : c.addAreaSeries({ lineColor: '#7c5cf0', topColor: 'rgba(124,92,240,0.22)', bottomColor: 'rgba(124,92,240,0.02)', lineWidth: 2 });
-      kind.current = data.kind;
+    const c = chart.current, m = main.current;
+    if (!c || !m || !candles.length) return;
+    const ts = c.timeScale();
+    const before = ts.getVisibleLogicalRange();
+    const added = prevFirst.current !== null && candles[0].time < prevFirst.current && shownKey.current === resetKey
+      ? candles.findIndex((x) => x.time === prevFirst.current) : 0;
+    m.setData(candles.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
+
+    for (const x of extra.current) c.removeSeries(x);
+    extra.current = [];
+    const times = candles.map((d) => d.time), close = candles.map((d) => d.close);
+    const showRsi = inds.has('rsi'), showVol = inds.has('vol');
+    m.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: showRsi ? (showVol ? 0.4 : 0.26) : showVol ? 0.2 : 0.06 } });
+    const addLine = (xs: number[], color: string, width: 1 | 2 = 1, scale?: string) => {
+      const s = c.addLineSeries({ color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...(scale ? { priceScaleId: scale } : {}) });
+      s.setData(line(times, xs)); extra.current.push(s); return s;
+    };
+    if (inds.has('ma')) [7, 25, 99].forEach((n, i) => addLine(I.sma(close, n), MA_COLORS[i]));
+    if (inds.has('ema')) addLine(I.ema(close, 20), '#db2777');
+    if (inds.has('boll')) { const b = I.boll(close); addLine(b.up, '#94a3b8'); addLine(b.mid, '#64748b'); addLine(b.lo, '#94a3b8'); }
+    if (showVol) {
+      const v = c.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
+      v.priceScale().applyOptions({ scaleMargins: { top: showRsi ? 0.64 : 0.82, bottom: showRsi ? 0.23 : 0 } });
+      v.setData(candles.map((d) => ({ time: d.time as UTCTimestamp, value: d.volume, color: d.close >= d.open ? 'rgba(22,163,74,.35)' : 'rgba(220,38,38,.35)' })));
+      extra.current.push(v);
     }
-    if (data.kind === 'candles') (series.current as ISeriesApi<'Candlestick'>).setData(data.data.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
-    else (series.current as ISeriesApi<'Area'>).setData(data.data.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
-    // Fill the chart width on a new series or interval; live refreshes keep the user's zoom.
-    const first = data.data[0]?.time;
-    if (first !== undefined && fittedFrom.current !== first) { c.timeScale().fitContent(); fittedFrom.current = first; }
-  }, [data]);
+    if (showRsi) {
+      const r = addLine(I.rsi(close), '#7c5cf0', 1, 'rsi');
+      r.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0.02 } });
+      r.applyOptions({ lastValueVisible: true });
+      r.createPriceLine({ price: 70, color: '#e8a0a0', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
+      r.createPriceLine({ price: 30, color: '#9fd3b0', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
+    }
+
+    m.setMarkers(markers ?? []);
+    if (pl.current) { m.removePriceLine(pl.current); pl.current = null; }
+    if (priceLine) pl.current = m.createPriceLine({ price: priceLine.price, color: '#7c5cf0', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: priceLine.title });
+
+    if (shownKey.current !== resetKey) {
+      // New market or interval: show the latest FIRST_VIEW bars with room on the right.
+      ts.setVisibleLogicalRange({ from: candles.length - FIRST_VIEW, to: candles.length + RIGHT_BARS });
+      shownKey.current = resetKey;
+    } else if (added > 0 && before) {
+      // Older candles were prepended: keep the same bars in view.
+      ts.setVisibleLogicalRange({ from: before.from + added, to: before.to + added });
+    }
+    prevFirst.current = candles[0].time;
+  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={box} className="chart" />;
+}
+
+function IndMenu({ on, toggle }: { on: Set<Ind>; toggle: (i: Ind) => void }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (
+    <div className="ind-menu" ref={ref}>
+      <button className={`ind-btn${open ? ' on' : ''}`} aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><path d="M2 12l4-5 3 3 5-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        {t.indicators}{on.size > 0 && <span className="ind-count">{on.size}</span>}
+      </button>
+      {open && (
+        <div className="ind-pop" role="menu">
+          {IND_ALL.map((i) => (
+            <label key={i} className="ind-item" role="menuitemcheckbox" aria-checked={on.has(i)}>
+              <input type="checkbox" checked={on.has(i)} onChange={() => toggle(i)} />
+              <span><b>{t.ind[i][0]}</b><small>{t.ind[i][1]}</small></span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IntervalBar<T extends string>({ list, value, set, label }: { list: readonly T[]; value: T; set: (v: T) => void; label: (v: T) => string }) {
+  return (
+    <div className="iv-group" role="group" aria-label="Interval">
+      {list.map((iv) => <button key={iv} className={iv === value ? 'on' : ''} aria-pressed={iv === value} onClick={() => set(iv)}>{label(iv)}</button>)}
+    </div>
+  );
+}
+
+/** Keeps the newest candles fresh and pages older ones in on demand. */
+function useCandles(key: string, latest: (limit: number) => Promise<cex.Candle[]>, olderThan: (first: cex.Candle) => Promise<cex.Candle[]>, refreshMs: number) {
+  const [candles, setCandles] = useState<cex.Candle[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const busy = useRef(false), done = useRef(false), cur = useRef<cex.Candle[]>([]), fns = useRef({ latest, olderThan }), keyNow = useRef(key);
+  fns.current = { latest, olderThan }; keyNow.current = key;
+  useEffect(() => {
+    let alive = true;
+    cur.current = []; setCandles([]); setErr(null); done.current = false;
+    const load = () => fns.current.latest(cur.current.length ? 100 : 1000).then((k) => {
+      if (!alive || !k.length) return;
+      const keep = cur.current.filter((c) => c.time < k[0].time);
+      cur.current = [...keep, ...k]; setCandles(cur.current); setErr(null);
+    }).catch((e: unknown) => alive && setErr(e instanceof Error ? e.message : String(e)));
+    load();
+    const x = setInterval(load, refreshMs);
+    return () => { alive = false; clearInterval(x); };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const more = () => {
+    const first = cur.current[0];
+    if (!first || busy.current || done.current) return;
+    busy.current = true;
+    const k0 = key;
+    fns.current.olderThan(first).then((k) => {
+      if (k0 !== keyNow.current) return;
+      const add = k.filter((c) => c.time < first.time);
+      if (!add.length) { done.current = true; return; }
+      cur.current = [...add, ...cur.current]; setCandles(cur.current);
+    }).catch(() => undefined).finally(() => { busy.current = false; });
+  };
+  return { candles, err, more };
 }
 
 function Stat({ label, value, cls }: { label: string; value: string; cls?: string }) {
@@ -68,11 +204,10 @@ function Stat({ label, value, cls }: { label: string; value: string; cls?: strin
 
 /* ---------- CEX: HashKey Global BTC/USDT perpetual ---------- */
 
-function useCex(interval: cex.Interval) {
+function useCex() {
   const [t, setT] = useState<cex.Ticker | null>(null);
   const [book, setBook] = useState<{ bids: cex.Level[]; asks: cex.Level[] } | null>(null);
   const [tape, setTape] = useState<cex.Trade[]>([]);
-  const [candles, setCandles] = useState<cex.Candle[]>([]);
   const [mi, setMi] = useState<{ mark: number; index: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -87,21 +222,24 @@ function useCex(interval: cex.Interval) {
     return () => { alive = false; clearInterval(a); clearInterval(b); };
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    const load = () => cex.klines(interval).then((k) => alive && setCandles(k)).catch(() => undefined);
-    load();
-    const x = setInterval(load, 15000);
-    return () => { alive = false; clearInterval(x); };
-  }, [interval]);
-
-  return { t, book, tape, candles, mi, err };
+  return { t, book, tape, mi, err };
 }
+
+const CEX_IV = ['1m', '15m', '1h', '4h', '1d', '1w'] as const;
+const DEX_IV = ['15m', '1h', '4h', '1d', '7d'] as const;
+function stored<T extends string>(key: string, list: readonly T[], dflt: T): T {
+  try { const v = localStorage.getItem(key) as T | null; if (v && list.includes(v)) return v; } catch { /* storage unavailable */ }
+  return dflt;
+}
+const save = (key: string, v: string) => { try { localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
 
 function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]; onPick: (n: StratNote) => void }) {
   const { t: s } = useT();
-  const [interval, setIv] = useState<cex.Interval>('15m');
-  const { t, tape, candles, mi, err } = useCex(interval);
+  const [interval, setIv] = useState<cex.Interval>(() => stored('moa.iv', CEX_IV, '4h'));
+  const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
+  const { t, tape, mi, err } = useCex();
+  const [inds, toggleInd] = useStoredInds();
+  const { candles, more } = useCandles(`cex-${interval}`, (n) => cex.klines(interval, n), (first) => cex.klines(interval, 1000, first.time * 1000 - 1), 15000);
   const chg = t ? (t.last / t.open - 1) * 100 : 0;
   const up = chg >= 0;
 
@@ -128,13 +266,12 @@ function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]
       </div>
 
       <section className="card chart-card">
-        <div className="chart-toolbar" role="group" aria-label="Interval">
-          {(['1m', '15m', '1h', '4h'] as cex.Interval[]).map((iv) => (
-            <button key={iv} className={iv === interval ? 'on' : ''} aria-pressed={iv === interval} onClick={() => setIv(iv)}>{iv}</button>
-          ))}
-          <span className="live"><span className="live-dot" /> {s.live}</span>
+        <div className="chart-toolbar">
+          <IntervalBar list={CEX_IV} value={interval} set={pickIv} label={(v) => s.ivLabel[v]} />
+          <IndMenu on={inds} toggle={toggleInd} />
+          <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>
         </div>
-        {candles.length ? <PriceChart data={{ kind: 'candles', data: candles }} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} resetKey={`cex-${interval}`} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
         {dexBtc !== undefined && t && (
           <div className="moa-note">
             <span className="orb sm" aria-hidden />
@@ -143,24 +280,41 @@ function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]
         )}
       </section>
 
-      <StrategyGrid quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onPick={onPick} />
+      <StrategyGrid venue="cex" quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onPick={onPick} />
     </>
   );
 }
 
 /* ---------- DEX: HSKSwap on HSK Chain ---------- */
 
-function DexPanel({ asset, setAsset, detail, err }: { asset: Asset; setAsset: (a: Asset) => void; detail: PoolDetail | null; err: string | null }) {
+function DexPanel({ asset, setAsset, detail, err, quotes, onPick }: { asset: Asset; setAsset: (a: Asset) => void; detail: PoolDetail | null; err: string | null; quotes: Quote[]; onPick: (n: StratNote) => void }) {
   const { t: s } = useT();
+  const [iv, setIv] = useState<GateInterval>(() => stored('moa.dexiv', DEX_IV, '1h'));
+  const pickIv = (v: GateInterval) => { setIv(v); save('moa.dexiv', v); };
+  const [inds, toggleInd] = useStoredInds();
+  const key = `dex-${asset}-${iv}`;
+  const { candles, more } = useCandles(key, (n) => gateCandles(asset, iv, n), (first) => gateCandles(asset, iv, 1000, first.time - 1), 20000);
   const vol = detail ? detail.swaps.reduce((acc, x) => acc + x.usdt, 0) : 0;
-  const line = detail ? (() => {
-    const pts = [...detail.swaps].reverse().map((x) => ({ time: Math.floor(x.time / 1000), value: x.price }));
-    pts.push({ time: Math.floor(detail.at / 1000), value: detail.price });
-    const dedup: { time: number; value: number }[] = [];
-    for (const p of pts) { if (dedup.length && dedup[dedup.length - 1].time >= p.time) dedup[dedup.length - 1] = { ...p, time: dedup[dedup.length - 1].time }; else dedup.push(p); }
-    return dedup;
-  })() : [];
   const p = POOLS[asset];
+  const gate = quotes.find((q) => q.asset === asset);
+  const gap = gate?.gap;
+
+  // Real HSKSwap swaps, pinned to the Gate candle they fall in.
+  const markers = useMemo(() => {
+    if (!detail || !candles.length) return [];
+    const sec = GATE_SECONDS[iv], first = candles[0].time, last = candles[candles.length - 1].time;
+    const out: SeriesMarker<Time>[] = [];
+    for (const x of [...detail.swaps].reverse()) {
+      const t0 = Math.floor(x.time / 1000);
+      if (t0 < first || t0 > last + sec) continue;
+      let lo = 0, hi = candles.length - 1;
+      while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (candles[mid].time <= t0) lo = mid; else hi = mid - 1; }
+      const buy = x.side === 'buy';
+      out.push({ time: candles[lo].time as UTCTimestamp, position: buy ? 'belowBar' : 'aboveBar', color: buy ? '#16a34a' : '#dc2626', shape: buy ? 'arrowUp' : 'arrowDown', size: 0.8 });
+    }
+    return out.sort((a, b) => (a.time as number) - (b.time as number));
+  }, [detail, candles, iv]);
+  const priceLine = useMemo(() => (detail ? { price: detail.price, title: 'HSKSwap' } : undefined), [detail?.price]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -171,28 +325,33 @@ function DexPanel({ asset, setAsset, detail, err }: { asset: Asset; setAsset: (a
         <div className="pair">
           <span className={`coin coin-${asset.toLowerCase()} big`} />
           <div>
-            <div className="pair-name">{p.symbol}/USDT <span className="tag">HSKSwap · 0.3%</span></div>
-            <div className="muted">Uniswap V3 · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></div>
+            <div className="pair-name">{p.symbol}/USDT <span className="tag">HSKSwap · {s.spot}</span></div>
+            <div className="muted">Uniswap V3 · 0.3% · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></div>
           </div>
         </div>
         <div className="last">{detail ? `$${fmtPrice(detail.price)}` : '—'}</div>
         <div className="stats">
-          <Stat label={s.poolOf(p.symbol)} value={detail ? compact(detail.reserveBase) : '—'} />
+          <Stat label={s.gateSpot} value={gate?.exchange !== undefined ? `$${fmtPrice(gate.exchange)}` : '—'} />
+          <Stat label={s.vsGateLabel} value={gap === undefined ? '—' : `${gap > 0 ? '+' : ''}${(gap * 100).toFixed(2)}%`} cls={gap === undefined ? '' : gap < 0 ? 'pos' : 'neg'} />
           <Stat label={s.poolUsdt} value={detail ? `$${compact(detail.reserveUsdt)}` : '—'} />
           <Stat label={s.swaps24h} value={detail ? String(detail.swaps.length) : '—'} />
           <Stat label={s.vol24h} value={detail ? `$${compact(vol)}` : '—'} />
-          <Stat label={s.block} value={detail ? detail.head.toLocaleString('en-US') : '—'} />
         </div>
         {err && <span className="unavail">{err}</span>}
       </div>
       <section className="card chart-card">
-        <div className="chart-toolbar"><span className="muted">{s.poolLine}</span><span className="live"><span className="live-dot" /> HSK Chain</span></div>
-        {line.length > 1 ? <PriceChart data={{ kind: 'line', data: line }} /> : detail ? <div className="chart-empty muted">{s.fewSwaps}</div> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.readingChain}</span></div>}
+        <div className="chart-toolbar">
+          <IntervalBar list={DEX_IV} value={iv} set={pickIv} label={(v) => s.ivLabel[v === '7d' ? '1w' : v]} />
+          <IndMenu on={inds} toggle={toggleInd} />
+          <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>
+        </div>
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={markers} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
       </section>
+      <StrategyGrid venue="dex" quotes={quotes} onPick={onPick} asset={asset} setAsset={setAsset} />
       <section className="card book-card">
         <div className="card-title">{s.recentSwaps}</div>
         <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
-        {detail?.swaps.slice(0, 12).map((x) => (
+        {detail?.swaps.slice(0, 8).map((x) => (
           <a key={x.tx + x.block} className="tape-row four" href={`${EXPLORER}/tx/${x.tx}`} target="_blank" rel="noreferrer">
             <span className={x.side === 'buy' ? 'pos' : 'neg'}>{arrow(x.side === 'buy')} {x.side === 'buy' ? s.buy : s.sell}</span>
             <span>{fmtPrice(x.price)}</span>
@@ -215,6 +374,7 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
   const [asset, setAsset] = useState<Asset>('BTC');
   const [detail, setDetail] = useState<PoolDetail | null>(null);
   const [dexErr, setDexErr] = useState<string | null>(null);
+  const pick = (n: StratNote) => { setNote(n); if (window.innerWidth <= 1180) document.querySelector('.feed-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
   useEffect(() => {
     let alive = true;
@@ -234,8 +394,8 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
           <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
         </div>
         {venue === 'cex'
-          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onPick={(n) => { setNote(n); if (window.innerWidth <= 1180) document.querySelector('.feed-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} />
-          : <DexPanel asset={asset} setAsset={setAsset} detail={detail} err={dexErr} />}
+          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onPick={pick} />
+          : <DexPanel asset={asset} setAsset={setAsset} detail={detail} err={dexErr} quotes={quotes} onPick={pick} />}
         <p className="muted small">{t.dataNote}</p>
       </div>
       <MoaFeed onAsk={onAsk} quotes={quotes} vault={vault} inject={note} />
