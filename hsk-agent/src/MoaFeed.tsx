@@ -13,7 +13,7 @@ import type { StratNote } from './Strategies.tsx';
 
 export interface MoaContext { venue: 'cex' | 'dex'; label: string; asset: 'HSK' | 'ETH' | 'BTC' }
 interface Note { id: number; at: number; text: string; card?: StratNote; follow: string[] }
-const time = (t: number) => new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+const time = (t: number, lang: string) => new Date(t).toLocaleTimeString(lang === 'ko' ? 'ko-KR' : 'en-US', { hour: '2-digit', minute: '2-digit' });
 const MOVE = 0.005;         // a 0.5 percentage-point change in the gap triggers a new note
 const QUIET_MS = 120_000;   // at most one unprompted note every 2 minutes
 
@@ -32,7 +32,7 @@ const ICONS = {
 export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
   quotes: Quote[]; vault: VaultInfo | null; onAsk: (prompt: string, context?: string) => void; inject?: StratNote | null; context: MoaContext;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const [notes, setNotes] = useState<Note[]>([]);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
@@ -120,7 +120,7 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
 
         {notes.map((n) => (
           <article key={n.id} className="note fade-up">
-            <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at)}</time></div>
+            <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at, lang)}</time></div>
             {n.card ? <StratCard c={n.card} onAsk={onAsk} /> : <p className="note-text">{n.text}</p>}
             {!n.card && <div className="note-actions"><CopyButton text={n.text} label={t.copy} done={t.copied} /></div>}
             {n.follow.length > 0 && (

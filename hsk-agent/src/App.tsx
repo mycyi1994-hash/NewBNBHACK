@@ -64,7 +64,9 @@ function useVault() {
   return { vault: v, reloadVault: load };
 }
 
-const time = (t: number) => new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+/** Dates and times follow the UI language (set on <html lang>). */
+const loc = () => (document.documentElement.lang === 'en' ? 'en-US' : 'ko-KR');
+const time = (t: number) => new Date(t).toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit' });
 const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
 /* ---------- shell ---------- */
@@ -545,7 +547,7 @@ function BotDetail({ bot, onDelete, execs, vault }: { bot: Bot; onDelete: () => 
           <span className="bot-avatar lg" aria-hidden>{bot.name.slice(0, 1)}</span>
           <div>
             <h1 className="hello">{bot.name}</h1>
-            <p className="muted">{t.created} {new Date(bot.createdAt).toLocaleDateString('en-US')}</p>
+            <p className="muted">{t.created} {new Date(bot.createdAt).toLocaleDateString(loc())}</p>
           </div>
         </div>
         <div className="row-gap">
@@ -595,7 +597,7 @@ function BotDetail({ bot, onDelete, execs, vault }: { bot: Bot; onDelete: () => 
               <span className={`dot ${x.ok ? 'ok' : 'bad'}`} />
               <span>{x.side === 'buy' ? t.buy : t.sell} {x.asset}</span>
               <span className="muted">{x.ok ? `${x.amountIn} ${x.tokenIn} → ${Number(x.amountOut).toPrecision(6)} ${x.tokenOut}` : x.reason}</span>
-              <span className="muted">{new Date(x.at).toLocaleString('en-US')}</span>
+              <span className="muted">{new Date(x.at).toLocaleString(loc())}</span>
               {x.explorerUrl ? <a href={x.explorerUrl} target="_blank" rel="noreferrer">{short(x.txHash)} ↗</a> : <span />}
             </div>
           ))}

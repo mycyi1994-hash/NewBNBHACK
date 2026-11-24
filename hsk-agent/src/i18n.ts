@@ -357,7 +357,7 @@ export function initialLang(): Lang {
     const saved = localStorage.getItem('moa.lang');
     if (saved === 'en' || saved === 'ko') return saved;
   } catch { /* storage unavailable */ }
-  return typeof navigator !== 'undefined' && navigator.language.startsWith('ko') ? 'ko' : 'en';
+  return 'ko'; // Korean first; English stays one tap away in the top bar
 }
 export function saveLang(l: Lang) {
   try { localStorage.setItem('moa.lang', l); } catch { /* storage unavailable */ }

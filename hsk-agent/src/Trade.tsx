@@ -26,6 +26,19 @@ const MA_COLORS = ['#f59e0b', '#7c5cf0', '#0ea5e9'];
 const RIGHT_BARS = 20;      // empty space to the right of the last candle
 const FIRST_VIEW = 160;     // bars in view on first load; the rest is a scroll/zoom away
 
+/** Korean axis labels (2026 · 11월 · 21일 · 14:00); English keeps the library's own labels. */
+function koTicks(time: Time, type: number): string | null {
+  if (document.documentElement.lang === 'en' || typeof time !== 'number') return null;
+  const d = new Date(time * 1000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  switch (type) {
+    case 0: return String(d.getFullYear());
+    case 1: return `${d.getMonth() + 1}월`;
+    case 2: return `${d.getDate()}일`;
+    default: return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+}
+
 const line = (times: number[], xs: number[]) => times.map((t, i) => ({ time: t as UTCTimestamp, value: xs[i] })).filter((p) => Number.isFinite(p.value));
 
 function useStoredInds(): [Set<Ind>, (i: Ind) => void] {
@@ -61,8 +74,9 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey }: {
       layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#6b665f', fontFamily: 'Inter Variable, system-ui, sans-serif', fontSize: 11 },
       grid: { vertLines: { color: '#f3f1ee' }, horzLines: { color: '#f3f1ee' } },
       rightPriceScale: { borderColor: '#e8e6e3' },
-      timeScale: { borderColor: '#e8e6e3', timeVisible: true, secondsVisible: false, rightOffset: RIGHT_BARS, minBarSpacing: 0.5, barSpacing: 7 },
+      timeScale: { borderColor: '#e8e6e3', timeVisible: true, secondsVisible: false, rightOffset: RIGHT_BARS, minBarSpacing: 0.5, barSpacing: 7, tickMarkFormatter: koTicks },
       crosshair: { mode: 0 },
+      localization: { locale: document.documentElement.lang === 'en' ? 'en-US' : 'ko-KR', dateFormat: document.documentElement.lang === 'en' ? 'dd MMM \'yy' : 'yyyy-MM-dd' },
       handleScale: { axisPressedMouseMove: { time: true, price: true }, mouseWheel: true, pinch: true },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
     });
