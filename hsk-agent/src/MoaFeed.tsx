@@ -511,13 +511,13 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
           <div className="note typing-note" role="status">
             <div className="note-meta"><span className="orb xs" aria-hidden /> Moa</div>
             {busy
-              ? <div className="moa-steps">{busy.map((s, k) => <span key={s} className={k === busy.length - 1 ? 'now' : 'done'}>{k === busy.length - 1 ? <span className="dots"><i /><i /><i /></span> : '✓'} {t.steps[s]}</span>)}</div>
+              ? <div className="moa-steps">{busy.map((s, k) => <span key={s} className={k === busy.length - 1 ? 'now' : 'done'}>{k === busy.length - 1 ? <span className="spark" aria-hidden /> : '✓'} <span className={k === busy.length - 1 ? 'shimmer-text' : ''}>{t.steps[s]}</span></span>)}</div>
               : <span className="dots" aria-label={t.feedTyping}><i /><i /><i /></span>}
           </div>
         )}
       </div>
 
-      <form className="feed-composer" onSubmit={(e) => { e.preventDefault(); void ask(draft); }}>
+      <form className={`feed-composer${busy ? ' running' : ''}`} onSubmit={(e) => { e.preventDefault(); void ask(draft); }}>
         <span className="ctx-chip" data-tip={t.ctxTip}>{context.asset ? <CoinMark base={context.asset} /> : <span className="orb xs" aria-hidden />}{context.label}</span>
         <div className="composer-row">
           <textarea ref={input} rows={1} value={draft} onChange={(e) => { if (!draft) interrupt(); setDraft(e.target.value); }} placeholder={t.feedPlaceholder} aria-label={t.askMoa}

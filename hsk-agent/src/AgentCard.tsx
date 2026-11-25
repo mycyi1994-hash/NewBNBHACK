@@ -84,56 +84,59 @@ export function AgentCard({ agent: a, size, picked, best, onPick, onHire, onAsk,
   );
 
   if (size === 'chat') {
+    // Compact: Moa's column is narrow, so the card says who, what, three numbers; the rules fold away.
     return (
       <div className="acard">
         {head}
         <p className="ag-line">{t.agLine[a.rule]}</p>
-        <dl className="acard-nums">
-          <div><dt>{t.acTotal}</dt><dd className={signCls(a.total)}>{pct(a.total)}</dd></div>
-          <div><dt>{t.acHold}</dt><dd className={signCls(a.hold)}>{pct(a.hold)}</dd></div>
-          <div><dt>{t.acDd}</dt><dd>{drop(a.maxDd)}</dd></div>
-        </dl>
-        <Equity pts={a.equity} up={a.total >= 0} wide />
-        <div className="scard-rules">
-          <b>{t.acRules}</b>
-          <ul>{t.agRules[a.rule].map((r) => <li key={r}>{r}</li>)}</ul>
+        <div className="ag-stats">
+          <span>{t.acTotal}<b className={signCls(a.total)}>{pct(a.total)}</b></span>
+          <span>{t.acHold}<b className={signCls(a.hold)}>{pct(a.hold)}</b></span>
+          <span>{t.acDd}<b>{drop(a.maxDd)}</b></span>
         </div>
+        <Equity pts={a.equity} up={a.total >= a.hold} wide />
         {!a.runnable && <p className="acard-demo">{t.whyNot(a.base)}</p>}
-        <p className="acard-foot">{t.acFoot(`${(a.fee * 100).toFixed(1)}%`, a.days)}</p>
+        <details className="acard-more">
+          <summary>{t.acRules}</summary>
+          <ul>{t.agRules[a.rule].map((r) => <li key={r}>{r}</li>)}</ul>
+          <p className="acard-foot">{t.acFoot(`${(a.fee * 100).toFixed(1)}%`, a.days)}</p>
+        </details>
         {actions}
       </div>
     );
   }
 
+  // Market: a gallery card. Thumbnail (the equity curve), title, tags, one line, three numbers, actions.
   return (
     <article className={`ag-card${a.runnable ? '' : ' signal-only'}`}>
-      {head}
-      <p className="ag-line">{t.agLine[a.rule]}</p>
-      <div className="ag-main">
-        <div>
-          <small>{t.acTotal} · {t.acDays(a.days)}</small>
-          <RollNum flash={false} className={`ag-big ${signCls(a.total)}`} text={pct(a.total)} />
-        </div>
-        <Equity pts={a.equity} up={a.total >= 0} />
+      <div className="ag-thumb">
+        <Equity pts={a.equity} up={a.total >= a.hold} wide />
+        <span className={`sig ${pill.cls}`}>{pill.text}</span>
       </div>
-      <dl className="ag-metrics">
-        <div><dt>{t.acHold}</dt><dd className={signCls(a.hold)}>{pct(a.hold)}</dd></div>
-        <div><dt>{t.acDd}</dt><dd>{drop(a.maxDd)}</dd></div>
-        <div><dt>{t.agSharpe}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
-        <div><dt>{a.kind === 'collect' ? t.acBuys : t.agTrades}</dt><dd>{a.trades}</dd></div>
-        <div><dt>{t.acFee}</dt><dd>{(a.fee * 100).toFixed(1)}%</dd></div>
-        <div><dt>{t.agDays}</dt><dd>{a.days}{t.agDayUnit}</dd></div>
-      </dl>
+      <div className="ag-body">
+        <div className="ag-title"><span className={`ag-avatar sm ag-r-${a.rule}`} aria-hidden><RuleIcon rule={a.rule} /></span><b>{agentName(t, a)}</b></div>
+        <div className="ag-tags">
+          <span className="tag"><CoinMark base={a.base} />{a.base}</span>
+          <span className="tag">{t.agStyle[a.style]}</span>
+          <span className={`tag ${a.runnable ? 'ok' : 'demo'}`}>{a.runnable ? t.acRunnable : t.acSignal}</span>
+        </div>
+        <p className="ag-line">{t.agLine[a.rule]}</p>
+        <div className="ag-stats">
+          <span>{t.acTotal}<b className={signCls(a.total)}>{pct(a.total)}</b></span>
+          <span>{t.acHold}<b className={signCls(a.hold)}>{pct(a.hold)}</b></span>
+          <span>{t.acDd}<b>{drop(a.maxDd)}</b></span>
+        </div>
+      </div>
       <footer className="ag-card-foot">
+        {a.runnable
+          ? <button className="btn-primary sm" onClick={onHire}>{t.acHire}</button>
+          : <span className="ag-signal-badge">{t.acSignal}</span>}
+        <button className="btn-text" onClick={onAsk}>{t.acAsk}</button>
         {onStar && (
           <button className={`ag-star${starred ? ' on' : ''}`} onClick={onStar} aria-pressed={starred} aria-label={t.agStar} data-tip={t.agStar}>
             <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2L2.5 8l5.2-.7L10 2.5z" fill={starred ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
           </button>
         )}
-        {a.runnable
-          ? <button className="btn-primary ag-use" onClick={onHire}>{t.acHire}</button>
-          : <span className="ag-signal-badge">{t.acSignal}</span>}
-        <button className="btn-ghost ag-ask" onClick={onAsk}>{t.acAsk}</button>
       </footer>
     </article>
   );

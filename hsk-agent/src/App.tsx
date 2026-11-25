@@ -71,8 +71,8 @@ function Sidebar({ view, go, count, vault }: { view: View; go: (v: View) => void
     <aside className="sidebar">
       <div className="brand"><span className="orb sm" aria-hidden /> moa</div>
       <div className="nav-label">{t.navMarkets}</div>
-      {item(t.navTrade, 'trade', '∿')}
       {item(t.navAgents, 'agents', '◈')}
+      {item(t.navTrade, 'trade', '∿')}
       <div className="nav-label">{t.navAutomations}</div>
       {item(t.navMine, 'mine', '◎', count)}
       <div className="sidebar-foot">
@@ -92,8 +92,8 @@ function TabBar({ view, go, count, asks, onMoa }: { view: View; go: (v: View) =>
   );
   return (
     <nav className="tabbar" aria-label="Main">
-      {tab(t.navTrade, 'trade', '∿')}
       {tab(t.navAgents, 'agents', '◈')}
+      {tab(t.navTrade, 'trade', '∿')}
       {tab(t.navMine, 'mine', '◎', count)}
       <button className="tab" onClick={onMoa} aria-label={t.openMoa}>
         <span className="tab-icon" aria-hidden><span className="orb sm" /></span>{t.navMoa}{asks ? <span className="nav-badge ask">{asks}</span> : null}
@@ -119,7 +119,7 @@ function Topbar({ title, quotes }: { title: string; quotes: Quote[] }) {
 function Shell() {
   const { t } = useT();
   const toast = useToast();
-  const [view, setView] = useState<View>('trade');
+  const [view, setView] = useState<View>('agents');
   const quotes = useQuotes();
   const { vault, reloadVault } = useVault();
   const { hired, add, update, remove } = useHired();
@@ -276,10 +276,9 @@ function Shell() {
       <main className="main">
         <Topbar title={title} quotes={quotes} />
         <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
-          onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume}
-          onRecommend={() => tell({ kind: 'recommend', coin: ctx.asset })} />
+          onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />
         {view === 'trade' && <Trade quotes={quotes} onContext={setTradeCtx} onPick={askMoaAbout} />}
-        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onAsk={askMoaAbout} />}
+        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onAsk={askMoaAbout} onRecommend={() => tell({ kind: 'recommend' })} />}
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}

@@ -6,20 +6,16 @@ import type { Quote } from './market.ts';
 import { statusOf, type HiredAgent } from './runner.ts';
 import { hiredName, moneyLine, statusText } from './hiredText.ts';
 
-export default function MyAgentsBar({ hired, quotes, now, sending, onOpen, onPause, onResume, onRecommend }: {
+export default function MyAgentsBar({ hired, quotes, now, sending, onOpen, onPause, onResume }: {
   hired: HiredAgent[]; quotes: Quote[]; now: number; sending: Set<string>;
-  onOpen: (id: string) => void; onPause: (id: string) => void; onResume: (id: string) => void; onRecommend: () => void;
+  onOpen: (id: string) => void; onPause: (id: string) => void; onResume: (id: string) => void;
 }) {
   const { t } = useT();
+  // Nothing hired: no bar. The market header and Moa carry "Get a pick from Moa".
+  if (!hired.length) return null;
   return (
     <div className="agent-bar" role="region" aria-label={t.barLabel}>
       <span className="agent-bar-label">{t.barLabel}</span>
-      {!hired.length && (
-        <>
-          <span className="agent-chip off"><span className="chip-text muted">{t.barEmpty}</span></span>
-          <button className="btn-primary agent-bar-cta" onClick={onRecommend}>{t.barRecommend}</button>
-        </>
-      )}
       {hired.map((h) => {
         const st = statusOf(h, now);
         const busy = !!h.pending && sending.has(h.pending.id);
