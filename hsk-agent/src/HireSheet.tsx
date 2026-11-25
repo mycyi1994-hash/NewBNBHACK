@@ -66,7 +66,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm }: {
   return (
     <Modal title={editing ? t.hsEditTitle(name) : t.hsTitle(name)} onClose={onClose} actions={<>
       <button className="btn-text" onClick={onClose}>{t.cancel}</button>
-      <button className="btn" disabled={editing && !changed} onClick={() => onConfirm({ perBuyUsd: per, budgetUsd: budget })}>{editing ? t.hsSave : t.hsHire}</button>
+      <button className={editing ? 'btn-primary' : 'btn-primary hire'} disabled={editing && !changed} onClick={() => onConfirm({ perBuyUsd: per, budgetUsd: budget })}>{editing ? t.hsSave : t.hsHire}</button>
     </>}>
       <div className="hire">
         <label className="field" htmlFor="hire-per">

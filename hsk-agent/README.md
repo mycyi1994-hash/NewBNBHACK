@@ -26,6 +26,10 @@ vault contract enforces.
 - **Moa's briefing.** The conclusion for the coin on screen first, the numbers in one table, one leading choice that
   goes to an agent. Moving to another coin's chart gets that coin's briefing, and a choice always acts on the coin
   it names.
+- **Sizes follow the screen.** `src/styles.css` is written in the pixels measured at a 1440px screen; the build
+  (`pxToRem` in `vite.config.ts`) turns them into rem and the root font size steps up on wider screens, so a 2560px
+  monitor gets a proportionally larger interface instead of small type in a wide frame. Latin and digits are
+  Google Sans Flex, Korean is Pretendard.
 - **The recommendation is a rule, not a model** (`src/recommend.ts`): only agents that can trade on HSKSwap → the coin
   on screen or named → risk 1–2 for first-timers, 1–3 otherwise → the smallest worst drop in the backtest.
   The AI only says which coin the user means.

@@ -6,7 +6,8 @@
 // It shows; it does not run anything. "Hire" opens the hire sheet over this page, a row or a card title
 // hands the agent to Moa on the right. Every number comes from agents.ts; nothing is invented, so there are
 // no creators, followers or subscriber counts here.
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { SlidePill } from './motion.tsx';
 import { useT, type Strings } from './i18n.ts';
 import { type Agent, type Style } from './agents.ts';
 import { agentName, drop, pct, statePill, Equity, RuleIcon } from './AgentCard.tsx';
@@ -29,7 +30,19 @@ function readStars(): Set<string> {
 /** Equity of the ranked agents over their shared window, as % from the start of that window. */
 function TopChart({ agents }: { agents: Agent[] }) {
   const { lang } = useT();
-  const W = 760, H = 250, L = 34, R = 6, T = 10, B = 22;
+  const box = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 760, rem: 14 });
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const read = () => setSize({ w: Math.max(240, Math.round(el.clientWidth)), rem: parseFloat(getComputedStyle(document.documentElement).fontSize) || 14 });
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Drawn in real pixels (not a scaled viewBox), so the axis labels keep the size of the rest of the text.
+  const u = size.rem / 14, W = size.w, H = Math.round(Math.min(360 * u, Math.max(190 * u, W * 0.36))), L = 42 * u, R = 8 * u, T = 10 * u, B = 26 * u;
   const from = Math.max(...agents.map((a) => a.equity[0]?.time ?? 0));
   const series = agents.map((a) => {
     const pts = a.equity.filter((p) => p.time >= from);
@@ -37,7 +50,7 @@ function TopChart({ agents }: { agents: Agent[] }) {
     return pts.map((p) => ({ time: p.time, v: p.value / base - 1 }));
   });
   const all = series.flat();
-  if (!all.length) return null;
+  if (!all.length) return <div className="top-chart" ref={box} />;
   const t0 = Math.min(...all.map((p) => p.time)), t1 = Math.max(...all.map((p) => p.time));
   const step = (Math.max(...all.map((p) => Math.abs(p.v))) > 1 ? 0.5 : 0.25);
   const lo = Math.floor(Math.min(0, ...all.map((p) => p.v)) / step) * step, hi = Math.ceil(Math.max(0, ...all.map((p) => p.v)) / step) * step || step;
@@ -47,18 +60,20 @@ function TopChart({ agents }: { agents: Agent[] }) {
   const months = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => t0 + f * (t1 - t0));
   const fmt = (t: number) => new Date(t * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { month: 'short' });
   return (
-    <svg className="top-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="equity">
-      {marks.map((v) => <g key={v}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className={v === 0 ? 'axis-zero' : 'axis-line'} /><text x={L - 6} y={y(v) + 3} textAnchor="end" className="axis-text">{Math.round(v * 100)}%</text></g>)}
+    <div className="top-chart" ref={box}>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="equity">
+      {marks.map((v) => <g key={v}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className={v === 0 ? 'axis-zero' : 'axis-line'} /><text x={L - 8 * u} y={y(v) + 4 * u} textAnchor="end" className="axis-text">{Math.round(v * 100)}%</text></g>)}
       {[...series].reverse().map((s, k) => {
         const i = series.length - 1 - k;
         return (
           <path key={agents[i].id} className="draw" pathLength={1} style={{ animationDelay: `${i * 0.05}s` }}
             d={s.filter((_, n) => n % 2 === 0 || n === s.length - 1).map((p, n) => `${n ? 'L' : 'M'}${x(p.time).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}
-            fill="none" stroke={LINE[i % LINE.length]} strokeWidth={i === 0 ? 1.8 : 1.2} strokeLinejoin="round" />
+            fill="none" stroke={LINE[i % LINE.length]} strokeWidth={(i === 0 ? 2.2 : 1.5) * u} strokeLinejoin="round" />
         );
       })}
-      {months.map((t, i) => <text key={i} x={x(t)} y={H - 4} textAnchor="middle" className="axis-text">{fmt(t)}</text>)}
+      {months.map((t, i) => <text key={i} x={x(t)} y={H - 6 * u} textAnchor="middle" className="axis-text">{fmt(t)}</text>)}
     </svg>
+    </div>
   );
 }
 
@@ -96,7 +111,8 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend }: {
 
   return (
     <div className="page market-page">
-      <nav className="subnav" aria-label={t.agTitle}>
+      <nav className="subnav has-line" aria-label={t.agTitle}>
+        <SlidePill dep={tab} />
         {(['top', 'market'] as Tab[]).map((k) => <button key={k} className={tab === k ? 'on' : ''} aria-current={tab === k ? 'page' : undefined} onClick={() => setTab(k)}>{k === 'top' ? t.mpTabTop : t.mpTabMarket}</button>)}
       </nav>
 
@@ -111,7 +127,8 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend }: {
 
       {tab === 'top' && (
         <>
-          <div className="rank-tabs" role="tablist">
+          <div className="rank-tabs has-line" role="tablist">
+            <SlidePill dep={rank} />
             {(['steady', 'bold'] as Rank[]).map((k) => <button key={k} role="tab" aria-selected={rank === k} className={rank === k ? 'on' : ''} onClick={() => setRank(k)}>{k === 'steady' ? t.topSteady : t.topBold}</button>)}
           </div>
 
@@ -154,7 +171,7 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend }: {
                 <span className={sign(a.total - a.hold)}>{pct(a.total - a.hold)}</span>
                 <span className={sign(a.total)}>{pct(a.total)}</span>
                 <span>{a.sharpe.toFixed(2)}</span>
-                <span>{(a.maxDd * 100).toFixed(2)}</span>
+                <span>{drop(a.maxDd)}</span>
                 <span>{a.trades.toLocaleString('en-US')}</span>
                 <span className="rank-period">{day(a.from)}<br />{day(a.to)}</span>
               </button>

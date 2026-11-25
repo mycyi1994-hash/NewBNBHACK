@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv, type Connect, type Plugin } from 'vite';
 import type { ServerResponse } from 'node:http';
+import type { AcceptedPlugin } from 'postcss';
 
 // Server-only API for local dev and `vite preview`: the Anthropic key and the agent key never reach the browser.
 function moaApi(env: Record<string, string>): Plugin {
@@ -86,6 +87,17 @@ function moaApi(env: Record<string, string>): Plugin {
 
 const HK = { target: 'https://api-glb.hashkey.com', changeOrigin: true, rewrite: (p: string) => p.replace(/^\/hk/, '') };
 
+// The stylesheet is written in the pixels measured at a 1440px screen. This turns them into rem (14px = 1rem) so the
+// whole interface grows with the root font size on larger screens (set by media queries in styles.css). Hairlines
+// (under 2px), the root size itself and media queries stay in pixels.
+const pxToRem: AcceptedPlugin = {
+  postcssPlugin: 'moa-px-to-rem',
+  Declaration(decl) {
+    if ((decl.parent as { selector?: string } | undefined)?.selector === 'html' || !decl.value.includes('px')) return;
+    decl.value = decl.value.replace(/(\d*\.?\d+)px/g, (m, n: string) => (Number(n) < 2 ? m : `${+(Number(n) / 14).toFixed(4)}rem`));
+  },
+};
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   console.log(`[moa] env from ${process.cwd()} · ANTHROPIC_API_KEY ${env.ANTHROPIC_API_KEY ? 'loaded' : 'MISSING (put it in hsk-agent/.env.local)'}`);
@@ -93,6 +105,7 @@ export default defineConfig(({ mode }) => {
   return {
     base: './',
     plugins: [moaApi(env)],
+    css: { postcss: { plugins: [pxToRem] } },
     // HashKey Global goes through this server too, so a browser extension or network rule that blocks
     // api-glb.hashkey.com in the browser does not leave the trade screen empty.
     server: { host: '127.0.0.1', port: 5180, strictPort: true, proxy: { '/hk': HK } },

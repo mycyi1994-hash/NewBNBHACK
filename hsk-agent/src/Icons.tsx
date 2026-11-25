@@ -33,15 +33,17 @@ const P: Record<string, string> = {
   globe: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z',
 };
 export type IconName = keyof typeof P;
+/** Sizes are given in the pixels of a 1440px screen and grow with the root font size (14px = 1rem). */
+const rem = (px: number) => ({ width: `${px / 14}rem`, height: `${px / 14}rem` });
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="ic">
-      <path d={P[name]} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg style={rem(size)} viewBox="0 0 24 24" aria-hidden className="ic">
+      <path d={P[name]} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
 /** The four-point spark that marks Moa's voice (a filled star, as AI Studio marks its assistant). */
 export function Spark({ size = 16 }: { size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="spark4"><path d="M12 2c.9 6.2 3.8 9.1 10 10-6.2.9-9.1 3.8-10 10-.9-6.2-3.8-9.1-10-10 6.2-.9 9.1-3.8 10-10z" fill="currentColor" /></svg>;
+  return <svg style={rem(size)} viewBox="0 0 24 24" aria-hidden className="spark4"><path d="M12 2c.9 6.2 3.8 9.1 10 10-6.2.9-9.1 3.8-10 10-.9-6.2-3.8-9.1-10-10 6.2-.9 9.1-3.8 10-10z" fill="currentColor" /></svg>;
 }

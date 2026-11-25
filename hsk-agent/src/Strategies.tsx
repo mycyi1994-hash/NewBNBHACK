@@ -48,6 +48,9 @@ export default function MarketAgents({ venue, market = cex.DEFAULT_MARKET, asset
       </div>
       {failed && <p className="muted">{t.agFailed}</p>}
       <div className="frows stagger" key={`${venue}-${coin}-${market.kind}`}>
+        <div className="frow-head" aria-hidden>
+          <span>{t.thName}</span><span>{t.thState}</span><span>{t.thCurve}</span><span>{t.thEdge}</span><span>{t.thTotal}</span><span>{t.thDd}</span><span />
+        </div>
         {!list && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="frow skel-block" aria-hidden />)}
         {list?.map((a) => (
           <AgentCard key={a.id} agent={a} size="tile" picked={picked === a.id} best={a.id === best}

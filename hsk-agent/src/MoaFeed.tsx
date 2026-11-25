@@ -94,6 +94,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
   const scriptRun = useRef(0);
   const greeted = useRef(false);
   const lastCtx = useRef(context.label);
+  const lastLang = useRef(lang);
   const quotesRef = useRef(quotes); quotesRef.current = quotes;
   const agentsRef = useRef(agents); agentsRef.current = agents;
   const hiredRef = useRef(hired); hiredRef.current = hired;
@@ -257,9 +258,10 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
     const [main, other] = ws;
     focus.current = main.base;
     visited.current = new Set();
-    const head = l === 'new' ? `${t.wxIs(name(main.base), t.sky[main.sky][1])} ${t.skyMean[main.sky]}`
-      : l === 'some' ? `${name(main.base)}: ${t.verdict[main.sky]} ${t.someWhy(p1(main.m1), gapLine(main))}`
-        : t.proHead(main.base, t.skyPro[main.sky], main.vsMa > 0, main.rsi < 30);
+    // The conclusion is the bold first sentence; the reason follows in plain weight.
+    const head = l === 'new' ? `**${t.wxIs(name(main.base), t.sky[main.sky][1])}** ${t.skyMean[main.sky]}`
+      : l === 'some' ? `**${name(main.base)}: ${t.verdict[main.sky]}** ${t.someWhy(p1(main.m1), gapLine(main))}`
+        : `**${t.proHead(main.base, t.skyPro[main.sky])}** ${t.proWhy(main.vsMa > 0, main.rsi < 30)}`;
     // The first choice moves forward (an agent); the rest help understand.
     const first: Topic[] = l === 'new' ? ['doit', 'why', 'how'] : l === 'some' ? ['strats', 'doit', 'alert'] : ['strats', 'chart', 'rule'];
     if (other) visited.current.add('other');
@@ -290,6 +292,8 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
     if (lastCtx.current === context.label) return;
     const first = !lastCtx.current;
     lastCtx.current = context.label;
+    // The label is translated, so a language change renames it; that is not a move to another screen.
+    if (lastLang.current !== lang) { lastLang.current = lang; return; }
     if (first) return; // the trade screen reporting its market on load is not a switch
     // Only a market change on the trade screen earns a line; the chip above the input already names the screen.
     if (!context.venue || !greeted.current || busy || Date.now() - lastNoteAt.current < 4000) return;
@@ -457,15 +461,15 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
         {notes.map((n, k) => n.role === 'you' ? (
           <div key={n.id} className="you-block fade-up">{n.text}</div>
         ) : (
-          <article key={n.id} className="note fade-up">
+          <article key={n.id} className={`note fade-up${n.sky ? ' brief' : ''}`}>
             {/* Messenger grouping: name and time only on the first of consecutive Moa lines. */}
             {(k === 0 || notes[k - 1].role !== 'moa' || n.at - notes[k - 1].at > 60_000) && <div className="note-meta">Moa<time>{time(n.at, lang)}</time></div>}
-            {n.text && <div className="note-text">{/\n|\*\*/.test(n.text) ? <RichText text={n.text} /> : <Stream text={n.text} />}</div>}
+            {n.text && <div className="note-text">{/\n/.test(n.text) ? <RichText text={n.text} /> : <Stream text={n.text} />}</div>}
             {n.offline && <p className="note-offline">{t.offline}</p>}
             {n.sky && <SkyCard level={n.sky.level} list={n.sky.list} />}
             {n.agent && (
               <AgentCard agent={n.agent.a} size="chat" actions={n.agent.a.runnable && (
-                <div className="acard-cta"><button className="btn-primary" onClick={() => onHire({ kind: 'agent', agent: n.agent!.a })}>{t.acHire}</button></div>
+                <div className="acard-cta"><button className="btn-primary hire" onClick={() => onHire({ kind: 'agent', agent: n.agent!.a })}>{t.acHire}</button></div>
               )} />
             )}
             {n.list && (
@@ -540,7 +544,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
         </div>
       </form>
       <div className="feed-foot">
-        <span aria-hidden>🔒</span>
+        <SIcon name="shield" size={14} />
         {vault?.configured
           ? <>{t.feedLimits(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?')} {vault.vault && <CopyAddress value={vault.vault} label={t.copyAddress} done={t.addressCopied} />}{vault.localFork && <span className="fork-badge">{t.localFork}</span>}</>
           : t.trust3none}
@@ -641,9 +645,9 @@ function SkyCard({ level, list }: { level: Level; list: Weather[] }) {
   const { t } = useT();
   const pct = (v: number | undefined, d = 1) => (v === undefined ? undefined : `${v > 0 ? '+' : ''}${(v * 100).toFixed(d)}%`);
   const sign = (v: number | undefined) => (v === undefined ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : '');
-  type Row = { k: string; cells: { text?: string; cls?: string; icon?: Weather['sky'] }[] };
+  type Row = { k: string; cells: { text?: string; cls?: string; icon?: Weather['sky']; pill?: Weather['sky'] }[] };
   const rows: Row[] = [
-    { k: level === 'pro' ? t.rowSignal : t.rowSky, cells: list.map((w) => ({ text: level === 'pro' ? t.skyPro[w.sky] : level === 'new' ? t.sky[w.sky][2] : t.sky[w.sky][1], icon: level === 'pro' ? undefined : w.sky })) },
+    { k: level === 'pro' ? t.rowSignal : t.rowSky, cells: list.map((w) => ({ text: level === 'pro' ? t.skyPro[w.sky] : level === 'new' ? t.sky[w.sky][2] : t.sky[w.sky][1], icon: level === 'pro' ? undefined : w.sky, pill: w.sky })) },
     { k: t.rowM1, cells: list.map((w) => ({ text: pct(w.m1), cls: sign(w.m1) })) },
     ...(level !== 'new' ? [{ k: level === 'pro' ? t.rowGapPro : t.rowGap, cells: list.map((w) => ({ text: pct(w.gap, 2) })) }] : []),
     ...(level === 'pro' ? [
@@ -662,7 +666,11 @@ function SkyCard({ level, list }: { level: Level; list: Weather[] }) {
         {rows.map((r) => (
           <tr key={r.k}>
             <th scope="row">{r.k}</th>
-            {r.cells.map((c, i) => <td key={i} className={c.cls}>{c.icon && <SIcon name={c.icon} size={16} />}{c.text ?? t.scNone}</td>)}
+            {r.cells.map((c, i) => (
+              <td key={i} className={c.text === undefined ? 'none' : c.cls}>
+                {c.pill ? <span className={`sig-pill sky-${c.pill}`}>{c.icon && <SIcon name={c.icon} size={15} />}{c.text}</span> : c.text ?? t.scNone}
+              </td>
+            ))}
           </tr>
         ))}
       </tbody>
@@ -672,11 +680,13 @@ function SkyCard({ level, list }: { level: Level; list: Weather[] }) {
 
 /** Moa's words arrive a few at a time, like a reply being written. */
 function Stream({ text }: { text: string }) {
-  const words = text.split(/(\s+)/);
   let k = 0;
+  const words = (part: string, key: string) => part.split(/(\s+)/).map((w, i) => (/^\s+$/.test(w) || !w ? w
+    : <span key={`${key}-${i}`} style={{ animationDelay: `${Math.min(1.2, (k++) * 0.022).toFixed(3)}s` }}>{w}</span>));
   return (
     <p className="stream">
-      {words.map((w, i) => (/^\s+$/.test(w) ? w : <span key={i} style={{ animationDelay: `${Math.min(1.2, (k++) * 0.022).toFixed(3)}s` }}>{w}</span>))}
+      {text.split(/(\*\*[^*]+\*\*)/).map((part, i) => (part.startsWith('**') && part.endsWith('**') && part.length > 4
+        ? <strong key={i}>{words(part.slice(2, -2), `b${i}`)}</strong> : words(part, `t${i}`)))}
     </p>
   );
 }

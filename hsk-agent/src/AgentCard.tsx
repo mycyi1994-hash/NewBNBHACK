@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import type { Agent, RuleId } from './agents.ts';
 import { useT, type Strings } from './i18n.ts';
 import { CoinMark } from './CoinMark.tsx';
+import { Icon } from './Icons.tsx';
 
 export const pct = (v: number, d = 1) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(d)}%`;
 export const drop = (v: number) => `−${(v * 100).toFixed(1)}%`;
@@ -53,24 +54,23 @@ export function AgentCard({ agent: a, size, picked, best, onPick, actions }: {
 
   const edge = a.total - a.hold;
   if (size === 'tile') {
-    // A row, like AI Studio's "Featured" list: icon, name with small badges, one line, and the one number that
-    // says something (how it did against just holding).
+    // A table row (the header lives in MarketAgents): who, state, the year's curve, then the three numbers in
+    // their own columns so they line up down the table. The lead number is how it did against just holding.
     return (
       <button className={`frow${picked ? ' on' : ''}`} onClick={onPick} aria-pressed={picked}>
-        <span className={`frow-ic ag-r-${a.rule}`} aria-hidden><RuleIcon rule={a.rule} /></span>
-        <span className="frow-main">
-          <span className="frow-title">
-            <b>{t.agRule[a.rule]}</b>
-            <span className={`badge ${pill.cls}`}><i />{pill.text}</span>
-            {best && <span className="badge pick"><i />{t.stratRec}</span>}
+        <span className="frow-who">
+          <span className="frow-ic" aria-hidden><RuleIcon rule={a.rule} /></span>
+          <span className="frow-main">
+            <span className="frow-title"><b>{t.agRule[a.rule]}</b>{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
+            <span className="frow-desc">{t.agLine[a.rule]}</span>
           </span>
-          <span className="frow-desc">{t.agLine[a.rule]}</span>
         </span>
-        <span className="frow-num">
-          <b className={edge >= 0 ? 'pos' : 'neg'}>{t.vsHold(pct(edge))}</b>
-          <small>{t.acTotal} {pct(a.total)} · {t.acDd} {drop(a.maxDd)}</small>
-        </span>
-        <span className="frow-go" aria-hidden>›</span>
+        <span className="frow-state"><span className={`badge ${pill.cls}`}><i />{pill.text}</span></span>
+        <span className="frow-eq" aria-hidden><Equity pts={a.equity} up={a.total >= a.hold} /></span>
+        <span className={`frow-n lead ${edge >= 0 ? 'pos' : 'neg'}`}>{pct(edge)}</span>
+        <span className={`frow-n ${a.total >= 0 ? 'pos' : 'neg'}`}>{pct(a.total)}</span>
+        <span className="frow-n">{drop(a.maxDd)}</span>
+        <span className="frow-go" aria-hidden><Icon name="chevron" size={18} /></span>
       </button>
     );
   }

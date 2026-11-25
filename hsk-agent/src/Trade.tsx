@@ -72,7 +72,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey }: {
     if (!box.current) return;
     const c = createChart(box.current, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#6b665f', fontFamily: 'Inter Variable, system-ui, sans-serif', fontSize: 11 },
+      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#444746', fontFamily: "'Google Sans Flex', 'Pretendard Variable', system-ui, sans-serif", fontSize: Math.round(parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.86) },
       grid: { vertLines: { color: '#f3f1ee' }, horzLines: { color: '#f3f1ee' } },
       rightPriceScale: { borderColor: '#e8e6e3' },
       timeScale: { borderColor: '#e8e6e3', timeVisible: true, secondsVisible: false, rightOffset: RIGHT_BARS, minBarSpacing: 0.5, barSpacing: 7, tickMarkFormatter: koTicks },
