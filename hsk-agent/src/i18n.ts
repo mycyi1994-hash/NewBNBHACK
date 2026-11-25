@@ -302,6 +302,7 @@ const en = {
   filledBuy: (u: string, q: string, a: string) => `Bought ${q} ${a} for $${u}.`, filledSell: (q: string, a: string, u: string) => `Sold ${q} ${a} for $${u}.`,
   skipSay: (n: string, why: string) => `${n} skipped today: ${why}`, skipBelowMa: 'the price is under its 50-day average.', skipTooSmall: 'today’s amount is under $1.',
   skipOverMax: (p: string) => `the price is above your $${p} cap.`,
+  thName: 'Agent', thState: 'Now', thSpent: 'Spent', thPnl: 'Profit / loss', mineVault: 'Vault',
   mineTitle: 'My agents', mineSub: 'Agents you hired. Each one asks you before it trades and stays inside your vault limits.',
   mineEmpty: 'No agents hired yet', mineEmptySub: 'Ask Moa for a pick, or hire one from the agent market.',
   mineFromMarket: 'From the agent market', mineCustom: 'Custom plan', mineRemove: 'Remove', mineRemoveTitle: 'Remove this agent?',
@@ -312,7 +313,7 @@ const en = {
   evSkipped: 'Skipped', evPaused: 'Paused', evResumed: 'Resumed', evChanged: 'Changed',
   closeMoa: 'Close Moa', openMoa: 'Open Moa', navAll: 'View all',
   homeTitle: 'What should an agent do for you?', homeAsk: 'Ask Moa, or say the result you want',
-  homeStart: 'Start with', homeGallery: 'Agents you can hire', homeGallerySignal: 'Signal only (demo)', homeGalleryAll: 'All agents',
+  homeTo: 'Moa answers', homeStart: 'Start with', homeGallery: 'Agents you can hire', homeGallerySignal: 'Signal only (demo)', homeGalleryAll: 'All agents',
   starts: [
     { k: 'pick', title: 'Get a pick from Moa', sub: 'One agent chosen by a fixed rule for you' },
     { k: 'collect', title: 'Collect a little every day', sub: 'Buy the same amount daily, smarter on dips' },
@@ -625,6 +626,7 @@ const ko: typeof en = {
   filledBuy: (u, q, a) => `$${u}로 ${a} ${q}개 샀어요.`, filledSell: (q, a, u) => `${a} ${q}개를 $${u}에 팔았어요.`,
   skipSay: (n, why) => `${n} 오늘은 쉬어요: ${why}`, skipBelowMa: '가격이 50일 평균 아래예요.', skipTooSmall: '오늘 금액이 $1보다 작아요.',
   skipOverMax: (p) => `가격이 정하신 상한 $${p}보다 높아요.`,
+  thName: '에이전트', thState: '지금', thSpent: '쓴 돈', thPnl: '손익', mineVault: '볼트',
   mineTitle: '내 에이전트', mineSub: '맡긴 에이전트예요. 매매 전마다 물어보고, 볼트 한도 안에서만 움직여요.',
   mineEmpty: '아직 맡긴 에이전트가 없어요', mineEmptySub: 'Moa에게 추천받거나, 에이전트 마켓에서 하나 골라 보세요.',
   mineFromMarket: '에이전트 마켓', mineCustom: '맞춤 계획', mineRemove: '삭제', mineRemoveTitle: '이 에이전트를 삭제할까요?',
@@ -635,7 +637,7 @@ const ko: typeof en = {
   evSkipped: '쉼', evPaused: '멈춤', evResumed: '다시 시작', evChanged: '바꿈',
   closeMoa: 'Moa 닫기', openMoa: 'Moa 열기', navAll: '전체 보기',
   homeTitle: '에이전트에게 무엇을 맡겨볼까요?', homeAsk: 'Moa에게 묻거나, 원하는 결과를 말해 보세요',
-  homeStart: '이걸로 시작해 보세요', homeGallery: '맡길 수 있는 에이전트', homeGallerySignal: '신호만 보는 에이전트 (데모)', homeGalleryAll: '모든 에이전트',
+  homeTo: 'Moa가 답해요', homeStart: '이걸로 시작해 보세요', homeGallery: '맡길 수 있는 에이전트', homeGallerySignal: '신호만 보는 에이전트 (데모)', homeGalleryAll: '모든 에이전트',
   starts: [
     { k: 'pick', title: 'Moa에게 추천받기', sub: '정해진 규칙으로 나에게 맞는 하나를 골라요' },
     { k: 'collect', title: '매일 조금씩 모으기', sub: '매일 같은 금액, 쌀 때는 조금 더' },

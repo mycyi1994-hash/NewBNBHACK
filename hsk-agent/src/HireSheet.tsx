@@ -65,25 +65,31 @@ export default function HireSheet({ target, vault, onClose, onConfirm }: {
 
   return (
     <Modal title={editing ? t.hsEditTitle(name) : t.hsTitle(name)} onClose={onClose} actions={<>
-      <button className="btn-ghost" onClick={onClose}>{t.cancel}</button>
-      <button className="btn-primary" disabled={editing && !changed} onClick={() => onConfirm({ perBuyUsd: per, budgetUsd: budget })}>{editing ? t.hsSave : t.hsHire}</button>
+      <button className="btn-text" onClick={onClose}>{t.cancel}</button>
+      <button className="btn" disabled={editing && !changed} onClick={() => onConfirm({ perBuyUsd: per, budgetUsd: budget })}>{editing ? t.hsSave : t.hsHire}</button>
     </>}>
       <div className="hire">
-        <div className="hire-row"><span>{t.hsPer}</span><span className="hire-v">{diff(start.perBuyUsd, per) && <small>{diff(start.perBuyUsd, per)}</small>}<Stepper id="hire-per" label={t.hsPer} value={per} options={perOptions} onChange={setPerKeep} /></span></div>
-        <div className="hire-row"><span>{t.hsBudget}</span><span className="hire-v">{diff(start.budgetUsd, budget) && <small>{diff(start.budgetUsd, budget)}</small>}<Stepper id="hire-budget" label={t.hsBudget} value={budget} options={budgetOptions} onChange={setBudget} /></span></div>
-        {editing && <p className="hire-sub">{t.hsSpent(money(book(target.hired).spent))}</p>}
-        <div className="hire-row"><span>{t.hsMode}</span><b>{t.hsModeAsk}</b></div>
-        <div className="hire-row"><span>{t.hsVault}</span><b>{vault?.configured ? t.hsVaultOn(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?') : t.hsVaultOff}</b></div>
+        <label className="field" htmlFor="hire-per">
+          <span>{t.hsPer}{diff(start.perBuyUsd, per) && <small>{diff(start.perBuyUsd, per)}${money(per)}</small>}</span>
+          <Stepper id="hire-per" label={t.hsPer} value={per} options={perOptions} onChange={setPerKeep} />
+        </label>
         {doubles && <p className="hire-sub">{t.hsDouble(money(Math.min(per * 2, maxTrade)))}</p>}
+        <label className="field" htmlFor="hire-budget">
+          <span>{t.hsBudget}{diff(start.budgetUsd, budget) && <small>{diff(start.budgetUsd, budget)}${money(budget)}</small>}</span>
+          <Stepper id="hire-budget" label={t.hsBudget} value={budget} options={budgetOptions} onChange={setBudget} />
+        </label>
+        {editing && <p className="hire-sub">{t.hsSpent(money(book(target.hired).spent))}</p>}
+        <div className="field"><span>{t.hsMode}</span><div className="field-ro">{t.hsModeAsk}</div></div>
+        <div className="field"><span>{t.hsVault}</span><div className="field-ro">{vault?.configured ? t.hsVaultOn(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?') : t.hsVaultOff}</div></div>
         {plan && (
-          <div className="hire-plan">
-            <b>{t.hsPlan}</b>
-            <ol>{plan.steps.map((s, i) => <li key={i}>{describe(s, lang)}</li>)}</ol>
+          <div className="field">
+            <span>{t.hsPlan}</span>
+            <ol className="hire-plan">{plan.steps.map((s, i) => <li key={i}>{describe(s, lang)}</li>)}</ol>
             {noBuy && <p className="hire-sub">{t.hsNoBuy}</p>}
           </div>
         )}
         <p className="hire-note">{t.hsNote} {t.hsWithdraw}</p>
-        {!vault?.configured && <p className="hire-demo">{t.hsDemo}</p>}
+        {!vault?.configured && <p className="hire-note demo">{t.hsDemo}</p>}
       </div>
     </Modal>
   );

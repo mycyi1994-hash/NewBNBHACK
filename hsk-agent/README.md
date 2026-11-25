@@ -46,7 +46,7 @@ vault contract enforces.
 | Execution (`server/executor.ts`, `contracts/src/MoaVault.sol`) | Approved agent orders and “실행”/“execute” in the chat. The vault enforces per-trade and daily caps, a slippage floor and owner-only withdrawals. Tested end to end on a local fork of HSK mainnet; **not deployed to mainnet yet**. Without a vault the app is a **demo**: agents ask, nothing is sent |
 | Pause | In the app it stops new orders. Locking the vault and withdrawing are done from the vault owner's wallet (**demo** until the mainnet vault) |
 
-UI reference: Hume AI web app (via Mobbin).
+UI reference: Google AI Studio web (via Mobbin). `src/styles.css` is built from measured captures: 208px sidebar, hairlines, 14/20 type, outlined buttons, grey selected chips with a dot, blue links and assistant marks. The layout (sidebar, screen, Moa on the right) is Moa's own.
 
 ## Run
 

@@ -15,6 +15,16 @@ const P: Record<string, string> = {
   enter: 'M9 10l-4 4 4 4M5 14h11a3 3 0 0 0 3-3V5',
   stop: 'M7 7h10v10H7z',
   menuFold: 'M4 7h11M4 12h8M4 17h11M20 9l-3 3 3 3',
+  arrowUp: 'M12 19V5M6 11l6-6 6 6',
+  edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  pause: 'M9 6v12M15 6v12',
+  play: 'M8 5.5v13l10-6.5z',
+  trash: 'M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7M10.5 10.5v6M13.5 10.5v6',
+  list: 'M8 7h11M8 12h11M8 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01',
+  plus: 'M12 5v14M5 12h14',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  down: 'M6 9l6 6 6-6',
+  chat: 'M5 5h14v10H10l-5 4z',
   globe: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z',
 };
 export type IconName = keyof typeof P;
@@ -24,4 +34,9 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
       <path d={P[name]} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+/** The four-point spark that marks Moa's voice (a filled star, as AI Studio marks its assistant). */
+export function Spark({ size = 16 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="spark4"><path d="M12 2c.9 6.2 3.8 9.1 10 10-6.2.9-9.1 3.8-10 10-.9-6.2-3.8-9.1-10-10 6.2-.9 9.1-3.8 10-10z" fill="currentColor" /></svg>;
 }

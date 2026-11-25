@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useT } from './i18n.ts';
 import { type Agent, type Style } from './agents.ts';
 import { AgentCard } from './AgentCard.tsx';
-import { Icon, type IconName } from './Icons.tsx';
+import { Icon, Spark, type IconName } from './Icons.tsx';
 
 type Sort = 'sharpe' | 'total' | 'dd';
 type RunF = 'run' | 'signal' | 'all';
@@ -55,18 +55,23 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend, onA
       <section className="home-hero">
         <h1>{t.homeTitle}</h1>
         <form className="home-ask" onSubmit={(e) => { e.preventDefault(); if (q.trim()) { onAskMoa(q.trim()); setQ(''); } }}>
-          <Icon name="search" />
           <input id="home-ask" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.homeAsk} aria-label={t.homeAsk} autoComplete="off" />
-          <button type="submit" className="run-btn" disabled={!q.trim()}>{t.ask}<kbd>↵</kbd></button>
+          <div className="home-ask-bar">
+            <span className="btn"><span className="orb xs" aria-hidden />{t.homeTo}</span>
+            <span className="grow" />
+            <button type="button" className="btn" onClick={onRecommend}><Spark size={14} />{t.barRecommend}</button>
+            <button type="submit" className="btn" disabled={!q.trim()}>{t.ask}<kbd>↵</kbd></button>
+          </div>
         </form>
       </section>
 
       <section>
-        <div className="home-sec">{t.homeStart}</div>
+        <h2 className="home-h2">{t.homeStart}</h2>
         <div className="start6 stagger">
           {t.starts.map((s) => (
             <button key={s.k} className="start6-card" onClick={() => start(s.k)}>
-              <span className="start6-head"><span className="start6-ic"><Icon name={START_ICON[s.k]} size={16} /></span><b>{s.title}</b></span>
+              <span className="start6-ic"><Icon name={START_ICON[s.k]} size={20} /></span>
+              <b>{s.title}</b>
               <small>{s.sub}</small>
             </button>
           ))}
@@ -74,6 +79,7 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend, onA
       </section>
 
       <section ref={gallery} className="home-gallery">
+        <h2 className="home-h2">{run === 'run' ? t.homeGallery : run === 'signal' ? t.homeGallerySignal : t.homeGalleryAll}</h2>
         <div className="fchips">
           {chip('run', t.agRunF.run, run === 'run', () => { setRun('run'); setAsset('all'); })}
           {chip('signal', t.agRunF.signal, run === 'signal', () => { setRun('signal'); setAsset('all'); })}
@@ -89,7 +95,6 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend, onA
             </select>
           </label>
         </div>
-        <h2 className="home-h2">{run === 'run' ? t.homeGallery : run === 'signal' ? t.homeGallerySignal : t.homeGalleryAll}</h2>
         {failed && <p className="muted">{t.agFailed}</p>}
         <div className="ag-grid stagger" key={`${run}-${asset}-${style}-${sort}`}>
           {!agents && !failed && [0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="ag-card ag-skel skel-block" />)}

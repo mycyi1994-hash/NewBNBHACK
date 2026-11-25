@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { SlidePill } from './motion.tsx';
-import { Icon as SIcon } from './Icons.tsx';
+import { Icon as SIcon, Spark } from './Icons.tsx';
 import type { VaultInfo } from './parts.tsx';
 import { CopyAddress, CopyButton, Modal, RichText } from './ui.tsx';
 import { askMoa, EXECUTE_WORDS, toStep, type Exec, type StepKey } from './moaClient.ts';
@@ -67,10 +67,6 @@ function coinIn(q: string): string | undefined {
   if (/(doge|도지)/i.test(q)) return 'DOGE';
   return undefined;
 }
-
-const Icon = ({ d }: { d: string }) => (
-  <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden><path d={d} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
-);
 
 export default function MoaFeed({ quotes, vault, inject, context, agents, agentsFailed, hired, sending, now, onHire, onEdit, onPause, onResume, onApprove, onDecline, onExecuted, onGoto, onAttention, onClose }: {
   quotes: Quote[]; vault: VaultInfo | null; inject?: MoaInject | null; context: MoaContext;
@@ -437,8 +433,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
   return (
     <aside className="dock feed-dock" aria-label="Moa">
       <header className="feed-head">
-        <span className="orb sm breathe" aria-hidden />
-        <b>Moa</b>
+        <span className="feed-title"><Spark size={16} />Moa</span>
         <span className="feed-status"><span className="live-dot" /> {level ? t.live : t.feedWatching}</span>
         {level && (
           <div className="depth-switch has-pill" role="tablist" aria-label={t.depthLabel}>
@@ -446,13 +441,13 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
             {(['new', 'some', 'pro'] as Level[]).map((l) => <button key={l} role="tab" aria-selected={level === l} className={level === l ? 'on' : ''} onClick={() => { if (l !== level && !busy) { interrupt(); setLevel(l); script([{ text: t.depthNow[l], follow: [] }, ...briefing(l)]); } }}>{t.depth[l]}</button>)}
           </div>
         )}
-        {notes.length > 0 && !busy && <button className="feed-clear" onClick={() => setNotes([])} data-tip={t.feedClearTip} aria-label={t.feedClearTip}><Icon d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" /></button>}
-        {onClose && <button className="feed-close" onClick={onClose} aria-label={t.closeMoa}><Icon d="M5 5l10 10M15 5L5 15" /></button>}
+        {notes.length > 0 && !busy && <button className="feed-clear" onClick={() => setNotes([])} data-tip={t.feedClearTip} aria-label={t.feedClearTip}><SIcon name="trash" size={18} /></button>}
+        {onClose && <button className="feed-close" onClick={onClose} aria-label={t.closeMoa}><SIcon name="close" size={18} /></button>}
       </header>
 
       <div className="feed" ref={feed} aria-live="polite">
         {notes.map((n, k) => n.role === 'you' ? (
-          <article key={n.id} className="note you fade-up"><div className="note-meta">{t.you}<time>{time(n.at, lang)}</time></div><div className="note-text you-text">{n.text}</div></article>
+          <div key={n.id} className="you-block fade-up">{n.text}</div>
         ) : (
           <article key={n.id} className="note fade-up">
             {/* Messenger grouping: name and time only on the first of consecutive Moa lines. */}
@@ -512,7 +507,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
         ))}
         {(typing || busy) && (
           <div className="note typing-note" role="status">
-            <div className="note-meta"><span className="orb xs" aria-hidden /> Moa</div>
+            <div className="note-meta">Moa</div>
             {busy
               ? (
                 <div className="thoughts">
@@ -532,8 +527,8 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
         <div className="composer-bar">
           <span className="ctx-chip" data-tip={t.ctxTip}>{context.asset ? <CoinMark base={context.asset} /> : <span className="orb xs" aria-hidden />}{context.label}</span>
           {busy
-            ? <button className="run-btn stop" type="button" onClick={stop} aria-label={t.stop}><SIcon name="stop" size={14} />{t.stop}<kbd>Esc</kbd></button>
-            : <button className="run-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask}>{t.ask}<kbd>↵</kbd></button>}
+            ? <button className="sq-btn" type="button" onClick={stop} aria-label={t.stop} data-tip={`${t.stop} (Esc)`}><SIcon name="stop" size={16} /></button>
+            : <button className="sq-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} data-tip={`${t.ask} (Enter)`}><SIcon name="arrowUp" size={16} /></button>}
         </div>
       </form>
       <div className="feed-foot">
@@ -545,8 +540,8 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
 
       {confirm && (
         <Modal title={t.confirmTitle} onClose={() => setConfirm(null)} actions={<>
-          <button className="btn-ghost" onClick={() => setConfirm(null)}>{t.cancel}</button>
-          <button className="btn-primary" onClick={() => { const q = confirm; setConfirm(null); void ask(q, true); }}>{t.executeBtn}</button>
+          <button className="btn-text" onClick={() => setConfirm(null)}>{t.cancel}</button>
+          <button className="btn" onClick={() => { const q = confirm; setConfirm(null); void ask(q, true); }}>{t.executeBtn}</button>
         </>}>
           <p className="modal-quote">“{confirm}”</p>
           <p>{t.confirmBody(vault?.maxTradeUsdt ?? '?', vault?.remainingTodayUsdt ?? '0')}</p>
