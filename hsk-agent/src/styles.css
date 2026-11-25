@@ -1072,3 +1072,8 @@ button:active:not(:disabled), .tile:active, .start-card:active, .tape-row:active
   .acard-nums dd { font-size: 14px; }
   .mine-head { flex-wrap: wrap; }
 }
+/* Phone: Moa's header stays one line (the level switch and close button matter more than "Live") */
+@media (max-width: 560px) {
+  .feed-dock .feed-status { display: none; }
+  .feed-dock .depth-switch { margin-left: auto; }
+}
