@@ -19,7 +19,7 @@ import { reply as offlineReply } from './moa.ts';
 import type { Execution } from './store.ts';
 import { CoinMark } from './CoinMark.tsx';
 import { loadWeather, skyOf, type Weather } from './weather.ts';
-import type { Agent } from './agents.ts';
+import { isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
 import { AgentCard, agentName, drop, explainAgent } from './AgentCard.tsx';
 import type { HireTarget } from './HireSheet.tsx';
@@ -36,7 +36,7 @@ export type MoaAsk =
   | { kind: 'ask'; text: string };
 export type MoaInject = MoaAsk & { n: number };
 export type { Level };
-interface Choice { label: string; act: () => void }
+interface Choice { label: string; act: () => void; primary?: boolean }
 interface Note {
   id: number; at: number; role: 'moa' | 'you'; text: string; plan?: Plan; goal?: string; execs?: Exec[]; offline?: boolean;
   follow: string[]; choices?: Choice[]; chosen?: string; sky?: { level: Level; list: Weather[] };
@@ -99,6 +99,9 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
   const hiredRef = useRef(hired); hiredRef.current = hired;
   const ctxRef = useRef(context); ctxRef.current = context;
   const pendingRec = useRef<{ coin?: string } | null>(null);
+  /** The coin the last briefing was about; choices under it act on this coin, whatever is on screen later. */
+  const focus = useRef<string | null>(null);
+  const [skyReady, setSkyReady] = useState(false);
   const announced = useRef<Set<string>>(new Set());
   const mountedAt = useRef(Date.now());
 
@@ -135,13 +138,18 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
   const name = (b: 'BTC' | 'ETH') => (b === 'BTC' ? t.coinBtc : t.coinEth);
   const p1 = (v: number) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
   const gapLine = (w: Weather) => (w.gap === undefined ? '' : w.gap >= 0.003 ? t.gapPricey((w.gap * 100).toFixed(1)) : w.gap <= -0.003 ? t.gapCheap((-w.gap * 100).toFixed(1)) : t.gapSame);
-  /** Today's weather with the latest HSKSwap vs Gate gap folded in (pool prices can arrive after the candles). */
-  const skies = (): Weather[] => (sky.current ?? []).map((w) => {
-    const gap = quotesRef.current.find((q) => q.asset === w.base)?.gap ?? w.gap;
-    const next = { ...w, gap };
-    return { ...next, sky: skyOf(next) };
-  });
-  const mainCoin = () => skies()[0]?.base ?? (ctxRef.current.asset && ['BTC', 'ETH', 'HSK'].includes(ctxRef.current.asset) ? ctxRef.current.asset : 'BTC');
+  /** Today's weather with the latest HSKSwap vs Gate gap folded in; the coin Moa is talking about comes first. */
+  const skies = (): Weather[] => {
+    const list = (sky.current ?? []).map((w) => {
+      const gap = quotesRef.current.find((q) => q.asset === w.base)?.gap ?? w.gap;
+      const next = { ...w, gap };
+      return { ...next, sky: skyOf(next) };
+    });
+    const at = list.findIndex((w) => w.base === (focus.current ?? ctxRef.current.asset));
+    return at > 0 ? [list[at], ...list.filter((_, n) => n !== at)] : list;
+  };
+  /** The coin Moa talks about: the one it last briefed, so a choice never names one coin and acts on another. */
+  const mainCoin = () => focus.current ?? skies()[0]?.base ?? 'BTC';
 
   /* ---------- agents in the conversation ---------- */
 
@@ -181,7 +189,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
     const ranked = rankedFor(list, coin);
     const rows = ranked.filter((a, i) => ranked.findIndex((b) => b.rule === a.rule) === i).slice(0, 4);
     if (!rows.length) { recommendNote(coin); return; }
-    say({ text: t.recOthers(coin), list: { agents: rows, coin }, follow: [] });
+    say({ text: t.recList(coin), list: { agents: rows, coin }, follow: [] });
   };
   const statusNote = (id: string, text = '') => {
     const h = hiredRef.current.find((x) => x.id === id);
@@ -191,11 +199,12 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
 
   /* ---------- conversation topics: every answer ends with the next things worth asking ---------- */
   const visited = useRef<Set<Topic>>(new Set());
-  const label = (id: Topic): string => {
+  const label = (id: Topic, coin: string): string => {
     const [main, other] = skies();
     switch (id) {
       case 'why': return t.chWhy(main ? t.sky[main.sky][1] : '');
       case 'other': return other ? t.chOther(name(other.base)) : t.chOther(t.coinEth);
+      case 'strats': return t.chAgents(coin);
       default: return t.topic[id];
     }
   };
@@ -217,20 +226,21 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
     }
   };
   /** Next choices: what the topic suggests, minus what was already covered, never a dead end. */
-  const choicesFor = (ids: Topic[]): Choice[] => {
+  const choicesFor = (ids: Topic[], lead = false): Choice[] => {
     const fresh = ids.filter((x) => !visited.current.has(x));
     const pool = fresh.length >= 2 ? fresh : [...fresh, ...((levelRef.current === 'pro' ? ['other', 'strats', 'chart', 'self'] : ['other', 'doit', 'when', 'self']) as Topic[]).filter((x) => !visited.current.has(x) && !fresh.includes(x))];
     const list = (pool.length ? pool : ['self' as Topic]).slice(0, 3);
-    return list.map((id) => ({ label: label(id), act: () => runTopic(id) }));
+    const coin = mainCoin();
+    return list.map((id, n) => ({ label: label(id, coin), act: () => runTopic(id, coin), primary: lead && n === 0 }));
   };
-  const runTopic = (id: Topic) => {
+  const runTopic = (id: Topic, coin: string) => {
     if (id !== 'self') visited.current.add(id);
-    if (id === 'strats') { listNote(mainCoin()); return; }
+    if (id === 'strats') { listNote(coin); return; }
     const { lines, next } = answer(id);
     if (id === 'doit') {
       // ④: the step forward is an agent, picked by the rule, right after the answer.
       const { run, at } = script(lines);
-      setTimeout(() => { if (scriptRun.current === run) recommendNote(mainCoin()); }, at + 200);
+      setTimeout(() => { if (scriptRun.current === run) recommendNote(coin); }, at + 200);
       return;
     }
     if (!next.length) { script(lines); return; }
@@ -238,37 +248,22 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
     script(lines.map((x, i) => (i === last ? { ...x, choices: choicesFor(next) } : x)));
   };
 
-  /* ---------- the briefing: same weather, three depths ---------- */
+  /* ---------- the briefing: the conclusion for the coin on screen, one table, one step forward ---------- */
   const briefing = (l: Level): Line[] => {
+    const onScreen = ctxRef.current.asset;
+    if (onScreen && (sky.current ?? []).some((w) => w.base === onScreen)) focus.current = onScreen;
     const ws = skies();
     if (!ws.length) return [{ text: t.wxNoData, follow: [] }];
     const [main, other] = ws;
+    focus.current = main.base;
     visited.current = new Set();
-    const first: Topic[] = l === 'new' ? ['why', 'how', 'alert'] : l === 'some' ? ['alert', 'doit', 'strats'] : ['chart', 'strats', 'rule'];
-    const pro = (w: Weather) => t.proLine(w.base, p1(w.vsMa), w.rsi.toFixed(0), p1(w.m1), w.basis === undefined ? '—' : `${w.basis > 0 ? '+' : ''}${(w.basis * 100).toFixed(3)}%`, w.gap === undefined ? '—' : `${w.gap > 0 ? '+' : ''}${(w.gap * 100).toFixed(2)}%`, w.volRatio.toFixed(2));
-    const body: Line[] = l === 'new'
-      ? [
-        { text: t.wxIntroNew, follow: [], sky: { level: l, list: ws } },
-        { text: `${t.wxIs(name(main.base), t.sky[main.sky][1])} ${t.skyMean[main.sky]}`, follow: [] },
-        ...(other ? [{ text: t.wxIs(name(other.base), t.sky[other.sky][1]), follow: [] }] : []),
-        { text: t.wxNextNew, follow: [] },
-      ]
-      : l === 'some'
-        ? [
-          { text: t.wxIntro, follow: [], sky: { level: l, list: ws } },
-          { text: `${t.someLine(name(main.base), p1(main.m1), gapLine(main))} ${t.verdict[main.sky]}`, follow: [] },
-          ...(other ? [{ text: `${t.someLine(name(other.base), p1(other.m1), gapLine(other))} ${t.verdict[other.sky]}`, follow: [] }] : []),
-          { text: t.wxNextSome, follow: [] },
-        ]
-        : [
-          { text: t.wxIntroPro, follow: [], sky: { level: l, list: ws } },
-          { text: pro(main), follow: [] },
-          ...(other ? [{ text: pro(other), follow: [] }] : []),
-          { text: t.proState(main.base, main.vsMa > 0, main.rsi < 30), follow: [] },
-        ];
+    const head = l === 'new' ? `${t.wxIs(name(main.base), t.sky[main.sky][1])} ${t.skyMean[main.sky]}`
+      : l === 'some' ? `${name(main.base)}: ${t.verdict[main.sky]} ${t.someWhy(p1(main.m1), gapLine(main))}`
+        : t.proHead(main.base, t.skyPro[main.sky], main.vsMa > 0, main.rsi < 30);
+    // The first choice moves forward (an agent); the rest help understand.
+    const first: Topic[] = l === 'new' ? ['doit', 'why', 'how'] : l === 'some' ? ['strats', 'doit', 'alert'] : ['strats', 'chart', 'rule'];
     if (other) visited.current.add('other');
-    body[body.length - 1] = { ...body[body.length - 1], choices: choicesFor(first) };
-    return body;
+    return [{ text: head, follow: [], sky: { level: l, list: ws }, choices: choicesFor(first, true) }];
   };
   const pickLevel = (l: Level) => { setLevel(l); script(briefing(l)); };
 
@@ -276,7 +271,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
   useEffect(() => {
     if (greeted.current) return;
     greeted.current = true;
-    const ready = loadWeather(quotes).then((w) => { sky.current = w; }).catch(() => { sky.current = []; });
+    const ready = loadWeather(quotes).then((w) => { sky.current = w; }).catch(() => { sky.current = []; }).then(() => setSkyReady(true));
     const l = levelRef.current;
     if (l) { void ready.then(() => script([{ text: t.helloAgain, follow: [] }, ...briefing(l)])); return; }
     script([
@@ -298,8 +293,21 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
     if (first) return; // the trade screen reporting its market on load is not a switch
     // Only a market change on the trade screen earns a line; the chip above the input already names the screen.
     if (!context.venue || !greeted.current || busy || Date.now() - lastNoteAt.current < 4000) return;
-    say({ text: levelRef.current === 'pro' && context.venue ? t.ctxSwitchPro(context.label) : t.ctxSwitch(context.label), follow: [] }, 500);
+    const coin = context.asset;
+    // A coin with weather that is not the one briefed gets its own briefing (the effect below), not a line.
+    if (coin && coin !== focus.current && (sky.current ?? []).some((w) => w.base === coin)) return;
+    const agentsOf = coin && isRunnable(coin) && coin !== focus.current ? [{ label: t.chAgents(coin), act: () => listNote(coin), primary: true }] : undefined;
+    say({ text: levelRef.current === 'pro' && context.venue ? t.ctxSwitchPro(context.label) : t.ctxSwitch(context.label), follow: [], choices: agentsOf }, 500);
   }, [context.label]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The coin on screen changed to another one Moa has weather for: say the conclusion for that coin, once Moa is free.
+  useEffect(() => {
+    const coin = context.asset, l = levelRef.current;
+    if (!coin || !l || !skyReady || !focus.current || focus.current === coin || busy || typing) return;
+    if (!(sky.current ?? []).some((w) => w.base === coin)) return;
+    const id = setTimeout(() => script(briefing(l)), 700);
+    return () => clearTimeout(id);
+  }, [context.asset, busy, typing, skyReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A recommendation asked for while the scores were loading.
   useEffect(() => {
@@ -483,7 +491,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
             {n.choices && (
               <div className={`choices${n.chosen ? ' done' : ''}`}>
                 {n.choices.map((c) => (
-                  <button key={c.label} className={`choice${n.chosen === c.label ? ' picked' : ''}`} disabled={!!n.chosen || !!busy} onClick={() => choose(n.id, c)}>{c.label}</button>
+                  <button key={c.label} className={`choice${c.primary ? ' primary' : ''}${n.chosen === c.label ? ' picked' : ''}`} disabled={!!n.chosen || !!busy} onClick={() => choose(n.id, c)}>{c.primary && <Spark size={13} />}{c.label}</button>
                 ))}
               </div>
             )}
@@ -628,22 +636,37 @@ function Receipt({ x }: { x: Exec }) {
   );
 }
 
-/** The weather card in Moa's briefing: one row per coin, worded for the user's depth. */
+/** The briefing table: one column per coin, one row per reading, as deep as the user's level. Rows without a value are left out. */
 function SkyCard({ level, list }: { level: Level; list: Weather[] }) {
   const { t } = useT();
+  const pct = (v: number | undefined, d = 1) => (v === undefined ? undefined : `${v > 0 ? '+' : ''}${(v * 100).toFixed(d)}%`);
+  const sign = (v: number | undefined) => (v === undefined ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : '');
+  type Row = { k: string; cells: { text?: string; cls?: string; icon?: Weather['sky'] }[] };
+  const rows: Row[] = [
+    { k: level === 'pro' ? t.rowSignal : t.rowSky, cells: list.map((w) => ({ text: level === 'pro' ? t.skyPro[w.sky] : level === 'new' ? t.sky[w.sky][2] : t.sky[w.sky][1], icon: level === 'pro' ? undefined : w.sky })) },
+    { k: t.rowM1, cells: list.map((w) => ({ text: pct(w.m1), cls: sign(w.m1) })) },
+    ...(level !== 'new' ? [{ k: level === 'pro' ? t.rowGapPro : t.rowGap, cells: list.map((w) => ({ text: pct(w.gap, 2) })) }] : []),
+    ...(level === 'pro' ? [
+      { k: t.rowMa, cells: list.map((w) => ({ text: pct(w.vsMa), cls: sign(w.vsMa) })) },
+      { k: t.rowRsi, cells: list.map((w) => ({ text: w.rsi.toFixed(0) })) },
+      { k: t.rowVol, cells: list.map((w) => ({ text: `×${w.volRatio.toFixed(2)}` })) },
+      { k: t.rowBasis, cells: list.map((w) => ({ text: pct(w.basis, 3) })) },
+    ] : []),
+  ].filter((r) => r.cells.some((c) => c.text !== undefined));
   return (
-    <div className={`sky-card sky-${level}`}>
-      {level === 'pro' && <div className="sky-title">{t.skyProTitle}</div>}
-      {list.map((w) => (
-        <div key={w.base} className="sky-row">
-          <CoinMark base={w.base} />
-          <span className="sky-name">{level === 'pro' ? w.base : w.base === 'BTC' ? t.coinBtc : t.coinEth}</span>
-          <span className={`sky-icon sky-${w.sky}`} aria-hidden>{t.sky[w.sky][0]}</span>
-          <span className="sky-word">{level === 'pro' ? t.skyPro[w.sky] : t.sky[w.sky][2]}</span>
-          {level !== 'new' && <span className={`sky-m1 ${w.m1 >= 0 ? 'pos' : 'neg'}`}>{w.m1 > 0 ? '+' : ''}{(w.m1 * 100).toFixed(1)}%</span>}
-        </div>
-      ))}
-    </div>
+    <table className="sky-table">
+      <thead>
+        <tr><th />{list.map((w) => <th key={w.base}><span className="sky-coin"><CoinMark base={w.base} />{level === 'pro' ? w.base : w.base === 'BTC' ? t.coinBtc : t.coinEth}</span></th>)}</tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.k}>
+            <th scope="row">{r.k}</th>
+            {r.cells.map((c, i) => <td key={i} className={c.cls}>{c.icon && <SIcon name={c.icon} size={16} />}{c.text ?? t.scNone}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

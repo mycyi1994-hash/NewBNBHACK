@@ -292,7 +292,7 @@ function Shell() {
         <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />
         {view === 'trade' && <Trade quotes={quotes} onContext={setTradeCtx} onPick={askMoaAbout} />}
-        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onAsk={askMoaAbout} onRecommend={() => tell({ kind: 'recommend' })} onAskMoa={(text) => tell({ kind: 'ask', text })} onGo={go} />}
+        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onAsk={askMoaAbout} onRecommend={() => tell({ kind: 'recommend' })} />}
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}

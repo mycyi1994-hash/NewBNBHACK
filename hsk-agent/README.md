@@ -20,6 +20,12 @@ vault contract enforces.
 - **From the conversation to an agent.** "Can you buy for me?", "pick one for me", the bar's "Get a pick from Moa",
   or the AI's `recommend_agent` tool all end in the same agent card inside the conversation, with "Hire",
   "Other agents" and "Why this one?". You never have to open the market to hire.
+- **Two pages in the market.** "Top agents" ranks the agents that can trade (steady = Sharpe ratio, bold = period
+  return) with their equity curves on one chart; "Marketplace" is the searchable, filterable card grid with a "Hire"
+  button on every card. Both read `src/agents.ts`; nothing on them is invented (no creators, no subscriber counts).
+- **Moa's briefing.** The conclusion for the coin on screen first, the numbers in one table, one leading choice that
+  goes to an agent. Moving to another coin's chart gets that coin's briefing, and a choice always acts on the coin
+  it names.
 - **The recommendation is a rule, not a model** (`src/recommend.ts`): only agents that can trade on HSKSwap → the coin
   on screen or named → risk 1–2 for first-timers, 1–3 otherwise → the smallest worst drop in the backtest.
   The AI only says which coin the user means.
