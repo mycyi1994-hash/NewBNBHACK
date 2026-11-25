@@ -452,11 +452,11 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
 
       <div className="feed" ref={feed} aria-live="polite">
         {notes.map((n, k) => n.role === 'you' ? (
-          <div key={n.id} className="you-row fade-up"><p className="you-bubble">{n.text}</p></div>
+          <article key={n.id} className="note you fade-up"><div className="note-meta">{t.you}<time>{time(n.at, lang)}</time></div><div className="note-text you-text">{n.text}</div></article>
         ) : (
           <article key={n.id} className="note fade-up">
             {/* Messenger grouping: name and time only on the first of consecutive Moa lines. */}
-            {(k === 0 || notes[k - 1].role !== 'moa' || n.at - notes[k - 1].at > 60_000) && <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at, lang)}</time></div>}
+            {(k === 0 || notes[k - 1].role !== 'moa' || n.at - notes[k - 1].at > 60_000) && <div className="note-meta">Moa<time>{time(n.at, lang)}</time></div>}
             {n.text && <div className="note-text">{/\n|\*\*/.test(n.text) ? <RichText text={n.text} /> : <Stream text={n.text} />}</div>}
             {n.offline && <p className="note-offline">{t.offline}</p>}
             {n.sky && <SkyCard level={n.sky.level} list={n.sky.list} />}

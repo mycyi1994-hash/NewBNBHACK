@@ -14,6 +14,8 @@ const P: Record<string, string> = {
   close: 'M6 6l12 12M18 6L6 18',
   enter: 'M9 10l-4 4 4 4M5 14h11a3 3 0 0 0 3-3V5',
   stop: 'M7 7h10v10H7z',
+  menuFold: 'M4 7h11M4 12h8M4 17h11M20 9l-3 3 3 3',
+  globe: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z',
 };
 export type IconName = keyof typeof P;
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {

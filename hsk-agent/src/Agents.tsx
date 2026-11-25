@@ -48,7 +48,7 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend, onA
     else if (k === 'chart') onGo('trade');
     else onGo('mine');
   };
-  const chip = (label: string, on: boolean, act: () => void) => <button key={label} className={`fchip${on ? ' on' : ''}`} aria-pressed={on} onClick={act}>{label}</button>;
+  const chip = (key: string, label: string, on: boolean, act: () => void) => <button key={key} className={`fchip${on ? ' on' : ''}`} aria-pressed={on} onClick={act}>{label}</button>;
 
   return (
     <div className="page agents-page studio-home">
@@ -66,8 +66,7 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend, onA
         <div className="start6 stagger">
           {t.starts.map((s) => (
             <button key={s.k} className="start6-card" onClick={() => start(s.k)}>
-              <span className="start6-ic"><Icon name={START_ICON[s.k]} size={18} /></span>
-              <b>{s.title}</b>
+              <span className="start6-head"><span className="start6-ic"><Icon name={START_ICON[s.k]} size={16} /></span><b>{s.title}</b></span>
               <small>{s.sub}</small>
             </button>
           ))}
@@ -76,14 +75,14 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend, onA
 
       <section ref={gallery} className="home-gallery">
         <div className="fchips">
-          {chip(t.agRunF.run, run === 'run', () => { setRun('run'); setAsset('all'); })}
-          {chip(t.agRunF.signal, run === 'signal', () => { setRun('signal'); setAsset('all'); })}
-          {chip(t.agRunF.all, run === 'all', () => { setRun('all'); setAsset('all'); })}
+          {chip('run', t.agRunF.run, run === 'run', () => { setRun('run'); setAsset('all'); })}
+          {chip('signal', t.agRunF.signal, run === 'signal', () => { setRun('signal'); setAsset('all'); })}
+          {chip('runall', t.agRunF.all, run === 'all', () => { setRun('all'); setAsset('all'); })}
           <span className="fchips-sep" aria-hidden />
-          {chip(t.agAll, asset === 'all', () => setAsset('all'))}
-          {assets.map((b) => chip(b, asset === b, () => setAsset(b)))}
+          {chip('assetall', t.agAll, asset === 'all', () => setAsset('all'))}
+          {assets.map((b) => chip(`a-${b}`, b, asset === b, () => setAsset(b)))}
           <span className="fchips-sep" aria-hidden />
-          {(['trend', 'revert', 'collect'] as Style[]).map((s) => chip(t.agStyle[s], style === s, () => setStyle(style === s ? 'all' : s)))}
+          {(['trend', 'revert', 'collect'] as Style[]).map((s) => chip(`s-${s}`, t.agStyle[s], style === s, () => setStyle(style === s ? 'all' : s)))}
           <label className="ag-sort">
             <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label={t.agSortLabel}>
               {(['dd', 'total', 'sharpe'] as Sort[]).map((s) => <option key={s} value={s}>{t.agSort[s]}</option>)}

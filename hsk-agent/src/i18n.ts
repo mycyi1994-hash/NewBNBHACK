@@ -310,7 +310,7 @@ const en = {
   mineStopNote: 'Pausing here stops Moa from sending new orders. Locking the vault and withdrawing are done from the vault owner’s wallet.',
   evHired: (p: string, b: string) => `Hired: $${p} per buy, $${b} budget`, evAsked: 'Asked you', evFilled: 'Filled', evDeclined: 'You skipped', evFailed: 'Not sent', evExpired: 'Dropped: signal changed',
   evSkipped: 'Skipped', evPaused: 'Paused', evResumed: 'Resumed', evChanged: 'Changed',
-  closeMoa: 'Close Moa', openMoa: 'Open Moa',
+  closeMoa: 'Close Moa', openMoa: 'Open Moa', navAll: 'View all',
   homeTitle: 'What should an agent do for you?', homeAsk: 'Ask Moa, or say the result you want',
   homeStart: 'Start with', homeGallery: 'Agents you can hire', homeGallerySignal: 'Signal only (demo)', homeGalleryAll: 'All agents',
   starts: [
@@ -633,7 +633,7 @@ const ko: typeof en = {
   mineStopNote: '여기서 멈추면 Moa가 새 주문을 보내지 않아요. 볼트 잠금과 출금은 볼트 주인 지갑에서 해요.',
   evHired: (p, b) => `맡김: 한 번에 $${p}, 예산 $${b}`, evAsked: '물어봄', evFilled: '체결', evDeclined: '건너뜀', evFailed: '보내지 않음', evExpired: '취소: 신호 바뀜',
   evSkipped: '쉼', evPaused: '멈춤', evResumed: '다시 시작', evChanged: '바꿈',
-  closeMoa: 'Moa 닫기', openMoa: 'Moa 열기',
+  closeMoa: 'Moa 닫기', openMoa: 'Moa 열기', navAll: '전체 보기',
   homeTitle: '에이전트에게 무엇을 맡겨볼까요?', homeAsk: 'Moa에게 묻거나, 원하는 결과를 말해 보세요',
   homeStart: '이걸로 시작해 보세요', homeGallery: '맡길 수 있는 에이전트', homeGallerySignal: '신호만 보는 에이전트 (데모)', homeGalleryAll: '모든 에이전트',
   starts: [

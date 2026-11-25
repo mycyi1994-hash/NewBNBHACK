@@ -59,26 +59,36 @@ const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
 /* ---------- shell ---------- */
 
-function Sidebar({ view, go, count, vault }: { view: View; go: (v: View) => void; count: number; vault: VaultInfo | null }) {
-  const { t } = useT();
-  const item = (label: string, v: View, icon: IconName, badge?: number) => (
+function Sidebar({ view, go, hired, vault, onOpenHired }: { view: View; go: (v: View) => void; hired: HiredAgent[]; vault: VaultInfo | null; onOpenHired: (id: string) => void }) {
+  const { t, lang, setLang } = useT();
+  const item = (label: string, v: View, icon: IconName, more?: 'chevron' | 'down') => (
     <button className={`nav-item${view === v ? ' active' : ''}`} onClick={() => go(v)} aria-current={view === v ? 'page' : undefined} data-tip={label}>
-      <span className="nav-icon"><Icon name={icon} /></span>
+      <span className="nav-icon"><Icon name={icon} size={18} /></span>
       <span className="nav-text">{label}</span>
-      {badge ? <span className="nav-badge">{badge}</span> : null}
+      {more && <span className={`nav-more ${more}`} aria-hidden><Icon name="chevron" size={16} /></span>}
     </button>
   );
   return (
     <aside className="sidebar">
       <div className="brand"><span className="orb sm" aria-hidden /><span className="nav-text">moa</span></div>
       {item(t.navAgents, 'agents', 'market')}
-      {item(t.navTrade, 'trade', 'chart')}
-      {item(t.navMine, 'mine', 'bot', count)}
+      {item(t.navTrade, 'trade', 'chart', 'chevron')}
+      {item(t.navMine, 'mine', 'bot', hired.length ? 'down' : 'chevron')}
+      {hired.length > 0 && (
+        <div className="nav-sub">
+          {hired.slice(0, 4).map((h) => <button key={h.id} className="nav-subitem" onClick={() => onOpenHired(h.id)}>{hiredName(t, h)}</button>)}
+          <button className="nav-all" onClick={() => go('mine')}>{t.navAll} →</button>
+        </div>
+      )}
       <div className="sidebar-foot">
         <div className="nav-item static" data-tip={vault?.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone}>
-          <span className="nav-icon"><Icon name="shield" /></span>
-          <span className="nav-text foot-note">{vault ? (vault.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone) : 'HSK Chain'}</span>
+          <span className="nav-icon"><Icon name="shield" size={18} /></span>
+          <span className="nav-text">{vault?.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone}</span>
         </div>
+        <button className="nav-item" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} data-tip={t.langLabel}>
+          <span className="nav-icon"><Icon name="globe" size={18} /></span>
+          <span className="nav-text">{t.langLabel}</span>
+        </button>
       </div>
     </aside>
   );
@@ -104,18 +114,16 @@ function TabBar({ view, go, count, asks, onMoa }: { view: View; go: (v: View) =>
 }
 
 function Topbar({ title, quotes, onMenu }: { title: string; quotes: Quote[]; onMenu: () => void }) {
-  const { t, lang, setLang } = useT();
   const hsk = quotes.find((q) => q.asset === 'HSK');
   return (
     <header className="topbar">
       <div className="topbar-title">
-        <button className="icon-btn menu-btn desktop-only" onClick={onMenu} aria-label="Menu"><Icon name="menu" /></button>
+        <button className="menu-btn desktop-only" onClick={onMenu} aria-label="Menu"><Icon name="menuFold" size={18} /></button>
         <span className="brand mobile-only"><span className="orb sm" aria-hidden /> moa</span>
         <span className="desktop-only">{title}</span>
       </div>
       <div className="topbar-right">
-        {hsk?.pool !== undefined && <span className="pill">HSK <RollNum text={fmtPrice(hsk.pool)} /></span>}
-        <button className="pill lang" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} aria-label="Switch language" data-tip={lang === 'en' ? '한국어로 보기' : 'View in English'}>{t.langLabel}</button>
+        {hsk?.pool !== undefined && <span className="top-meta">HSK <RollNum text={fmtPrice(hsk.pool)} /></span>}
       </div>
     </header>
   );
@@ -278,7 +286,7 @@ function Shell() {
 
   return (
     <div className={`app${moaOpen ? ' moa-open' : ''}${navMini ? ' nav-mini' : ''}`}>
-      <Sidebar view={view} go={go} count={hired.length} vault={vault} />
+      <Sidebar view={view} go={go} hired={hired} vault={vault} onOpenHired={(id) => tell({ kind: 'status', hiredId: id })} />
       <main className="main">
         <Topbar title={title} quotes={quotes} onMenu={() => setNavMini((v) => !v)} />
         <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
