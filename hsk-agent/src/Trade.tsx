@@ -8,11 +8,9 @@ import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
-import type { VaultInfo } from './parts.tsx';
-import type { Plan } from './intent.ts';
-import type { Execution } from './store.ts';
-import StrategyGrid, { type StratNote } from './Strategies.tsx';
-import MoaFeed, { type MoaContext } from './MoaFeed.tsx';
+import MarketAgents from './Strategies.tsx';
+import type { Agent } from './agents.ts';
+import type { MoaContext } from './MoaFeed.tsx';
 import { CoinMark } from './CoinMark.tsx';
 
 type Venue = 'cex' | 'dex';
@@ -226,25 +224,19 @@ function Stat({ label, value, cls }: { label: string; value: string; cls?: strin
 /** Live market data for one HashKey Global market. A failed poll keeps the last numbers; the next poll catches up. */
 function useCex(m: cex.Market) {
   const [t, setT] = useState<cex.Ticker | null>(null);
-  const [tape, setTape] = useState<cex.Trade[]>([]);
   const [mi, setMi] = useState<{ mark: number; index: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
-    setT(null); setTape([]); setMi(null);
-    const fast = async () => {
-      const [a, c] = await Promise.allSettled([cex.ticker(m), cex.trades(m, 20)]);
-      if (!alive) return;
-      if (a.status === 'fulfilled') setT(a.value);
-      if (c.status === 'fulfilled') setTape(c.value);
-    };
+    setT(null); setMi(null);
+    const fast = () => { cex.ticker(m).then((x) => alive && setT(x)).catch(() => undefined); };
     const slow = () => { if (m.kind === 'perp') cex.markAndIndex(m).then((x) => alive && setMi(x)).catch(() => undefined); };
     fast(); slow();
     const a = setInterval(fast, 4000), b = setInterval(slow, 10000);
     return () => { alive = false; clearInterval(a); clearInterval(b); };
   }, [m.symbol]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { t, tape, mi };
+  return { t, mi };
 }
 
 /** Price with sensible decimals for anything from BTC to DOGE. */
@@ -322,11 +314,11 @@ function stored<T extends string>(key: string, list: readonly T[], dflt: T): T {
 }
 const save = (key: string, v: string) => { try { localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
 
-function CexPanel({ market, setMarket, dexPrice, quotes, onPick }: { market: cex.Market; setMarket: (m: cex.Market) => void; dexPrice?: number; quotes: Quote[]; onPick: (n: StratNote) => void }) {
+function CexPanel({ market, setMarket, dexPrice, onPick }: { market: cex.Market; setMarket: (m: cex.Market) => void; dexPrice?: number; onPick: (a: Agent) => void }) {
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>(() => stored('moa.iv', CEX_IV, '4h'));
   const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
-  const { t, tape, mi } = useCex(market);
+  const { t, mi } = useCex(market);
   const [inds, toggleInd] = useStoredInds();
   const key = `cex-${market.symbol}-${interval}`;
   const { candles, more } = useCandles(key, (n) => cex.klines(market, interval, n), (first) => cex.klines(market, interval, 1000, first.time * 1000 - 1), 15000);
@@ -364,14 +356,14 @@ function CexPanel({ market, setMarket, dexPrice, quotes, onPick }: { market: cex
         )}
       </section>
 
-      <StrategyGrid venue="cex" market={market} quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onPick={onPick} />
+      <MarketAgents venue="cex" market={market} onPick={onPick} />
     </>
   );
 }
 
 /* ---------- DEX: HSKSwap on HSK Chain ---------- */
 
-function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; setAsset: (a: Asset) => void; detail: PoolDetail | null; quotes: Quote[]; onPick: (n: StratNote) => void }) {
+function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; setAsset: (a: Asset) => void; detail: PoolDetail | null; quotes: Quote[]; onPick: (a: Agent) => void }) {
   const { t: s } = useT();
   const [iv, setIv] = useState<GateInterval>(() => stored('moa.dexiv', DEX_IV, '1h'));
   const pickIv = (v: GateInterval) => { setIv(v); save('moa.dexiv', v); };
@@ -430,7 +422,7 @@ function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; s
         </div>
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={markers} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
       </section>
-      <StrategyGrid venue="dex" quotes={quotes} onPick={onPick} asset={asset} setAsset={setAsset} />
+      <MarketAgents venue="dex" asset={asset} setAsset={setAsset} onPick={onPick} />
       <section className="card book-card">
         <div className="card-title">{s.recentSwaps}</div>
         <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
@@ -450,18 +442,16 @@ function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; s
 
 /* ---------- page ---------- */
 
-export default function Trade({ start, quotes, vault, onCreate, onExecuted }: { start?: { market: cex.Market; note: StratNote } | null; quotes: Quote[]; vault: VaultInfo | null; onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void }) {
+export default function Trade({ quotes, onContext, onPick }: { quotes: Quote[]; onContext: (c: MoaContext) => void; onPick: (a: Agent) => void }) {
   const { t } = useT();
   const [venue, setVenue] = useState<Venue>('cex');
-  const [note, setNote] = useState<StratNote | null>(null);
   const [asset, setAsset] = useState<Asset>('BTC');
   const [market, setMarketState] = useState<cex.Market>(() => { try { return cex.marketBySymbol(localStorage.getItem('moa.market') ?? ''); } catch { return cex.DEFAULT_MARKET; } });
   const setMarket = (m: cex.Market) => { setMarketState(m); save('moa.market', m.symbol); };
   const [detail, setDetail] = useState<PoolDetail | null>(null);
   const ctx: MoaContext = venue === 'cex' ? { venue, label: t.ctxCex(market.base, market.kind === 'perp'), asset: market.base, perp: market.kind === 'perp' } : { venue, label: t.ctxDex(POOLS[asset].symbol), asset, perp: false };
-  // Arriving from the agent market: open that market and hand the agent's card to Moa.
-  useEffect(() => { if (start) { setVenue('cex'); setMarket(start.market); setNote(start.note); } }, [start]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pick = (n: StratNote) => { setNote(n); if (window.innerWidth <= 1180) document.querySelector('.feed-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  // Moa sits outside this page; tell it what the user is looking at.
+  useEffect(() => { onContext(ctx); }, [ctx.label]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if ((ASSETS as readonly string[]).includes(market.base)) setAsset(market.base as Asset); }, [market.base]);
 
@@ -484,11 +474,10 @@ export default function Trade({ start, quotes, vault, onCreate, onExecuted }: { 
           <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
         </div>
         {venue === 'cex'
-          ? <CexPanel market={market} setMarket={setMarket} dexPrice={market.base === asset ? detail?.price : undefined} quotes={quotes} onPick={pick} />
-          : <DexPanel asset={asset} setAsset={setAsset} detail={detail} quotes={quotes} onPick={pick} />}
+          ? <CexPanel market={market} setMarket={setMarket} dexPrice={market.base === asset ? detail?.price : undefined} onPick={onPick} />
+          : <DexPanel asset={asset} setAsset={setAsset} detail={detail} quotes={quotes} onPick={onPick} />}
         <p className="muted small">{t.dataNote}</p>
       </div>
-      <MoaFeed quotes={quotes} vault={vault} inject={note} context={ctx} onCreate={onCreate} onExecuted={onExecuted} />
     </div>
   );
 }

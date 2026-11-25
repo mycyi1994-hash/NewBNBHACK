@@ -1,15 +1,7 @@
-// Bots and executed trades saved in this browser. Bots are drafts until automatic runs exist.
+// Hired agents and trades run from the chat, saved in this browser. The hired agent is the one source of
+// truth for amounts, state and profit; Moa and the bar read it, they do not keep their own copy.
 import { useCallback, useState } from 'react';
-import type { Plan } from './intent.ts';
-
-export interface Bot {
-  id: string;
-  name: string;
-  goal: string;
-  plan: Plan;
-  createdAt: number;
-  status: 'draft';
-}
+import type { HiredAgent } from './runner.ts';
 
 export interface Execution {
   at: number;
@@ -43,17 +35,15 @@ function write<T>(key: string, v: T[]) {
   }
 }
 
-export function useBots() {
-  const [bots, setBots] = useState<Bot[]>(() => read<Bot>('moa.bots.v1'));
-  const add = useCallback((b: Omit<Bot, 'id' | 'createdAt' | 'status'>) => {
-    const bot: Bot = { ...b, id: Math.random().toString(36).slice(2, 10), createdAt: Date.now(), status: 'draft' };
-    setBots((prev) => { const next = [bot, ...prev]; write('moa.bots.v1', next); return next; });
-    return bot;
-  }, []);
-  const remove = useCallback((id: string) => {
-    setBots((prev) => { const next = prev.filter((b) => b.id !== id); write('moa.bots.v1', next); return next; });
-  }, []);
-  return { bots, add, remove };
+const HIRED = 'moa.hired.v1';
+
+export function useHired() {
+  const [hired, setHired] = useState<HiredAgent[]>(() => read<HiredAgent>(HIRED));
+  const commit = (fn: (cur: HiredAgent[]) => HiredAgent[]) => setHired((cur) => { const next = fn(cur); write(HIRED, next); return next; });
+  const add = useCallback((h: HiredAgent) => commit((cur) => [h, ...cur]), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const update = useCallback((id: string, fn: (h: HiredAgent) => HiredAgent) => commit((cur) => cur.map((h) => (h.id === id ? fn(h) : h))), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const remove = useCallback((id: string) => commit((cur) => cur.filter((h) => h.id !== id)), []); // eslint-disable-line react-hooks/exhaustive-deps
+  return { hired, add, update, remove };
 }
 
 export function useExecutions() {

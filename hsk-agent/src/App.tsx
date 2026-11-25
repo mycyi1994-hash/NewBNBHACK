@@ -1,26 +1,38 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { botName, describe, parseIntent, scheduleOf, type Plan, type Step } from './intent.ts';
+// The shell. Three screens (trade, agent market, my agents), the "My agents" bar on top of all of them,
+// and one Moa conversation docked on the right of all of them. On small screens Moa slides up as a sheet.
+// The agent market shows, Moa picks and explains, hired agents work:
+//  - the hire sheet is the only place amounts change
+//  - the runner below decides each hired agent's next order from its rule, and every order waits for the
+//    user's OK in Moa's conversation before it goes to the vault (which enforces its limits again)
+//  - pausing works from the bar without Moa or the AI
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fmtPrice, loadQuotes, type Quote } from './market.ts';
-import { GREETING, reply } from './moa.ts';
-import { useBots, useExecutions, type Bot, type Execution } from './store.ts';
+import { useExecutions, useHired } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
-import { RollNum, SlidePill } from './motion.tsx';
-import { EXECUTE_WORDS, toApiHistory, toStep, type Exec, type ServerStep, type StepKey } from './moaClient.ts';
+import { RollNum } from './motion.tsx';
 import Trade from './Trade.tsx';
 import Agents from './Agents.tsx';
-import type { StratNote } from './Strategies.tsx';
-import type { Market } from './cex.ts';
-import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
-import { CopyButton, Menu, Modal, RichText, ToastProvider, useToast } from './ui.tsx';
+import MyAgents from './MyAgents.tsx';
+import MyAgentsBar from './MyAgentsBar.tsx';
+import MoaFeed, { type MoaAsk, type MoaContext, type MoaInject } from './MoaFeed.tsx';
+import HireSheet, { type HireTarget } from './HireSheet.tsx';
+import { agentById, loadAgents, type Agent } from './agents.ts';
+import type { Asset } from './intent.ts';
+import { chainNote, decide, newId, type Amounts, type HiredAgent, type Signal } from './runner.ts';
+import { hiredName } from './hiredText.ts';
+import { agentName } from './AgentCard.tsx';
+import { sendAgentTrade } from './moaClient.ts';
+import type { VaultInfo } from './parts.tsx';
+import { ToastProvider, useToast } from './ui.tsx';
 
-type View = { name: 'trade' } | { name: 'agents' } | { name: 'chat'; prefill?: string; auto?: boolean } | { name: 'bots' } | { name: 'bot'; id: string };
-interface Msg { role: 'moa' | 'you'; text: string; at: number; execs?: Exec[]; offline?: boolean }
+type View = 'trade' | 'agents' | 'mine';
+const NARROW = '(max-width: 1180px)';
 
 function useQuotes() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   useEffect(() => {
     let alive = true;
-    const tick = () => loadQuotes().then((q) => alive && setQuotes(q));
+    const tick = () => loadQuotes().then((q) => alive && setQuotes(q)).catch(() => undefined);
     tick();
     const t = setInterval(tick, 30_000);
     return () => { alive = false; clearInterval(t); };
@@ -35,17 +47,21 @@ function useVault() {
   return { vault: v, reloadVault: load };
 }
 
-/** Dates and times follow the UI language (set on <html lang>). */
-const loc = () => (document.documentElement.lang === 'en' ? 'en-US' : 'ko-KR');
-const time = (t: number) => new Date(t).toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit' });
+/** A clock that ticks, so time-based states ("bought today", "next buy") move on their own. */
+function useNow(ms: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(t); }, [ms]);
+  return now;
+}
+
 const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
 /* ---------- shell ---------- */
 
-function Sidebar({ view, go, botCount, vault }: { view: View; go: (v: View) => void; botCount: number; vault: VaultInfo | null }) {
+function Sidebar({ view, go, count, vault }: { view: View; go: (v: View) => void; count: number; vault: VaultInfo | null }) {
   const { t } = useT();
-  const item = (label: string, v: View, icon: string, active: boolean, badge?: number) => (
-    <button className={`nav-item${active ? ' active' : ''}`} onClick={() => go(v)} aria-current={active ? 'page' : undefined}>
+  const item = (label: string, v: View, icon: string, badge?: number) => (
+    <button className={`nav-item${view === v ? ' active' : ''}`} onClick={() => go(v)} aria-current={view === v ? 'page' : undefined}>
       <span className="nav-icon" aria-hidden>{icon}</span>
       {label}
       {badge ? <span className="nav-badge">{badge}</span> : null}
@@ -55,12 +71,10 @@ function Sidebar({ view, go, botCount, vault }: { view: View; go: (v: View) => v
     <aside className="sidebar">
       <div className="brand"><span className="orb sm" aria-hidden /> moa</div>
       <div className="nav-label">{t.navMarkets}</div>
-      {item(t.navTrade, { name: 'trade' }, '∿', view.name === 'trade')}
-      {item(t.navAgents, { name: 'agents' }, '◈', view.name === 'agents')}
-      <div className="nav-label">{t.navAssistant}</div>
-      {item(t.navAsk, { name: 'chat' }, '✦', view.name === 'chat')}
+      {item(t.navTrade, 'trade', '∿')}
+      {item(t.navAgents, 'agents', '◈')}
       <div className="nav-label">{t.navAutomations}</div>
-      {item(t.navBots, { name: 'bots' }, '◎', view.name === 'bots' || view.name === 'bot', botCount)}
+      {item(t.navMine, 'mine', '◎', count)}
       <div className="sidebar-foot">
         <div className="net"><span className="live-dot" /> HSK Chain</div>
         {vault && <div className="foot-note">{vault.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone}</div>}
@@ -69,19 +83,21 @@ function Sidebar({ view, go, botCount, vault }: { view: View; go: (v: View) => v
   );
 }
 
-function TabBar({ view, go, botCount }: { view: View; go: (v: View) => void; botCount: number }) {
+function TabBar({ view, go, count, asks, onMoa }: { view: View; go: (v: View) => void; count: number; asks: number; onMoa: () => void }) {
   const { t } = useT();
-  const tab = (label: string, v: View, icon: string, active: boolean, badge?: number) => (
-    <button className={`tab${active ? ' on' : ''}`} onClick={() => go(v)} aria-current={active ? 'page' : undefined}>
+  const tab = (label: string, v: View, icon: string, badge?: number) => (
+    <button className={`tab${view === v ? ' on' : ''}`} onClick={() => go(v)} aria-current={view === v ? 'page' : undefined}>
       <span className="tab-icon" aria-hidden>{icon}</span>{label}{badge ? <span className="nav-badge">{badge}</span> : null}
     </button>
   );
   return (
     <nav className="tabbar" aria-label="Main">
-      {tab(t.navTrade, { name: 'trade' }, '∿', view.name === 'trade')}
-      {tab(t.navAsk, { name: 'chat' }, '✦', view.name === 'chat')}
-      {tab(t.navAgents, { name: 'agents' }, '◈', view.name === 'agents')}
-      {tab(t.navBots, { name: 'bots' }, '◎', view.name === 'bots' || view.name === 'bot', botCount)}
+      {tab(t.navTrade, 'trade', '∿')}
+      {tab(t.navAgents, 'agents', '◈')}
+      {tab(t.navMine, 'mine', '◎', count)}
+      <button className="tab" onClick={onMoa} aria-label={t.openMoa}>
+        <span className="tab-icon" aria-hidden><span className="orb sm" /></span>{t.navMoa}{asks ? <span className="nav-badge ask">{asks}</span> : null}
+      </button>
     </nav>
   );
 }
@@ -100,516 +116,206 @@ function Topbar({ title, quotes }: { title: string; quotes: Quote[] }) {
   );
 }
 
-/* ---------- shared Moa pieces ---------- */
-
-/** Reveals text a few characters at a time, like someone typing. */
-function Typing({ text, onDone }: { text: string; onDone: () => void }) {
-  const [n, setN] = useState(0);
-  const done = useRef(onDone);
-  done.current = onDone;
-  useEffect(() => {
-    const step = Math.max(2, Math.round(text.length / 90));
-    const tm = setInterval(() => setN((v) => {
-      const next = Math.min(text.length, v + step);
-      if (next === text.length) { clearInterval(tm); done.current(); }
-      return next;
-    }), 16);
-    return () => clearInterval(tm);
-  }, [text]);
-  return <>{text.slice(0, n)}<span className="caret" aria-hidden /></>;
-}
-
-function Receipt({ x }: { x: Exec }) {
+function Shell() {
   const { t } = useT();
-  const side = x.request.side === 'buy' ? t.buy : t.sell;
-  return x.ok ? (
-    <div className="receipt ok">
-      <div className="receipt-head"><span className="dot ok" /> {t.executed}</div>
-      <div className="receipt-line">{side} {x.request.asset}: {x.amountIn} {x.tokenIn} → {Number(x.amountOut).toPrecision(6)} {x.tokenOut}</div>
-      <a href={x.explorerUrl} target="_blank" rel="noreferrer">{short(x.txHash)} ↗</a>
-    </div>
-  ) : (
-    <div className="receipt bad">
-      <div className="receipt-head"><span className="dot bad" /> {t.notExecuted}</div>
-      <div className="receipt-line">{side} {x.request.asset} {x.request.amount}: {x.reason}</div>
-    </div>
-  );
-}
-
-function Progress({ steps, startedAt }: { steps: StepKey[]; startedAt: number }) {
-  const { t } = useT();
-  const [, tick] = useState(0);
-  useEffect(() => { const i = setInterval(() => tick((v) => v + 1), 1000); return () => clearInterval(i); }, []);
-  const secs = Math.round((Date.now() - startedAt) / 1000);
-  return (
-    <div className="bubble moa progress" role="status" aria-live="polite">
-      <ol>
-        {steps.map((s, i) => (
-          <li key={i} className={i === steps.length - 1 ? 'now' : 'done'}>
-            <span className="pmark" aria-hidden>{i === steps.length - 1 ? <span className="spinner" /> : '✓'}</span>
-            {t.steps[s]}
-          </li>
-        ))}
-      </ol>
-      <span className="elapsed">{secs}s</span>
-    </div>
-  );
-}
-
-/* ---------- chat ---------- */
-
-function Chat({ active, quotes, vault, onCreate, onExecuted }: {
-  active: boolean; quotes: Quote[]; vault: VaultInfo | null;
-  onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void;
-}) {
-  const { t, lang } = useT();
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [draft, setDraft] = useState('');
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [goal, setGoal] = useState('');
-  const [busy, setBusy] = useState<{ steps: StepKey[]; at: number } | null>(null);
-  const [typingIdx, setTypingIdx] = useState<number | null>(null);
-  const end = useRef<HTMLDivElement>(null);
-  const scroller = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLTextAreaElement>(null);
-  const [atBottom, setAtBottom] = useState(true);
-  const started = msgs.length > 0;
-
-  // Follow new messages only while the reader is at the bottom; if they scrolled up, offer a jump button instead.
-  const toBottom = (smooth = true) => { const el = scroller.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); };
-  useEffect(() => { if (atBottom) toBottom(); }, [msgs, busy, typingIdx]); // eslint-disable-line react-hooks/exhaustive-deps
-  const onScroll = () => { const el = scroller.current; if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80); };
-
-  // The input grows with its text, up to a limit (ChatGPT).
-  // Measure only while visible: a hidden chat reports scrollHeight 0 and would clip the placeholder.
-  useEffect(() => { const el = input.current; if (!el || !active) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 180)}px`; }, [draft, active, msgs.length]);
-
   const toast = useToast();
-  const [confirm, setConfirm] = useState<string | null>(null);
-  const abort = useRef<AbortController | null>(null);
+  const [view, setView] = useState<View>('trade');
+  const quotes = useQuotes();
+  const { vault, reloadVault } = useVault();
+  const { hired, add, update, remove } = useHired();
+  const { execs, record } = useExecutions();
+  const now = useNow(30_000);
+  const [agents, setAgents] = useState<Agent[] | null>(null);
+  const [agentsFailed, setAgentsFailed] = useState(false);
+  const [extra, setExtra] = useState<Record<string, Agent>>({});
+  const [tradeCtx, setTradeCtx] = useState<MoaContext>({ label: '' });
+  const [inject, setInject] = useState<MoaInject | null>(null);
+  const injectN = useRef(0);
+  const [sheet, setSheet] = useState<HireTarget | null>(null);
+  const [moaOpen, setMoaOpen] = useState(false);
+  const [sending, setSending] = useState<Set<string>>(new Set());
+  const sendingRef = useRef(sending); sendingRef.current = sending;
+  const hiredRef = useRef(hired); hiredRef.current = hired;
+  const vaultRef = useRef(vault); vaultRef.current = vault;
 
-  /** A message that can move money gets a confirm step first (ChatGPT-style dialog). */
-  const ask = (text: string) => {
-    const tx = text.trim();
-    if (!tx || busy) return;
-    if (EXECUTE_WORDS.test(tx) && vault?.configured) { setConfirm(tx); return; }
-    void send(tx);
-  };
+  const go = (v: View) => { setView(v); window.scrollTo(0, 0); };
+  const tell = (x: MoaAsk) => setInject({ ...x, n: ++injectN.current });
+  const attention = () => { if (window.matchMedia(NARROW).matches) setMoaOpen(true); };
 
-  const stop = () => {
-    abort.current?.abort();
-    abort.current = null;
-    setBusy(null);
-    setMsgs((cur) => [...cur, { role: 'moa', text: t.stopped, at: Date.now() }]);
-  };
-
-  const send = async (text: string, base: Msg[] = msgs) => {
-    const tx = text.trim();
-    if (!tx || busy) return;
-    setDraft('');
-    setAtBottom(true);
-    const ctrl = new AbortController();
-    abort.current = ctrl;
-    const history = [...base, { role: 'you' as const, text: tx, at: Date.now() }];
-    setMsgs(history);
-    setBusy({ steps: ['thinking'], at: Date.now() });
-    const finish = (m: Msg, p: Plan | null, g: string) => {
-      if (p && p.steps.length) { setPlan(p); setGoal(g); }
-      setBusy(null);
-      setMsgs((cur) => { setTypingIdx(cur.length); return [...cur, m]; });
-    };
-    try {
-      const r = await fetch('/api/moa', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ history: toApiHistory(history) }),
-        signal: ctrl.signal,
-      });
-      if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
-      const reader = r.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let nl;
-        while ((nl = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
-          if (!line.trim()) continue;
-          const ev = JSON.parse(line) as { type: string; step?: StepKey; error?: string; result?: { reply: string; plan?: { steps: ServerStep[]; missing: string[] }; executions: Exec[] } };
-          if (ev.type === 'step' && ev.step) setBusy((b) => (b && b.steps[b.steps.length - 1] !== ev.step ? { ...b, steps: [...b.steps, ev.step!] } : b));
-          else if (ev.type === 'error') throw new Error(ev.error);
-          else if (ev.type === 'done' && ev.result) {
-            const res = ev.result;
-            const p = res.plan ? { steps: res.plan.steps.map(toStep), missing: res.plan.missing } : null;
-            if (res.executions?.length) onExecuted(res.executions.map((x) => ({ at: Date.now(), ok: x.ok, asset: x.request.asset, side: x.request.side, amount: x.request.amount, reason: x.reason, txHash: x.txHash, explorerUrl: x.explorerUrl, amountIn: x.amountIn, amountOut: x.amountOut, tokenIn: x.tokenIn, tokenOut: x.tokenOut })));
-            finish({ role: 'moa', text: res.reply, at: Date.now(), execs: res.executions?.length ? res.executions : undefined }, p, tx);
-            return;
-          }
-        }
-      }
-      throw new Error('stream ended without a result');
-    } catch {
-      if (ctrl.signal.aborted) return; // the user pressed stop; nothing more to show
-      // No server (static hosting) or the API failed: fall back to the on-device parser, clearly marked.
-      const merged = plan && plan.missing.length && goal ? `${goal}, ${tx}` : tx;
-      const p = parseIntent(merged);
-      finish({ role: 'moa', text: reply(p, quotes, lang), at: Date.now(), offline: true }, p, merged);
-    }
-  };
-
-  /** Regenerate: drop the reply and the question it answered, then ask again (ChatGPT). */
-  const retry = (i: number) => {
-    const q = msgs[i - 1];
-    if (!q || q.role !== 'you' || busy) return;
-    const base = msgs.slice(0, i - 1);
-    setMsgs(base);
-    // A retried "execute" message is still a trade: it gets the same confirm dialog as a typed one.
-    if (EXECUTE_WORDS.test(q.text) && vault?.configured) { setConfirm(q.text); return; }
-    void send(q.text, base);
-  };
-
-  // Esc stops a reply; "/" jumps to the input from anywhere on the page (ChatGPT / Perplexity shortcuts).
+  // Agent scores for the market, Moa's picks and the runner. Refreshed every 10 minutes so live signals move.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!active) return;
-      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
-      if (e.key === 'Escape' && busy && !busy.steps.includes('execute') && !confirm) stop();
-      else if (e.key === '/' && !typing && !confirm) { e.preventDefault(); input.current?.focus(); }
+    let alive = true;
+    const load = () => loadAgents().then((a) => { if (alive) { setAgents(a); setAgentsFailed(false); } }, () => { if (alive) setAgentsFailed(true); });
+    load();
+    const x = setInterval(load, 10 * 60_000);
+    return () => { alive = false; clearInterval(x); };
+  }, []);
+
+  // Hired agents that are not in the market listing (e.g. hired from the tiles of a spot market) load on their own.
+  const missing = hired.flatMap((h) => (h.source.type === 'market' && !agents?.some((a) => a.id === (h.source as { agentId: string }).agentId) ? [h.source.agentId] : []));
+  const missingKey = [...new Set(missing)].sort().join(',');
+  useEffect(() => {
+    if (!missingKey) return;
+    let alive = true;
+    const load = () => Promise.all(missingKey.split(',').map((id) => agentById(id).catch(() => null))).then((xs) => {
+      if (alive) setExtra((cur) => { const next = { ...cur }; for (const a of xs) if (a) next[a.id] = a; return next; });
+    });
+    void load();
+    const x = setInterval(load, 10 * 60_000);
+    return () => { alive = false; clearInterval(x); };
+  }, [missingKey]);
+
+  const agentFor = (id: string) => agents?.find((a) => a.id === id) ?? extra[id];
+  const signalOf = (h: HiredAgent): Signal | undefined => {
+    if (h.source.type === 'custom') return { kind: 'custom', price: quotes.find((q) => q.asset === h.asset)?.pool };
+    const a = agentFor(h.source.agentId);
+    if (!a) return undefined;
+    return a.kind === 'position' ? { kind: 'position', live: a.live } : { kind: 'collect', mult: a.mult };
+  };
+  const maxTradeUsd = vault?.configured && vault.maxTradeUsdt ? Number(vault.maxTradeUsdt) : undefined;
+
+  // The runner: while the app is open, each hired agent's rule decides its next order. Orders only wait for an answer.
+  useEffect(() => {
+    const at = Date.now();
+    for (const h of hired) {
+      const s = signalOf(h);
+      if (!s) continue;
+      const d = decide(h, s, at, { maxTradeUsd });
+      if (d.type === 'order') {
+        const order = { ...d.order, id: newId(), at };
+        update(h.id, (x) => (x.pending || x.paused ? x : { ...x, pending: order, declined: undefined, log: [...x.log, { at, k: 'asked', order }] }));
+      } else if (d.type === 'skip') {
+        update(h.id, (x) => (x.lastRunAt !== h.lastRunAt ? x : { ...x, lastRunAt: at, log: [...x.log, { at, k: 'skipped', why: d.why }] }));
+      } else if (d.type === 'cancel') {
+        update(h.id, (x) => (x.pending && !sendingRef.current.has(x.pending.id) ? { ...x, pending: undefined, log: [...x.log, { at, k: 'expired', orderId: x.pending.id }] } : x));
+      } else if (d.clearDeclined) {
+        update(h.id, (x) => ({ ...x, declined: undefined }));
+      }
+    }
+  }, [hired, agents, extra, quotes, now, maxTradeUsd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** The user said yes: send this one order to the vault and record exactly what came back. */
+  const approve = async (id: string, orderId: string) => {
+    const h = hiredRef.current.find((x) => x.id === id);
+    const o = h?.pending;
+    if (!h || !o || o.id !== orderId || sendingRef.current.has(orderId)) return;
+    setSending((cur) => new Set(cur).add(orderId));
+    const amount = o.side === 'buy' ? o.usd ?? 0 : o.qty ?? 0;
+    const enName = h.source.type === 'market' ? agentName(STRINGS.en, h.source) : STRINGS.en.customName(h.asset);
+    // Demo (the server reports no vault): the answer is recorded, nothing is sent.
+    const demo = vaultRef.current?.configured === false;
+    const r = demo ? { ok: false as const, reason: 'No vault is connected (demo).' } : await sendAgentTrade({ asset: h.asset, side: o.side, amount, note: chainNote(enName, o.why) });
+    const at = Date.now();
+    const position = h.source.type === 'market' && h.source.kind === 'position';
+    const key = 'key' in o.why ? o.why.key : undefined;
+    update(id, (x) => {
+      const base = { ...x, pending: x.pending?.id === orderId ? undefined : x.pending, fired: key && !x.fired.includes(key) ? [...x.fired, key] : x.fired };
+      if (r.ok) {
+        const fill = { at, side: o.side, usd: Number(o.side === 'buy' ? r.amountIn : r.amountOut), qty: Number(o.side === 'buy' ? r.amountOut : r.amountIn), txHash: r.txHash, explorerUrl: r.explorerUrl };
+        return { ...base, fills: [...x.fills, fill], lastRunAt: o.side === 'buy' ? at : x.lastRunAt, log: [...x.log, { at, k: 'filled', orderId, fill }] };
+      }
+      return { ...base, declined: position ? o.side : x.declined, lastRunAt: position || o.side === 'sell' ? x.lastRunAt : at, log: [...x.log, { at, k: 'failed', orderId, reason: r.reason, demo }] };
+    });
+    setSending((cur) => { const next = new Set(cur); next.delete(orderId); return next; });
+    reloadVault();
+  };
+
+  const decline = (id: string, orderId: string) => update(id, (x) => {
+    const o = x.pending;
+    if (!o || o.id !== orderId || sendingRef.current.has(orderId)) return x;
+    const at = Date.now();
+    const position = x.source.type === 'market' && x.source.kind === 'position';
+    const key = 'key' in o.why ? o.why.key : undefined;
+    return {
+      ...x, pending: undefined, declined: position ? o.side : x.declined, lastRunAt: position || o.side === 'sell' ? x.lastRunAt : at,
+      fired: key ? [...x.fired, key] : x.fired, log: [...x.log, { at, k: 'declined', orderId }],
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
   });
 
-  useEffect(() => { if (active) input.current?.focus(); }, [active]);
+  const pause = (id: string) => update(id, (x) => {
+    if (x.paused) return x;
+    const at = Date.now();
+    const drop = x.pending && !sendingRef.current.has(x.pending.id) ? x.pending : undefined;
+    return { ...x, paused: true, pending: drop ? undefined : x.pending, log: [...x.log, ...(drop ? [{ at, k: 'expired' as const, orderId: drop.id }] : []), { at, k: 'paused' }] };
+  });
+  const resume = (id: string) => update(id, (x) => (x.paused ? { ...x, paused: false, declined: undefined, log: [...x.log, { at: Date.now(), k: 'resumed' }] } : x));
 
-  /** ChatGPT "New chat": clear the conversation and the plan. */
-  const newChat = () => { if (busy) return; setMsgs([]); setPlan(null); setGoal(''); setDraft(''); setTypingIdx(null); input.current?.focus(); };
+  /** The hire sheet's button: the only place a hired agent is created or its amounts change. */
+  const confirmSheet = (v: Amounts) => {
+    if (!sheet) return;
+    const at = Date.now();
+    if (sheet.kind === 'edit') {
+      const from = { perBuyUsd: sheet.hired.perBuyUsd, budgetUsd: sheet.hired.budgetUsd };
+      update(sheet.hired.id, (x) => ({ ...x, ...v, log: [...x.log, { at, k: 'changed', from, to: v }] }));
+      tell({ kind: 'hired', hiredId: sheet.hired.id, changed: { from, to: v } });
+    } else {
+      let h: HiredAgent;
+      if (sheet.kind === 'agent') {
+        const a = sheet.agent;
+        setExtra((cur) => ({ ...cur, [a.id]: a }));
+        h = { id: newId(), createdAt: at, source: { type: 'market', agentId: a.id, kind: a.kind, rule: a.rule, base: a.base }, asset: a.base as Asset, ...v, mode: 'ask', paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
+      } else {
+        const first = sheet.plan.steps.find((s) => 'asset' in s) as { asset?: Asset } | undefined;
+        h = { id: newId(), createdAt: at, source: { type: 'custom', goal: sheet.goal, plan: sheet.plan }, asset: first?.asset ?? 'HSK', ...v, mode: 'ask', paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
+      }
+      add(h);
+      toast(t.hiredSay(hiredName(t, h)));
+      tell({ kind: 'hired', hiredId: h.id });
+    }
+    setSheet(null);
+  };
 
-  // Stop is offered while Moa thinks, but not once a trade is on its way to the vault (it may already be on-chain).
-  const canStop = !!busy && !busy.steps.includes('execute');
-  const composer = (big: boolean) => (
-    <form className={`composer${big ? ' big' : ''}`} onSubmit={(e) => { e.preventDefault(); ask(draft); }}>
-      <textarea ref={input} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={big ? t.heroPlaceholder : t.replyPlaceholder} aria-label="Message Moa" autoFocus
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); ask(draft); } }} />
-      {busy ? (
-        <button className="send-btn stop" type="button" onClick={stop} disabled={!canStop} aria-label={t.stop} data-tip={canStop ? `${t.stop} (Esc)` : t.stopLocked}>
-          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor" /></svg>
+  const ctx: MoaContext = view === 'trade' ? tradeCtx : view === 'agents' ? { label: t.ctxMarket } : { label: t.ctxMine };
+  const asks = hired.filter((h) => h.pending).length;
+  const title = { trade: t.navTrade, agents: t.agTitle, mine: t.mineTitle }[view];
+  const askMoaAbout = (a: Agent) => tell({ kind: 'agent', agent: a });
+
+  return (
+    <div className={`app${moaOpen ? ' moa-open' : ''}`}>
+      <Sidebar view={view} go={go} count={hired.length} vault={vault} />
+      <main className="main">
+        <Topbar title={title} quotes={quotes} />
+        <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
+          onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume}
+          onRecommend={() => tell({ kind: 'recommend', coin: ctx.asset })} />
+        {view === 'trade' && <Trade quotes={quotes} onContext={setTradeCtx} onPick={askMoaAbout} />}
+        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onAsk={askMoaAbout} />}
+        {view === 'mine' && (
+          <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
+            onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
+            onPause={pause} onResume={resume} onRemove={remove} onOpen={(id) => tell({ kind: 'status', hiredId: id })}
+            onRecommend={() => tell({ kind: 'recommend' })} />
+        )}
+      </main>
+      <div className="moa-col">
+        <MoaFeed quotes={quotes} vault={vault} inject={inject} context={ctx} agents={agents} agentsFailed={agentsFailed}
+          hired={hired} sending={sending} now={now}
+          onHire={setSheet} onEdit={(id) => { const h = hiredRef.current.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
+          onPause={pause} onResume={resume} onApprove={(id, o) => void approve(id, o)} onDecline={decline}
+          onExecuted={(x) => { record(x); reloadVault(); }} onGoto={(v) => { go(v); if (window.matchMedia(NARROW).matches) setMoaOpen(false); }}
+          onAttention={attention} onClose={() => setMoaOpen(false)} />
+      </div>
+      {moaOpen && <div className="moa-scrim" onClick={() => setMoaOpen(false)} aria-hidden />}
+      {!moaOpen && (
+        <button className="moa-fab" onClick={() => setMoaOpen(true)} aria-label={t.openMoa}>
+          <span className="orb sm breathe" aria-hidden /> Moa{asks ? <span className="nav-badge ask">{asks}</span> : null}
         </button>
-      ) : (
-        <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.send} data-tip={`${t.send} (Enter)`}>
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        </button>
       )}
-    </form>
-  );
-
-  return (
-    <div className="chat-layout">
-      {confirm && (
-        <Modal
-          title={t.confirmTitle}
-          onClose={() => setConfirm(null)}
-          actions={<>
-            <button className="btn-ghost" onClick={() => setConfirm(null)}>{t.cancel}</button>
-            <button className="btn-primary" onClick={() => { const x = confirm; setConfirm(null); void send(x); }}>{t.executeBtn}</button>
-          </>}
-        >
-          <p className="modal-quote">“{confirm}”</p>
-          <p>{t.confirmBody(vault?.maxTradeUsdt ?? '?', vault?.remainingTodayUsdt ?? '?')}</p>
-        </Modal>
-      )}
-      <div className="chat-main">
-        {!started ? (
-          <div className="hero">
-            <span className="orb xl breathe" aria-hidden />
-            <h1>{t.heroTitle}</h1>
-            <p className="muted">{lang === 'ko' ? t.dockSub : GREETING}</p>
-            {composer(true)}
-            <div className="starter-row">
-              {t.starters.map((s, i) => (
-                <button key={s.title} className="starter" onClick={() => ask(s.prompt)}>
-                  <span className={`feature-icon sm ${['peach', 'lilac', 'sky', 'mint'][i]}`} aria-hidden>{['◔', '◈', '◍', '◎'][i]}</span>
-                  <span><b>{s.title}</b><span className="muted">{s.sub}</span></span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
-              <div className="chat-col">
-                <div className="event"><span className="event-dot" /> {t.started} <span className="event-time">{time(msgs[0].at)}</span>
-                  <button className="new-chat" onClick={newChat} disabled={!!busy} data-tip={t.newChatTip}>
-                    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><path d="M11.5 2.5 13.5 4.5 7 11l-2.7.7.7-2.7 6.5-6.5zM3 13.5h10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>{t.newChat}
-                  </button>
-                </div>
-                {msgs.map((m, i) => (
-                  <div key={i} className={`msg ${m.role}`}>
-                    {m.role === 'moa' && <span className="orb md" aria-hidden />}
-                    <div className={`bubble ${m.role}`}>
-                      <div className="bubble-head">{m.role === 'moa' ? 'Moa' : t.you}<span>{time(m.at)}</span></div>
-                      <div className="bubble-text">{m.role === 'moa' && i === typingIdx ? <Typing text={m.text} onDone={() => setTypingIdx(null)} /> : m.role === 'moa' ? <RichText text={m.text} /> : m.text}</div>
-                      {m.execs?.map((x, k) => <Receipt key={k} x={x} />)}
-                    </div>
-                    {m.role === 'moa' && i !== typingIdx && (
-                      <div className="msg-actions">
-                        <CopyButton text={m.text} label={t.copy} done={t.copied} />
-                        {m.offline && <button className="icon-btn sm" onClick={() => retry(i)} aria-label={t.retry} data-tip={t.retry}><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v3h-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {busy && (
-                  <div className="msg moa">
-                    <span className="orb md spin" aria-hidden />
-                    <Progress steps={busy.steps} startedAt={busy.at} />
-                  </div>
-                )}
-                <div ref={end} />
-              </div>
-            </div>
-            <div className="chat-col bottom">
-              {!atBottom && <button className="jump" onClick={() => toBottom()} aria-label={t.toLatest} data-tip={t.toLatest}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
-              {composer(false)}
-            </div>
-          </>
-        )}
-      </div>
-      <aside className="plan-panel">
-        {plan ? (
-          <>
-            <div className="panel-label">{t.plan}</div>
-            <PlanSteps steps={plan.steps} />
-            {plan.missing.length > 0 && <div className="needs">{t.needs} {plan.missing[0]}</div>}
-            <div className="panel-label">{t.guardrails}</div>
-            <ul className="guards"><li>{t.guard1}</li><li>{t.guard2}</li><li>{t.guard3}</li></ul>
-            <button className="btn-primary wide" disabled={plan.missing.length > 0} onClick={() => { onCreate(goal, plan); toast(t.botCreatedToast); }}>{t.createBot}</button>
-          </>
-        ) : (
-          <MoaSees quotes={quotes} />
-        )}
-        <TrustCard vault={vault} />
-      </aside>
+      <TabBar view={view} go={go} count={hired.length} asks={asks} onMoa={() => setMoaOpen((v) => !v)} />
+      {sheet && <HireSheet target={sheet} vault={vault} onClose={() => setSheet(null)} onConfirm={confirmSheet} />}
     </div>
   );
 }
-
-function PlanSteps({ steps }: { steps: Step[] }) {
-  const { t, lang } = useT();
-  return (
-    <ol className="steps">
-      {steps.map((s, i) => {
-        const sch = s.kind === 'accumulate' ? scheduleOf(s) : {};
-        return (
-          <li key={i} className={`step step-${s.kind}`}>
-            <span className="step-tag">{t.tags[s.kind]}</span>
-            <span>{describe(s, lang)}</span>
-            {sch.buys !== undefined && <span className="step-meta">{sch.buys} × · ${sch.totalUsd?.toLocaleString('en-US')}</span>}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-/* ---------- bots ---------- */
-
-function botBudget(bot: Bot): number | undefined {
-  let total = 0, known = false;
-  for (const s of bot.plan.steps) {
-    if (s.kind !== 'accumulate') continue;
-    const sch = scheduleOf(s);
-    if (sch.totalUsd !== undefined) { total += sch.totalUsd; known = true; } else if (s.budgetUsd !== undefined) { total += s.budgetUsd; known = true; }
-  }
-  return known ? total : undefined;
-}
-const botAssets = (bot: Bot) => new Set(bot.plan.steps.flatMap((s) => ('asset' in s ? [s.asset] : [])));
-const botExecs = (bot: Bot, execs: Execution[]) => execs.filter((x) => x.at >= bot.createdAt && botAssets(bot).has(x.asset as 'HSK'));
-
-function BotList({ bots, go, execs }: { bots: Bot[]; go: (v: View) => void; execs: Execution[] }) {
-  const { t } = useT();
-  return (
-    <div className="bot-list">
-      {bots.map((b) => {
-        const spent = botExecs(b, execs).filter((x) => x.ok && x.side === 'buy').reduce((s, x) => s + x.amount, 0);
-        const budget = botBudget(b);
-        return (
-          <button key={b.id} className="bot-row" onClick={() => go({ name: 'bot', id: b.id })}>
-            <span className="bot-avatar" aria-hidden>{b.name.slice(0, 1)}</span>
-            <span className="bot-text">
-              <span className="bot-name">{b.name}</span>
-              <span className="muted ellipsis">{b.goal}</span>
-              {budget !== undefined && <span className="mini-bar" aria-hidden><span style={{ width: `${Math.min(100, (spent / budget) * 100)}%` }} /></span>}
-            </span>
-            <span className="status draft">{t.draft}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function Bots({ bots, go, execs }: { bots: Bot[]; go: (v: View) => void; execs: Execution[] }) {
-  const { t } = useT();
-  return (
-    <div className="page">
-      <div className="card-head">
-        <div>
-          <h1 className="hello">{t.bots}</h1>
-          <p className="muted">{t.botsSub}</p>
-        </div>
-        <button className="btn-primary" onClick={() => go({ name: 'chat' })}>{t.newBot}</button>
-      </div>
-      <section className="card">
-        {bots.length ? <BotList bots={bots} go={go} execs={execs} /> : (
-          <div className="empty">
-            <span className="orb lg breathe" aria-hidden />
-            <div className="empty-title">{t.noBots}</div>
-            <div className="muted">{t.noBotsSub}</div>
-            <button className="btn-primary" onClick={() => go({ name: 'chat' })}>{t.askMoa}</button>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function BotDetail({ bot, onDelete, execs, vault }: { bot: Bot; onDelete: () => void; execs: Execution[]; vault: VaultInfo | null }) {
-  const { t } = useT();
-  const [tab, setTab] = useState<'overview' | 'activity'>('overview');
-  const [askDelete, setAskDelete] = useState(false);
-  const toast = useToast();
-  const mine = botExecs(bot, execs);
-  const spent = mine.filter((x) => x.ok && x.side === 'buy').reduce((s, x) => s + x.amount, 0);
-  const budget = botBudget(bot);
-  return (
-    <div className="page narrow">
-      {askDelete && (
-        <Modal
-          title={t.deleteTitle}
-          onClose={() => setAskDelete(false)}
-          actions={<>
-            <button className="btn-ghost" onClick={() => setAskDelete(false)}>{t.cancel}</button>
-            <button className="btn-danger" onClick={() => { setAskDelete(false); onDelete(); toast(t.botDeleted); }}>{t.delete}</button>
-          </>}
-        >
-          <p><b>{bot.name}</b> {t.deleteBody}</p>
-        </Modal>
-      )}
-      <div className="card-head">
-        <div className="row-gap">
-          <span className="bot-avatar lg" aria-hidden>{bot.name.slice(0, 1)}</span>
-          <div>
-            <h1 className="hello">{bot.name}</h1>
-            <p className="muted">{t.created} {new Date(bot.createdAt).toLocaleDateString(loc())}</p>
-          </div>
-        </div>
-        <div className="row-gap">
-          <span className="status draft">{t.draft}</span>
-          <Menu label={t.more} items={[{ label: t.delete, danger: true, onSelect: () => setAskDelete(true) }]} />
-        </div>
-      </div>
-      <div className="tabs has-pill" role="tablist">
-        <SlidePill dep={tab} />
-        <button role="tab" aria-selected={tab === 'overview'} className={tab === 'overview' ? 'on' : ''} onClick={() => setTab('overview')}>{t.overview}</button>
-        <button role="tab" aria-selected={tab === 'activity'} className={tab === 'activity' ? 'on' : ''} onClick={() => setTab('activity')}>{t.activity} {mine.length ? `(${mine.length})` : ''}</button>
-      </div>
-      {tab === 'overview' ? (
-        <div className="detail-grid">
-          <section className="card">
-            <div className="panel-label">{t.goal}</div>
-            <p className="goal">“{bot.goal}”</p>
-            <div className="panel-label">{t.plan}</div>
-            <PlanSteps steps={bot.plan.steps} />
-          </section>
-          <div className="detail-side">
-            <section className="card">
-              <div className="panel-label">{t.progress}</div>
-              <div className="big-num">${spent.toFixed(2)}</div>
-              <div className="muted">{budget !== undefined ? t.spent(spent.toFixed(2), budget.toFixed(0)) : t.spentOpen(spent.toFixed(2))}</div>
-              {budget !== undefined && <div className="bar" aria-hidden><span style={{ width: `${Math.min(100, (spent / budget) * 100)}%` }} /></div>}
-              <div className="panel-label top-gap">{t.nextRun}</div>
-              <p className="muted small-text">{t.nextRunOff}</p>
-            </section>
-            <section className="card">
-              <div className="panel-label">{t.limits}</div>
-              {vault?.configured ? (
-                <dl className="kv">
-                  <dt>{t.perTrade}</dt><dd>${vault.maxTradeUsdt}</dd>
-                  <dt>{t.perDay}</dt><dd>${vault.maxDailyUsdt}</dd>
-                  <dt>{t.leftToday}</dt><dd>${vault.remainingTodayUsdt}</dd>
-                  <dt>{t.balance}</dt><dd>{Number(vault.usdtBalance).toFixed(2)}</dd>
-                </dl>
-              ) : <p className="muted small-text">{t.noVault}</p>}
-            </section>
-          </div>
-        </div>
-      ) : mine.length ? (
-        <section className="card">
-          {mine.map((x, i) => (
-            <div key={i} className="act-row">
-              <span className={`dot ${x.ok ? 'ok' : 'bad'}`} />
-              <span>{x.side === 'buy' ? t.buy : t.sell} {x.asset}</span>
-              <span className="muted">{x.ok ? `${x.amountIn} ${x.tokenIn} → ${Number(x.amountOut).toPrecision(6)} ${x.tokenOut}` : x.reason}</span>
-              <span className="muted">{new Date(x.at).toLocaleString(loc())}</span>
-              {x.explorerUrl ? <a href={x.explorerUrl} target="_blank" rel="noreferrer">{short(x.txHash)} ↗</a> : <span />}
-            </div>
-          ))}
-        </section>
-      ) : (
-        <section className="card empty">
-          <div className="empty-title">{t.noTrades}</div>
-          <div className="muted">{t.noTradesSub}</div>
-        </section>
-      )}
-    </div>
-  );
-}
-
-/* ---------- app ---------- */
 
 export default function App() {
   const [lang, setLangState] = useState<Lang>(initialLang);
   const setLang = (l: Lang) => { setLangState(l); saveLang(l); };
   const t = STRINGS[lang];
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
-
-  const [view, setView] = useState<View>({ name: 'trade' });
-  const [start, setStart] = useState<{ market: Market; note: StratNote } | null>(null);
-  const quotes = useQuotes();
-  const { vault, reloadVault } = useVault();
-  const { bots, add, remove } = useBots();
-  const { execs, record } = useExecutions();
-  const current = useMemo(() => (view.name === 'bot' ? bots.find((b) => b.id === view.id) : undefined), [view, bots]);
-  const title = { trade: t.navTrade, agents: t.agTitle, chat: t.navAsk, bots: t.navBots, bot: current?.name ?? t.navBots }[view.name];
-  const go = (v: View) => { setView(v); window.scrollTo(0, 0); };
-
   return (
     <LangContext.Provider value={{ lang, t, setLang }}>
       <ToastProvider>
-      <div className="app">
-        <Sidebar view={view} go={go} botCount={bots.length} vault={vault} />
-        <main className="main">
-          <Topbar title={title} quotes={quotes} />
-          {view.name === 'agents' && <Agents onUse={(market, note) => { setStart({ market, note }); go({ name: 'trade' }); }} />}
-          {view.name === 'trade' && <Trade start={start} quotes={quotes} vault={vault} onExecuted={(x) => { record(x); reloadVault(); }} onCreate={(goal, plan) => { const b = add({ name: botName(plan), goal, plan }); go({ name: 'bot', id: b.id }); }} />}
-          {/* Chat stays mounted so the conversation survives page changes; it is only hidden. */}
-          <div className="chat-host" hidden={view.name !== 'chat'}>
-            <Chat
-              active={view.name === 'chat'}
-              quotes={quotes}
-              vault={vault}
-              onExecuted={(x) => { record(x); reloadVault(); }}
-              onCreate={(goal, plan) => { const b = add({ name: botName(plan), goal, plan }); go({ name: 'bot', id: b.id }); }}
-            />
-          </div>
-          {view.name === 'bots' && <Bots bots={bots} go={go} execs={execs} />}
-          {view.name === 'bot' && current && <BotDetail bot={current} execs={execs} vault={vault} onDelete={() => { remove(current.id); go({ name: 'bots' }); }} />}
-        </main>
-        <TabBar view={view} go={go} botCount={bots.length} />
-      </div>
+        <Shell />
       </ToastProvider>
     </LangContext.Provider>
   );

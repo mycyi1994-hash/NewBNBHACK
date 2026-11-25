@@ -1,11 +1,13 @@
-// Talking to Moa's server brain (/api/moa, NDJSON stream). Shared by the Ask Moa page and the
-// Moa panel on the trade screen, so both get the same live progress steps, plans and trade receipts.
+// Talking to Moa's server brain (/api/moa, NDJSON stream) and sending a hired agent's approved order
+// to the vault (/api/agent-trade).
 import type { Step } from './intent.ts';
 
-export type StepKey = 'thinking' | 'market' | 'plan' | 'execute' | 'writing';
+export type StepKey = 'thinking' | 'market' | 'plan' | 'agents' | 'execute' | 'writing';
 export interface Exec { ok: boolean; reason?: string; txHash?: string; explorerUrl?: string; amountIn?: string; amountOut?: string; tokenIn?: string; tokenOut?: string; request: { asset: string; side: string; amount: number } }
 export interface ServerStep { kind: Step['kind']; asset?: 'HSK' | 'ETH' | 'BTC'; perBuyUsd?: number; every?: 'hour' | 'day' | 'week'; durationDays?: number; targetQty?: number; deadline?: string; maxPrice?: number; budgetUsd?: number; dropPct?: number; risePct?: number; sellFraction?: number; what?: 'idle USDT' | 'accumulated coins' }
-export interface MoaResult { reply: string; plan?: { steps: ServerStep[]; missing: string[] }; executions: Exec[] }
+export interface MoaResult { reply: string; plan?: { steps: ServerStep[]; missing: string[] }; executions: Exec[]; recommend?: { agentId: string; coin: string } }
+/** What the server needs to know about the user that is not in the words: their level and the coin on screen. */
+export interface MoaCtx { level?: 'new' | 'some' | 'pro' | null; asset?: string }
 
 /** Same words the server checks before it lets Moa trade. */
 export const EXECUTE_WORDS = /(실행|execute)/i;
@@ -38,11 +40,11 @@ export function toStep(s: ServerStep): Step {
 }
 
 /** Ask Moa. Calls onStep for each progress step; resolves with the final result, rejects if the API is unreachable. */
-export async function askMoa(history: { role: 'moa' | 'you'; text: string }[], onStep: (s: StepKey) => void, signal?: AbortSignal): Promise<MoaResult> {
+export async function askMoa(history: { role: 'moa' | 'you'; text: string }[], onStep: (s: StepKey) => void, signal?: AbortSignal, context?: MoaCtx): Promise<MoaResult> {
   const r = await fetch('/api/moa', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ history: toApiHistory(history) }),
+    body: JSON.stringify({ history: toApiHistory(history), context }),
     signal,
   });
   if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
@@ -64,4 +66,20 @@ export async function askMoa(history: { role: 'moa' | 'you'; text: string }[], o
     }
   }
   throw new Error('stream ended without a result');
+}
+
+export type TradeResult =
+  | { ok: true; txHash: string; explorerUrl: string; amountIn: string; amountOut: string; tokenIn: string; tokenOut: string }
+  | { ok: false; reason: string };
+
+/** One approved order from a hired agent. buy: amount is USDT; sell: amount is the coin quantity. */
+export async function sendAgentTrade(req: { asset: string; side: 'buy' | 'sell'; amount: number; note: string }): Promise<TradeResult> {
+  try {
+    const r = await fetch('/api/agent-trade', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req) });
+    const j = (await r.json().catch(() => null)) as TradeResult | { error?: string } | null;
+    if (j && 'ok' in j) return j;
+    return { ok: false, reason: (j && 'error' in j && j.error) || `Server answered HTTP ${r.status}.` };
+  } catch (e) {
+    return { ok: false, reason: `The server is not reachable (${e instanceof Error ? e.message : String(e)}).` };
+  }
 }

@@ -36,7 +36,7 @@ function moaApi(env: Record<string, string>): Plugin {
         if (!env.ANTHROPIC_API_KEY) return send(503, { error: 'ANTHROPIC_API_KEY is not set on the server.' });
         let raw = '';
         for await (const chunk of req) raw += chunk;
-        const { history } = JSON.parse(raw) as { history: { role: 'user' | 'assistant'; content: string }[] };
+        const { history, context } = JSON.parse(raw) as { history: { role: 'user' | 'assistant'; content: string }[]; context?: { level?: 'new' | 'some' | 'pro' | null; asset?: string } };
         const { runMoa } = await import('./server/moaAgent.ts');
         // NDJSON stream: real progress steps while Claude works, then the final result
         res.statusCode = 200;
@@ -44,7 +44,7 @@ function moaApi(env: Record<string, string>): Plugin {
         res.setHeader('cache-control', 'no-cache');
         const write = (o: unknown) => res.write(JSON.stringify(o) + '\n');
         try {
-          const result = await runMoa(env.ANTHROPIC_API_KEY, cfg, history.slice(-20), write);
+          const result = await runMoa(env.ANTHROPIC_API_KEY, cfg, history.slice(-20), write, context ?? {});
           write({ type: 'done', result });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -52,6 +52,25 @@ function moaApi(env: Record<string, string>): Plugin {
           write({ type: 'error', error: msg });
         }
         return res.end();
+      }
+      // A hired agent's order that the user approved on screen. No model is involved: the order is the
+      // agent's own rule, the user pressed the button, and the vault enforces its limits again on-chain.
+      // JSON from this origin only, so another website cannot post an order to a local server.
+      if (req.url === '/api/agent-trade' && req.method === 'POST') {
+        if (!String(req.headers['content-type'] ?? '').includes('application/json')) return send(415, { error: 'Send JSON.' });
+        const origin = req.headers.origin;
+        let sameOrigin = true;
+        try { if (origin) sameOrigin = new URL(origin).host === req.headers.host; } catch { sameOrigin = false; }
+        if (!sameOrigin) return send(403, { error: 'Orders from another origin are refused.' });
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw) as { asset?: unknown; side?: unknown; amount?: unknown; note?: unknown };
+        const asset = String(body.asset), side = body.side, amount = Number(body.amount);
+        if (!['HSK', 'ETH', 'BTC'].includes(asset) || (side !== 'buy' && side !== 'sell') || !Number.isFinite(amount) || amount <= 0) return send(400, { error: 'Invalid order.' });
+        const { executeTrade } = await import('./server/executor.ts');
+        const r = await executeTrade(cfg, { asset: asset as 'HSK' | 'ETH' | 'BTC', side, amount, note: String(body.note ?? '').slice(0, 120) });
+        console.log(`[moa] agent order ${side} ${amount} ${asset}: ${r.ok ? r.txHash : r.reason}`);
+        return send(200, r);
       }
       return send(404, { error: 'not found' });
     } catch (e) {
