@@ -5,45 +5,13 @@ import { GREETING, reply } from './moa.ts';
 import { useBots, useExecutions, type Bot, type Execution } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
+import { EXECUTE_WORDS, toApiHistory, toStep, type Exec, type ServerStep, type StepKey } from './moaClient.ts';
 import Trade from './Trade.tsx';
 import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
 import { CopyButton, Menu, Modal, RichText, ToastProvider, useToast } from './ui.tsx';
 
-/**
- * The API conversation must start with the user. When Moa opened the conversation (its note on the trade
- * screen), fold that note into the user's first message as quoted context instead of sending it as a turn.
- */
-function toApiHistory(history: { role: 'moa' | 'you'; text: string }[]) {
-  const out: { role: 'user' | 'assistant'; content: string }[] = [];
-  let lead: string[] = [];
-  for (const m of history) {
-    if (!out.length && m.role === 'moa') { lead.push(m.text); continue; }
-    const content = lead.length && m.role === 'you' ? `(Moa said earlier: “${lead.join(' ')}”)\n\n${m.text}` : m.text;
-    lead = [];
-    out.push({ role: m.role === 'you' ? 'user' : 'assistant', content });
-  }
-  return out;
-}
-
-/** Same words the server checks before it lets Moa trade. */
-const EXECUTE_WORDS = /(실행|execute)/i;
-
 type View = { name: 'trade' } | { name: 'chat'; prefill?: string; auto?: boolean } | { name: 'bots' } | { name: 'bot'; id: string };
-type StepKey = 'thinking' | 'market' | 'plan' | 'execute' | 'writing';
-interface Exec { ok: boolean; reason?: string; txHash?: string; explorerUrl?: string; amountIn?: string; amountOut?: string; tokenIn?: string; tokenOut?: string; request: { asset: string; side: string; amount: number } }
 interface Msg { role: 'moa' | 'you'; text: string; at: number; execs?: Exec[]; offline?: boolean }
-interface ServerStep { kind: Step['kind']; asset?: 'HSK' | 'ETH' | 'BTC'; perBuyUsd?: number; every?: 'hour' | 'day' | 'week'; durationDays?: number; targetQty?: number; deadline?: string; maxPrice?: number; budgetUsd?: number; dropPct?: number; risePct?: number; sellFraction?: number; what?: 'idle USDT' | 'accumulated coins' }
-
-/** The server's plan has optional fields; fill in the shape the plan cards expect. */
-function toStep(s: ServerStep): Step {
-  const asset = s.asset ?? 'HSK';
-  switch (s.kind) {
-    case 'accumulate': return { kind: 'accumulate', asset, perBuyUsd: s.perBuyUsd, every: s.every, durationDays: s.durationDays, targetQty: s.targetQty, deadline: s.deadline, maxPrice: s.maxPrice, budgetUsd: s.budgetUsd };
-    case 'stopLoss': return { kind: 'stopLoss', asset, dropPct: s.dropPct ?? 0, sellFraction: s.sellFraction ?? 1 };
-    case 'takeProfit': return { kind: 'takeProfit', asset, risePct: s.risePct ?? 0, sellFraction: s.sellFraction ?? 1 };
-    default: return { kind: 'earn', what: s.what ?? 'idle USDT' };
-  }
-}
 
 function useQuotes() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -185,8 +153,8 @@ function Progress({ steps, startedAt }: { steps: StepKey[]; startedAt: number })
 
 /* ---------- chat ---------- */
 
-function Chat({ seed, active, quotes, vault, onCreate, onExecuted }: {
-  seed: { text: string; ctx?: string; n: number } | null; active: boolean; quotes: Quote[]; vault: VaultInfo | null;
+function Chat({ active, quotes, vault, onCreate, onExecuted }: {
+  active: boolean; quotes: Quote[]; vault: VaultInfo | null;
   onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void;
 }) {
   const { t, lang } = useT();
@@ -309,22 +277,6 @@ function Chat({ seed, active, quotes, vault, onCreate, onExecuted }: {
     return () => document.removeEventListener('keydown', onKey);
   });
 
-  // A goal sent from the trade-screen dock joins this conversation; it does not wipe it (ChatGPT keeps history).
-  const seen = useRef(0);
-  useEffect(() => {
-    if (!seed || seed.n === seen.current) return;
-    seen.current = seed.n;
-    if (!seed.text) { input.current?.focus(); return; }
-    // Replying to something Moa said on the trade screen: start the conversation with that note, so the reply has context.
-    if (seed.ctx && msgs.length === 0) {
-      const base: Msg[] = [{ role: 'moa', text: seed.ctx, at: Date.now() }];
-      setMsgs(base);
-      if (EXECUTE_WORDS.test(seed.text) && vault?.configured) setConfirm(seed.text);
-      else void send(seed.text, base);
-      return;
-    }
-    ask(seed.text);
-  });
   useEffect(() => { if (active) input.current?.focus(); }, [active]);
 
   /** ChatGPT "New chat": clear the conversation and the plan. */
@@ -395,7 +347,6 @@ function Chat({ seed, active, quotes, vault, onCreate, onExecuted }: {
                       <div className="bubble-head">{m.role === 'moa' ? 'Moa' : t.you}<span>{time(m.at)}</span></div>
                       <div className="bubble-text">{m.role === 'moa' && i === typingIdx ? <Typing text={m.text} onDone={() => setTypingIdx(null)} /> : m.role === 'moa' ? <RichText text={m.text} /> : m.text}</div>
                       {m.execs?.map((x, k) => <Receipt key={k} x={x} />)}
-                      {m.offline && <div className="offline">{t.offline}</div>}
                     </div>
                     {m.role === 'moa' && i !== typingIdx && (
                       <div className="msg-actions">
@@ -621,7 +572,6 @@ export default function App() {
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
   const [view, setView] = useState<View>({ name: 'trade' });
-  const [seed, setSeed] = useState<{ text: string; ctx?: string; n: number } | null>(null);
   const quotes = useQuotes();
   const { vault, reloadVault } = useVault();
   const { bots, add, remove } = useBots();
@@ -637,11 +587,10 @@ export default function App() {
         <Sidebar view={view} go={go} botCount={bots.length} vault={vault} />
         <main className="main">
           <Topbar title={title} quotes={quotes} />
-          {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onAsk={(p, ctx) => { setSeed((x) => ({ text: p, ctx, n: (x?.n ?? 0) + 1 })); go({ name: 'chat' }); }} />}
+          {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onExecuted={(x) => { record(x); reloadVault(); }} onCreate={(goal, plan) => { const b = add({ name: botName(plan), goal, plan }); go({ name: 'bot', id: b.id }); }} />}
           {/* Chat stays mounted so the conversation survives page changes; it is only hidden. */}
           <div className="chat-host" hidden={view.name !== 'chat'}>
             <Chat
-              seed={seed}
               active={view.name === 'chat'}
               quotes={quotes}
               vault={vault}

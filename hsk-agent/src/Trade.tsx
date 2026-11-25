@@ -9,6 +9,8 @@ import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import type { VaultInfo } from './parts.tsx';
+import type { Plan } from './intent.ts';
+import type { Execution } from './store.ts';
 import StrategyGrid, { type StratNote } from './Strategies.tsx';
 import MoaFeed, { type MoaContext } from './MoaFeed.tsx';
 
@@ -220,22 +222,18 @@ function Stat({ label, value, cls }: { label: string; value: string; cls?: strin
 
 /* ---------- CEX: HashKey Global BTC/USDT perpetual ---------- */
 
-/** Live perp data. One failed poll keeps the last numbers (marked stale); only a run of failures shows "unavailable". */
+/** Live perp data. A failed poll keeps the last numbers on screen; the next poll catches up. */
 function useCex() {
   const [t, setT] = useState<cex.Ticker | null>(null);
   const [tape, setTape] = useState<cex.Trade[]>([]);
   const [mi, setMi] = useState<{ mark: number; index: number } | null>(null);
-  const [at, setAt] = useState(0);
-  const [fails, setFails] = useState(0);
-  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     const fast = async () => {
       const [a, c] = await Promise.allSettled([cex.ticker(), cex.trades(20)]);
       if (!alive) return;
-      if (a.status === 'fulfilled') { setT(a.value); setAt(Date.now()); setFails(0); setErr(null); }
-      else { setFails((n) => n + 1); setErr(a.reason instanceof Error ? a.reason.message : String(a.reason)); }
+      if (a.status === 'fulfilled') setT(a.value);
       if (c.status === 'fulfilled') setTape(c.value);
     };
     const slow = () => cex.markAndIndex().then((x) => alive && setMi(x)).catch(() => undefined);
@@ -244,9 +242,7 @@ function useCex() {
     return () => { alive = false; clearInterval(a); clearInterval(b); };
   }, []);
 
-  // LIVE, STALE (last good numbers, with their age) or UNAVAILABLE (never loaded, or failing for a while).
-  const state: 'live' | 'stale' | 'down' = fails === 0 ? 'live' : t && fails < 8 ? 'stale' : 'down';
-  return { t, tape, mi, err, state, at };
+  return { t, tape, mi };
 }
 
 const CEX_IV = ['1m', '15m', '1h', '4h', '1d', '1w'] as const;
@@ -261,7 +257,7 @@ function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>(() => stored('moa.iv', CEX_IV, '4h'));
   const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
-  const { t, tape, mi, err, state, at } = useCex();
+  const { t, tape, mi } = useCex();
   const [inds, toggleInd] = useStoredInds();
   const { candles, more } = useCandles(`cex-${interval}`, (n) => cex.klines(interval, n), (first) => cex.klines(interval, 1000, first.time * 1000 - 1), 15000);
   const chg = t ? (t.last / t.open - 1) * 100 : 0;
@@ -286,15 +282,13 @@ function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]
           <Stat label={s.low24h} value={t ? usd(t.low, 1) : '—'} />
           <Stat label={s.vol24h} value={t ? `${compact(t.volContracts * cex.CONTRACT_BTC)} BTC` : '—'} />
         </div>
-        {state === 'stale' && <span className="stale-chip" role="status">{s.staleAt(ago(at))}</span>}
-        {state === 'down' && <span className="unavail">{s.feedDown} {err}</span>}
       </div>
 
       <section className="card chart-card">
         <div className="chart-toolbar">
           <IntervalBar list={CEX_IV} value={interval} set={pickIv} label={(v) => s.ivLabel[v]} />
           <IndMenu on={inds} toggle={toggleInd} />
-          <span className={`live${state !== 'live' ? ' is-stale' : ''}`}><span className="live-dot" /> {state === 'live' ? s.live : s.stale} · HashKey Global</span>
+          <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>
         </div>
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} resetKey={`cex-${interval}`} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
         {dexBtc !== undefined && t && (
@@ -312,7 +306,7 @@ function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]
 
 /* ---------- DEX: HSKSwap on HSK Chain ---------- */
 
-function DexPanel({ asset, setAsset, detail, err, quotes, onPick }: { asset: Asset; setAsset: (a: Asset) => void; detail: PoolDetail | null; err: string | null; quotes: Quote[]; onPick: (n: StratNote) => void }) {
+function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; setAsset: (a: Asset) => void; detail: PoolDetail | null; quotes: Quote[]; onPick: (n: StratNote) => void }) {
   const { t: s } = useT();
   const [iv, setIv] = useState<GateInterval>(() => stored('moa.dexiv', DEX_IV, '1h'));
   const pickIv = (v: GateInterval) => { setIv(v); save('moa.dexiv', v); };
@@ -362,8 +356,6 @@ function DexPanel({ asset, setAsset, detail, err, quotes, onPick }: { asset: Ass
           <Stat label={s.swaps24h} value={detail ? String(detail.swaps.length) : '—'} />
           <Stat label={s.vol24h} value={detail ? `$${compact(vol)}` : '—'} />
         </div>
-        {err && detail && <span className="stale-chip" role="status">{s.stale}</span>}
-        {err && !detail && <span className="unavail">{s.feedDown} {err}</span>}
       </div>
       <section className="card chart-card">
         <div className="chart-toolbar">
@@ -393,20 +385,19 @@ function DexPanel({ asset, setAsset, detail, err, quotes, onPick }: { asset: Ass
 
 /* ---------- page ---------- */
 
-export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string, context?: string) => void; quotes: Quote[]; vault: VaultInfo | null }) {
+export default function Trade({ quotes, vault, onCreate, onExecuted }: { quotes: Quote[]; vault: VaultInfo | null; onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void }) {
   const { t } = useT();
   const [venue, setVenue] = useState<Venue>('cex');
   const [note, setNote] = useState<StratNote | null>(null);
   const [asset, setAsset] = useState<Asset>('BTC');
   const [detail, setDetail] = useState<PoolDetail | null>(null);
-  const [dexErr, setDexErr] = useState<string | null>(null);
   const ctx: MoaContext = venue === 'cex' ? { venue, label: t.ctxCex, asset: 'BTC' } : { venue, label: t.ctxDex(POOLS[asset].symbol), asset };
   const pick = (n: StratNote) => { setNote(n); if (window.innerWidth <= 1180) document.querySelector('.feed-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
   useEffect(() => {
     let alive = true;
     setDetail(null);
-    const load = () => poolDetail(asset).then((d) => { if (alive) { setDetail(d); setDexErr(null); } }).catch((e: unknown) => alive && setDexErr(e instanceof Error ? e.message : String(e)));
+    const load = () => poolDetail(asset).then((d) => { if (alive) setDetail(d); }).catch(() => undefined);
     load();
     const x = setInterval(load, 30000);
     return () => { alive = false; clearInterval(x); };
@@ -423,10 +414,10 @@ export default function Trade({ onAsk, quotes, vault }: { onAsk: (prompt: string
         </div>
         {venue === 'cex'
           ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onPick={pick} />
-          : <DexPanel asset={asset} setAsset={setAsset} detail={detail} err={dexErr} quotes={quotes} onPick={pick} />}
+          : <DexPanel asset={asset} setAsset={setAsset} detail={detail} quotes={quotes} onPick={pick} />}
         <p className="muted small">{t.dataNote}</p>
       </div>
-      <MoaFeed onAsk={onAsk} quotes={quotes} vault={vault} inject={note} context={ctx} />
+      <MoaFeed quotes={quotes} vault={vault} inject={note} context={ctx} onCreate={onCreate} onExecuted={onExecuted} />
     </div>
   );
 }

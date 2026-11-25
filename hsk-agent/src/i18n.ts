@@ -173,6 +173,8 @@ const en = {
   stWhy: 'Why do prices differ?', stWhySub: 'HSKSwap vs Gate, explained',
   stale: 'Delayed', staleAt: (ago: string) => `Delayed · last update ${ago} ago`,
   ctxCex: 'BTC/USDT perp · HashKey', ctxDex: (s: string) => `${s}/USDT · HSKSwap`,
+  ctxNow: 'The user is looking at', planMini: 'Plan', makeBot: 'Make this a bot', planNeeds: (m: string) => `Still needed: ${m}`,
+  receiptOk: 'Done', receiptFail: 'Not executed', viewTx: 'View transaction',
 };
 
 const ko: typeof en = {
@@ -345,6 +347,8 @@ const ko: typeof en = {
   stWhy: '왜 가격이 달라?', stWhySub: 'HSKSwap과 Gate 차이 설명',
   stale: '지연', staleAt: (ago) => `지연 · ${ago} 전 마지막 업데이트`,
   ctxCex: 'BTC/USDT 무기한 · HashKey', ctxDex: (s) => `${s}/USDT · HSKSwap`,
+  ctxNow: '사용자가 보고 있는 화면', planMini: '계획', makeBot: '이 계획으로 봇 만들기', planNeeds: (m) => `더 필요한 정보: ${m}`,
+  receiptOk: '체결됨', receiptFail: '실행 안 됨', viewTx: '거래 보기',
 };
 
 export const STRINGS = { en, ko };

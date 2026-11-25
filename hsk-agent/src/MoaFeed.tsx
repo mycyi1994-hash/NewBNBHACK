@@ -1,18 +1,22 @@
-// Moa on the right of the trade screen.
+// Moa on the right of the trade screen: a conversation that stays here.
 // Opens instantly (never waits on data): a short greeting, a live market brief, and "start with" cards
-// for the market you are looking at. Below that, Moa's own notes appear as the market moves, and a tapped
-// strategy arrives as a full card. The composer carries a chip with the market in view, so a question is
-// always about something. Every number comes from live data (pool vs Gate, vault), never from the model.
+// for the market you are looking at. You ask, Moa answers in this panel (same server brain as the Ask Moa
+// page, with live progress steps); plans can become bots and trades show their receipts, all without
+// leaving the chart. A tapped strategy arrives as a full card. Every number comes from live data.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { RollNum } from './motion.tsx';
 import type { VaultInfo } from './parts.tsx';
-import { CopyAddress, CopyButton } from './ui.tsx';
+import { CopyAddress, CopyButton, Modal, RichText } from './ui.tsx';
 import type { StratNote } from './Strategies.tsx';
+import { askMoa, EXECUTE_WORDS, toStep, type Exec, type StepKey } from './moaClient.ts';
+import { describe, parseIntent, type Plan } from './intent.ts';
+import { reply as offlineReply } from './moa.ts';
+import type { Execution } from './store.ts';
 
 export interface MoaContext { venue: 'cex' | 'dex'; label: string; asset: 'HSK' | 'ETH' | 'BTC' }
-interface Note { id: number; at: number; text: string; card?: StratNote; follow: string[] }
+interface Note { id: number; at: number; role: 'moa' | 'you'; text: string; card?: StratNote; plan?: Plan; goal?: string; execs?: Exec[]; offline?: boolean; follow: string[] }
 const time = (t: number, lang: string) => new Date(t).toLocaleTimeString(lang === 'ko' ? 'ko-KR' : 'en-US', { hour: '2-digit', minute: '2-digit' });
 const MOVE = 0.005;         // a 0.5 percentage-point change in the gap triggers a new note
 const QUIET_MS = 120_000;   // at most one unprompted note every 2 minutes
@@ -29,27 +33,62 @@ const ICONS = {
   ask: 'M5 15l-2 2V5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5z',
 };
 
-export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
-  quotes: Quote[]; vault: VaultInfo | null; onAsk: (prompt: string, context?: string) => void; inject?: StratNote | null; context: MoaContext;
+export default function MoaFeed({ quotes, vault, inject, context, onCreate, onExecuted }: {
+  quotes: Quote[]; vault: VaultInfo | null; inject?: StratNote | null; context: MoaContext;
+  onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void;
 }) {
   const { t, lang } = useT();
   const [notes, setNotes] = useState<Note[]>([]);
   const [typing, setTyping] = useState(false);
+  const [busy, setBusy] = useState<StepKey[] | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const feed = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const abort = useRef<AbortController | null>(null);
+  const notesRef = useRef<Note[]>([]); notesRef.current = notes;
   const lastGap = useRef<Partial<Record<Quote['asset'], number>>>({});
   const lastNoteAt = useRef(0);
   const nextId = useRef(1);
 
-  const say = (n: Omit<Note, 'id' | 'at'>, delay = 600) => {
+  const push = (n: Omit<Note, 'id' | 'at'>) => setNotes((cur) => [...cur, { ...n, id: nextId.current++, at: Date.now() }]);
+  /** Moa's own short notes: a brief "typing" beat, then the note. */
+  const say = (n: Omit<Note, 'id' | 'at' | 'role'>, delay = 600) => {
     setTyping(true);
-    setTimeout(() => {
-      setTyping(false);
-      setNotes((cur) => [...cur, { ...n, id: nextId.current++, at: Date.now() }]);
-      lastNoteAt.current = Date.now();
-    }, delay);
+    setTimeout(() => { setTyping(false); push({ ...n, role: 'moa' }); lastNoteAt.current = Date.now(); }, delay);
   };
+
+  /** Ask Moa right here: the question, live progress steps, then the answer (or the on-device fallback). */
+  const ask = async (text: string, confirmed = false) => {
+    const q = text.trim();
+    if (!q || busy) return;
+    if (!confirmed && EXECUTE_WORDS.test(q) && vault?.configured) { setConfirm(q); return; }
+    setDraft('');
+    const history = [
+      // What the user is looking at goes in as context, so "this" and "here" mean something.
+      { role: 'moa' as const, text: `${t.ctxNow}: ${context.label}` },
+      ...notesRef.current.map((n) => ({ role: n.role, text: n.card ? `${n.card.name}: ${n.card.text}` : n.text })),
+      { role: 'you' as const, text: q },
+    ];
+    push({ role: 'you', text: q, follow: [] });
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    setBusy(['thinking']);
+    try {
+      const res = await askMoa(history, (s) => setBusy((b) => (b && b[b.length - 1] !== s ? [...b, s] : b)), ctrl.signal);
+      const plan = res.plan?.steps.length ? { steps: res.plan.steps.map(toStep), missing: res.plan.missing } : undefined;
+      if (res.executions?.length) onExecuted(res.executions.map((x) => ({ at: Date.now(), ok: x.ok, asset: x.request.asset, side: x.request.side, amount: x.request.amount, reason: x.reason, txHash: x.txHash, explorerUrl: x.explorerUrl, amountIn: x.amountIn, amountOut: x.amountOut, tokenIn: x.tokenIn, tokenOut: x.tokenOut })));
+      push({ role: 'moa', text: res.reply, plan, goal: q, execs: res.executions?.length ? res.executions : undefined, follow: [] });
+    } catch {
+      if (ctrl.signal.aborted) { setBusy(null); return; }
+      // No server or the AI is unreachable: answer with the on-device parser, clearly marked.
+      const p = parseIntent(q);
+      push({ role: 'moa', text: offlineReply(p, quotes, lang), plan: p.steps.length ? p : undefined, goal: q, offline: true, follow: [] });
+    }
+    setBusy(null);
+    lastNoteAt.current = Date.now();
+  };
+  const stop = () => { abort.current?.abort(); setBusy(null); };
 
   // Watching: when a pool moves noticeably against Gate, Moa speaks up on its own.
   useEffect(() => {
@@ -57,7 +96,7 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
       if (q.gap === undefined) continue;
       const prev = lastGap.current[q.asset];
       lastGap.current[q.asset] = q.gap;
-      if (prev === undefined || Math.abs(q.gap - prev) < MOVE || Date.now() - lastNoteAt.current < QUIET_MS) continue;
+      if (busy || prev === undefined || Math.abs(q.gap - prev) < MOVE || Date.now() - lastNoteAt.current < QUIET_MS) continue;
       say({ text: t.feedMoved(q.asset, (prev * 100).toFixed(1), (q.gap * 100).toFixed(1)), follow: [t.fuPlan(q.asset)] });
       break;
     }
@@ -66,11 +105,14 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
   // A strategy tapped under the chart arrives as a full card.
   useEffect(() => { if (inject) say({ text: inject.text, card: inject, follow: [] }, 380); }, [inject]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { const el = feed.current; if (el && notes.length) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, [notes, typing]);
+  useEffect(() => { const el = feed.current; if (el && (notes.length || busy)) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, [notes, typing, busy]);
   useEffect(() => { const el = input.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; }, [draft]);
-
-  const lastText = notes[notes.length - 1]?.text;
-  const submit = () => { const v = draft.trim(); if (v) { onAsk(v, `${context.label}. ${lastText ?? ''}`.trim()); setDraft(''); } };
+  useEffect(() => {
+    if (!busy) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') stop(); };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const a = context.asset;
   const starts: { icon: keyof typeof ICONS; title: string; sub: string; prompt: string }[] = context.venue === 'cex'
@@ -93,7 +135,7 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
         <span className="orb sm breathe" aria-hidden />
         <b>Moa</b>
         <span className="feed-status"><span className="live-dot" /> {t.feedWatching}</span>
-        {notes.length > 0 && <button className="feed-clear" onClick={() => setNotes([])} data-tip={t.feedClearTip} aria-label={t.feedClearTip}><Icon d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" /></button>}
+        {notes.length > 0 && !busy && <button className="feed-clear" onClick={() => setNotes([])} data-tip={t.feedClearTip} aria-label={t.feedClearTip}><Icon d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" /></button>}
       </header>
 
       <div className="feed" ref={feed} aria-live="polite">
@@ -109,7 +151,7 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
           <div className="moa-sec-title">{t.stTitle}</div>
           <div className="start-grid stagger">
             {starts.map((s) => (
-              <button key={s.title} className="start-card" onClick={() => onAsk(s.prompt, context.label)}>
+              <button key={s.title} className="start-card" disabled={!!busy} onClick={() => void ask(s.prompt)}>
                 <span className="start-ic"><Icon d={ICONS[s.icon]} /></span>
                 <b>{s.title}</b>
                 <small>{s.sub}</small>
@@ -118,34 +160,50 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
           </div>
         </section>
 
-        {notes.map((n) => (
+        {notes.map((n) => n.role === 'you' ? (
+          <div key={n.id} className="you-row fade-up"><p className="you-bubble">{n.text}</p></div>
+        ) : (
           <article key={n.id} className="note fade-up">
             <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at, lang)}</time></div>
-            {n.card ? <StratCard c={n.card} onAsk={onAsk} /> : <p className="note-text">{n.text}</p>}
+            {n.card ? <StratCard c={n.card} onAsk={(p) => void ask(p)} /> : <div className="note-text"><RichText text={n.text} /></div>}
+            {n.execs?.map((x, k) => <Receipt key={k} x={x} />)}
+            {n.plan && n.plan.steps.length > 0 && (
+              <div className="plan-mini">
+                <b>{t.planMini}</b>
+                <ol>{n.plan.steps.map((s, k) => <li key={k}>{describe(s, lang)}</li>)}</ol>
+                {n.plan.missing.length === 0
+                  ? <button className="btn-primary" onClick={() => onCreate(n.goal ?? '', n.plan!)}>{t.makeBot}</button>
+                  : <p className="muted small">{t.planNeeds(n.plan.missing.join(', '))}</p>}
+              </div>
+            )}
             {!n.card && <div className="note-actions"><CopyButton text={n.text} label={t.copy} done={t.copied} /></div>}
             {n.follow.length > 0 && (
               <div className="followups">
-                {n.follow.map((f) => <button key={f} className="fu" onClick={() => onAsk(f, n.text)}><span aria-hidden>↳</span>{f}</button>)}
+                {n.follow.map((f) => <button key={f} className="fu" disabled={!!busy} onClick={() => void ask(f)}><span aria-hidden>↳</span>{f}</button>)}
               </div>
             )}
           </article>
         ))}
-        {typing && (
+        {(typing || busy) && (
           <div className="note typing-note" role="status">
             <div className="note-meta"><span className="orb xs" aria-hidden /> Moa</div>
-            <span className="dots" aria-label={t.feedTyping}><i /><i /><i /></span>
+            {busy
+              ? <div className="moa-steps">{busy.map((s, k) => <span key={s} className={k === busy.length - 1 ? 'now' : 'done'}>{k === busy.length - 1 ? <span className="dots"><i /><i /><i /></span> : '✓'} {t.steps[s]}</span>)}</div>
+              : <span className="dots" aria-label={t.feedTyping}><i /><i /><i /></span>}
           </div>
         )}
       </div>
 
-      <form className="feed-composer" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+      <form className="feed-composer" onSubmit={(e) => { e.preventDefault(); void ask(draft); }}>
         <span className="ctx-chip" data-tip={t.ctxTip}><span className={`coin coin-${context.asset.toLowerCase()}`} />{context.label}</span>
         <div className="composer-row">
           <textarea ref={input} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t.feedPlaceholder} aria-label={t.askMoa}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
-          <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} data-tip={`${t.ask} (Enter)`}>
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </button>
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void ask(draft); } }} />
+          {busy
+            ? <button className="send-btn stop" type="button" onClick={stop} aria-label={t.stop} data-tip={`${t.stop} (Esc)`}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor" /></svg></button>
+            : <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} data-tip={`${t.ask} (Enter)`}>
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>}
         </div>
       </form>
       <div className="feed-foot">
@@ -154,7 +212,29 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
           ? <>{t.feedLimits(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?')} {vault.vault && <CopyAddress value={vault.vault} label={t.copyAddress} done={t.addressCopied} />}{vault.localFork && <span className="fork-badge">{t.localFork}</span>}</>
           : t.trust3none}
       </div>
+
+      {confirm && (
+        <Modal title={t.confirmTitle} onClose={() => setConfirm(null)} actions={<>
+          <button className="btn-ghost" onClick={() => setConfirm(null)}>{t.cancel}</button>
+          <button className="btn-primary" onClick={() => { const q = confirm; setConfirm(null); void ask(q, true); }}>{t.executeBtn}</button>
+        </>}>
+          <p className="modal-quote">“{confirm}”</p>
+          <p>{t.confirmBody(vault?.maxTradeUsdt ?? '?', vault?.remainingTodayUsdt ?? '0')}</p>
+        </Modal>
+      )}
     </aside>
+  );
+}
+
+/** A trade Moa sent to the vault: what happened, with the explorer link. */
+function Receipt({ x }: { x: Exec }) {
+  const { t } = useT();
+  return (
+    <div className={`receipt-mini ${x.ok ? 'ok' : 'fail'}`}>
+      <b>{x.ok ? t.receiptOk : t.receiptFail}</b>
+      <span>{x.request.side === 'buy' ? t.buy : t.sell} {x.request.asset} · ${x.request.amount}{x.reason ? ` · ${x.reason}` : ''}</span>
+      {x.explorerUrl && <a href={x.explorerUrl} target="_blank" rel="noreferrer">{t.viewTx} ↗</a>}
+    </div>
   );
 }
 
@@ -162,7 +242,6 @@ export default function MoaFeed({ quotes, vault, onAsk, inject, context }: {
 function Brief({ quotes, vault }: { quotes: Quote[]; vault: VaultInfo | null }) {
   const { t } = useT();
   const live = quotes.filter((q) => q.gap !== undefined);
-  const down = quotes.length > 0 && live.length === 0;
   let body: ReactNode;
   if (quotes.length === 0) body = [0, 1, 2].map((i) => <div key={i} className="brief-row" aria-hidden><span className="skel" style={{ width: 90 }} /><span className="skel" style={{ width: 54 }} /></div>);
   else body = quotes.map((q) => (
@@ -179,7 +258,7 @@ function Brief({ quotes, vault }: { quotes: Quote[]; vault: VaultInfo | null }) 
     <section className="moa-brief">
       <div className="moa-sec-title">
         {t.briefTitle}
-        <span className={`brief-state ${down ? 'down' : quotes.length ? 'live' : ''}`}>{down ? t.briefDown : quotes.length ? t.live : t.stratLoading}</span>
+        {live.length > 0 && <span className="brief-state live">{t.live}</span>}
       </div>
       <div className="brief-box">
         <div className="brief-cols"><span>{t.briefCoin}</span><span>HSKSwap</span><span>{t.briefVsGate}</span><span /></div>
