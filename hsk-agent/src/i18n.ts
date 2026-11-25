@@ -222,6 +222,19 @@ const en = {
   ctxSwitch: (l: string) => `You’re looking at ${l} now. Ask me anything about it.`, ctxSwitchPro: (l: string) => `${l} loaded. Strategy backtests below follow it.`,
   depthLabel: 'Detail', depth: { new: 'Easy', some: 'Normal', pro: 'Detailed' } as Record<'new' | 'some' | 'pro', string>,
   depthNow: { new: 'I’ll keep it simple.', some: 'Normal detail from here.', pro: 'Going into detail.' } as Record<'new' | 'some' | 'pro', string>,
+  topic: { why: 'Why?', how: 'How is the weather decided?', when: 'So when should I buy?', split: 'What is splitting buys?', alert: 'Tell me when it’s cheap', other: 'And the other coin?', strats: 'Show me strategies', chart: 'Open the chart', rule: 'Change the signal rules', doit: 'Can you buy for me?', self: 'I’ll ask my own question' } as Record<'why' | 'how' | 'when' | 'split' | 'alert' | 'other' | 'strats' | 'chart' | 'rule' | 'doit' | 'self', string>,
+  chOther: (n: string) => `What about ${n}?`,
+  whenWait: 'When the weather clears, or when it gets cheaper here than on the big exchanges. I’ll tell you first when that happens. Buying a little at a time also takes the pressure off timing.',
+  whenNow: 'It’s fine now. Just don’t buy it all at once; small, regular buys are safer.',
+  splitExplain: 'Instead of buying 100 at once, you buy 10 ten times. You pick up some when it’s pricey and some when it’s cheap, so your average price evens out and one bad day hurts less.',
+  alertMore: 'Meanwhile, want to look at something else?',
+  stratsHere: 'Strategies are right under the chart. Tap one and I’ll explain it here with today’s numbers.',
+  chartHere: 'Scrolled to the chart. The Indicators menu has MA, EMA, Bollinger, volume and RSI; scroll left for more history.',
+  ruleNow: 'Current rules — storm: ATR ratio ≥ 1.8; rain: under MA50 or HSKSwap ≥ 0.3% over Gate; sunny: over MA50, gap ≤ 0.1%, RSI < 70; otherwise cloudy. Tell me what you’d change.',
+  howSkyPro: 'Composite of four daily inputs: price vs MA50, 30-day change, ATR(14) now vs a month ago, and HSKSwap vs Gate. Perp mark/index is shown for context, not scored.',
+  doItVault: 'Yes. With your vault connected I buy by the rule you set, and the contract blocks anything over your per-trade and daily limits. Tell me the coin, amount and how often.',
+  doItNoVault: 'Yes, once a vault (your own safe on HSK Chain) is connected. I only trade inside its limits, and you can withdraw any time. Until then I can plan with you and alert you.',
+  selfAsk: 'Sure, ask me anything below.',
 };
 
 /** Korean copula after a word: 비 → 예요, 구름 → 이에요. */
@@ -446,6 +459,19 @@ const ko: typeof en = {
   ctxSwitch: (l) => `지금 ${l} 보고 계시네요. 궁금한 거 물어보세요.`, ctxSwitchPro: (l) => `${l}로 바꿨어요. 아래 전략 백테스트도 이 시장 기준이에요.`,
   depthLabel: '설명 깊이', depth: { new: '쉽게', some: '보통', pro: '자세히' },
   depthNow: { new: '쉽게 말씀드릴게요.', some: '보통 깊이로 말씀드릴게요.', pro: '자세히 말씀드릴게요.' },
+  topic: { why: '왜요?', how: '날씨는 어떻게 정해요?', when: '그럼 언제 사요?', split: '나눠 사는 게 뭐예요?', alert: '싸지면 알려줘', other: '다른 코인은요?', strats: '전략 보여줘', chart: '차트 열기', rule: '신호 조건 바꾸기', doit: '대신 사줄 수 있어?', self: '직접 물어볼게요' },
+  chOther: (n) => `${n}은요?`,
+  whenWait: '날씨가 맑아지거나, 여기가 큰 거래소보다 싸질 때요. 그때 제가 먼저 알려드릴게요. 그리고 조금씩 나눠 사면 타이밍 걱정이 줄어요.',
+  whenNow: '지금도 괜찮아요. 다만 한 번에 다 사지 말고 조금씩 나눠 사는 게 안전해요.',
+  splitExplain: '한 번에 100을 사지 않고 10씩 열 번에 나눠 사는 거예요. 비쌀 때도 쌀 때도 조금씩 사니까 평균 가격이 고르게 되고, 나쁜 하루에 덜 다쳐요.',
+  alertMore: '그동안 다른 것도 볼까요?',
+  stratsHere: '차트 바로 아래에 전략들이 있어요. 하나 누르면 오늘 숫자로 여기서 풀어 드릴게요.',
+  chartHere: '차트로 옮겼어요. "지표" 메뉴에서 이동평균·EMA·볼린저·거래량·RSI를 켤 수 있고, 왼쪽으로 끌면 과거가 더 나와요.',
+  ruleNow: '지금 기준 — 폭풍: ATR 비율 1.8 이상 / 비: MA50 아래 또는 HSKSwap이 Gate보다 0.3% 이상 비쌈 / 맑음: MA50 위·갭 0.1% 이하·RSI 70 미만 / 나머지는 구름. 바꾸고 싶은 조건을 말해 주세요.',
+  howSkyPro: '일봉 기준 네 가지를 합쳐요: MA50 대비 가격, 30일 변화, 지금 ATR(14)과 한 달 전 ATR의 비율, HSKSwap vs Gate 갭. 무기한 마크/인덱스는 참고로만 보여드리고 점수엔 안 넣어요.',
+  doItVault: '네. 연결된 볼트에서 정하신 규칙대로 제가 사고, 1회·하루 한도를 넘는 건 컨트랙트가 막아요. 코인, 금액, 주기를 말씀해 주세요.',
+  doItNoVault: '네, 볼트(HSK Chain에 있는 내 전용 금고)를 연결하면요. 저는 그 한도 안에서만 거래하고, 출금은 언제든 직접 하실 수 있어요. 그 전까지는 계획을 같이 짜고 알림을 드릴게요.',
+  selfAsk: '좋아요! 아래에 편하게 물어보세요.',
 };
 
 export const STRINGS = { en, ko };

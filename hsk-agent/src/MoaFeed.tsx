@@ -22,6 +22,7 @@ export type Level = 'new' | 'some' | 'pro';
 interface Choice { label: string; act: () => void }
 interface Note { id: number; at: number; role: 'moa' | 'you'; text: string; card?: StratNote; plan?: Plan; goal?: string; execs?: Exec[]; offline?: boolean; follow: string[]; choices?: Choice[]; chosen?: string; sky?: { level: Level; list: Weather[] } }
 type Line = Omit<Note, 'id' | 'at' | 'role'>;
+type Topic = 'why' | 'how' | 'when' | 'split' | 'alert' | 'other' | 'strats' | 'chart' | 'rule' | 'doit' | 'self';
 const PRO_WORDS = /(rsi|macd|ema|롱|숏|레버리지|펀딩|볼린저|지표|long|short|leverage|funding|bollinger)/i;
 const readLevel = (): Level | null => { try { const v = localStorage.getItem('moa.level'); return v === 'new' || v === 'some' || v === 'pro' ? v : null; } catch { return null; } };
 const saveLevel = (l: Level) => { try { localStorage.setItem('moa.level', l); } catch { /* storage unavailable */ } };
@@ -89,51 +90,90 @@ export default function MoaFeed({ quotes, vault, inject, context, onCreate, onEx
   };
   const setLevel = (l: Level) => { setLevelState(l); saveLevel(l); };
 
-  /* ---------- the briefing: same weather, three depths ---------- */
   const name = (b: 'BTC' | 'ETH') => (b === 'BTC' ? t.coinBtc : t.coinEth);
   const p1 = (v: number) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
   const gapLine = (w: Weather) => (w.gap === undefined ? '' : w.gap >= 0.003 ? t.gapPricey((w.gap * 100).toFixed(1)) : w.gap <= -0.003 ? t.gapCheap((-w.gap * 100).toFixed(1)) : t.gapSame);
+  /** Today's weather with the latest HSKSwap vs Gate gap folded in (pool prices can arrive after the candles). */
+  const skies = (): Weather[] => (sky.current ?? []).map((w) => {
+    const gap = quotesRef.current.find((q) => q.asset === w.base)?.gap ?? w.gap;
+    const next = { ...w, gap };
+    return { ...next, sky: skyOf(next) };
+  });
+
+  /* ---------- conversation topics: every answer ends with the next things worth asking ---------- */
+  const visited = useRef<Set<Topic>>(new Set());
+  const label = (id: Topic): string => {
+    const [main, other] = skies();
+    switch (id) {
+      case 'why': return t.chWhy(main ? t.sky[main.sky][1] : '');
+      case 'other': return other ? t.chOther(name(other.base)) : t.chOther(t.coinEth);
+      default: return t.topic[id];
+    }
+  };
+  const answer = (id: Topic): { lines: Line[]; next: Topic[] } => {
+    const [main, other] = skies();
+    const l = levelRef.current ?? 'some';
+    const go = (sel: string) => document.querySelector(sel)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    switch (id) {
+      case 'why': return main ? { lines: [{ text: t.whyNew(name(main.base), main.m1 * 100, main.vsMa, gapLine(main)), follow: [] }], next: ['when', 'how', 'alert'] } : { lines: [{ text: t.wxNoData, follow: [] }], next: ['self'] };
+      case 'how': return { lines: [{ text: l === 'pro' ? t.howSkyPro : t.howSky, follow: [] }], next: l === 'pro' ? ['rule', 'chart', 'strats'] : ['why', 'when', 'alert'] };
+      case 'when': return { lines: [{ text: main && (main.sky === 'rain' || main.sky === 'storm') ? t.whenWait : t.whenNow, follow: [] }], next: ['split', 'alert', 'strats'] };
+      case 'split': return { lines: [{ text: t.splitExplain, follow: [] }], next: ['when', 'alert', 'strats'] };
+      case 'alert': return { lines: [{ text: t.alertOn, follow: [] }, { text: t.alertMore, follow: [] }], next: ['other', 'strats', 'self'] };
+      case 'other': return other ? { lines: [{ text: l === 'new' ? `${t.wxIs(name(other.base), t.sky[other.sky][1])} ${t.skyMean[other.sky]}` : `${t.someLine(name(other.base), p1(other.m1), gapLine(other))} ${t.verdict[other.sky]}`, follow: [] }], next: ['when', 'alert', 'strats'] } : { lines: [{ text: t.wxNoData, follow: [] }], next: ['self'] };
+      case 'strats': go('.strats'); return { lines: [{ text: t.stratsHere, follow: [] }], next: l === 'pro' ? ['chart', 'rule', 'self'] : ['split', 'alert', 'self'] };
+      case 'chart': go('.chart-card'); return { lines: [{ text: t.chartHere, follow: [] }], next: ['strats', 'rule', 'other'] };
+      case 'rule': return { lines: [{ text: t.ruleNow, follow: [] }], next: ['chart', 'strats', 'self'] };
+      case 'doit': return { lines: [{ text: vault?.configured ? t.doItVault : t.doItNoVault, follow: [] }], next: ['alert', 'strats', 'self'] };
+      default: setTimeout(() => input.current?.focus(), 400); return { lines: [{ text: t.selfAsk, follow: [] }], next: [] };
+    }
+  };
+  /** Next choices: what the topic suggests, minus what was already covered, never a dead end. */
+  const choicesFor = (ids: Topic[]): Choice[] => {
+    const fresh = ids.filter((x) => !visited.current.has(x));
+    const pool = fresh.length >= 2 ? fresh : [...fresh, ...((levelRef.current === 'pro' ? ['other', 'strats', 'chart', 'self'] : ['other', 'strats', 'when', 'self']) as Topic[]).filter((x) => !visited.current.has(x) && !fresh.includes(x))];
+    const list = (pool.length ? pool : ['self' as Topic]).slice(0, 3);
+    return list.map((id) => ({ label: label(id), act: () => runTopic(id) }));
+  };
+  const runTopic = (id: Topic) => {
+    if (id !== 'self') visited.current.add(id);
+    const { lines, next } = answer(id);
+    if (!next.length) { script(lines); return; }
+    const last = lines.length - 1;
+    script(lines.map((x, i) => (i === last ? { ...x, choices: choicesFor(next) } : x)));
+  };
+
+  /* ---------- the briefing: same weather, three depths ---------- */
   const briefing = (l: Level): Line[] => {
-    // Pool prices can arrive after the candles: fold in the latest HSKSwap vs Gate gap now.
-    const ws = (sky.current ?? []).map((w) => {
-      const gap = quotesRef.current.find((q) => q.asset === w.base)?.gap ?? w.gap;
-      const next = { ...w, gap };
-      return { ...next, sky: skyOf(next) };
-    });
+    const ws = skies();
     if (!ws.length) return [{ text: t.wxNoData, follow: [] }];
     const [main, other] = ws;
-    const toast = () => { push({ role: 'moa', text: t.alertOn, follow: [] }); };
-    if (l === 'new') return [
-      { text: t.wxIntroNew, follow: [], sky: { level: l, list: ws } },
-      { text: `${t.wxIs(name(main.base), t.sky[main.sky][1])} ${t.skyMean[main.sky]}`, follow: [] },
-      ...(other ? [{ text: t.wxIs(name(other.base), t.sky[other.sky][1]), follow: [] }] : []),
-      { text: t.wxNextNew, follow: [], choices: [
-        { label: t.chWhy(t.sky[main.sky][1]), act: () => script([{ text: t.whyNew(name(main.base), main.m1 * 100, main.vsMa, gapLine(main)), follow: [] }]) },
-        { label: t.chHow, act: () => script([{ text: t.howSky, follow: [] }]) },
-        { label: t.chAlert, act: toast },
-      ] },
-    ];
-    if (l === 'some') return [
-      { text: t.wxIntro, follow: [], sky: { level: l, list: ws } },
-      { text: `${t.someLine(name(main.base), p1(main.m1), gapLine(main))} ${t.verdict[main.sky]}`, follow: [] },
-      ...(other ? [{ text: `${t.someLine(name(other.base), p1(other.m1), gapLine(other))} ${t.verdict[other.sky]}`, follow: [] }] : []),
-      { text: t.wxNextSome, follow: [], choices: [
-        { label: t.chAlert, act: toast },
-        { label: t.chDoIt, act: () => void ask(t.qDoIt(name(main.base))) },
-        { label: t.chStrats, act: () => document.querySelector('.strats')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
-      ] },
-    ];
+    visited.current = new Set();
+    const first: Topic[] = l === 'new' ? ['why', 'how', 'alert'] : l === 'some' ? ['alert', 'doit', 'strats'] : ['chart', 'strats', 'rule'];
     const pro = (w: Weather) => t.proLine(w.base, p1(w.vsMa), w.rsi.toFixed(0), p1(w.m1), w.basis === undefined ? '—' : `${w.basis > 0 ? '+' : ''}${(w.basis * 100).toFixed(3)}%`, w.gap === undefined ? '—' : `${w.gap > 0 ? '+' : ''}${(w.gap * 100).toFixed(2)}%`, w.volRatio.toFixed(2));
-    return [
-      { text: t.wxIntroPro, follow: [], sky: { level: l, list: ws } },
-      { text: pro(main), follow: [] },
-      ...(other ? [{ text: pro(other), follow: [] }] : []),
-      { text: t.proState(main.base, main.vsMa > 0, main.rsi < 30), follow: [], choices: [
-        { label: t.chChart, act: () => document.querySelector('.chart-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
-        { label: t.chStratsPro, act: () => document.querySelector('.strats')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
-        { label: t.chRule, act: () => void ask(t.qRule) },
-      ] },
-    ];
+    const body: Line[] = l === 'new'
+      ? [
+        { text: t.wxIntroNew, follow: [], sky: { level: l, list: ws } },
+        { text: `${t.wxIs(name(main.base), t.sky[main.sky][1])} ${t.skyMean[main.sky]}`, follow: [] },
+        ...(other ? [{ text: t.wxIs(name(other.base), t.sky[other.sky][1]), follow: [] }] : []),
+        { text: t.wxNextNew, follow: [] },
+      ]
+      : l === 'some'
+        ? [
+          { text: t.wxIntro, follow: [], sky: { level: l, list: ws } },
+          { text: `${t.someLine(name(main.base), p1(main.m1), gapLine(main))} ${t.verdict[main.sky]}`, follow: [] },
+          ...(other ? [{ text: `${t.someLine(name(other.base), p1(other.m1), gapLine(other))} ${t.verdict[other.sky]}`, follow: [] }] : []),
+          { text: t.wxNextSome, follow: [] },
+        ]
+        : [
+          { text: t.wxIntroPro, follow: [], sky: { level: l, list: ws } },
+          { text: pro(main), follow: [] },
+          ...(other ? [{ text: pro(other), follow: [] }] : []),
+          { text: t.proState(main.base, main.vsMa > 0, main.rsi < 30), follow: [] },
+        ];
+    if (other) visited.current.add('other');
+    body[body.length - 1] = { ...body[body.length - 1], choices: choicesFor(first) };
+    return body;
   };
   const pickLevel = (l: Level) => { setLevel(l); script(briefing(l)); };
 
