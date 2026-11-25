@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { SlidePill } from './motion.tsx';
+import { Icon as SIcon } from './Icons.tsx';
 import type { VaultInfo } from './parts.tsx';
 import { CopyAddress, CopyButton, Modal, RichText } from './ui.tsx';
 import { askMoa, EXECUTE_WORDS, toStep, type Exec, type StepKey } from './moaClient.ts';
@@ -31,7 +32,8 @@ export type MoaAsk =
   | { kind: 'agent'; agent: Agent }
   | { kind: 'recommend'; coin?: string }
   | { kind: 'status'; hiredId: string }
-  | { kind: 'hired'; hiredId: string; changed?: { from: Amounts; to: Amounts } };
+  | { kind: 'hired'; hiredId: string; changed?: { from: Amounts; to: Amounts } }
+  | { kind: 'ask'; text: string };
 export type MoaInject = MoaAsk & { n: number };
 export type { Level };
 interface Choice { label: string; act: () => void }
@@ -405,6 +407,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
   // Something on another part of the screen handed Moa a job.
   useEffect(() => {
     if (!inject) return;
+    if (inject.kind === 'ask') { void ask(inject.text); onAttention(); return; }
     interrupt();
     if (inject.kind === 'agent') agentNote(inject.agent, explainAgent(t, inject.agent));
     else if (inject.kind === 'recommend') recommendNote(inject.coin);
@@ -454,7 +457,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
           <article key={n.id} className="note fade-up">
             {/* Messenger grouping: name and time only on the first of consecutive Moa lines. */}
             {(k === 0 || notes[k - 1].role !== 'moa' || n.at - notes[k - 1].at > 60_000) && <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at, lang)}</time></div>}
-            {n.text && <div className="note-text"><RichText text={n.text} /></div>}
+            {n.text && <div className="note-text">{/\n|\*\*/.test(n.text) ? <RichText text={n.text} /> : <Stream text={n.text} />}</div>}
             {n.offline && <p className="note-offline">{t.offline}</p>}
             {n.sky && <SkyCard level={n.sky.level} list={n.sky.list} />}
             {n.agent && (
@@ -511,22 +514,26 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
           <div className="note typing-note" role="status">
             <div className="note-meta"><span className="orb xs" aria-hidden /> Moa</div>
             {busy
-              ? <div className="moa-steps">{busy.map((s, k) => <span key={s} className={k === busy.length - 1 ? 'now' : 'done'}>{k === busy.length - 1 ? <span className="spark" aria-hidden /> : '✓'} <span className={k === busy.length - 1 ? 'shimmer-text' : ''}>{t.steps[s]}</span></span>)}</div>
+              ? (
+                <div className="thoughts">
+                  <div className="thoughts-head"><span className="spark" aria-hidden /><span className="shimmer-text">{t.steps[busy[busy.length - 1]]}</span></div>
+                  {busy.length > 1 && <ol className="thoughts-steps">{busy.slice(0, -1).map((s) => <li key={s}>✓ {t.steps[s]}</li>)}</ol>}
+                </div>
+              )
               : <span className="dots" aria-label={t.feedTyping}><i /><i /><i /></span>}
           </div>
         )}
       </div>
 
+      <div className="moa-glow" aria-hidden />
       <form className={`feed-composer${busy ? ' running' : ''}`} onSubmit={(e) => { e.preventDefault(); void ask(draft); }}>
-        <span className="ctx-chip" data-tip={t.ctxTip}>{context.asset ? <CoinMark base={context.asset} /> : <span className="orb xs" aria-hidden />}{context.label}</span>
-        <div className="composer-row">
-          <textarea ref={input} rows={1} value={draft} onChange={(e) => { if (!draft) interrupt(); setDraft(e.target.value); }} placeholder={t.feedPlaceholder} aria-label={t.askMoa}
+        <textarea ref={input} rows={1} value={draft} onChange={(e) => { if (!draft) interrupt(); setDraft(e.target.value); }} placeholder={t.feedPlaceholder} aria-label={t.askMoa}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void ask(draft); } }} />
+        <div className="composer-bar">
+          <span className="ctx-chip" data-tip={t.ctxTip}>{context.asset ? <CoinMark base={context.asset} /> : <span className="orb xs" aria-hidden />}{context.label}</span>
           {busy
-            ? <button className="send-btn stop" type="button" onClick={stop} aria-label={t.stop} data-tip={`${t.stop} (Esc)`}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor" /></svg></button>
-            : <button className="send-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} data-tip={`${t.ask} (Enter)`}>
-              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            </button>}
+            ? <button className="run-btn stop" type="button" onClick={stop} aria-label={t.stop}><SIcon name="stop" size={14} />{t.stop}<kbd>Esc</kbd></button>
+            : <button className="run-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask}>{t.ask}<kbd>↵</kbd></button>}
         </div>
       </form>
       <div className="feed-foot">
@@ -642,5 +649,16 @@ function SkyCard({ level, list }: { level: Level; list: Weather[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Moa's words arrive a few at a time, like a reply being written. */
+function Stream({ text }: { text: string }) {
+  const words = text.split(/(\s+)/);
+  let k = 0;
+  return (
+    <p className="stream">
+      {words.map((w, i) => (/^\s+$/.test(w) ? w : <span key={i} style={{ animationDelay: `${Math.min(1.2, (k++) * 0.022).toFixed(3)}s` }}>{w}</span>))}
+    </p>
   );
 }

@@ -5,7 +5,6 @@
 import type { ReactNode } from 'react';
 import type { Agent, RuleId } from './agents.ts';
 import { useT, type Strings } from './i18n.ts';
-import { RollNum } from './motion.tsx';
 import { CoinMark } from './CoinMark.tsx';
 
 export const pct = (v: number, d = 1) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(d)}%`;
@@ -46,7 +45,6 @@ export function RuleIcon({ rule }: { rule: RuleId }) {
   return <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden><path d={ICON[rule]} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
-const signCls = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
 
 export function AgentCard({ agent: a, size, picked, best, onPick, onHire, onAsk, starred, onStar, actions }: {
   agent: Agent; size: 'tile' | 'market' | 'chat'; picked?: boolean; best?: boolean;
@@ -55,19 +53,26 @@ export function AgentCard({ agent: a, size, picked, best, onPick, onHire, onAsk,
   const { t } = useT();
   const pill = statePill(t, a);
 
+  const edge = a.total - a.hold;
   if (size === 'tile') {
+    // A row, like AI Studio's "Featured" list: icon, name with small badges, one line, and the one number that
+    // says something (how it did against just holding).
     return (
-      <button className={`tile${picked ? ' on' : ''}`} onClick={onPick} aria-pressed={picked}>
-        <span className="tile-top">
-          <b>{t.agRule[a.rule]}</b>
-          <span className={`sig ${pill.cls}`}>{pill.text}</span>
+      <button className={`frow${picked ? ' on' : ''}`} onClick={onPick} aria-pressed={picked}>
+        <span className={`frow-ic ag-r-${a.rule}`} aria-hidden><RuleIcon rule={a.rule} /></span>
+        <span className="frow-main">
+          <span className="frow-title">
+            <b>{t.agRule[a.rule]}</b>
+            <span className={`badge ${pill.cls}`}><i />{pill.text}</span>
+            {best && <span className="badge pick"><i />{t.stratRec}</span>}
+          </span>
+          <span className="frow-desc">{t.agLine[a.rule]}</span>
         </span>
-        <span className="tile-line">{t.agLine[a.rule]}</span>
-        <span className="tile-num">
-          <RollNum flash={false} className={`tile-val ${signCls(a.total)}`} text={pct(a.total)} />
-          <small>{t.acDays(a.days)} · {t.acHold} {pct(a.hold)} · {t.acDd} {drop(a.maxDd)}</small>
+        <span className="frow-num">
+          <b className={edge >= 0 ? 'pos' : 'neg'}>{t.vsHold(pct(edge))}</b>
+          <small>{t.acTotal} {pct(a.total)} · {t.acDd} {drop(a.maxDd)}</small>
         </span>
-        {best && <span className="tile-best">{t.stratRec}</span>}
+        <span className="frow-go" aria-hidden>›</span>
       </button>
     );
   }
@@ -90,8 +95,8 @@ export function AgentCard({ agent: a, size, picked, best, onPick, onHire, onAsk,
         {head}
         <p className="ag-line">{t.agLine[a.rule]}</p>
         <div className="ag-stats">
-          <span>{t.acTotal}<b className={signCls(a.total)}>{pct(a.total)}</b></span>
-          <span>{t.acHold}<b className={signCls(a.hold)}>{pct(a.hold)}</b></span>
+          <span>{t.acEdge}<b className={edge >= 0 ? 'pos' : 'neg'}>{pct(edge)}</b></span>
+          <span>{t.acTotal}<b>{pct(a.total)}</b></span>
           <span>{t.acDd}<b>{drop(a.maxDd)}</b></span>
         </div>
         <Equity pts={a.equity} up={a.total >= a.hold} wide />
@@ -122,8 +127,8 @@ export function AgentCard({ agent: a, size, picked, best, onPick, onHire, onAsk,
         </div>
         <p className="ag-line">{t.agLine[a.rule]}</p>
         <div className="ag-stats">
-          <span>{t.acTotal}<b className={signCls(a.total)}>{pct(a.total)}</b></span>
-          <span>{t.acHold}<b className={signCls(a.hold)}>{pct(a.hold)}</b></span>
+          <span>{t.acEdge}<b className={edge >= 0 ? 'pos' : 'neg'}>{pct(edge)}</b></span>
+          <span>{t.acTotal}<b>{pct(a.total)}</b></span>
           <span>{t.acDd}<b>{drop(a.maxDd)}</b></span>
         </div>
       </div>

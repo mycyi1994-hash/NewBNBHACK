@@ -10,6 +10,7 @@ import { fmtPrice, loadQuotes, type Quote } from './market.ts';
 import { useExecutions, useHired } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
 import { RollNum } from './motion.tsx';
+import { Icon, type IconName } from './Icons.tsx';
 import Trade from './Trade.tsx';
 import Agents from './Agents.tsx';
 import MyAgents from './MyAgents.tsx';
@@ -60,24 +61,24 @@ const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
 function Sidebar({ view, go, count, vault }: { view: View; go: (v: View) => void; count: number; vault: VaultInfo | null }) {
   const { t } = useT();
-  const item = (label: string, v: View, icon: string, badge?: number) => (
-    <button className={`nav-item${view === v ? ' active' : ''}`} onClick={() => go(v)} aria-current={view === v ? 'page' : undefined}>
-      <span className="nav-icon" aria-hidden>{icon}</span>
-      {label}
+  const item = (label: string, v: View, icon: IconName, badge?: number) => (
+    <button className={`nav-item${view === v ? ' active' : ''}`} onClick={() => go(v)} aria-current={view === v ? 'page' : undefined} data-tip={label}>
+      <span className="nav-icon"><Icon name={icon} /></span>
+      <span className="nav-text">{label}</span>
       {badge ? <span className="nav-badge">{badge}</span> : null}
     </button>
   );
   return (
     <aside className="sidebar">
-      <div className="brand"><span className="orb sm" aria-hidden /> moa</div>
-      <div className="nav-label">{t.navMarkets}</div>
-      {item(t.navAgents, 'agents', '◈')}
-      {item(t.navTrade, 'trade', '∿')}
-      <div className="nav-label">{t.navAutomations}</div>
-      {item(t.navMine, 'mine', '◎', count)}
+      <div className="brand"><span className="orb sm" aria-hidden /><span className="nav-text">moa</span></div>
+      {item(t.navAgents, 'agents', 'market')}
+      {item(t.navTrade, 'trade', 'chart')}
+      {item(t.navMine, 'mine', 'bot', count)}
       <div className="sidebar-foot">
-        <div className="net"><span className="live-dot" /> HSK Chain</div>
-        {vault && <div className="foot-note">{vault.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone}</div>}
+        <div className="nav-item static" data-tip={vault?.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone}>
+          <span className="nav-icon"><Icon name="shield" /></span>
+          <span className="nav-text foot-note">{vault ? (vault.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone) : 'HSK Chain'}</span>
+        </div>
       </div>
     </aside>
   );
@@ -85,29 +86,33 @@ function Sidebar({ view, go, count, vault }: { view: View; go: (v: View) => void
 
 function TabBar({ view, go, count, asks, onMoa }: { view: View; go: (v: View) => void; count: number; asks: number; onMoa: () => void }) {
   const { t } = useT();
-  const tab = (label: string, v: View, icon: string, badge?: number) => (
+  const tab = (label: string, v: View, icon: IconName, badge?: number) => (
     <button className={`tab${view === v ? ' on' : ''}`} onClick={() => go(v)} aria-current={view === v ? 'page' : undefined}>
-      <span className="tab-icon" aria-hidden>{icon}</span>{label}{badge ? <span className="nav-badge">{badge}</span> : null}
+      <span className="tab-icon"><Icon name={icon} /></span>{label}{badge ? <span className="nav-badge">{badge}</span> : null}
     </button>
   );
   return (
     <nav className="tabbar" aria-label="Main">
-      {tab(t.navAgents, 'agents', '◈')}
-      {tab(t.navTrade, 'trade', '∿')}
-      {tab(t.navMine, 'mine', '◎', count)}
+      {tab(t.navAgents, 'agents', 'market')}
+      {tab(t.navTrade, 'trade', 'chart')}
+      {tab(t.navMine, 'mine', 'bot', count)}
       <button className="tab" onClick={onMoa} aria-label={t.openMoa}>
-        <span className="tab-icon" aria-hidden><span className="orb sm" /></span>{t.navMoa}{asks ? <span className="nav-badge ask">{asks}</span> : null}
+        <span className="tab-icon"><span className="orb sm" /></span>{t.navMoa}{asks ? <span className="nav-badge ask">{asks}</span> : null}
       </button>
     </nav>
   );
 }
 
-function Topbar({ title, quotes }: { title: string; quotes: Quote[] }) {
+function Topbar({ title, quotes, onMenu }: { title: string; quotes: Quote[]; onMenu: () => void }) {
   const { t, lang, setLang } = useT();
   const hsk = quotes.find((q) => q.asset === 'HSK');
   return (
     <header className="topbar">
-      <div className="topbar-title"><span className="brand mobile-only"><span className="orb sm" aria-hidden /> moa</span><span className="desktop-only">{title}</span></div>
+      <div className="topbar-title">
+        <button className="icon-btn menu-btn desktop-only" onClick={onMenu} aria-label="Menu"><Icon name="menu" /></button>
+        <span className="brand mobile-only"><span className="orb sm" aria-hidden /> moa</span>
+        <span className="desktop-only">{title}</span>
+      </div>
       <div className="topbar-right">
         {hsk?.pool !== undefined && <span className="pill">HSK <RollNum text={fmtPrice(hsk.pool)} /></span>}
         <button className="pill lang" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} aria-label="Switch language" data-tip={lang === 'en' ? '한국어로 보기' : 'View in English'}>{t.langLabel}</button>
@@ -133,6 +138,7 @@ function Shell() {
   const injectN = useRef(0);
   const [sheet, setSheet] = useState<HireTarget | null>(null);
   const [moaOpen, setMoaOpen] = useState(false);
+  const [navMini, setNavMini] = useState(false);
   const [sending, setSending] = useState<Set<string>>(new Set());
   const sendingRef = useRef(sending); sendingRef.current = sending;
   const hiredRef = useRef(hired); hiredRef.current = hired;
@@ -271,14 +277,14 @@ function Shell() {
   const askMoaAbout = (a: Agent) => tell({ kind: 'agent', agent: a });
 
   return (
-    <div className={`app${moaOpen ? ' moa-open' : ''}`}>
+    <div className={`app${moaOpen ? ' moa-open' : ''}${navMini ? ' nav-mini' : ''}`}>
       <Sidebar view={view} go={go} count={hired.length} vault={vault} />
       <main className="main">
-        <Topbar title={title} quotes={quotes} />
+        <Topbar title={title} quotes={quotes} onMenu={() => setNavMini((v) => !v)} />
         <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />
         {view === 'trade' && <Trade quotes={quotes} onContext={setTradeCtx} onPick={askMoaAbout} />}
-        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onAsk={askMoaAbout} onRecommend={() => tell({ kind: 'recommend' })} />}
+        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onAsk={askMoaAbout} onRecommend={() => tell({ kind: 'recommend' })} onAskMoa={(text) => tell({ kind: 'ask', text })} onGo={go} />}
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}

@@ -311,6 +311,17 @@ const en = {
   evHired: (p: string, b: string) => `Hired: $${p} per buy, $${b} budget`, evAsked: 'Asked you', evFilled: 'Filled', evDeclined: 'You skipped', evFailed: 'Not sent', evExpired: 'Dropped: signal changed',
   evSkipped: 'Skipped', evPaused: 'Paused', evResumed: 'Resumed', evChanged: 'Changed',
   closeMoa: 'Close Moa', openMoa: 'Open Moa',
+  homeTitle: 'What should an agent do for you?', homeAsk: 'Ask Moa, or say the result you want',
+  homeStart: 'Start with', homeGallery: 'Agents you can hire', homeGallerySignal: 'Signal only (demo)', homeGalleryAll: 'All agents',
+  starts: [
+    { k: 'pick', title: 'Get a pick from Moa', sub: 'One agent chosen by a fixed rule for you' },
+    { k: 'collect', title: 'Collect a little every day', sub: 'Buy the same amount daily, smarter on dips' },
+    { k: 'trend', title: 'Hold only while it rises', sub: 'In above the average, out below it' },
+    { k: 'revert', title: 'Buy when it drops', sub: 'Step in after sharp falls, out on the bounce' },
+    { k: 'chart', title: 'Pick from the chart', sub: 'See a market and the agents that follow it' },
+    { k: 'mine', title: 'My agents', sub: 'What your hired agents are doing now' },
+  ] as { k: 'pick' | 'collect' | 'trend' | 'revert' | 'chart' | 'mine'; title: string; sub: string }[],
+  vsHold: (p: string) => `${p} vs holding`, acEdge: 'vs holding',
 };
 
 /** Korean copula after a word: 비 → 예요, 구름 → 이에요. */
@@ -623,6 +634,17 @@ const ko: typeof en = {
   evHired: (p, b) => `맡김: 한 번에 $${p}, 예산 $${b}`, evAsked: '물어봄', evFilled: '체결', evDeclined: '건너뜀', evFailed: '보내지 않음', evExpired: '취소: 신호 바뀜',
   evSkipped: '쉼', evPaused: '멈춤', evResumed: '다시 시작', evChanged: '바꿈',
   closeMoa: 'Moa 닫기', openMoa: 'Moa 열기',
+  homeTitle: '에이전트에게 무엇을 맡겨볼까요?', homeAsk: 'Moa에게 묻거나, 원하는 결과를 말해 보세요',
+  homeStart: '이걸로 시작해 보세요', homeGallery: '맡길 수 있는 에이전트', homeGallerySignal: '신호만 보는 에이전트 (데모)', homeGalleryAll: '모든 에이전트',
+  starts: [
+    { k: 'pick', title: 'Moa에게 추천받기', sub: '정해진 규칙으로 나에게 맞는 하나를 골라요' },
+    { k: 'collect', title: '매일 조금씩 모으기', sub: '매일 같은 금액, 쌀 때는 조금 더' },
+    { k: 'trend', title: '오를 때만 들고 있기', sub: '평균 위에서 사고, 아래로 가면 팔아요' },
+    { k: 'revert', title: '떨어졌을 때 사기', sub: '크게 빠지면 사고, 반등하면 팔아요' },
+    { k: 'chart', title: '차트 보며 고르기', sub: '시장을 보고 그 시장의 에이전트를 골라요' },
+    { k: 'mine', title: '내 에이전트', sub: '맡긴 에이전트가 지금 하는 일' },
+  ],
+  vsHold: (p) => `보유 대비 ${p}`, acEdge: '보유 대비',
 };
 
 export const STRINGS = { en, ko };
