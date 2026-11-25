@@ -3,10 +3,10 @@
 // for the market you are looking at. You ask, Moa answers in this panel (same server brain as the Ask Moa
 // page, with live progress steps); plans can become bots and trades show their receipts, all without
 // leaving the chart. A tapped strategy arrives as a full card. Every number comes from live data.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { fmtPrice, type Quote } from './market.ts';
+import { useEffect, useRef, useState } from 'react';
+import type { Quote } from './market.ts';
 import { useT } from './i18n.ts';
-import { RollNum } from './motion.tsx';
+import { RollNum, SlidePill } from './motion.tsx';
 import type { VaultInfo } from './parts.tsx';
 import { CopyAddress, CopyButton, Modal, RichText } from './ui.tsx';
 import type { StratNote } from './Strategies.tsx';
@@ -14,9 +14,19 @@ import { askMoa, EXECUTE_WORDS, toStep, type Exec, type StepKey } from './moaCli
 import { describe, parseIntent, type Plan } from './intent.ts';
 import { reply as offlineReply } from './moa.ts';
 import type { Execution } from './store.ts';
+import { CoinMark } from './CoinMark.tsx';
+import { loadWeather, skyOf, type Weather } from './weather.ts';
 
-export interface MoaContext { venue: 'cex' | 'dex'; label: string; asset: 'HSK' | 'ETH' | 'BTC' }
-interface Note { id: number; at: number; role: 'moa' | 'you'; text: string; card?: StratNote; plan?: Plan; goal?: string; execs?: Exec[]; offline?: boolean; follow: string[] }
+export interface MoaContext { venue: 'cex' | 'dex'; label: string; asset: string; perp: boolean }
+export type Level = 'new' | 'some' | 'pro';
+interface Choice { label: string; act: () => void }
+interface Note { id: number; at: number; role: 'moa' | 'you'; text: string; card?: StratNote; plan?: Plan; goal?: string; execs?: Exec[]; offline?: boolean; follow: string[]; choices?: Choice[]; chosen?: string; sky?: { level: Level; list: Weather[] } }
+type Line = Omit<Note, 'id' | 'at' | 'role'>;
+const PRO_WORDS = /(rsi|macd|ema|롱|숏|레버리지|펀딩|볼린저|지표|long|short|leverage|funding|bollinger)/i;
+const readLevel = (): Level | null => { try { const v = localStorage.getItem('moa.level'); return v === 'new' || v === 'some' || v === 'pro' ? v : null; } catch { return null; } };
+const saveLevel = (l: Level) => { try { localStorage.setItem('moa.level', l); } catch { /* storage unavailable */ } };
+/** Typing time grows with the length of the line, like a person writing it. */
+const beat = (text: string) => Math.min(1400, 420 + text.length * 16);
 const time = (t: number, lang: string) => new Date(t).toLocaleTimeString(lang === 'ko' ? 'ko-KR' : 'en-US', { hour: '2-digit', minute: '2-digit' });
 const MOVE = 0.005;         // a 0.5 percentage-point change in the gap triggers a new note
 const QUIET_MS = 120_000;   // at most one unprompted note every 2 minutes
@@ -24,14 +34,6 @@ const QUIET_MS = 120_000;   // at most one unprompted note every 2 minutes
 const Icon = ({ d }: { d: string }) => (
   <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden><path d={d} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
 );
-const ICONS = {
-  stack: 'M4 13l6 3 6-3M4 9.5l6 3 6-3M10 3l6 3-6 3-6-3 6-3z',
-  tag: 'M3 10.5V4a1 1 0 011-1h6.5L17 9.5 10.5 16 3 10.5zM7 7h.01',
-  shield: 'M10 3l6 2.5v4c0 3.6-2.6 6.4-6 7.5-3.4-1.1-6-3.9-6-7.5v-4L10 3z',
-  chart: 'M3 16h14M5 13l3-4 3 2 4-6',
-  pulse: 'M2 10h4l2-5 4 10 2-5h4',
-  ask: 'M5 15l-2 2V5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5z',
-};
 
 export default function MoaFeed({ quotes, vault, inject, context, onCreate, onExecuted }: {
   quotes: Quote[]; vault: VaultInfo | null; inject?: StratNote | null; context: MoaContext;
@@ -50,20 +52,125 @@ export default function MoaFeed({ quotes, vault, inject, context, onCreate, onEx
   const lastGap = useRef<Partial<Record<Quote['asset'], number>>>({});
   const lastNoteAt = useRef(0);
   const nextId = useRef(1);
+  const [level, setLevelState] = useState<Level | null>(readLevel);
+  const levelRef = useRef<Level | null>(level); levelRef.current = level;
+  const sky = useRef<Weather[] | null>(null);
+  const scriptRun = useRef(0);
+  const greeted = useRef(false);
+  const lastCtx = useRef(context.label);
+  const quotesRef = useRef(quotes); quotesRef.current = quotes;
 
   const push = (n: Omit<Note, 'id' | 'at'>) => setNotes((cur) => [...cur, { ...n, id: nextId.current++, at: Date.now() }]);
   /** Moa's own short notes: a brief "typing" beat, then the note. */
-  const say = (n: Omit<Note, 'id' | 'at' | 'role'>, delay = 600) => {
+  const say = (n: Line, delay = 600) => {
     setTyping(true);
     setTimeout(() => { setTyping(false); push({ ...n, role: 'moa' }); lastNoteAt.current = Date.now(); }, delay);
   };
+  /** Several lines in a row, each after its own typing beat. Anything the user does cancels the rest. */
+  const script = (lines: Line[]) => {
+    const run = ++scriptRun.current;
+    let at = 0;
+    lines.forEach((l, i) => {
+      at += i === 0 ? 350 : beat(l.text);
+      setTimeout(() => { if (scriptRun.current === run) setTyping(true); }, at - Math.min(700, beat(l.text) - 150));
+      setTimeout(() => {
+        if (scriptRun.current !== run) return;
+        setTyping(i < lines.length - 1);
+        push({ ...l, role: 'moa' });
+        lastNoteAt.current = Date.now();
+      }, at);
+    });
+  };
+  const interrupt = () => { scriptRun.current++; setTyping(false); };
+  const choose = (id: number, c: Choice) => {
+    setNotes((cur) => cur.map((n) => (n.id === id ? { ...n, chosen: c.label } : n)));
+    push({ role: 'you', text: c.label, follow: [] });
+    c.act();
+  };
+  const setLevel = (l: Level) => { setLevelState(l); saveLevel(l); };
+
+  /* ---------- the briefing: same weather, three depths ---------- */
+  const name = (b: 'BTC' | 'ETH') => (b === 'BTC' ? t.coinBtc : t.coinEth);
+  const p1 = (v: number) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
+  const gapLine = (w: Weather) => (w.gap === undefined ? '' : w.gap >= 0.003 ? t.gapPricey((w.gap * 100).toFixed(1)) : w.gap <= -0.003 ? t.gapCheap((-w.gap * 100).toFixed(1)) : t.gapSame);
+  const briefing = (l: Level): Line[] => {
+    // Pool prices can arrive after the candles: fold in the latest HSKSwap vs Gate gap now.
+    const ws = (sky.current ?? []).map((w) => {
+      const gap = quotesRef.current.find((q) => q.asset === w.base)?.gap ?? w.gap;
+      const next = { ...w, gap };
+      return { ...next, sky: skyOf(next) };
+    });
+    if (!ws.length) return [{ text: t.wxNoData, follow: [] }];
+    const [main, other] = ws;
+    const toast = () => { push({ role: 'moa', text: t.alertOn, follow: [] }); };
+    if (l === 'new') return [
+      { text: t.wxIntroNew, follow: [], sky: { level: l, list: ws } },
+      { text: `${t.wxIs(name(main.base), t.sky[main.sky][1])} ${t.skyMean[main.sky]}`, follow: [] },
+      ...(other ? [{ text: t.wxIs(name(other.base), t.sky[other.sky][1]), follow: [] }] : []),
+      { text: t.wxNextNew, follow: [], choices: [
+        { label: t.chWhy(t.sky[main.sky][1]), act: () => script([{ text: t.whyNew(name(main.base), main.m1 * 100, main.vsMa, gapLine(main)), follow: [] }]) },
+        { label: t.chHow, act: () => script([{ text: t.howSky, follow: [] }]) },
+        { label: t.chAlert, act: toast },
+      ] },
+    ];
+    if (l === 'some') return [
+      { text: t.wxIntro, follow: [], sky: { level: l, list: ws } },
+      { text: `${t.someLine(name(main.base), p1(main.m1), gapLine(main))} ${t.verdict[main.sky]}`, follow: [] },
+      ...(other ? [{ text: `${t.someLine(name(other.base), p1(other.m1), gapLine(other))} ${t.verdict[other.sky]}`, follow: [] }] : []),
+      { text: t.wxNextSome, follow: [], choices: [
+        { label: t.chAlert, act: toast },
+        { label: t.chDoIt, act: () => void ask(t.qDoIt(name(main.base))) },
+        { label: t.chStrats, act: () => document.querySelector('.strats')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
+      ] },
+    ];
+    const pro = (w: Weather) => t.proLine(w.base, p1(w.vsMa), w.rsi.toFixed(0), p1(w.m1), w.basis === undefined ? '—' : `${w.basis > 0 ? '+' : ''}${(w.basis * 100).toFixed(3)}%`, w.gap === undefined ? '—' : `${w.gap > 0 ? '+' : ''}${(w.gap * 100).toFixed(2)}%`, w.volRatio.toFixed(2));
+    return [
+      { text: t.wxIntroPro, follow: [], sky: { level: l, list: ws } },
+      { text: pro(main), follow: [] },
+      ...(other ? [{ text: pro(other), follow: [] }] : []),
+      { text: t.proState(main.base, main.vsMa > 0, main.rsi < 30), follow: [], choices: [
+        { label: t.chChart, act: () => document.querySelector('.chart-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
+        { label: t.chStratsPro, act: () => document.querySelector('.strats')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
+        { label: t.chRule, act: () => void ask(t.qRule) },
+      ] },
+    ];
+  };
+  const pickLevel = (l: Level) => { setLevel(l); script(briefing(l)); };
+
+  // Opening: Moa speaks first. New visitors get one question to find their level; returning ones go straight on.
+  useEffect(() => {
+    if (greeted.current) return;
+    greeted.current = true;
+    const ready = loadWeather(quotes).then((w) => { sky.current = w; }).catch(() => { sky.current = []; });
+    const l = levelRef.current;
+    if (l) { void ready.then(() => script([{ text: t.helloAgain, follow: [] }, ...briefing(l)])); return; }
+    script([
+      { text: t.hello1, follow: [] },
+      { text: t.hello2, follow: [] },
+      { text: t.askLevel, follow: [], choices: [
+        { label: t.lvNew, act: () => void ready.then(() => pickLevel('new')) },
+        { label: t.lvSome, act: () => void ready.then(() => pickLevel('some')) },
+        { label: t.lvPro, act: () => void ready.then(() => pickLevel('pro')) },
+      ] },
+    ]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching market: one short line, in the user's depth.
+  useEffect(() => {
+    if (lastCtx.current === context.label) return;
+    lastCtx.current = context.label;
+    if (!greeted.current || busy || Date.now() - lastNoteAt.current < 4000) return;
+    say({ text: levelRef.current === 'pro' ? t.ctxSwitchPro(context.label) : t.ctxSwitch(context.label), follow: [] }, 500);
+  }, [context.label]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Ask Moa right here: the question, live progress steps, then the answer (or the on-device fallback). */
   const ask = async (text: string, confirmed = false) => {
     const q = text.trim();
     if (!q || busy) return;
     if (!confirmed && EXECUTE_WORDS.test(q) && vault?.configured) { setConfirm(q); return; }
+    interrupt();
     setDraft('');
+    if (PRO_WORDS.test(q) && levelRef.current !== 'pro') setLevel('pro');
     const history = [
       // What the user is looking at goes in as context, so "this" and "here" mean something.
       { role: 'moa' as const, text: `${t.ctxNow}: ${context.label}` },
@@ -114,58 +221,37 @@ export default function MoaFeed({ quotes, vault, inject, context, onCreate, onEx
     return () => document.removeEventListener('keydown', esc);
   }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const a = context.asset;
-  const starts: { icon: keyof typeof ICONS; title: string; sub: string; prompt: string }[] = context.venue === 'cex'
-    ? [
-      { icon: 'chart', title: t.stTrend, sub: t.stTrendSub, prompt: t.pcTrend },
-      { icon: 'shield', title: t.stStop, sub: t.stStopSub, prompt: t.pcAtr },
-      { icon: 'pulse', title: t.stMood, sub: t.stMoodSub, prompt: t.stMoodQ },
-      { icon: 'ask', title: t.stExplain, sub: t.stExplainSub, prompt: t.stExplainQ(context.label) },
-    ]
-    : [
-      { icon: 'stack', title: t.stDaily, sub: t.stDailySub(a), prompt: t.fuPlan(a) },
-      { icon: 'tag', title: t.stCheap, sub: t.stCheapSub, prompt: t.s1Prompt(a) },
-      { icon: 'shield', title: t.stStop, sub: t.stStopSubDex(a), prompt: t.stStopQ(a) },
-      { icon: 'ask', title: t.stWhy, sub: t.stWhySub, prompt: t.fuWhy },
-    ];
-
   return (
     <aside className="dock feed-dock" aria-label="Moa">
       <header className="feed-head">
         <span className="orb sm breathe" aria-hidden />
         <b>Moa</b>
-        <span className="feed-status"><span className="live-dot" /> {t.feedWatching}</span>
+        <span className="feed-status"><span className="live-dot" /> {level ? t.live : t.feedWatching}</span>
+        {level && (
+          <div className="depth-switch has-pill" role="tablist" aria-label={t.depthLabel}>
+            <SlidePill dep={level} />
+            {(['new', 'some', 'pro'] as Level[]).map((l) => <button key={l} role="tab" aria-selected={level === l} className={level === l ? 'on' : ''} onClick={() => { if (l !== level && !busy) { interrupt(); setLevel(l); script([{ text: t.depthNow[l], follow: [] }, ...briefing(l)]); } }}>{t.depth[l]}</button>)}
+          </div>
+        )}
         {notes.length > 0 && !busy && <button className="feed-clear" onClick={() => setNotes([])} data-tip={t.feedClearTip} aria-label={t.feedClearTip}><Icon d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" /></button>}
       </header>
 
       <div className="feed" ref={feed} aria-live="polite">
-        <section className="moa-hero">
-          <span className="orb lg breathe" aria-hidden />
-          <h2>{t.heroQ}</h2>
-          <p>{t.heroSub}</p>
-        </section>
-
-        <Brief quotes={quotes} vault={vault} />
-
-        <section className="moa-starts" aria-label={t.stTitle}>
-          <div className="moa-sec-title">{t.stTitle}</div>
-          <div className="start-grid stagger">
-            {starts.map((s) => (
-              <button key={s.title} className="start-card" disabled={!!busy} onClick={() => void ask(s.prompt)}>
-                <span className="start-ic"><Icon d={ICONS[s.icon]} /></span>
-                <b>{s.title}</b>
-                <small>{s.sub}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {notes.map((n) => n.role === 'you' ? (
+        {notes.map((n, k) => n.role === 'you' ? (
           <div key={n.id} className="you-row fade-up"><p className="you-bubble">{n.text}</p></div>
         ) : (
           <article key={n.id} className="note fade-up">
-            <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at, lang)}</time></div>
+            {/* Messenger grouping: name and time only on the first of consecutive Moa lines. */}
+            {(k === 0 || notes[k - 1].role !== 'moa' || n.at - notes[k - 1].at > 60_000) && <div className="note-meta"><span className="orb xs" aria-hidden /> Moa <time>{time(n.at, lang)}</time></div>}
             {n.card ? <StratCard c={n.card} onAsk={(p) => void ask(p)} /> : <div className="note-text"><RichText text={n.text} /></div>}
+            {n.sky && <SkyCard level={n.sky.level} list={n.sky.list} />}
+            {n.choices && (
+              <div className={`choices${n.chosen ? ' done' : ''}`}>
+                {n.choices.map((c) => (
+                  <button key={c.label} className={`choice${n.chosen === c.label ? ' picked' : ''}`} disabled={!!n.chosen || !!busy} onClick={() => choose(n.id, c)}>{c.label}</button>
+                ))}
+              </div>
+            )}
             {n.execs?.map((x, k) => <Receipt key={k} x={x} />)}
             {n.plan && n.plan.steps.length > 0 && (
               <div className="plan-mini">
@@ -176,7 +262,7 @@ export default function MoaFeed({ quotes, vault, inject, context, onCreate, onEx
                   : <p className="muted small">{t.planNeeds(n.plan.missing.join(', '))}</p>}
               </div>
             )}
-            {!n.card && <div className="note-actions"><CopyButton text={n.text} label={t.copy} done={t.copied} /></div>}
+            {n.goal && <div className="note-actions"><CopyButton text={n.text} label={t.copy} done={t.copied} /></div>}
             {n.follow.length > 0 && (
               <div className="followups">
                 {n.follow.map((f) => <button key={f} className="fu" disabled={!!busy} onClick={() => void ask(f)}><span aria-hidden>↳</span>{f}</button>)}
@@ -195,9 +281,9 @@ export default function MoaFeed({ quotes, vault, inject, context, onCreate, onEx
       </div>
 
       <form className="feed-composer" onSubmit={(e) => { e.preventDefault(); void ask(draft); }}>
-        <span className="ctx-chip" data-tip={t.ctxTip}><span className={`coin coin-${context.asset.toLowerCase()}`} />{context.label}</span>
+        <span className="ctx-chip" data-tip={t.ctxTip}><CoinMark base={context.asset} />{context.label}</span>
         <div className="composer-row">
-          <textarea ref={input} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t.feedPlaceholder} aria-label={t.askMoa}
+          <textarea ref={input} rows={1} value={draft} onChange={(e) => { if (!draft) interrupt(); setDraft(e.target.value); }} placeholder={t.feedPlaceholder} aria-label={t.askMoa}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void ask(draft); } }} />
           {busy
             ? <button className="send-btn stop" type="button" onClick={stop} aria-label={t.stop} data-tip={`${t.stop} (Esc)`}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor" /></svg></button>
@@ -235,41 +321,6 @@ function Receipt({ x }: { x: Exec }) {
       <span>{x.request.side === 'buy' ? t.buy : t.sell} {x.request.asset} · ${x.request.amount}{x.reason ? ` · ${x.reason}` : ''}</span>
       {x.explorerUrl && <a href={x.explorerUrl} target="_blank" rel="noreferrer">{t.viewTx} ↗</a>}
     </div>
-  );
-}
-
-/** "What Moa sees right now": HSKSwap pools vs Gate and the vault, with LIVE / loading / UNAVAILABLE states. */
-function Brief({ quotes, vault }: { quotes: Quote[]; vault: VaultInfo | null }) {
-  const { t } = useT();
-  const live = quotes.filter((q) => q.gap !== undefined);
-  let body: ReactNode;
-  if (quotes.length === 0) body = [0, 1, 2].map((i) => <div key={i} className="brief-row" aria-hidden><span className="skel" style={{ width: 90 }} /><span className="skel" style={{ width: 54 }} /></div>);
-  else body = quotes.map((q) => (
-    <div key={q.asset} className="brief-row">
-      <span className="brief-coin"><span className={`coin coin-${q.asset.toLowerCase()}`} />{q.asset}</span>
-      <RollNum className="brief-px" text={q.pool !== undefined ? `$${fmtPrice(q.pool)}` : '—'} />
-      {q.gap !== undefined
-        ? <span className={`brief-gap ${q.gap <= -0.003 ? 'cheap' : q.gap >= 0.003 ? 'pricey' : ''}`}>{q.gap > 0 ? '+' : ''}{(q.gap * 100).toFixed(2)}%</span>
-        : <span className="brief-gap muted">—</span>}
-      <span className="brief-take">{q.gap === undefined ? t.briefNoGate : Math.abs(q.gap) < 0.003 ? t.seesInLine : q.gap > 0 ? t.seesPricey : t.seesCheap}</span>
-    </div>
-  ));
-  return (
-    <section className="moa-brief">
-      <div className="moa-sec-title">
-        {t.briefTitle}
-        {live.length > 0 && <span className="brief-state live">{t.live}</span>}
-      </div>
-      <div className="brief-box">
-        <div className="brief-cols"><span>{t.briefCoin}</span><span>HSKSwap</span><span>{t.briefVsGate}</span><span /></div>
-        {body}
-        <div className="brief-vault">
-          {vault?.configured
-            ? t.briefVault(Number(vault.usdtBalance).toFixed(0), vault.remainingTodayUsdt ?? '0')
-            : t.feedNoVault}
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -335,6 +386,25 @@ function StratCard({ c, onAsk }: { c: StratNote; onAsk: (prompt: string, context
         <button className="btn-primary" onClick={() => onAsk(c.follow[0], c.text)}>{t.cardPlan}</button>
         <button className="btn-ghost" onClick={() => onAsk(c.follow[1], c.text)}>{t.cardRisk}</button>
       </div>
+    </div>
+  );
+}
+
+/** The weather card in Moa's briefing: one row per coin, worded for the user's depth. */
+function SkyCard({ level, list }: { level: Level; list: Weather[] }) {
+  const { t } = useT();
+  return (
+    <div className={`sky-card sky-${level}`}>
+      {level === 'pro' && <div className="sky-title">{t.skyProTitle}</div>}
+      {list.map((w) => (
+        <div key={w.base} className="sky-row">
+          <CoinMark base={w.base} />
+          <span className="sky-name">{level === 'pro' ? w.base : w.base === 'BTC' ? t.coinBtc : t.coinEth}</span>
+          <span className={`sky-icon sky-${w.sky}`} aria-hidden>{t.sky[w.sky][0]}</span>
+          <span className="sky-word">{level === 'pro' ? t.skyPro[w.sky] : t.sky[w.sky][2]}</span>
+          {level !== 'new' && <span className={`sky-m1 ${w.m1 >= 0 ? 'pos' : 'neg'}`}>{w.m1 > 0 ? '+' : ''}{(w.m1 * 100).toFixed(1)}%</span>}
+        </div>
+      ))}
     </div>
   );
 }

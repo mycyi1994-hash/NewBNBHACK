@@ -7,10 +7,13 @@ import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './
 import { RollNum, SlidePill } from './motion.tsx';
 import { EXECUTE_WORDS, toApiHistory, toStep, type Exec, type ServerStep, type StepKey } from './moaClient.ts';
 import Trade from './Trade.tsx';
+import Agents from './Agents.tsx';
+import type { StratNote } from './Strategies.tsx';
+import type { Market } from './cex.ts';
 import { MoaSees, TrustCard, type VaultInfo } from './parts.tsx';
 import { CopyButton, Menu, Modal, RichText, ToastProvider, useToast } from './ui.tsx';
 
-type View = { name: 'trade' } | { name: 'chat'; prefill?: string; auto?: boolean } | { name: 'bots' } | { name: 'bot'; id: string };
+type View = { name: 'trade' } | { name: 'agents' } | { name: 'chat'; prefill?: string; auto?: boolean } | { name: 'bots' } | { name: 'bot'; id: string };
 interface Msg { role: 'moa' | 'you'; text: string; at: number; execs?: Exec[]; offline?: boolean }
 
 function useQuotes() {
@@ -53,6 +56,7 @@ function Sidebar({ view, go, botCount, vault }: { view: View; go: (v: View) => v
       <div className="brand"><span className="orb sm" aria-hidden /> moa</div>
       <div className="nav-label">{t.navMarkets}</div>
       {item(t.navTrade, { name: 'trade' }, '∿', view.name === 'trade')}
+      {item(t.navAgents, { name: 'agents' }, '◈', view.name === 'agents')}
       <div className="nav-label">{t.navAssistant}</div>
       {item(t.navAsk, { name: 'chat' }, '✦', view.name === 'chat')}
       <div className="nav-label">{t.navAutomations}</div>
@@ -76,6 +80,7 @@ function TabBar({ view, go, botCount }: { view: View; go: (v: View) => void; bot
     <nav className="tabbar" aria-label="Main">
       {tab(t.navTrade, { name: 'trade' }, '∿', view.name === 'trade')}
       {tab(t.navAsk, { name: 'chat' }, '✦', view.name === 'chat')}
+      {tab(t.navAgents, { name: 'agents' }, '◈', view.name === 'agents')}
       {tab(t.navBots, { name: 'bots' }, '◎', view.name === 'bots' || view.name === 'bot', botCount)}
     </nav>
   );
@@ -572,12 +577,13 @@ export default function App() {
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
   const [view, setView] = useState<View>({ name: 'trade' });
+  const [start, setStart] = useState<{ market: Market; note: StratNote } | null>(null);
   const quotes = useQuotes();
   const { vault, reloadVault } = useVault();
   const { bots, add, remove } = useBots();
   const { execs, record } = useExecutions();
   const current = useMemo(() => (view.name === 'bot' ? bots.find((b) => b.id === view.id) : undefined), [view, bots]);
-  const title = { trade: t.navTrade, chat: t.navAsk, bots: t.navBots, bot: current?.name ?? t.navBots }[view.name];
+  const title = { trade: t.navTrade, agents: t.agTitle, chat: t.navAsk, bots: t.navBots, bot: current?.name ?? t.navBots }[view.name];
   const go = (v: View) => { setView(v); window.scrollTo(0, 0); };
 
   return (
@@ -587,7 +593,8 @@ export default function App() {
         <Sidebar view={view} go={go} botCount={bots.length} vault={vault} />
         <main className="main">
           <Topbar title={title} quotes={quotes} />
-          {view.name === 'trade' && <Trade quotes={quotes} vault={vault} onExecuted={(x) => { record(x); reloadVault(); }} onCreate={(goal, plan) => { const b = add({ name: botName(plan), goal, plan }); go({ name: 'bot', id: b.id }); }} />}
+          {view.name === 'agents' && <Agents onUse={(market, note) => { setStart({ market, note }); go({ name: 'trade' }); }} />}
+          {view.name === 'trade' && <Trade start={start} quotes={quotes} vault={vault} onExecuted={(x) => { record(x); reloadVault(); }} onCreate={(goal, plan) => { const b = add({ name: botName(plan), goal, plan }); go({ name: 'bot', id: b.id }); }} />}
           {/* Chat stays mounted so the conversation survives page changes; it is only hidden. */}
           <div className="chat-host" hidden={view.name !== 'chat'}>
             <Chat

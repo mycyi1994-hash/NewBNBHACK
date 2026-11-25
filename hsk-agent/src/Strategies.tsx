@@ -28,10 +28,10 @@ export interface StratNote {
 }
 
 const cache = new Map<string, Promise<Bar[]>>();
-function daily(venue: Venue, asset: Asset): Promise<Bar[]> {
-  const k = venue === 'cex' ? 'cex' : asset;
+function daily(venue: Venue, asset: Asset, market: cex.Market): Promise<Bar[]> {
+  const k = venue === 'cex' ? market.symbol : asset;
   if (!cache.has(k)) {
-    const p = venue === 'cex' ? cex.klines('1d', 400) : gateCandles(asset, '1d', 400);
+    const p = venue === 'cex' ? cex.klines(market, '1d', 400) : gateCandles(asset, '1d', 400);
     cache.set(k, p.catch((e: unknown) => { cache.delete(k); throw e; }));
   }
   return cache.get(k)!;
@@ -92,9 +92,9 @@ function dca(c: number[], mult: (i: number) => number) {
 
 interface Tile { id: string; note: Omit<StratNote, 'n' | 'follow'>; line: string; caption: string; prompt: string }
 
-export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick, asset: extAsset, setAsset: setExtAsset }: {
+export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick, asset: extAsset, setAsset: setExtAsset, market = cex.DEFAULT_MARKET }: {
   venue: Venue; quotes: Quote[]; mark?: number; index?: number; tape?: cex.Trade[]; onPick: (note: StratNote) => void;
-  asset?: Asset; setAsset?: (a: Asset) => void;
+  asset?: Asset; setAsset?: (a: Asset) => void; market?: cex.Market;
 }) {
   const { t } = useT();
   const [ownAsset, setOwnAsset] = useState<Asset>('ETH');
@@ -108,9 +108,9 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
   useEffect(() => {
     let alive = true;
     setBars(null); setFailed(false); setPicked(null);
-    daily(venue, asset).then((d) => alive && setBars(d), () => alive && setFailed(true));
+    daily(venue, asset, market).then((d) => alive && setBars(d), () => alive && setFailed(true));
     return () => { alive = false; };
-  }, [venue, asset]);
+  }, [venue, asset, market.symbol]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const wait = failed ? '—' : '…';
   const c = bars?.map((b) => b.close) ?? [];
@@ -118,7 +118,9 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
   const tail = (xs: number[]) => xs.slice(-N);
   const shift = (dots: number[]) => dots.map((i) => i - (c.length - N)).filter((i) => i >= 0);
   const enough = (k: number) => !!bars && bars.length >= k;
-  const src = venue === 'cex' ? t.srcHk : t.srcGate(asset);
+  const perp = market.kind === 'perp';
+  const coin = venue === 'cex' ? market.base : asset;
+  const src = venue === 'cex' ? t.srcHk(coin, perp) : t.srcGate(asset);
   const atrV = bars ? I.atr(bars) : null;
   const atrTile = (prompt: string): Tile => {
     const dist = atrV && last ? (2 * atrV) / last : undefined;
@@ -128,9 +130,9 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
       id: 'atr', line: t.lAtr, caption: stop ? t.capStopAt(fmtPrice(stop)) : t.capAtr, prompt,
       note: {
         venue, name: t.sAtrName, signal: 'neutral', value: dist ? pct(-dist) : wait, valueLabel: t.capAtr, good: false, source: src,
-        facts: [[t.fNow, last ? `$${fmtPrice(last)}` : '—'], [t.fStop, stop ? `$${fmtPrice(stop)}` : '—'], venue === 'cex' ? [t.fLev, lev ? `≤ ${lev}×` : '—', t.fLevHint] : [t.fAtr, atrV && last ? pct(atrV / last) : '—']],
-        rules: venue === 'cex' ? t.rAtrCex : t.rAtrDex,
-        text: stop && dist && atrV ? (venue === 'cex' ? t.xAtrCex(fmtPrice(stop), pct(-dist), pct(atrV / last), String(lev)) : t.xAtr(asset, fmtPrice(stop), pct(-dist), pct(atrV / last))) : t.xNoData,
+        facts: [[t.fNow, last ? `$${fmtPrice(last)}` : '—'], [t.fStop, stop ? `$${fmtPrice(stop)}` : '—'], venue === 'cex' && perp ? [t.fLev, lev ? `≤ ${lev}×` : '—', t.fLevHint] : [t.fAtr, atrV && last ? pct(atrV / last) : '—']],
+        rules: venue === 'cex' && perp ? t.rAtrCex : t.rAtrDex,
+        text: stop && dist && atrV ? (venue === 'cex' && perp ? t.xAtrCex(coin, fmtPrice(stop), pct(-dist), pct(atrV / last), String(lev)) : t.xAtr(coin, fmtPrice(stop), pct(-dist), pct(atrV / last))) : t.xNoData,
         spark: bars ? { closes: tail(c), level: stop, levelLabel: t.fStop } : undefined,
       },
     };
@@ -155,18 +157,18 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
     const posFacts = (r: { trades: number; inMkt: number }): [string, string][] => [[t.fTrades, String(r.trades)], [t.fInMkt, `${Math.round(r.inMkt * 100)}%`]];
     const edge = (r: { ret: number } | null) => (r ? pct(r.ret) : wait);
     const cap = (r: { hold: number } | null) => (r ? t.capRet(BT, pct(r.hold)) : t.capRet(BT, '…'));
-    tiles = [
+    tiles = ([
       {
-        id: 'trend', line: t.cTrendLine, caption: cap(tr), prompt: t.pcTrend,
+        id: 'trend', line: t.cTrendLine, caption: cap(tr), prompt: t.pcTrend(coin),
         note: {
           venue, name: t.cTrendName, signal: !tr ? 'neutral' : trOn ? 'good' : 'wait', value: edge(tr), valueLabel: cap(tr), good: !!tr && tr.ret > 0, bad: !!tr && tr.ret < 0, source: src,
           facts: tr ? [...posFacts(tr), [t.fNow, trOn ? t.inPos : t.flat]] : [], rules: t.rcTrend,
-          text: tr ? t.xcTrend(pct(tr.ret), pct(tr.hold), tr.trades, trOn, pct(last / ma50[ma50.length - 1] - 1)) : t.xNoData,
+          text: tr ? t.xcTrend(coin, pct(tr.ret), pct(tr.hold), tr.trades, trOn, pct(last / ma50[ma50.length - 1] - 1)) : t.xNoData,
           spark: tr ? { closes: tail(c), ref: tail(ma50), refLabel: 'MA50', dots: shift(tr.dots) } : undefined,
         },
       },
       {
-        id: 'break', line: t.cBreakLine, caption: cap(bo), prompt: t.pcBreak,
+        id: 'break', line: t.cBreakLine, caption: cap(bo), prompt: t.pcBreak(coin),
         note: {
           venue, name: t.cBreakName, signal: !bo ? 'neutral' : boOn ? 'good' : 'neutral', value: edge(bo), valueLabel: cap(bo), good: !!bo && bo.ret > 0, bad: !!bo && bo.ret < 0, source: src,
           facts: bo ? [...posFacts(bo), [t.fHigh20, hi20 ? `$${fmtPrice(hi20)}` : '—']] : [], rules: t.rcBreak,
@@ -175,7 +177,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
         },
       },
       {
-        id: 'rsi', line: t.cRsiLine, caption: cap(rs), prompt: t.pcRsi,
+        id: 'rsi', line: t.cRsiLine, caption: cap(rs), prompt: t.pcRsi(coin),
         note: {
           venue, name: t.cRsiName, signal: rsiNow === undefined ? 'neutral' : rsiNow < 35 ? 'good' : rsiNow > 70 ? 'wait' : 'neutral', value: edge(rs), valueLabel: cap(rs), good: !!rs && rs.ret > 0, bad: !!rs && rs.ret < 0, source: src,
           facts: rs && rsiNow !== undefined ? [...posFacts(rs), [t.fRsi, rsiNow.toFixed(0)]] : [], rules: t.rcRsi,
@@ -191,8 +193,8 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
           text: basis === undefined ? t.xNoData : t.x3(pct(basis, 3), buy === undefined ? '—' : `${Math.round(buy * 100)}%`),
         },
       },
-      atrTile(t.pcAtr),
-    ];
+      atrTile(t.pcAtr(coin)),
+    ] as Tile[]).filter((x) => perp || x.id !== 'mood');
   } else {
     const q = quotes.find((x) => x.asset === asset);
     const gap = q?.gap;
@@ -257,11 +259,11 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
   };
 
   return (
-    <section className="strats" aria-label={venue === 'cex' ? t.stratTitleCex : t.stratTitleDex}>
+    <section className="strats" aria-label={venue === 'cex' ? t.stratTitleCex(perp) : t.stratTitleDex}>
       <div className="strats-head">
         <div>
-          <h3>{venue === 'cex' ? t.stratTitleCex : t.stratTitleDex}</h3>
-          <p className="muted">{venue === 'cex' ? t.stratHintCex : t.stratHintDex}</p>
+          <h3>{venue === 'cex' ? t.stratTitleCex(perp) : t.stratTitleDex}</h3>
+          <p className="muted">{venue === 'cex' ? t.stratHintCex(coin, perp) : t.stratHintDex}</p>
         </div>
         {venue === 'dex' && (
           <div className="coin-switch has-pill" role="tablist" aria-label={t.stratAsset}>
@@ -270,7 +272,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
           </div>
         )}
       </div>
-      <div className="strat-tiles stagger" key={`${venue}-${asset}`}>
+      <div className="strat-tiles stagger" key={`${venue}-${coin}-${market.kind}`}>
         {tiles.map((x) => (
           <button key={x.id} className={`tile${picked === x.id ? ' on' : ''}`} onClick={() => pick(x)} aria-pressed={picked === x.id}>
             <span className="tile-top">
@@ -286,7 +288,7 @@ export default function StrategyGrid({ venue, quotes, mark, index, tape, onPick,
           </button>
         ))}
       </div>
-      <p className="strats-foot muted">{venue === 'cex' ? t.stratFootCex : t.stratFootDex}</p>
+      <p className="strats-foot muted">{venue === 'cex' ? t.stratFootCex(coin, perp) : t.stratFootDex}</p>
     </section>
   );
 }

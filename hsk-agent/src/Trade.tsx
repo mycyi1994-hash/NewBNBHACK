@@ -13,6 +13,7 @@ import type { Plan } from './intent.ts';
 import type { Execution } from './store.ts';
 import StrategyGrid, { type StratNote } from './Strategies.tsx';
 import MoaFeed, { type MoaContext } from './MoaFeed.tsx';
+import { CoinMark } from './CoinMark.tsx';
 
 type Venue = 'cex' | 'dex';
 const usd = (v: number, d = 2) => v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -222,27 +223,95 @@ function Stat({ label, value, cls }: { label: string; value: string; cls?: strin
 
 /* ---------- CEX: HashKey Global BTC/USDT perpetual ---------- */
 
-/** Live perp data. A failed poll keeps the last numbers on screen; the next poll catches up. */
-function useCex() {
+/** Live market data for one HashKey Global market. A failed poll keeps the last numbers; the next poll catches up. */
+function useCex(m: cex.Market) {
   const [t, setT] = useState<cex.Ticker | null>(null);
   const [tape, setTape] = useState<cex.Trade[]>([]);
   const [mi, setMi] = useState<{ mark: number; index: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
+    setT(null); setTape([]); setMi(null);
     const fast = async () => {
-      const [a, c] = await Promise.allSettled([cex.ticker(), cex.trades(20)]);
+      const [a, c] = await Promise.allSettled([cex.ticker(m), cex.trades(m, 20)]);
       if (!alive) return;
       if (a.status === 'fulfilled') setT(a.value);
       if (c.status === 'fulfilled') setTape(c.value);
     };
-    const slow = () => cex.markAndIndex().then((x) => alive && setMi(x)).catch(() => undefined);
+    const slow = () => { if (m.kind === 'perp') cex.markAndIndex(m).then((x) => alive && setMi(x)).catch(() => undefined); };
     fast(); slow();
     const a = setInterval(fast, 4000), b = setInterval(slow, 10000);
     return () => { alive = false; clearInterval(a); clearInterval(b); };
-  }, []);
+  }, [m.symbol]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { t, tape, mi };
+}
+
+/** Price with sensible decimals for anything from BTC to DOGE. */
+const px = (v: number) => (v >= 1000 ? usd(v, 1) : v >= 1 ? usd(v, 2) : fmtPrice(v));
+
+/** Market picker (Binance/Upbit style): search, perpetuals first, then spot, each with live price and 24h change. */
+function MarketPicker({ value, onChange }: { value: cex.Market; onChange: (m: cex.Market) => void }) {
+  const { t: s } = useT();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [tick, setTick] = useState<Record<string, cex.Ticker>>({});
+  const ref = useRef<HTMLDivElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const load = () => cex.allTickers().then((x) => alive && setTick(x)).catch(() => undefined);
+    load();
+    const id = setInterval(load, 8000);
+    setTimeout(() => search.current?.focus(), 30);
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close); document.addEventListener('keydown', esc);
+    return () => { alive = false; clearInterval(id); document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [open]);
+
+  const list = cex.MARKETS.filter((m) => !q || m.base.toLowerCase().includes(q.trim().toLowerCase()));
+  const row = (m: cex.Market) => {
+    const x = tick[m.symbol];
+    const chg = x ? (x.last / x.open - 1) * 100 : undefined;
+    return (
+      <button key={m.symbol} role="option" aria-selected={m.symbol === value.symbol} className={`mk-row${m.symbol === value.symbol ? ' on' : ''}`}
+        onClick={() => { onChange(m); setOpen(false); setQ(''); }}>
+        <CoinMark base={m.base} />
+        <span className="mk-name"><b>{m.base}</b><small>{m.kind === 'perp' ? s.perpetual : s.spotTag}</small></span>
+        <span className="mk-px">{x ? px(x.last) : '—'}</span>
+        <span className={`mk-chg ${chg === undefined ? '' : chg >= 0 ? 'pos' : 'neg'}`}>{chg === undefined ? '' : `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`}</span>
+      </button>
+    );
+  };
+  const perps = list.filter((m) => m.kind === 'perp'), spots = list.filter((m) => m.kind === 'spot');
+
+  return (
+    <div className="mk-picker" ref={ref}>
+      <button className="pair mk-trigger" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <CoinMark base={value.base} big />
+        <div>
+          <div className="pair-name">{value.base}/USDT <span className="tag">{value.kind === 'perp' ? s.perpetual : s.spotTag}</span>
+            <svg className="mk-caret" width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M3 4.5 6 7.5l3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </div>
+          <div className="muted">{value.kind === 'perp' ? s.usdtMargined : s.spotSub}</div>
+        </div>
+      </button>
+      {open && (
+        <div className="mk-pop" role="listbox" aria-label={s.marketSearch}>
+          <input ref={search} className="mk-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={s.marketSearch} aria-label={s.marketSearch} />
+          <div className="mk-list">
+            {perps.length > 0 && <div className="mk-group">{s.perpsLabel}</div>}
+            {perps.map(row)}
+            {spots.length > 0 && <div className="mk-group">{s.spotsLabel}</div>}
+            {spots.map(row)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const CEX_IV = ['1m', '15m', '1h', '4h', '1d', '1w'] as const;
@@ -253,34 +322,30 @@ function stored<T extends string>(key: string, list: readonly T[], dflt: T): T {
 }
 const save = (key: string, v: string) => { try { localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
 
-function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]; onPick: (n: StratNote) => void }) {
+function CexPanel({ market, setMarket, dexPrice, quotes, onPick }: { market: cex.Market; setMarket: (m: cex.Market) => void; dexPrice?: number; quotes: Quote[]; onPick: (n: StratNote) => void }) {
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>(() => stored('moa.iv', CEX_IV, '4h'));
   const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
-  const { t, tape, mi } = useCex();
+  const { t, tape, mi } = useCex(market);
   const [inds, toggleInd] = useStoredInds();
-  const { candles, more } = useCandles(`cex-${interval}`, (n) => cex.klines(interval, n), (first) => cex.klines(interval, 1000, first.time * 1000 - 1), 15000);
+  const key = `cex-${market.symbol}-${interval}`;
+  const { candles, more } = useCandles(key, (n) => cex.klines(market, interval, n), (first) => cex.klines(market, interval, 1000, first.time * 1000 - 1), 15000);
   const chg = t ? (t.last / t.open - 1) * 100 : 0;
   const up = chg >= 0;
+  const perp = market.kind === 'perp';
 
   return (
     <>
       <div className="market-head card">
-        <div className="pair">
-          <span className="coin coin-btc big" />
-          <div>
-            <div className="pair-name">BTC/USDT <span className="tag">{s.perpetual}</span></div>
-            <div className="muted">{s.usdtMargined}</div>
-          </div>
-        </div>
-        <div className={`last ${up ? 'pos' : 'neg'}`}><RollNum text={t ? usd(t.last, 1) : '—'} /></div>
+        <MarketPicker value={market} onChange={setMarket} />
+        <div className={`last ${up ? 'pos' : 'neg'}`}><RollNum text={t ? px(t.last) : '—'} /></div>
         <div className="stats">
           <Stat label={s.change24h} value={t ? `${arrow(up)} ${up ? '+' : ''}${chg.toFixed(2)}%` : '—'} cls={up ? 'pos' : 'neg'} />
-          <Stat label={s.mark} value={mi ? usd(mi.mark, 1) : '—'} />
-          <Stat label={s.index} value={mi ? usd(mi.index, 1) : '—'} />
-          <Stat label={s.high24h} value={t ? usd(t.high, 1) : '—'} />
-          <Stat label={s.low24h} value={t ? usd(t.low, 1) : '—'} />
-          <Stat label={s.vol24h} value={t ? `${compact(t.volContracts * cex.CONTRACT_BTC)} BTC` : '—'} />
+          {perp && <Stat label={s.mark} value={mi ? px(mi.mark) : '—'} />}
+          {perp && <Stat label={s.index} value={mi ? px(mi.index) : '—'} />}
+          <Stat label={s.high24h} value={t ? px(t.high) : '—'} />
+          <Stat label={s.low24h} value={t ? px(t.low) : '—'} />
+          <Stat label={s.vol24h} value={t ? `${compact(t.volBase)} ${market.base}` : '—'} />
         </div>
       </div>
 
@@ -290,16 +355,16 @@ function CexPanel({ dexBtc, quotes, onPick }: { dexBtc?: number; quotes: Quote[]
           <IndMenu on={inds} toggle={toggleInd} />
           <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} resetKey={`cex-${interval}`} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
-        {dexBtc !== undefined && t && (
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
+        {dexPrice !== undefined && t && (
           <div className="moa-note">
             <span className="orb sm" aria-hidden />
-            {s.dexVsPerp(`$${usd(dexBtc, 0)}`, `${dexBtc >= t.last ? '▲ +' : '▼ '}${((dexBtc / t.last - 1) * 100).toFixed(2)}%`)}
+            {s.dexVsPerp(`$${px(dexPrice)}`, `${dexPrice >= t.last ? '▲ +' : '▼ '}${((dexPrice / t.last - 1) * 100).toFixed(2)}%`)}
           </div>
         )}
       </section>
 
-      <StrategyGrid venue="cex" quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onPick={onPick} />
+      <StrategyGrid venue="cex" market={market} quotes={quotes} mark={mi?.mark} index={mi?.index} tape={tape} onPick={onPick} />
     </>
   );
 }
@@ -385,14 +450,20 @@ function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; s
 
 /* ---------- page ---------- */
 
-export default function Trade({ quotes, vault, onCreate, onExecuted }: { quotes: Quote[]; vault: VaultInfo | null; onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void }) {
+export default function Trade({ start, quotes, vault, onCreate, onExecuted }: { start?: { market: cex.Market; note: StratNote } | null; quotes: Quote[]; vault: VaultInfo | null; onCreate: (goal: string, plan: Plan) => void; onExecuted: (x: Execution[]) => void }) {
   const { t } = useT();
   const [venue, setVenue] = useState<Venue>('cex');
   const [note, setNote] = useState<StratNote | null>(null);
   const [asset, setAsset] = useState<Asset>('BTC');
+  const [market, setMarketState] = useState<cex.Market>(() => { try { return cex.marketBySymbol(localStorage.getItem('moa.market') ?? ''); } catch { return cex.DEFAULT_MARKET; } });
+  const setMarket = (m: cex.Market) => { setMarketState(m); save('moa.market', m.symbol); };
   const [detail, setDetail] = useState<PoolDetail | null>(null);
-  const ctx: MoaContext = venue === 'cex' ? { venue, label: t.ctxCex, asset: 'BTC' } : { venue, label: t.ctxDex(POOLS[asset].symbol), asset };
+  const ctx: MoaContext = venue === 'cex' ? { venue, label: t.ctxCex(market.base, market.kind === 'perp'), asset: market.base, perp: market.kind === 'perp' } : { venue, label: t.ctxDex(POOLS[asset].symbol), asset, perp: false };
+  // Arriving from the agent market: open that market and hand the agent's card to Moa.
+  useEffect(() => { if (start) { setVenue('cex'); setMarket(start.market); setNote(start.note); } }, [start]); // eslint-disable-line react-hooks/exhaustive-deps
   const pick = (n: StratNote) => { setNote(n); if (window.innerWidth <= 1180) document.querySelector('.feed-dock')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+
+  useEffect(() => { if ((ASSETS as readonly string[]).includes(market.base)) setAsset(market.base as Asset); }, [market.base]);
 
   useEffect(() => {
     let alive = true;
@@ -413,7 +484,7 @@ export default function Trade({ quotes, vault, onCreate, onExecuted }: { quotes:
           <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
         </div>
         {venue === 'cex'
-          ? <CexPanel dexBtc={asset === 'BTC' ? detail?.price : undefined} quotes={quotes} onPick={pick} />
+          ? <CexPanel market={market} setMarket={setMarket} dexPrice={market.base === asset ? detail?.price : undefined} quotes={quotes} onPick={pick} />
           : <DexPanel asset={asset} setAsset={setAsset} detail={detail} quotes={quotes} onPick={pick} />}
         <p className="muted small">{t.dataNote}</p>
       </div>
