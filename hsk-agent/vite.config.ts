@@ -44,13 +44,20 @@ function moaApi(env: Record<string, string>): Plugin {
         res.setHeader('content-type', 'application/x-ndjson');
         res.setHeader('cache-control', 'no-cache');
         const write = (o: unknown) => res.write(JSON.stringify(o) + '\n');
+        // A line every few seconds tells the browser the server is alive and still working, so it can tell a
+        // slow answer from a dead connection. Closing the tab or pressing stop ends the model call.
+        const gone = new AbortController();
+        res.on('close', () => gone.abort());
+        const beat = setInterval(() => write({ type: 'ping' }), 5000);
         try {
-          const result = await runMoa(env.ANTHROPIC_API_KEY, cfg, history.slice(-20), write, context ?? {});
+          const result = await runMoa(env.ANTHROPIC_API_KEY, cfg, history.slice(-20), write, context ?? {}, gone.signal);
           write({ type: 'done', result });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           console.error('[moa] Anthropic call failed:', msg);
           write({ type: 'error', error: msg });
+        } finally {
+          clearInterval(beat);
         }
         return res.end();
       }

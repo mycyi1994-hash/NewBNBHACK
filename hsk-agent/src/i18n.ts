@@ -322,7 +322,7 @@ const en = {
   someWhy: (m1: string, gap: string) => `It moved ${m1} over a month${gap ? `, and ${gap}` : ''}.`,
   proHead: (b: string, word: string) => `${b} reads ${word.toLowerCase()}.`,
   proWhy: (trend: boolean, rsiIn: boolean) => `Trend follow is ${trend ? 'long' : 'flat'}, RSI bounce is ${rsiIn ? 'entering' : 'waiting'}.`,
-  thCurve: '365-day curve',
+  thCurve: 'Curve',
   agTier: { 1: 'Published classic', 2: 'Standard rule', 3: 'Moa variation' } as Record<1 | 2 | 3, string>,
   agOrigin: {
     tsmom: 'Managed-futures classic · 2012', break: 'Turtle traders · 1983', trend200: 'Faber timing rule · 2007', golden: 'Golden cross · 50/200',
@@ -343,7 +343,13 @@ const en = {
     trendDca: 'Moa’s own variation of dollar-cost averaging. Not a published strategy.',
     rsiDca: 'Moa’s own variation of dollar-cost averaging. Not a published strategy.',
   } as Record<RuleId, string>,
-  ovLabel: { tsmom: 'Price a year ago', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20-day high · 10-day low', rsi: 'RSI 30 / 55', boll: 'Bollinger bands', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' } as Record<RuleId, string>,
+  ovLabel: { tsmom: '12-month return (hold above 0)', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20-day high · 10-day low', rsi: 'RSI 30 / 55', boll: 'Bollinger bands', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' } as Record<RuleId, string>,
+  btStd: '3 years', btSeam: (d: string) => `Days before ${d} (the exchange listing) are Gate spot daily candles.`, btSeamTag: 'HashKey listing',
+  btSay: (o: { collect: boolean; better: boolean; trades: number; hold: string; total: string; held: string }) => (o.collect
+    ? `Bought once and held: ${o.hold}. Bought in ${o.trades} parts by this rule: ${o.total}.`
+    : o.trades === 0 ? `It never bought in this period. Just holding would have made ${o.hold}.`
+      : o.better ? `Just holding: ${o.hold}. This agent: ${o.total}, holding the coin ${o.held} of the time.`
+        : `It did worse than just holding (${o.hold}): ${o.total}. It held the coin ${o.held} of the time.`),
   aiBadge: 'AI agent', btYear: '1 year', btAll: 'All history', btRank: (k: number, n: number) => `#${k} of ${n} here`, btPrev: 'Previous agent', btNext: 'Next agent', btHeld: 'holding', btStart: 'Start',
   sortPick: 'Moa’s order', sortEdge: 'vs holding', sortSharpe: 'Sharpe', rankWhy: (classic: boolean, dd: string) => `${classic ? 'Published classic with' : 'Has'} the smallest worst drop here (${dd})`,
   topClassic: 'Published classics', fOrigin: 'Origin', thOrigin: 'Origin',
@@ -695,7 +701,7 @@ const ko: typeof en = {
   someWhy: (m1, gap) => `한 달 동안 ${m1} 움직였${gap ? `고, ${gap}` : '어요'}.`,
   proHead: (b, word) => `${b}는 지금 ${word}예요.`,
   proWhy: (trend, rsiIn) => `추세 추종은 ${trend ? '롱' : '쉼'}, RSI 반등은 ${rsiIn ? '진입' : '대기'} 상태예요.`,
-  thCurve: '365일 곡선',
+  thCurve: '수익 곡선',
   agTier: { 1: '검증된 클래식', 2: '표준 지표 규칙', 3: 'Moa 변형' },
   agOrigin: {
     tsmom: 'CTA 펀드의 기본 전략 · 2012', break: '터틀 트레이딩 · 1983', trend200: '파버 타이밍 규칙 · 2007', golden: '골든크로스 · 50/200',
@@ -716,7 +722,13 @@ const ko: typeof en = {
     trendDca: '분할매수를 Moa가 변형한 규칙이에요. 공개 검증된 전략은 아니에요.',
     rsiDca: '분할매수를 Moa가 변형한 규칙이에요. 공개 검증된 전략은 아니에요.',
   },
-  ovLabel: { tsmom: '1년 전 가격', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20일 고가 · 10일 저가', rsi: 'RSI 30 / 55', boll: '볼린저 밴드', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' },
+  ovLabel: { tsmom: '12개월 수익률 (0 위면 보유)', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20일 고가 · 10일 저가', rsi: 'RSI 30 / 55', boll: '볼린저 밴드', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' },
+  btStd: '3년', btSeam: (d) => `${d}(거래소 상장) 이전은 Gate 현물 일봉을 이어 붙였어요.`, btSeamTag: 'HashKey 상장',
+  btSay: (o) => (o.collect
+    ? `한 번에 사서 들고 있었다면 ${o.hold}, 이 규칙대로 ${o.trades}번 나눠 샀다면 ${o.total}였어요.`
+    : o.trades === 0 ? `이 기간에는 한 번도 사지 않았어요. 그냥 들고 있었다면 ${o.hold}였어요.`
+      : o.better ? `그냥 들고 있었다면 ${o.hold}, 이 에이전트는 ${o.total}. 기간의 ${o.held}만 코인을 들고 있었어요.`
+        : `그냥 들고 있는 것(${o.hold})보다 못했어요: ${o.total}. 기간의 ${o.held} 동안 코인을 들고 있었어요.`),
   aiBadge: 'AI 에이전트', btYear: '1년', btAll: '전체', btRank: (k, n) => `이 시장 ${n}개 중 ${k}위`, btPrev: '이전 에이전트', btNext: '다음 에이전트', btHeld: '보유 구간', btStart: '시작',
   sortPick: '추천순', sortEdge: '보유 대비 순', sortSharpe: '샤프 순', rankWhy: (classic, dd) => `${classic ? '검증된 클래식 중 ' : ''}여기서 가장 덜 빠졌어요 (${dd})`,
   topClassic: '검증된 전략', fOrigin: '출처', thOrigin: '출처',

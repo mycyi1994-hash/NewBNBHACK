@@ -55,11 +55,13 @@ test('the published classics decide the way their sources say, and are left out 
   for (const i of [364, 365, 500, 700, 799]) assert.equal(mom[i], i >= 365 && c[i] > c[i - 365], `12-month momentum at day ${i}`);
   assert.equal(positions('trend200', b)[150], false, 'no 200-day average yet');
   assert.equal(positions('golden', b)[450], true, 'the 50-day average is above the 200-day in a steady rise');
-  assert.equal(scorePosition('tsmom', market('BTCUSDT-PERPETUAL'), bars(rising(600))), null, '600 days cannot hold 365 of look-back and a 365-day test');
+  assert.equal(scorePosition('tsmom', market('BTCUSDT-PERPETUAL'), bars(rising(500))), null, '500 days leave too little to test after 365 of look-back');
   const full = scorePosition('tsmom', market('BTCUSDT-PERPETUAL'), b)!;
-  assert.equal(full.days, 365);
+  assert.equal(full.days, 800 - 1 - 365, 'a younger market is scored over what it has after the warm-up');
   assert.equal(full.tier, 1);
-  assert.ok(scorePosition('tsmom', market('BTCUSDT-PERPETUAL'), b, Infinity)!.days > 365, 'all history starts right after the warm-up');
+  assert.equal(full.seam, undefined, 'no join when every day is the exchange\'s own');
+  assert.equal(scorePosition('tsmom', market('BTCUSDT-PERPETUAL'), b, 365)!.days, 365, 'a shorter window on request');
+  assert.equal(scorePosition('trend', market('BTCUSDT-PERPETUAL'), bars(rising(2000)))!.days, 1095, 'three years when there is enough history');
   assert.deepEqual([TIER.break, TIER.trend, TIER.smart], [1, 2, 3]);
 });
 

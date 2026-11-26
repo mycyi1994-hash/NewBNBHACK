@@ -19,3 +19,18 @@ export async function gateCandles(asset: Asset, interval: GateInterval, limit = 
     .map((x) => ({ time: Number(x[0]), close: +x[2], high: +x[3], low: +x[4], open: +x[5], volume: +x[6] }))
     .filter((c) => c.close > 0);
 }
+
+/**
+ * Daily candles of any coin's USDT pair between two times (seconds), oldest first. Gate serves at most 1000 points
+ * per request, so a long range is fetched in pieces. A coin Gate does not list returns an empty list.
+ */
+export async function gateDailyRange(base: string, from: number, to: number): Promise<Candle[]> {
+  const DAY = GATE_SECONDS['1d'], STEP = 990 * DAY;
+  const out: Candle[] = [];
+  for (let a = from; a < to; a += STEP + DAY) {
+    const r = await fetch(`https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${base}_USDT&interval=1d&from=${a}&to=${Math.min(to, a + STEP)}`);
+    if (!r.ok) { if (out.length || r.status !== 400) throw new Error(`Gate HTTP ${r.status}`); return []; }
+    for (const x of (await r.json()) as string[][]) out.push({ time: Number(x[0]), close: +x[2], high: +x[3], low: +x[4], open: +x[5], volume: +x[6] });
+  }
+  return out.filter((c, i) => c.close > 0 && (i === 0 || c.time > out[i - 1].time));
+}

@@ -40,7 +40,28 @@ export function toStep(s: ServerStep): Step {
 }
 
 /** Ask Moa. Calls onStep for each progress step; resolves with the final result, rejects if the API is unreachable. */
+/** The server sends a line every 5 seconds while it works. This long without one means the connection is dead. */
+export const SILENCE_MS = 25_000;
+/** No answer after this long: stop waiting, whatever the server says (six model calls would be the worst case). */
+export const ANSWER_MS = 150_000;
+
 export async function askMoa(history: { role: 'moa' | 'you'; text: string }[], onStep: (s: StepKey) => void, signal?: AbortSignal, context?: MoaCtx): Promise<MoaResult> {
+  // Three ways out: the user stops it, the server goes quiet, or the whole answer takes too long.
+  const watch = new AbortController();
+  const stopOn = () => watch.abort();
+  signal?.addEventListener('abort', stopOn);
+  let quiet = setTimeout(stopOn, SILENCE_MS);
+  const total = setTimeout(stopOn, ANSWER_MS);
+  const heard = () => { clearTimeout(quiet); quiet = setTimeout(stopOn, SILENCE_MS); };
+  try {
+    return await readMoa(history, onStep, watch.signal, heard, context);
+  } finally {
+    clearTimeout(quiet); clearTimeout(total);
+    signal?.removeEventListener('abort', stopOn);
+  }
+}
+
+async function readMoa(history: { role: 'moa' | 'you'; text: string }[], onStep: (s: StepKey) => void, signal: AbortSignal, heard: () => void, context?: MoaCtx): Promise<MoaResult> {
   const r = await fetch('/api/moa', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -54,6 +75,7 @@ export async function askMoa(history: { role: 'moa' | 'you'; text: string }[], o
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
+    heard();
     buf += dec.decode(value, { stream: true });
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {

@@ -51,10 +51,9 @@
 /* Sizes below are the pixels of a 1440px screen; the build turns them into rem, so a larger screen gets a
    proportionally larger interface instead of small type in a wide empty frame. */
 html { font-size: 14px; }
-@media (min-width: 1600px) { html { font-size: 15px; } }
-@media (min-width: 1900px) { html { font-size: 16px; } }
-@media (min-width: 2300px) { html { font-size: 17.5px; } }
-@media (min-width: 3000px) { html { font-size: 20px; } }
+@media (min-width: 1900px) { html { font-size: 14.5px; } }
+@media (min-width: 2300px) { html { font-size: 15px; } }
+@media (min-width: 3000px) { html { font-size: 16.5px; } }
 svg[width='12'] { width: 12px; height: 12px; } svg[width='14'] { width: 14px; height: 14px; }
 svg[width='16'] { width: 16px; height: 16px; } svg[width='18'] { width: 18px; height: 18px; }
 strong, b { font-weight: 600; }
@@ -478,7 +477,7 @@ select { padding-right: 8px; }
 .cb-buy { background: #12924a; transform: translate(-50%, 9px); }
 .cb-sell { background: #d93025; transform: translate(-50%, calc(-100% - 9px)); }
 .cb-note { background: #5f6368; font-weight: 600; transform: translate(-50%, calc(-100% - 9px)); }
-.cb.tight { padding: 0 6px; } .cb.tight b { display: none; }
+.cb.tight { width: 18px; height: 18px; padding: 0; justify-content: center; border-radius: 50%; } .cb.tight b { display: none; }
 .chart-empty { flex: 1; min-height: 0; }
 .bt-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; height: 30px; padding: 0 4px 0 12px; border-radius: 999px; background: #e8f0fe; font-size: 13px; font-weight: 600; animation: pop var(--d2) var(--ease-in) backwards; }
 .bt-chip b { color: #0b57d0; font-weight: 600; }
@@ -556,6 +555,7 @@ select { padding-right: 8px; }
 .bt-demo { font-size: 12.5px; line-height: 18px; color: var(--warn); }
 .bt-cta { flex: none; display: flex; align-items: center; gap: 8px; }
 .bt-cta .btn-primary.hire { flex: 1; max-width: 200px; height: 34px; }
+.bt-say { flex: none; font-size: 13px; line-height: 19px; font-weight: 500; color: var(--ink-title); }
 .bt-stats { flex: none; display: grid; grid-template-columns: repeat(6, auto); justify-content: space-between; gap: 6px 14px; margin: 0; }
 .bt-stats dt { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .bt-stats dd { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink-title); white-space: nowrap; }
@@ -574,8 +574,7 @@ select { padding-right: 8px; }
 .bt-legend i { display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: middle; background: #9aa0a6; }
 .bt-legend .lg-agent { background: var(--accent); height: 3px; }
 .bt-span { margin-left: auto; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; }
-.bt-legend .seg { margin-left: 4px; }
-.bt-legend > span:first-child + span + .seg, .bt-legend .bt-span[hidden] + .seg { margin-left: auto; }
+
 .bt > .bt-log { padding: 0; gap: 0; }
 .bt-log-head, .bt-log-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px; align-items: center; gap: 10px; padding: 0 16px; }
 .bt-log-head { flex: none; height: 32px; background: var(--head); font-size: 12px; font-weight: 600; color: var(--ink-2); }
@@ -785,11 +784,13 @@ select { padding-right: 8px; }
   .segmented.venue button span { display: none; }
   .tdock-note { display: none; }
   .tdock-head .seg { margin-left: auto; }
+  .bt-say { font-size: 12.5px; line-height: 18px; }
   .frow-desc { display: none; }
   .frow-head, .frow { grid-template-columns: 22px minmax(150px, 3fr) 84px minmax(56px, .8fr) repeat(3, minmax(62px, .7fr)) 16px; gap: 10px; }
   .frow-origin, .frow-head > span:nth-child(3) { display: none; }
   .frow-star { display: inline; }
-  .bt .bt-stats { grid-template-columns: repeat(3, auto); }
+  .bt .bt-stats { grid-template-columns: repeat(4, auto); }
+  .bt .bt-stats > div:nth-child(2), .bt .bt-stats > div:nth-child(3) { display: none; }   /* both are in the sentence above */
   .bt .bt-stats .lead dd { font-size: 16px; }
   .bt .bt-span { display: none; }
   .bt .bt-name b { white-space: normal; line-height: 19px; }

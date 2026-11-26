@@ -24,9 +24,12 @@ vault contract enforces.
   the agents for that market. Picking an agent moves no money: the chart switches to daily candles and marks every
   buy and sell of its backtest, and the panel shows the result against just holding, the two curves and the list of
   trades (`src/Dock.tsx`; the trades come from `marks` in `src/agents.ts`). The chart also draws the lines the rule
-  itself looks at (its averages, its channel, its RSI levels) and shades the days it was holding. The backtest is
-  one year by default, so agents compare like for like; "All history" reruns the one on screen over everything the
-  exchange has (HashKey's ETH and BTC perpetuals start on 2024-05-29). Hiring is a button on that backtest.
+  itself looks at (its averages, its channel, its RSI levels) and shades the days it was holding. The backtest
+  covers three years by default, so agents compare like for like and a slow rule has enough trades to judge; the
+  panel can switch to one year or to all history, and says the result in one sentence before the numbers. HashKey's
+  own candles only start at its listing dates (2024-05-29 for the BTC and ETH perpetuals), so the days before are
+  Gate spot daily candles joined in front (`dailyHistory` in `src/agents.ts`); the join is marked on the chart and
+  named under the backtest, and the joined days carry no volume. Hiring is a button on that backtest.
   Moa's agent card and the agent market open the same view ("See the backtest").
 - **Two pages in the market.** "Top agents" ranks the agents that can trade (steady = Sharpe ratio, bold = period
   return) with their equity curves on one chart; "Marketplace" is the searchable, filterable card grid with a "Hire"
@@ -34,9 +37,12 @@ vault contract enforces.
 - **Moa's briefing.** The conclusion for the coin on screen first, the numbers in one table, one leading choice that
   goes to an agent. Moving to another coin's chart gets that coin's briefing, and a choice always acts on the coin
   it names.
+- **Moa never leaves you waiting.** Each model call is streamed and has a 90-second deadline with one retry
+  (`server/moaAgent.ts`); the server sends a line every 5 seconds while it works, and the browser stops waiting after
+  25 seconds of silence or 150 seconds in total and answers with the on-device parser, marked as offline.
 - **Sizes follow the screen.** `src/styles.css` is written in the pixels measured at a 1440px screen; the build
   (`pxToRem` in `vite.config.ts`) turns them into rem and the root font size steps up on wider screens, so a 2560px
-  monitor gets a proportionally larger interface instead of small type in a wide frame. Latin and digits are
+  monitor gets a slightly larger interface (15px base instead of 14px) instead of small type in a wide frame. Latin and digits are
   Google Sans Flex, Korean is Pretendard.
 - **Well-known strategies come first.** Every rule carries its origin (`TIER` in `src/agents.ts`): published
   classics (12-month time-series momentum, the Turtle 20/10 breakout, the 200-day average timing rule, the 50/200
@@ -55,7 +61,7 @@ vault contract enforces.
   plans follow their steps, stop-loss and take-profit first). Moa asks; "Buy $10" sends it to the vault through
   `/api/agent-trade`, "Skip this time" records the skip. No model is involved in that path.
 - **Pause** is a button on each chip in the bar and works without Moa or the AI.
-- **Same agent, same numbers.** `src/agents.ts` scores every agent once, over the same last 365 days; the market,
+- **Same agent, same numbers.** `src/agents.ts` scores every agent once, over the same last three years (or all a younger coin has); the market,
   the agents under the chart, Moa's cards and the server tool all read it.
 
 ## Status

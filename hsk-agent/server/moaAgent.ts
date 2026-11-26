@@ -140,8 +140,13 @@ function forModel(a: Agent) {
   };
 }
 
-export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[], onEvent: (e: MoaEvent) => void = () => {}, ctx: MoaContext = {}): Promise<MoaResult> {
-  const client = new Anthropic({ apiKey });
+/** How long one model call may take before Moa gives up and says so (the app then answers on-device). */
+export const CALL_DEADLINE_MS = 90_000;
+
+export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[], onEvent: (e: MoaEvent) => void = () => {}, ctx: MoaContext = {}, signal?: AbortSignal): Promise<MoaResult> {
+  // No silent retries behind the user's back: the SDK default (10 minutes, twice retried) left the chat
+  // "reading the message" for half an hour when the API was slow or unreachable.
+  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: CALL_DEADLINE_MS });
   const lastUser = [...history].reverse().find((t) => t.role === 'user')?.content ?? '';
   const executionAllowed = EXECUTE_WORDS.test(lastUser);
   const messages: Anthropic.Beta.BetaMessageParam[] = history.map((t) => ({ role: t.role, content: t.content }));
@@ -149,7 +154,10 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
 
   for (let i = 0; i < 6; i++) {
     onEvent({ type: 'step', step: i === 0 ? 'thinking' : 'writing' });
-    const response = await client.beta.messages.create({
+    // Streamed, so a long answer keeps the connection alive; one deadline for the whole call, and the
+    // caller's signal (the browser closed the request, or pressed stop) ends it at once.
+    const deadline = AbortSignal.timeout(CALL_DEADLINE_MS);
+    const response = await client.beta.messages.stream({
       model: MODEL,
       max_tokens: 16000,
       output_config: { effort: EFFORT },
@@ -158,7 +166,7 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
       system: SYSTEM,
       tools,
       messages,
-    });
+    }, { signal: signal ? AbortSignal.any([signal, deadline]) : deadline }).finalMessage();
     result.model = response.model;
     if (response.stop_reason === 'refusal') {
       result.reply = 'I can’t help with that one.';

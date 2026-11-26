@@ -5,12 +5,15 @@
 //    rule, the 50/200 golden cross), then standard indicator rules (MA50, EMA 20/50, RSI bounce, Bollinger).
 //  - Collect agents (daily, smart, trend-filter and RSI-weighted DCA): a buy every day on Gate daily candles,
 //    bigger on some days, smaller or skipped on others. Their returns are on the money put in so far.
-// Every agent is scored over the same last 365 days, so returns and worst drops compare like for like.
+// Every agent is scored over the same window, the last three years (or all there is for a younger coin), so
+// returns and worst drops compare like for like. HashKey's own candles only go back to its listing dates
+// (2024-05-29 for the BTC and ETH perpetuals), so the days before that are Gate spot daily candles joined in
+// front; an agent whose window crosses the join says so (`seam`).
 // Runnable: HSKSwap has a pool for the coin (HSK, ETH, BTC), so the agent can trade from the vault.
 // Fees: 0.3% per swap for runnable agents (the HSKSwap pool fee), 0.1% per trade for signal-only agents
 // (HashKey Global). Nothing here is invented: every number comes from the candles the exchanges return.
 import * as cex from './cex.ts';
-import { gateCandles } from './gate.ts';
+import { gateDailyRange } from './gate.ts';
 import * as I from './indicators.ts';
 import type { Asset } from './intent.ts';
 
@@ -67,9 +70,11 @@ export const SIGNAL_MARKETS = ['BTCUSDT-PERPETUAL', 'ETHUSDT-PERPETUAL', 'HSKUSD
 
 export const FEE_HSKSWAP = 0.003;
 export const FEE_HASHKEY = 0.001;
+const DAY = 86_400;
 const WARMUP = 60;          // days of indicator warm-up before the first decision
-export const WINDOW = 365;  // every agent is scored over the last 365 days
-const HISTORY = 1000;       // daily candles asked for: the long averages need them, and "all history" shows them
+export const WINDOW = 1095; // every agent is scored over the last three years
+const MIN_DAYS = 200;       // a coin with less than this to score an agent on does not get that agent
+const DEPTH = 1900;         // days of history wanted: three years, a year of look-back, and room for "all history"
 const BASE_USD = 10;        // collect backtests buy $10 × the day's multiplier
 
 export interface Agent {
@@ -107,6 +112,8 @@ export interface Agent {
   mult: number;
   /** Last close of the candles the agent reads. */
   price: number;
+  /** Set when the window starts before the exchange listed the market: days before this time are Gate spot candles. */
+  seam?: number;
 }
 
 /** One action of the backtest, at the close of the day `time` opens. */
@@ -133,8 +140,26 @@ function cached(key: string, load: () => Promise<Bar[]>): Promise<Bar[]> {
   p.catch(() => { if (cache.get(key)?.p === p) cache.delete(key); });
   return p;
 }
-const hashkeyDaily = (m: cex.Market) => cached(`hk:${m.symbol}`, () => cex.klines(m, '1d', HISTORY));
-const gateDaily = (a: Asset) => cached(`gate:${a}`, () => gateCandles(a, '1d', HISTORY));
+/** Where each HashKey market's own candles begin, when older Gate days were joined in front of them. */
+const seams = new Map<string, number>();
+/**
+ * Daily candles for a HashKey market, with the days before its listing taken from Gate spot. If Gate cannot be
+ * reached the HashKey candles are used alone (shorter history, never invented days).
+ */
+export const dailyHistory = (m: cex.Market) => cached(`hk:${m.symbol}`, async () => {
+  const own = await cex.klines(m, '1d', 1000);
+  if (!own.length) return own;
+  const from = own[own.length - 1].time - DEPTH * DAY;
+  if (own[0].time <= from) return own;
+  // Prices only: another exchange's volume says nothing about this market, so the joined days carry none.
+  const older = (await gateDailyRange(m.base, from, own[0].time - DAY).catch(() => [])).filter((b) => b.time < own[0].time).map((b) => ({ ...b, volume: 0 }));
+  if (older.length) seams.set(m.symbol, own[0].time);
+  return [...older, ...own];
+});
+const hashkeyDaily = dailyHistory;
+/** Gate daily candles for a coin with an HSKSwap pool (the collect agents and the HSKSwap chart). */
+export const collectHistory = (a: Asset) => cached(`gate:${a}`, () => { const now = Math.floor(Date.now() / 1000); return gateDailyRange(a, now - DEPTH * DAY, now + DAY); });
+const gateDaily = collectHistory;
 
 /* ---------- position agents ---------- */
 
@@ -177,15 +202,14 @@ function stats(rets: number[]) {
 }
 
 /**
- * Long-only backtest over the window (the last 365 days, or `Infinity` for all the history there is).
- * Fees on every entry and exit. A rule that cannot be scored over the full window on this market (not enough
- * history for its long average) is left out rather than scored over a shorter one.
+ * Long-only backtest over the window (the last three years by default, any number of days, or `Infinity` for
+ * all the history there is). Fees on every entry and exit. A younger coin is scored over what it has after the
+ * rule's warm-up; with too little left the agent is not offered at all.
  */
 export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window = WINDOW): Agent | null {
   const need = NEED[rule] ?? WARMUP;
-  if (bars.length < need + 90) return null;
-  if (need > WARMUP && Number.isFinite(window) && bars.length - 1 - window < need) return null;
   const start = Math.max(need, bars.length - 1 - window);
+  if (bars.length - 1 - start < Math.min(MIN_DAYS, window)) return null;
   const def = POSITION_RULES.find((r) => r.id === rule)!;
   const runnable = isRunnable(market.base);
   const fee = runnable ? FEE_HSKSWAP : FEE_HASHKEY;
@@ -217,6 +241,7 @@ export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[
     days, from: bars[start].time, to: bars[bars.length - 1].time,
     total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets),
     trades, inMarket: inDays / days, equity, bench, marks, live, mult: live ? 1 : 0, price: bars[bars.length - 1].close,
+    seam: (seams.get(market.symbol) ?? 0) > bars[start].time ? seams.get(market.symbol) : undefined,
   };
 }
 
@@ -270,10 +295,10 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
 
 /* ---------- loading ---------- */
 
-/** The same agent over all the history its exchange has (after its warm-up), for a closer look at one agent. */
-export async function fullBacktest(a: Agent): Promise<Agent | null> {
-  if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), Infinity) : null;
-  return a.market ? scorePosition(a.rule as PositionRule, a.market, await hashkeyDaily(a.market), Infinity) : null;
+/** The same agent over another window (days, or `Infinity` for everything after its warm-up), for a closer look at one agent. */
+export async function rescore(a: Agent, window: number): Promise<Agent | null> {
+  if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), window) : null;
+  return a.market ? scorePosition(a.rule as PositionRule, a.market, await hashkeyDaily(a.market), window) : null;
 }
 
 /** An agent that never traded in the window has no worst drop to judge, so it does not outrank one that did. */

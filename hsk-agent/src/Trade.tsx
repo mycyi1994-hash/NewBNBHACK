@@ -9,7 +9,7 @@ import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import Dock, { px, useBacktest, useMarketAgents } from './Dock.tsx';
-import type { Agent, RuleId } from './agents.ts';
+import { collectHistory, dailyHistory, type Agent, type RuleId } from './agents.ts';
 import { pct } from './AgentCard.tsx';
 import { Icon } from './Icons.tsx';
 import type { MoaContext } from './MoaFeed.tsx';
@@ -115,8 +115,10 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     extra.current = [];
     const times = candles.map((d) => d.time), close = candles.map((d) => d.close);
     const rule = study?.rule;
-    const showRsi = inds.has('rsi') || rule === 'rsi' || rule === 'rsiDca', showVol = inds.has('vol');
-    m.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: showRsi ? (showVol ? 0.4 : 0.26) : showVol ? 0.2 : 0.06 } });
+    const showMom = rule === 'tsmom';
+    const showRsi = !showMom && (inds.has('rsi') || rule === 'rsi' || rule === 'rsiDca'), showVol = inds.has('vol');
+    const pane = showRsi || showMom;
+    m.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: pane ? (showVol ? 0.4 : 0.26) : showVol ? 0.2 : 0.06 } });
     const addLine = (xs: number[], color: string, width: 1 | 2 = 1, scale?: string) => {
       const s = c.addLineSeries({ color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...(scale ? { priceScaleId: scale } : {}) });
       s.setData(line(times, xs)); extra.current.push(s); return s;
@@ -138,7 +140,14 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
       if (rule === 'ema') { addLine(I.ema(close, 20), AMBER, 2); addLine(I.ema(close, 50), BLUE, 2); }
       if (rule === 'smart') addLine(I.sma(close, 20), BLUE, 2);
       if (rule === 'boll') { const b = I.boll(close); addLine(b.up, BLUE, 2); addLine(b.mid, '#64748b'); addLine(b.lo, BLUE, 2); }
-      if (rule === 'tsmom') addLine(close.map((_, i) => (i >= 365 ? close[i - 365] : NaN)), BLUE, 2);
+      if (showMom) {
+        // The rule in one line: the return over the last 12 months. Above zero it holds, below zero it is out.
+        const mom = c.addLineSeries({ color: BLUE, lineWidth: 2, priceScaleId: 'mom', priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, priceFormat: { type: 'custom', minMove: 0.1, formatter: (v: number) => `${v.toFixed(0)}%` } });
+        mom.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0.02 } });
+        mom.setData(line(times, close.map((x, i) => (i >= 365 ? (x / close[i - 365] - 1) * 100 : NaN))));
+        mom.createPriceLine({ price: 0, color: '#5f6368', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+        extra.current.push(mom);
+      }
       if (rule === 'break') {
         const hi = candles.map((_, i) => (i < 20 ? NaN : Math.max(...candles.slice(i - 20, i).map((x) => x.high))));
         const lo = candles.map((_, i) => (i < 10 ? NaN : Math.min(...candles.slice(i - 10, i).map((x) => x.low))));
@@ -151,7 +160,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     }
     if (showVol) {
       const v = c.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
-      v.priceScale().applyOptions({ scaleMargins: { top: showRsi ? 0.64 : 0.82, bottom: showRsi ? 0.23 : 0 } });
+      v.priceScale().applyOptions({ scaleMargins: { top: pane ? 0.64 : 0.82, bottom: pane ? 0.23 : 0 } });
       v.setData(candles.map((d) => ({ time: d.time as UTCTimestamp, value: d.volume, color: d.close >= d.open ? 'rgba(22,163,74,.35)' : 'rgba(220,38,38,.35)' })));
       extra.current.push(v);
     }
@@ -226,8 +235,10 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
         const y = cd ? m.priceToCoordinate(b.side === 'buy' ? cd.low : cd.high) : null;
         if (x === null || y === null || x < 0 || x > w || y < 0 || y > h) { n.style.display = 'none'; return; }
         n.style.display = '';
-        // Too close to the one before: keep the arrow, drop the words.
-        n.classList.toggle('tight', x - last[b.side] < 70);
+        // Too close to the one before: keep the arrow, drop the words. On top of it: one mark is enough.
+        const gap = x - last[b.side];
+        if (gap < 12) { n.style.display = 'none'; return; }
+        n.classList.toggle('tight', gap < 76);
         last[b.side] = x;
         n.style.left = `${x}px`; n.style.top = `${y}px`;
       });
@@ -337,7 +348,7 @@ function useCex(m: cex.Market) {
 }
 
 /** A backtest for the chart: the rule's lines, the buys and sells pinned to the candle that holds that day's close, the holding days. */
-function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string; btRest: string; btStart: string }): Study {
+function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string; btRest: string; btSeamTag: string }): Study {
   const DAY = 86_400;
   const at = (dayOpen: number) => {
     const close = dayOpen + DAY - 1;
@@ -348,8 +359,9 @@ function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string
   };
   const badges: Badge[] = [];
   const bands: { from: number; to: number }[] = [];
-  const first = at(a.from);
-  if (first !== null) badges.push({ time: first, side: 'note', text: t.btStart });
+  // Where the exchange's own candles begin, when the window reaches back into the joined Gate days.
+  const seam = a.seam ? at(a.seam) : null;
+  if (seam !== null) badges.push({ time: seam, side: 'note', text: t.btSeamTag });
   if (a.kind === 'position') {
     let open: number | null = null;
     for (const m of a.marks) {
@@ -477,7 +489,9 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
   const { t, mi } = useCex(market);
   const [inds, toggleInd] = useStoredInds();
   const key = `cex-${market.symbol}-${interval}`;
-  const { candles, more } = useCandles(key, (n) => cex.klines(market, interval, n), (first) => cex.klines(market, interval, 1000, first.time * 1000 - 1), 15000);
+  // Daily candles come with the days before the exchange listed the market (Gate spot, joined in front), the
+  // same history the agents are scored on, so a backtest's whole window is on the chart.
+  const { candles, more } = useCandles(key, (n) => (interval === '1d' && n > 100 ? dailyHistory(market) : cex.klines(market, interval, n)), (first) => cex.klines(market, interval, 1000, first.time * 1000 - 1), 15000);
   const { list, failed } = useMarketAgents('cex', market, asset);
   const sel = list?.find((a) => a.id === selId) ?? null;
   // A backtest runs on daily candles: show it on the daily chart (the user can still change the interval after).
@@ -528,7 +542,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   const pickIv = (v: GateInterval) => { setIv(v); save('moa.dexiv', v); };
   const [inds, toggleInd] = useStoredInds();
   const key = `dex-${asset}-${iv}`;
-  const { candles, more } = useCandles(key, (n) => gateCandles(asset, iv, n), (first) => gateCandles(asset, iv, 1000, first.time - 1), 20000);
+  const { candles, more } = useCandles(key, (n) => (iv === '1d' && n > 100 ? collectHistory(asset) : gateCandles(asset, iv, n)), (first) => gateCandles(asset, iv, 1000, first.time - 1), 20000);
   const vol = detail ? detail.swaps.reduce((acc, x) => acc + x.usdt, 0) : 0;
   const p = POOLS[asset];
   const gate = quotes.find((q) => q.asset === asset);

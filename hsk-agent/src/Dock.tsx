@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
-import { byMerit, collectAgents, fullBacktest, isRunnable, positionAgents, type Agent, type Mark } from './agents.ts';
+import { byMerit, collectAgents, isRunnable, positionAgents, rescore, type Agent, type Mark } from './agents.ts';
 import { readLevel, recommend } from './recommend.ts';
 import { AgentCard, agentName, drop, pct, sourceLine, statePill, RuleIcon } from './AgentCard.tsx';
 import { fmtPrice } from './market.ts';
@@ -35,19 +35,19 @@ export function useMarketAgents(venue: 'cex' | 'dex', market: cex.Market, asset:
   return { list, failed };
 }
 
-export type Period = 'year' | 'all';
-/** The backtest on screen: the like-for-like year from the list, or the same agent over all its history. */
+export type Period = 'year' | 'std' | 'all';
+/** The backtest on screen: the standard three years from the list, or the same agent over one year or all its history. */
 export function useBacktest(sel: Agent | null) {
-  const [period, setPeriod] = useState<Period>('year');
-  const [full, setFull] = useState<Agent | null>(null);
+  const [period, setPeriod] = useState<Period>('std');
+  const [other, setOther] = useState<{ agent: Agent; period: Period } | null>(null);
   useEffect(() => {
-    setFull(null);
-    if (!sel || period !== 'all') return;
+    setOther(null);
+    if (!sel || period === 'std') return;
     let alive = true;
-    fullBacktest(sel).then((a) => alive && setFull(a), () => undefined);
+    rescore(sel, period === 'year' ? 365 : Infinity).then((a: Agent | null) => { if (alive && a) setOther({ agent: a, period }); }, () => undefined);
     return () => { alive = false; };
   }, [sel?.id, period]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { period, setPeriod, shown: sel && period === 'all' && full?.id === sel.id ? full : sel };
+  return { period, setPeriod, shown: sel && period !== 'std' && other?.period === period && other.agent.id === sel.id ? other.agent : sel };
 }
 
 /** Round trips of a position agent, newest first. The last one may still be open (valued at the last close). */
@@ -100,8 +100,8 @@ function Curves({ a, peers, onPick }: { a: Agent; peers: Agent[]; onPick: (p: Ag
   );
 }
 
-function Backtest({ a, year, ranked, period, setPeriod, onSelect, onHire, onAsk }: {
-  a: Agent; year: Agent; ranked: Agent[]; period: Period; setPeriod: (p: Period) => void;
+function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
+  a: Agent; year: Agent; ranked: Agent[]; period: Period;
   onSelect: (a: Agent) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void;
 }) {
   const { t, lang } = useT();
@@ -143,6 +143,7 @@ function Backtest({ a, year, ranked, period, setPeriod, onSelect, onHire, onAsk 
       </section>
 
       <section className="bt-perf">
+        <p className="bt-say">{t.btSay({ collect: a.kind === 'collect', better: edge >= 0, trades: a.trades, hold: pct(a.hold), total: pct(a.total), held: `${Math.round(a.inMarket * 100)}%` })}</p>
         <dl className="bt-stats">
           <div className="lead"><dt>{t.thEdge}</dt><dd className={sign(edge)}>{pct(edge)}</dd></div>
           <div><dt>{t.btAgent}</dt><dd className={sign(a.total)}>{pct(a.total)}</dd></div>
@@ -151,13 +152,10 @@ function Backtest({ a, year, ranked, period, setPeriod, onSelect, onHire, onAsk 
           <div><dt>{t.thSharpe}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
           <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.trades)}</dd></div>
         </dl>
-        <Curves a={a} peers={period === 'year' ? ranked.filter((x) => x.id !== year.id) : []} onPick={onSelect} />
+        <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id) : []} onPick={onSelect} />
         <div className="bt-legend">
           <span><i className="lg-agent" />{t.btAgent}</span><span><i className="lg-hold" />{t.acHold}</span>
           <span className="bt-span">{day(a.from)} – {day(a.to)}</span>
-          <div className="seg" role="group" aria-label={t.thPeriod}>
-            {(['year', 'all'] as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} aria-pressed={period === p} onClick={() => setPeriod(p)}>{p === 'year' ? t.btYear : t.btAll}</button>)}
-          </div>
         </div>
       </section>
 
@@ -214,7 +212,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const best = list ? recommend(list, { coin, level: readLevel() })?.pick.id : undefined;
   const top = ranked[0];
   const hint = venue === 'dex' ? t.mkHintDex : isRunnable(coin) ? t.mkHintCex(coin) : t.mkHintSignal(coin);
-  const note = tab === 'bt' && shown ? t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days) : tab === 'list' ? (sort === 'pick' && top ? `${t.agRule[top.rule]}: ${t.rankWhy(top.tier === 1, drop(top.maxDd))}` : hint) : '';
+  const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
+  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? (sort === 'pick' && top ? `${t.agRule[top.rule]}: ${t.rankWhy(top.tier === 1, drop(top.maxDd))}` : hint) : '';
 
   return (
     <section className="tdock" aria-label={t.mkTitle}>
@@ -235,6 +234,11 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             {(['pick', 'edge', 'sharpe'] as Sort[]).map((k) => <button key={k} className={sort === k ? 'on' : ''} aria-pressed={sort === k} onClick={() => setSort(k)}>{k === 'pick' ? t.sortPick : k === 'edge' ? t.sortEdge : t.sortSharpe}</button>)}
           </div>
         )}
+        {tab === 'bt' && sel && (
+          <div className="seg" role="group" aria-label={t.thPeriod}>
+            {(['year', 'std', 'all'] as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} aria-pressed={period === p} onClick={() => setPeriod(p)}>{p === 'year' ? t.btYear : p === 'std' ? t.btStd : t.btAll}</button>)}
+          </div>
+        )}
         {tab === 'bt' && sel && <button className="icon-btn sm" onClick={() => onSelect(null)} aria-label={t.btBack} data-tip={t.btBack}><Icon name="close" size={16} /></button>}
       </header>
 
@@ -249,7 +253,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             {ranked.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === best} onPick={() => onSelect(a)} />)}
           </div>
         )}
-        {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} setPeriod={setPeriod} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}
+        {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}
         {tab === 'swaps' && swaps}
       </div>
     </section>
