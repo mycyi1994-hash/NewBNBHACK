@@ -12,6 +12,7 @@ import { useT } from './i18n.ts';
 import { SlidePill } from './motion.tsx';
 import { Icon as SIcon, Spark } from './Icons.tsx';
 import { limitsText, type VaultInfo } from './parts.tsx';
+import { fmtPrice } from './market.ts';
 import { CopyButton, Modal, RichText } from './ui.tsx';
 import { VaultLine } from './VaultCard.tsx';
 import { parse } from './spec.ts';
@@ -50,6 +51,10 @@ const PRO_WORDS = /(rsi|macd|ema|롱|숏|레버리지|펀딩|볼린저|지표|lo
 const BUILD_WORDS = /(에이전트|전략|봇|agent|strategy|bot).{0,24}(만들|짜|생성|create|make|build)|(만들|짜|create|make|build).{0,24}(에이전트|전략|봇|agent|strategy|bot)/i;
 const RECOMMEND_WORDS = /(추천|맡길|맡겨|골라|recommend|suggest|which agent|pick (?:one|an agent))/i;
 const STOP_WORDS = /(멈춰|멈추|중지|정지|그만해|pause|stop (?:the |my |all )?(?:agents?|bots?))/i;
+/** What is in my vault right now, answered from the chain without the AI. */
+const VAULT_WORDS = /(포지션|보유|잔고|잔액|볼트|금고|들고 있|what do i (?:hold|have|own)|position|holdings?|balance|my vault)/i;
+/** The price gap between the exchange and HSKSwap, and whether it is worth anything. */
+const SPREAD_WORDS = /(스프레드|차익|가격 ?차이|괴리|arbitrage|spread|price gap)/i;
 const STATUS_WORDS = /(얼마 벌|수익|손익|현황|잘 하고|어떻게 하고|how (?:are|is) my|status|p&l|pnl|profit)/i;
 const readLevel = (): Level | null => { try { const v = localStorage.getItem('moa.level'); return v === 'new' || v === 'some' || v === 'pro' ? v : null; } catch { return null; } };
 const saveLevel = (l: Level) => { try { localStorage.setItem('moa.level', l); } catch { /* storage unavailable */ } };
@@ -352,6 +357,26 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
       running.forEach((h) => onPause(h.id));
       say({ text: t.pausedSay(running.map((h) => hiredName(t, h)).join(', ')), follow: [] }, 400);
       return true;
+    }
+    if (VAULT_WORDS.test(q) && vault?.configured) {
+      const usd = (s?: string) => Number(s ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const held = (vault.holdings ?? []).map((h) => {
+        const cost = Number(h.costUsdt ?? 0), value = Number(h.valueUsdt ?? 0);
+        const gain = cost > 0 ? `${value >= cost ? '+' : '−'}${Math.abs((value / cost - 1) * 100).toFixed(1)}%` : '';
+        return `- ${t.vaHold(h.symbol, Number(h.amount).toPrecision(4).replace(/\.?0+$/, ''), usd(h.valueUsdt), usd(h.costUsdt), gain)}${h.stopDue ? ` ${t.vaStopDue}` : ''}`;
+      });
+      const rules = `${limitsText(t, vault)}${vault.remainingTodayUsdt !== undefined ? ` (${t.vcSide(usd(vault.remainingTodayUsdt))})` : ''}${vault.stopLossBps ? ` · ${t.lmStopShort(String(vault.stopLossBps / 100))}` : ''}`;
+      say({ text: [t.vaCash(usd(vault.usdtBalance)), ...(held.length ? held : [t.vaNoCoins]), t.vaRules(rules), vault.paused ? t.lmLocked : ''].filter(Boolean).join('\n'), follow: [] }, 400);
+      if (STATUS_WORDS.test(q)) list.slice(0, 3).forEach((h, i) => setTimeout(() => statusNote(h.id), 400 + i * 250));
+      return true;
+    }
+    if (SPREAD_WORDS.test(q)) {
+      const rows = quotes.filter((x) => x.pool !== undefined && x.exchange !== undefined && x.gap !== undefined);
+      if (rows.length) {
+        const lines = rows.map((x) => `- ${t.spRow(x.asset, fmtPrice(x.exchange!), fmtPrice(x.pool!), `${x.gap! >= 0 ? '+' : '−'}${Math.abs(x.gap! * 100).toFixed(2)}%`)}`);
+        say({ text: [t.spHead, ...lines, t.spCost, t.spVerdict].join('\n'), follow: [] }, 400);
+        return true;
+      }
     }
     if (STATUS_WORDS.test(q) && list.length) {
       list.slice(0, 3).forEach((h, i) => setTimeout(() => statusNote(h.id), i * 250));

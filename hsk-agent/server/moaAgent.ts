@@ -51,7 +51,7 @@ Rules:
 const tools: Anthropic.Beta.BetaTool[] = [
   {
     name: 'get_market',
-    description: 'Live prices: HSKSwap pool prices on HSK Chain (HSK, ETH, BTC vs USDT) with the gap to Gate spot, the HashKey Global BTC/USDT perpetual, and the user vault status (limits, balance) if a vault is configured.',
+    description: 'Live prices: HSKSwap pool prices on HSK Chain (HSK, ETH, BTC vs USDT) with the gap to Gate spot, the HashKey Global BTC/USDT perpetual, and the vault of the logged-in user when there is one: its USDT, each coin it holds with what that cost and what it is worth now (holdings[].costUsdt, valueUsdt), the limits the owner set (a missing limit means none), the stop-loss (stopLossBps) and whether trading is locked (paused). Use it for questions about positions and profit or loss.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     strict: true,
   },
