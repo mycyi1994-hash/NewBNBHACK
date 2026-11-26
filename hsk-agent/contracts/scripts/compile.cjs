@@ -22,4 +22,6 @@ if (errors.length) process.exit(1);
 const c = out.contracts['MoaVault.sol'].MoaVault;
 fs.mkdirSync(path.join(root, 'out'), { recursive: true });
 fs.writeFileSync(path.join(root, 'out/MoaVault.json'), JSON.stringify({ abi: c.abi, bytecode: '0x' + c.evm.bytecode.object }, null, 2));
+// The exact compiler input, for verifying the source on the block explorer ("Solidity (Standard JSON input)").
+fs.writeFileSync(path.join(root, 'out/MoaVault.standard-input.json'), JSON.stringify(input, null, 2) + '\n');
 console.log('compiled MoaVault with', solc.version(), '- bytecode', c.evm.bytecode.object.length / 2, 'bytes');

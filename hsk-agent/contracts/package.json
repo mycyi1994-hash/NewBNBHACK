@@ -4,7 +4,9 @@
   "type": "commonjs",
   "scripts": {
     "compile": "node scripts/compile.cjs",
-    "test": "node scripts/fork-test.cjs"
+    "test": "node --experimental-strip-types scripts/fork-test.mjs",
+    "deploy:check": "node scripts/deploy-mainnet.mjs",
+    "vault": "node scripts/vault.mjs"
   },
   "dependencies": {
     "hardhat": "^2.29.2",

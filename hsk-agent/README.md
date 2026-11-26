@@ -131,6 +131,13 @@ npm test         # parser, agent scoring, recommend rule and runner tests
 npm run build
 ```
 
+### Deploy the vault to HSK Chain mainnet
+
+[`contracts/MAINNET.md`](contracts/MAINNET.md) has the steps: make the agent key, dry run, deploy, publish the source on the
+explorer, fund, first trade, and the owner's controls (pause, withdraw, limits). The scripts check every address on-chain
+before sending, show the plan and gas cost first, and ask for a typed word before each transaction. The owner's key is
+typed into a hidden prompt and is never stored.
+
 ### Try execution on a local fork of HSK mainnet (no real funds)
 
 ```bash
