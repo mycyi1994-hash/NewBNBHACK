@@ -46,6 +46,15 @@ vault contract enforces.
   how far it has been tested, with "no published test" stated where that is the case. "Replay" plays the backtest a
   daily candle at a time from 14 days before it starts (`src/replay.ts`): candles, the rule's lines, buys and sells,
   the money and the trade list all advance together; pause, seek and 1×/4×/16×.
+- **Anyone can make an agent.** "Make an agent" is one screen: pick the coin, start from a published strategy and
+  change its numbers, add conditions by hand, or describe the rule in a sentence; the backtest reruns on every
+  change. A made rule is data, not code (`src/spec.ts`): a few conditions of the form "this is above/below that",
+  run by one interpreter that decides on past days only, long-only, daily, one coin. The sentence reader is a fixed
+  set of patterns, not a model, and says what it could not read. Twelve built-in strategies are expressible as this
+  data and a test checks they decide identically. Made agents are saved per account (`src/madeStore.ts`; until
+  sign-in exists the account is "guest", this browser), show under their coin's chart with the full backtest and
+  replay, are labelled "made by you, no published test", and are hired through the same sheet as any agent: the
+  same per-trade approval and the same vault limits apply.
 - **Agents have names and faces.** Each rule has a short name and its own coloured mark ("BTC Turtle", "ETH
   Guardian"); the rule it follows and where the rule comes from stay beside it as the subtitle and the origin tag.
 - **The vault is on screen, not in a footnote.** `src/VaultCard.tsx` shows the same vault three ways (sidebar,

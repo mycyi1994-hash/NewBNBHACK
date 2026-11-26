@@ -1073,3 +1073,57 @@ select { padding-right: 8px; }
 .ai-short { display: none; }
 .depth-switch button { white-space: nowrap; }
 @media (max-width: 560px) { .ai-long { display: none; } .ai-short { display: inline; } .feed-head { gap: 6px; padding: 0 8px 0 14px; } .depth-switch button { padding: 0 8px; } }
+
+/* ---------- make an agent ---------- */
+.build-page { max-width: 1240px; }
+.bu-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
+.bu-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.bu-card { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border: 1px solid var(--line-card); border-radius: var(--r-card); background: var(--bg); }
+.bu-card h3 { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: var(--ink-title); }
+.bu-row { display: flex; flex-direction: column; gap: 6px; }
+.bu-label { font-size: 12.5px; font-weight: 700; color: var(--ink-3); }
+.bu-coins, .bu-templates { display: flex; flex-wrap: wrap; gap: 6px; }
+.bu-coins .coin { gap: 0; } .bu-coins .coin::before, .bu-coins .coin-letter { width: 14px; height: 14px; font-size: 8px; }
+.bu-templates .fchip { height: 30px; font-size: 13px; font-weight: 500; }
+.bu-words { display: flex; gap: 8px; }
+.bu-words input { flex: 1; min-width: 0; }
+.bu-note { font-size: 12.5px; line-height: 18px; color: var(--ink-3); }
+.bu-note.warn { color: var(--warn); }
+.bu-conds { display: flex; flex-direction: column; gap: 8px; }
+.bu-conds h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.bu-cond { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--head); animation: rise var(--d2) var(--ease-in) backwards; }
+.term { display: inline-flex; align-items: center; gap: 6px; }
+.term select, .bu-op { height: 32px; background: var(--bg); font-size: 13.5px; font-weight: 600; }
+.bu-op { color: var(--accent-ink); border-color: var(--accent-tint); background: var(--accent-tint); }
+.term-n { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-3); }
+.term-n input { width: 68px; height: 32px; padding: 0 8px; border: 1px solid #e3e3e3; border-radius: 8px; background: var(--bg); font-size: 13.5px; font-weight: 600; }
+.bu-empty { font-size: 13px; color: var(--ink-3); }
+.bu-add { align-self: flex-start; height: 30px; font-size: 13px; color: var(--accent); }
+.bu-result { position: sticky; top: 76px; }
+.bu-wait { display: flex; align-items: center; gap: 10px; min-height: 120px; font-size: 13.5px; color: var(--ink-3); }
+.bu-money { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.bu-money > div { display: grid; grid-template-columns: auto auto; column-gap: 8px; align-items: baseline; }
+.bu-money small { grid-column: 1 / -1; font-size: 12.5px; color: var(--ink-2); }
+.bu-money b { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink-title); }
+.bu-money .dim b { font-size: 21px; font-weight: 600; color: var(--ink-2); }
+.bu-money b.pos, .bu-money em.pos { color: var(--pos); } .bu-money b.neg, .bu-money em.neg { color: var(--neg); }
+.bu-money em { font-style: normal; font-size: 14px; font-weight: 600; }
+.bu-result .ag-eq.wide { width: 100%; height: 96px; }
+.bu-stats { display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 8px; margin: 0; padding-top: 10px; border-top: 1px solid var(--line); }
+.bu-stats dt { font-size: 12px; color: var(--ink-3); }
+.bu-stats dd { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink-title); }
+.bu-stats dd.pos { color: var(--pos); } .bu-stats dd.neg { color: var(--neg); }
+.bu-save { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.bu-name { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.bu-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.bu-mine { display: flex; flex-direction: column; gap: 8px; }
+.bu-mine h3 { font-size: 15px; font-weight: 700; color: var(--ink-title); }
+.bu-mine-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-card); border-radius: 12px; }
+.bu-mine-row.on { border-color: var(--accent); }
+.bu-mine-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bu-mine-name b { font-size: 14px; font-weight: 600; color: var(--ink-title); }
+.bu-mine-name small { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.face.r-made { background: #111; color: #fff; }
+.tdock-build { flex: none; }
+@media (max-width: 1280px) { .bu-grid { grid-template-columns: minmax(0, 1fr); } .bu-result { position: static; } }
+@media (max-width: 560px) { .bu-words { flex-direction: column; } }

@@ -14,6 +14,7 @@ import { Icon as SIcon, Spark } from './Icons.tsx';
 import type { VaultInfo } from './parts.tsx';
 import { CopyButton, Modal, RichText } from './ui.tsx';
 import { VaultLine } from './VaultCard.tsx';
+import { parse } from './spec.ts';
 import { askMoa, EXECUTE_WORDS, toStep, type Exec, type StepKey } from './moaClient.ts';
 import { describe, parseIntent, type Plan } from './intent.ts';
 import { reply as offlineReply } from './moa.ts';
@@ -46,6 +47,7 @@ interface Note {
 type Line = Omit<Note, 'id' | 'at' | 'role'>;
 type Topic = 'why' | 'how' | 'when' | 'split' | 'alert' | 'other' | 'strats' | 'chart' | 'rule' | 'doit' | 'self';
 const PRO_WORDS = /(rsi|macd|ema|롱|숏|레버리지|펀딩|볼린저|지표|long|short|leverage|funding|bollinger)/i;
+const BUILD_WORDS = /(에이전트|전략|봇|agent|strategy|bot).{0,24}(만들|짜|생성|create|make|build)|(만들|짜|create|make|build).{0,24}(에이전트|전략|봇|agent|strategy|bot)/i;
 const RECOMMEND_WORDS = /(추천|맡길|맡겨|골라|recommend|suggest|which agent|pick (?:one|an agent))/i;
 const STOP_WORDS = /(멈춰|멈추|중지|정지|그만해|pause|stop (?:the |my |all )?(?:agents?|bots?))/i;
 const STATUS_WORDS = /(얼마 벌|수익|손익|현황|잘 하고|어떻게 하고|how (?:are|is) my|status|p&l|pnl|profit)/i;
@@ -69,12 +71,12 @@ function coinIn(q: string): string | undefined {
   return undefined;
 }
 
-export default function MoaFeed({ quotes, vault, inject, context, agents, agentsFailed, hired, sending, now, onHire, onEdit, onPause, onResume, onApprove, onDecline, onExecuted, onGoto, onShow, onAttention, onClose }: {
+export default function MoaFeed({ quotes, vault, inject, context, agents, agentsFailed, hired, sending, now, onHire, onEdit, onPause, onResume, onApprove, onDecline, onExecuted, onGoto, onShow, onBuild, onAttention, onClose }: {
   quotes: Quote[]; vault: VaultInfo | null; inject?: MoaInject | null; context: MoaContext;
   agents: Agent[] | null; agentsFailed: boolean; hired: HiredAgent[]; sending: Set<string>; now: number;
   onHire: (target: HireTarget) => void; onEdit: (id: string) => void; onPause: (id: string) => void; onResume: (id: string) => void;
   onApprove: (id: string, orderId: string) => void; onDecline: (id: string, orderId: string) => void;
-  onExecuted: (x: Execution[]) => void; onGoto: (v: 'trade' | 'agents' | 'mine') => void; onShow: (a: Agent) => void; onAttention: () => void; onClose?: () => void;
+  onExecuted: (x: Execution[]) => void; onGoto: (v: 'trade' | 'agents' | 'mine') => void; onShow: (a: Agent) => void; onBuild: (text: string) => void; onAttention: () => void; onClose?: () => void;
 }) {
   const { t, lang } = useT();
   const [notes, setNotes] = useState<Note[]>([]);
@@ -353,6 +355,13 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
     }
     if (STATUS_WORDS.test(q) && list.length) {
       list.slice(0, 3).forEach((h, i) => setTimeout(() => statusNote(h.id), i * 250));
+      return true;
+    }
+    if (BUILD_WORDS.test(q)) {
+      // The rule is read by a fixed reader (spec.ts), not by the model; the builder shows what was understood.
+      const got = parse(q).buy.length > 0;
+      say({ text: got ? t.buildSay : t.buildSayEmpty, follow: [] }, 400);
+      onBuild(got ? q : '');
       return true;
     }
     if (RECOMMEND_WORDS.test(q)) { recommendNote(coinIn(q) ?? ctxRef.current.asset); return true; }

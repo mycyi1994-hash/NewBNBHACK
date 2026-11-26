@@ -6,13 +6,25 @@ import type { Agent, RuleId } from './agents.ts';
 import { useT, type Strings } from './i18n.ts';
 import { CoinMark } from './CoinMark.tsx';
 import { Icon } from './Icons.tsx';
+import { madeById } from './madeStore.ts';
+import type { Cond, MadeSpec } from './spec.ts';
 
 /** Signed percent with a true minus sign, one decimal: the one number format used across the app. */
 export const pct = (v: number, d = 1) => { const x = Math.abs(v * 100).toFixed(d); return `${Number(x) === 0 ? '' : v > 0 ? '+' : '−'}${x}%`; };
 export const drop = (v: number) => `−${(v * 100).toFixed(1)}%`;
 export const multText = (m: number) => String(Math.round(m * 100) / 100);
 /** An agent goes by a short name ("BTC Turtle"); the rule it follows ("Breakout · 20/10") is its subtitle. */
-export const agentName = (t: Strings, a: { base: string; rule: RuleId }) => `${a.base} ${t.agNick[a.rule]}`;
+export function agentName(t: Strings, a: { base: string; rule: RuleId; made?: { name: string }; id?: string; agentId?: string }): string {
+  // A made agent goes by the name its maker gave it (a hired one only carries its id, so the name is looked up).
+  if (a.rule === 'made') return a.made?.name ?? madeById(a.agentId ?? a.id ?? '')?.name ?? t.agNick.made;
+  return `${a.base} ${t.agNick[a.rule]}`;
+}
+/** A condition as "price > 200-day average". */
+export const condText = (t: Strings, c: Cond) => `${t.term(c.a.k, c.a.n)} ${c.op === 'above' ? '>' : '<'} ${t.term(c.b.k, c.b.n, c.a.k === 'ret')}`;
+/** The rule in two lines, for a made agent; the built-in text otherwise. */
+export const ruleLines = (t: Strings, a: { rule: RuleId; made?: MadeSpec }): string[] => (a.made
+  ? [`${t.cuBuy}: ${a.made.buy.map((c) => condText(t, c)).join(` ${t.cuAnd} `)}`, a.made.sell.length ? `${t.cuSell}: ${a.made.sell.map((c) => condText(t, c)).join(` ${t.cuOr} `)}` : t.cuSellNone]
+  : t.agRules[a.rule].slice(0, 2));
 
 export function statePill(t: Strings, a: Agent): { text: string; cls: string } {
   if (a.kind === 'position') return a.live ? { text: t.acHolding, cls: 'sig-good' } : { text: t.acWaiting, cls: 'sig-neutral' };
@@ -74,8 +86,8 @@ export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions 
         <span className="frow-who">
           <Face rule={a.rule} size="sm" />
           <span className="frow-main">
-            <span className="frow-title"><b>{t.agNick[a.rule]}</b><span className="frow-rule">{t.agRule[a.rule]}</span>{a.tier === 1 && <span className="frow-star" data-tip={t.agOrigin[a.rule]}>★</span>}{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
-            <span className="frow-desc">{t.agLine[a.rule]}</span>
+            <span className="frow-title"><b>{a.made?.name ?? t.agNick[a.rule]}</b><span className="frow-rule">{t.agRule[a.rule]}</span>{a.tier === 1 && <span className="frow-star" data-tip={t.agOrigin[a.rule]}>★</span>}{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
+            <span className="frow-desc">{a.made ? ruleLines(t, a)[0] : t.agLine[a.rule]}</span>
           </span>
         </span>
         <span className="frow-origin"><span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span></span>

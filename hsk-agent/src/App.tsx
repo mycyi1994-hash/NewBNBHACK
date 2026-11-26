@@ -13,6 +13,7 @@ import { RollNum } from './motion.tsx';
 import { Icon, type IconName } from './Icons.tsx';
 import Trade, { type ShowAgent } from './Trade.tsx';
 import { VaultMini } from './VaultCard.tsx';
+import Builder, { type BuildDraft } from './Builder.tsx';
 import Agents from './Agents.tsx';
 import MyAgents from './MyAgents.tsx';
 import MyAgentsBar from './MyAgentsBar.tsx';
@@ -27,7 +28,7 @@ import { sendAgentTrade } from './moaClient.ts';
 import type { VaultInfo } from './parts.tsx';
 import { ToastProvider, useToast } from './ui.tsx';
 
-type View = 'trade' | 'agents' | 'mine';
+type View = 'trade' | 'agents' | 'build' | 'mine';
 const NARROW = '(max-width: 1180px)';
 
 function useQuotes() {
@@ -73,6 +74,7 @@ function Sidebar({ view, go, hired, vault, onOpenHired }: { view: View; go: (v: 
       <div className="brand"><span className="orb sm" aria-hidden /><span className="nav-text">moa</span></div>
       {item(t.navTrade, 'trade', 'chart', 'chevron')}
       {item(t.navAgents, 'agents', 'market')}
+      {item(t.navBuild, 'build', 'plus')}
       {item(t.navMine, 'mine', 'bot', hired.length ? 'down' : 'chevron')}
       {hired.length > 0 && (
         <div className="nav-sub">
@@ -142,6 +144,10 @@ function Shell() {
   const [inject, setInject] = useState<MoaInject | null>(null);
   const injectN = useRef(0);
   const [show, setShow] = useState<ShowAgent | null>(null);
+  const [build, setBuild] = useState<BuildDraft | null>(null);
+  const buildN = useRef(0);
+  /** Open the builder: empty, on the coin on screen, with a sentence to read, or on a saved agent. */
+  const openBuilder = (x: Omit<BuildDraft, 'n'> = {}) => { setBuild({ ...x, n: ++buildN.current }); go('build'); if (window.matchMedia(NARROW).matches) setMoaOpen(false); };
   const showN = useRef(0);
   const [sheet, setSheet] = useState<HireTarget | null>(null);
   const [moaOpen, setMoaOpen] = useState(false);
@@ -281,9 +287,9 @@ function Shell() {
     setSheet(null);
   };
 
-  const ctx: MoaContext = view === 'trade' ? tradeCtx : view === 'agents' ? { label: t.ctxMarket } : { label: t.ctxMine };
+  const ctx: MoaContext = view === 'trade' ? tradeCtx : view === 'agents' ? { label: t.ctxMarket } : view === 'build' ? { label: t.ctxBuild } : { label: t.ctxMine };
   const asks = hired.filter((h) => h.pending).length;
-  const title = { trade: t.navTrade, agents: t.agTitle, mine: t.mineTitle }[view];
+  const title = { trade: t.navTrade, agents: t.agTitle, build: t.navBuild, mine: t.mineTitle }[view];
   const askMoaAbout = (a: Agent) => tell({ kind: 'agent', agent: a });
   // "See the backtest" from Moa's card or the agent market: the trade screen opens that agent on its own chart.
   const openBacktest = (a: Agent) => { setShow({ agent: a, n: ++showN.current }); go('trade'); if (window.matchMedia(NARROW).matches) setMoaOpen(false); };
@@ -295,8 +301,9 @@ function Shell() {
         <Topbar title={title} quotes={quotes} onMenu={() => setNavMini((v) => !v)} />
         <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />
-        {view === 'trade' && <Trade quotes={quotes} show={show} onContext={setTradeCtx} onAsk={askMoaAbout} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
+        {view === 'trade' && <Trade quotes={quotes} show={show} onContext={setTradeCtx} onAsk={askMoaAbout} onBuild={(coin) => openBuilder({ coin })} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
         {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} />}
+        {view === 'build' && <Builder draft={build} onOpen={openBacktest} />}
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
@@ -309,7 +316,7 @@ function Shell() {
           hired={hired} sending={sending} now={now}
           onHire={setSheet} onEdit={(id) => { const h = hiredRef.current.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
           onPause={pause} onResume={resume} onApprove={(id, o) => void approve(id, o)} onDecline={decline}
-          onExecuted={(x) => { record(x); reloadVault(); }} onGoto={(v) => { go(v); if (window.matchMedia(NARROW).matches) setMoaOpen(false); }} onShow={openBacktest}
+          onExecuted={(x) => { record(x); reloadVault(); }} onGoto={(v) => { go(v); if (window.matchMedia(NARROW).matches) setMoaOpen(false); }} onShow={openBacktest} onBuild={(text) => openBuilder({ text, coin: tradeCtx.asset })}
           onAttention={attention} onClose={() => setMoaOpen(false)} />
       </div>
       {moaOpen && <div className="moa-scrim" onClick={() => setMoaOpen(false)} aria-hidden />}

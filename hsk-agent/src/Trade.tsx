@@ -9,6 +9,7 @@ import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
+import type { MadeSpec } from './spec.ts';
 import { LEAD_DAYS, SPEEDS, useReplay, type Replay } from './replay.ts';
 import Dock, { px, useBacktest, useMarketAgents } from './Dock.tsx';
 import { collectHistory, dailyHistory, overlays, paneOf, type Agent, type Pane, type RuleId } from './agents.ts';
@@ -80,7 +81,7 @@ function chartOptions() {
 /** A label drawn over the chart at one candle: a buy (under its low), a sell (over its high) or a grey note. */
 export interface Badge { time: number; side: 'buy' | 'sell' | 'note'; text: string }
 /** What a backtest adds to the chart: the rule's own lines, its buys and sells, and the days it was holding. */
-export interface Study { rule: RuleId; badges: Badge[]; bands: { from: number; to: number }[] }
+export interface Study { rule: RuleId; made?: MadeSpec; badges: Badge[]; bands: { from: number; to: number }[] }
 
 function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until }: {
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
@@ -101,7 +102,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
   const subBox = useRef<HTMLDivElement>(null);
   const sub = useRef<{ chart: IChartApi; series: ISeriesApi<'Line'>; lines: ReturnType<ISeriesApi<'Line'>['createPriceLine']>[] } | null>(null);
   // What goes in it comes from the rule on screen; without one, the user's own RSI indicator.
-  const paneSpec: Pane | null = (study ? paneOf(study.rule) : null) ?? (inds.has('rsi') ? { kind: 'rsi', period: 14, levels: [30, 70] } : null);
+  const paneSpec: Pane | null = (study ? paneOf(study.rule, study.made) : null) ?? (inds.has('rsi') ? { kind: 'rsi', period: 14, levels: [30, 70] } : null);
   const paneKind = paneSpec?.kind ?? null;
   const extra = useRef<ISeriesApi<'Line' | 'Histogram' | 'Area'>[]>([]);
   // Every series with all its points. A replay shows a prefix of each; without one, all of them.
@@ -195,7 +196,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
       }
       // The lines the rule itself looks at, so each buy and sell can be read off the chart.
       const TONE = { main: '#1a73e8', fast: '#f59e0b', mid: '#64748b', up: '#16a34a', down: '#dc2626' } as const;
-      for (const o of overlays(study.rule, candles)) {
+      for (const o of overlays(study.rule, candles, study.made)) {
         if (!o.dots) { addLine(o.values, TONE[o.tone], o.tone === 'main' || o.tone === 'fast' ? 2 : 1); continue; }
         // The parabolic stop is a row of points, one per day.
         const d = c.addLineSeries({ color: TONE[o.tone], lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
@@ -311,7 +312,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
   return (
     <div className="chart-wrap">
       <div className="chart-main"><div ref={box} className="chart" /><div ref={layer} className="chart-badges" aria-hidden /></div>
-      {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneSpec?.kind === 'mom' && study ? t.ovLabel[study.rule] : `RSI(${paneSpec?.kind === 'rsi' ? paneSpec.period : 14})`}</span><div ref={subBox} className="chart" /></div>}
+      {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneSpec?.kind === 'mom' && study ? (study.made ? t.term('ret', paneSpec.days) : t.ovLabel[study.rule]) : `RSI(${paneSpec?.kind === 'rsi' ? paneSpec.period : 14})`}</span><div ref={subBox} className="chart" /></div>}
     </div>
   );
 }
@@ -444,7 +445,7 @@ function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string
       badges.push(m.side === 'buy' ? { time, side: 'buy', text: t.buy } : { time, side: 'sell', text: `${t.sell} ${pct(m.ret ?? 0)}` });
     }
     if (open !== null) bands.push({ from: open, to: Infinity });
-    return { rule: a.rule, badges, bands };
+    return { rule: a.rule, made: a.made, badges, bands };
   }
   // Collect agents buy almost every day, so only the changes are marked: buying more, less, the usual amount, or a pause.
   const bucket = (x: number) => (x > 1.25 ? 'more' : x < 0.75 ? 'less' : 'same');
@@ -463,7 +464,7 @@ function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string
     }
     last = m.time;
   }
-  return { rule: a.rule, badges, bands };
+  return { rule: a.rule, made: a.made, badges, bands };
 }
 
 /** The line in the chart toolbar that says whose buys and sells are on the candles. */
@@ -487,7 +488,7 @@ function BacktestChip({ a, replay, onClose }: { a: Agent; replay: Replay; onClos
   return (
     <span className="bt-chip">
       <button className="rp-start" onClick={replay.start} data-tip={t.rpFrom(LEAD_DAYS)}><Icon name="play" size={14} />{t.rpPlay}</button>
-      <b>{t.btOn(t.agNick[a.rule])}</b>
+      <b>{t.btOn(a.made?.name ?? t.agNick[a.rule])}</b>
       {t.ovLabel[a.rule] && <span className="bt-key"><i className="k-line" />{t.ovLabel[a.rule]}</span>}
       <span className="bt-key"><i className="k-buy">▲</i>{t.buy}</span>
       {a.kind === 'position' && <span className="bt-key"><i className="k-sell">▼</i>{t.sell}</span>}
@@ -569,9 +570,9 @@ function stored<T extends string>(key: string, list: readonly T[], dflt: T): T {
 }
 const save = (key: string, v: string) => { try { localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
 
-interface PanelProps { venueTabs: React.ReactNode; selId: string | null; setSel: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void }
+interface PanelProps { venueTabs: React.ReactNode; selId: string | null; setSel: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; onBuild: (coin: string) => void }
 
-function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel, onHire, onAsk }: PanelProps & { market: cex.Market; setMarket: (m: cex.Market) => void; asset: Asset; dexPrice?: number }) {
+function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel, onHire, onAsk, onBuild }: PanelProps & { market: cex.Market; setMarket: (m: cex.Market) => void; asset: Asset; dexPrice?: number }) {
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>(() => stored('moa.iv', CEX_IV, '4h'));
   const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
@@ -619,7 +620,7 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
 
-      <Dock venue="cex" coin={market.base} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
+      <Dock venue="cex" coin={market.base} onBuild={() => onBuild(market.base)} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
     </>
   );
 }
@@ -718,8 +719,8 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
 export interface ShowAgent { agent: Agent; n: number }
 let shown = 0;   // the last request applied, so coming back to this screen does not replay an old one
 
-export default function Trade({ quotes, show, onContext, onAsk, onHire }: {
-  quotes: Quote[]; show?: ShowAgent | null; onContext: (c: MoaContext) => void; onAsk: (a: Agent) => void; onHire: (a: Agent) => void;
+export default function Trade({ quotes, show, onContext, onAsk, onHire, onBuild }: {
+  quotes: Quote[]; show?: ShowAgent | null; onContext: (c: MoaContext) => void; onAsk: (a: Agent) => void; onHire: (a: Agent) => void; onBuild: (coin: string) => void;
 }) {
   const { t } = useT();
   const fresh = show && show.n > shown ? show.agent : null;
@@ -761,7 +762,7 @@ export default function Trade({ quotes, show, onContext, onAsk, onHire }: {
       <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
     </div>
   );
-  const panel = { venueTabs, selId, setSel: (a: Agent | null) => setSelId(a?.id ?? null), onHire, onAsk };
+  const panel = { venueTabs, selId, setSel: (a: Agent | null) => setSelId(a?.id ?? null), onHire, onAsk, onBuild };
 
   return (
     <div className="trade-page">

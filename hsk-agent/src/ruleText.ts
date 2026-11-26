@@ -4,7 +4,7 @@
 // parameter Moa had to choose) is said in the text, and nothing claims a fund runs these agents.
 
 export type MoreRule = 'multiTrend' | 'dualMom' | 'turtle2' | 'donchian' | 'ma520' | 'triple' | 'macd' | 'ichimoku'
-  | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7';
+  | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7' | 'made';
 
 export interface RuleText {
   nick: string;      // the agent's short name
@@ -152,6 +152,13 @@ export const RULE_TEXT: Record<'en' | 'ko', Record<MoreRule, RuleText>> = {
       users: 'Popular with short-term traders of stock indexes.', proof: 'Published by its authors with their own tests on US stock indexes. No independent academic test; crypto is outside it.',
       fit: 'You want a very simple dip-buying rule inside an uptrend.', good: 'An uptrend that swings week to week.', ov: 'MA200',
     },
+    made: {
+      nick: 'My agent', rule: 'Made by you', line: 'Follows the rule you wrote.',
+      rules: ['Buys when every buy condition holds.', 'Sells when any sell condition holds.'],
+      risk: 'Nobody has tested this rule but this backtest, and a rule tuned to the past often fails afterwards.',
+      origin: 'Made by you', from: 'A rule you made in Moa.', users: 'Only you.', proof: 'No published test. The backtest on this screen is all there is; the more you adjusted the numbers to fit it, the less it tells you.',
+      fit: 'You have your own idea of when to buy and sell.', good: 'Markets like the ones the rule was built on.', ov: '',
+    },
   },
   ko: {
     multiTrend: {
@@ -277,6 +284,13 @@ export const RULE_TEXT: Record<'en' | 'ko', Record<MoreRule, RuleText>> = {
       origin: '코너스 더블 세븐 · 2008', from: 'Larry Connors·Cesar Alvarez, 『Short Term Trading Strategies That Work』, 2008의 “Double 7’s” 전략.',
       users: '주가지수 단기 매매자들이 널리 써요.', proof: '저자들이 미국 주가지수로 한 자체 검증과 함께 공개했어요. 독립적인 학술 검증은 없고, 암호화폐는 범위 밖이에요.',
       fit: '상승 추세 안에서 아주 단순하게 눌림을 사고 싶은 분.', good: '주 단위로 오르내리는 상승장.', ov: 'MA200',
+    },
+    made: {
+      nick: '내 에이전트', rule: '직접 만든 규칙', line: '직접 쓴 규칙대로 사고팔아요.',
+      rules: ['사는 조건이 모두 맞으면 사요.', '파는 조건이 하나라도 맞으면 팔아요.'],
+      risk: '이 백테스트 말고는 아무도 검증하지 않았어요. 과거에 맞춰 다듬은 규칙은 그 뒤에 자주 틀려요.',
+      origin: '직접 만든 규칙', from: 'Moa에서 직접 만든 규칙이에요.', users: '나만 써요.', proof: '공개된 검증은 없어요. 이 화면의 백테스트가 전부이고, 숫자를 결과에 맞춰 많이 고쳤을수록 믿기 어려워요.',
+      fit: '언제 사고팔지 나만의 생각이 있는 분.', good: '규칙을 만들 때 본 것과 비슷한 장.', ov: '',
     },
   },
 };

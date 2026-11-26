@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreCollect, scorePosition, positions, overlays, FEE_HASHKEY, FEE_HSKSWAP, POSITION_RULES, PROOF, TIER, type Agent } from './agents.ts';
+import { scoreCollect, scoreMade, scorePosition, positions, overlays, FEE_HASHKEY, FEE_HSKSWAP, POSITION_RULES, PROOF, TIER, type Agent } from './agents.ts';
 import { recommend } from './recommend.ts';
 import { LEAD_DAYS, replayDays } from './replay.ts';
+import { TEMPLATE_IDS, fromTemplate, parse, problems, specPositions } from './spec.ts';
 import { MARKETS } from './cex.ts';
 
 const DAY = 86_400;
@@ -99,6 +100,39 @@ test('every rule decides on past days only and comes with its origin, proof leve
   // Dual momentum stays out while the other coin is stronger over the same year.
   const strong = bars(wave.map((v, i) => v * 1.002 ** i));
   assert.ok(positions('dualMom', b, strong).filter(Boolean).length < positions('dualMom', b).filter(Boolean).length);
+});
+
+test('a made rule is data: the templates reproduce the built-in strategies, and it never looks ahead', () => {
+  const wave = Array.from({ length: 900 }, (_, i) => 100 * (1 + 0.5 * Math.sin(i / 37)) * 1.001 ** i);
+  const b = bars(wave);
+  for (const rule of TEMPLATE_IDS) {
+    const spec = fromTemplate(rule)!;
+    assert.deepEqual(specPositions(spec, b), positions(rule as Parameters<typeof positions>[0], b), `${rule} as data decides like the built-in rule`);
+    assert.deepEqual(specPositions(spec, b).slice(0, 600), specPositions(spec, b.slice(0, 600)), `${rule} as data uses past days only`);
+    assert.deepEqual(problems({ ...spec, name: 'x' }), []);
+  }
+  const made = scoreMade({ id: 'm1', name: 'Mine', market: 'BTCUSDT-PERPETUAL', createdAt: 0, ...fromTemplate('trend200')! }, market('BTCUSDT-PERPETUAL'), b)!;
+  const built = scorePosition('trend200', market('BTCUSDT-PERPETUAL'), b)!;
+  assert.equal(made.total, built.total, 'same engine, same fees, same number');
+  assert.equal(made.tier, 3);
+  assert.equal(made.id, 'made:m1');
+  assert.ok(problems({ name: '', buy: [], sell: [] }).includes('noBuy'));
+  assert.ok(problems({ name: 'x', buy: [{ a: { k: 'price' }, op: 'above', b: { k: 'rsi', n: 14 } }], sell: [] }).includes('scale'), 'a price is not compared with RSI');
+});
+
+test('a rule can be read from a sentence, in Korean or English, and says what it could not read', () => {
+  const ko = parse('200일선 위에서 RSI가 30 밑이면 사고 55 넘으면 팔아');
+  assert.deepEqual(ko.buy, [{ a: { k: 'price' }, op: 'above', b: { k: 'sma', n: 200 } }, { a: { k: 'rsi', n: 14 }, op: 'below', b: { k: 'num', n: 30 } }]);
+  assert.deepEqual(ko.sell, [{ a: { k: 'rsi', n: 14 }, op: 'above', b: { k: 'num', n: 55 } }]);
+  const en = parse('buy when RSI is under 30, sell when RSI is over 55');
+  assert.deepEqual(en.buy, [{ a: { k: 'rsi', n: 14 }, op: 'below', b: { k: 'num', n: 30 } }]);
+  assert.deepEqual(en.sell, [{ a: { k: 'rsi', n: 14 }, op: 'above', b: { k: 'num', n: 55 } }]);
+  assert.deepEqual(parse('20일 신고가에 사고 10일 신저가에 팔아'), { buy: [{ a: { k: 'price' }, op: 'above', b: { k: 'high', n: 20 } }], sell: [{ a: { k: 'price' }, op: 'below', b: { k: 'low', n: 10 } }], unknown: [] });
+  assert.deepEqual(parse('골든크로스에 사고 데드크로스에 팔아').buy, [{ a: { k: 'sma', n: 50 }, op: 'above', b: { k: 'sma', n: 200 } }]);
+  assert.deepEqual(parse('4주 전보다 높으면 사고 낮으면 팔아').buy, [{ a: { k: 'ret', n: 28 }, op: 'above', b: { k: 'num', n: 0 } }]);
+  assert.equal(parse('기분 좋을 때 사줘').buy.length, 0);
+  const chat = parse('20일 신고가에 사고 10일 신저가에 파는 에이전트 만들어줘');
+  assert.equal(chat.buy.length, 1); assert.deepEqual(chat.sell, [{ a: { k: 'price' }, op: 'below', b: { k: 'low', n: 10 } }]);
 });
 
 const fake = (p: Partial<Agent>): Agent => ({

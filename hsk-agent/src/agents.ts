@@ -16,13 +16,16 @@ import * as cex from './cex.ts';
 import { gateDailyRange } from './gate.ts';
 import * as I from './indicators.ts';
 import type { Asset } from './intent.ts';
+import { specLines, specNeed, specPane, specPositions, type MadeSpec } from './spec.ts';
+import { MADE_PREFIX, madeById, madeList } from './madeStore.ts';
 
 export type PositionRule =
   | 'tsmom' | 'multiTrend' | 'dualMom' | 'trend200' | 'golden' | 'break' | 'turtle2' | 'donchian' | 'ma520' | 'triple'
   | 'macd' | 'ichimoku' | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7'
   | 'trend' | 'ema' | 'rsi' | 'boll';
 export type CollectRule = 'daily' | 'smart' | 'trendDca' | 'rsiDca';
-export type RuleId = PositionRule | CollectRule;
+/** `made` is an agent someone built themselves (its rule is data: see spec.ts). */
+export type RuleId = PositionRule | CollectRule | 'made';
 export type Style = 'trend' | 'revert' | 'collect';
 export type Risk = 1 | 2 | 3;
 
@@ -41,7 +44,7 @@ export const TIER: Record<RuleId, Tier> = {
   tsmom: 1, multiTrend: 1, dualMom: 1, trend200: 1, golden: 1, break: 1, turtle2: 1, donchian: 1, ma520: 1, triple: 1,
   macd: 1, ichimoku: 1, keltner: 1, psar: 1, adx: 1, aroon: 1, cryptoMom: 1, rsi2: 1, double7: 1, daily: 1,
   trend: 2, ema: 2, rsi: 2, boll: 2,
-  smart: 3, trendDca: 3, rsiDca: 3,
+  smart: 3, trendDca: 3, rsiDca: 3, made: 3,
 };
 /**
  * What stands behind a rule, said plainly on every agent:
@@ -55,7 +58,7 @@ export const PROOF: Record<RuleId, Proof> = {
   break: 'record', turtle2: 'record',
   donchian: 'book', ma520: 'book', triple: 'book', macd: 'book', ichimoku: 'book', keltner: 'book', psar: 'book', adx: 'book', aroon: 'book', rsi2: 'book', double7: 'book', daily: 'book',
   golden: 'common',
-  trend: 'none', ema: 'none', rsi: 'none', boll: 'none', smart: 'none', trendDca: 'none', rsiDca: 'none',
+  trend: 'none', ema: 'none', rsi: 'none', boll: 'none', smart: 'none', trendDca: 'none', rsiDca: 'none', made: 'none',
 };
 /** Days of history a rule needs before its first decision (the slow ones need their long averages). */
 const NEED: Partial<Record<RuleId, number>> = { tsmom: 365, multiTrend: 365, dualMom: 365, trend200: 200, golden: 200, rsi2: 200, double7: 200, ichimoku: 90 };
@@ -147,6 +150,8 @@ export interface Agent {
   price: number;
   /** Set when the window starts before the exchange listed the market: days before this time are Gate spot candles. */
   seam?: number;
+  /** A made agent's own rule. */
+  made?: MadeSpec;
 }
 
 /** One action of the backtest, at the close of the day `time` opens. */
@@ -318,7 +323,8 @@ export function positions(rule: PositionRule, bars: Bar[], ref?: Bar[]): boolean
 
 /** A line the rule looks at, for the chart. `dots` draws points instead of a line (the parabolic stop). */
 export interface Overlay { values: number[]; tone: 'main' | 'fast' | 'mid' | 'up' | 'down'; dots?: boolean }
-export function overlays(rule: RuleId, bars: Bar[]): Overlay[] {
+export function overlays(rule: RuleId, bars: Bar[], made?: MadeSpec): Overlay[] {
+  if (made) return specLines(made, bars);
   const c = bars.map((b) => b.close);
   const L = (values: number[], tone: Overlay['tone']): Overlay => ({ values, tone });
   switch (rule) {
@@ -343,7 +349,8 @@ export function overlays(rule: RuleId, bars: Bar[]): Overlay[] {
 }
 /** The pane a rule needs under the price chart: a return over some days (hold above zero) or RSI with its levels. */
 export type Pane = { kind: 'mom'; days: number } | { kind: 'rsi'; period: number; levels: number[] };
-export function paneOf(rule: RuleId): Pane | null {
+export function paneOf(rule: RuleId, made?: MadeSpec): Pane | null {
+  if (made) return specPane(made);
   switch (rule) {
     case 'tsmom': case 'multiTrend': case 'dualMom': return { kind: 'mom', days: 365 };
     case 'cryptoMom': return { kind: 'mom', days: 28 };
@@ -366,13 +373,20 @@ function stats(rets: number[]) {
  * rule's warm-up; with too little left the agent is not offered at all.
  */
 export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window = WINDOW, ref?: Bar[]): Agent | null {
-  const need = NEED[rule] ?? WARMUP;
+  const def = POSITION_RULES.find((r) => r.id === rule)!;
+  return run({ id: `${rule}-${market.symbol}`, rule, style: def.style, risk: def.risk }, positions(rule, bars, ref), NEED[rule] ?? WARMUP, market, bars, window);
+}
+/** A made agent, scored exactly like the built-in ones: same fees, same window, same numbers. */
+export function scoreMade(spec: MadeSpec, market: cex.Market, bars: Bar[], window = WINDOW): Agent | null {
+  const a = run({ id: MADE_PREFIX + spec.id, rule: 'made', style: 'trend', risk: 3 }, specPositions(spec, bars), specNeed(spec), market, bars, window);
+  return a && { ...a, made: spec };
+}
+function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: boolean[], need: number, market: cex.Market, bars: Bar[], window: number): Agent | null {
+  const { rule } = who, def = who;
   const start = Math.max(need, bars.length - 1 - window);
   if (bars.length - 1 - start < Math.min(MIN_DAYS, window)) return null;
-  const def = POSITION_RULES.find((r) => r.id === rule)!;
   const runnable = isRunnable(market.base);
   const fee = runnable ? FEE_HSKSWAP : FEE_HASHKEY;
-  const pos = positions(rule, bars, ref);
   let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0;
   const rets: number[] = [];
   const equity: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
@@ -395,7 +409,7 @@ export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[
   const days = bars.length - 1 - start;
   const live = pos[bars.length - 1];
   return {
-    id: `${rule}-${market.symbol}`, kind: 'position', rule, style: def.style, risk: def.risk, tier: TIER[rule], base: market.base,
+    id: who.id, kind: 'position', rule, style: def.style, risk: def.risk, tier: TIER[rule], base: market.base,
     runnable, source: 'hashkey', market, fee,
     days, from: bars[start].time, to: bars[bars.length - 1].time,
     total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets),
@@ -456,6 +470,7 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
 
 /** The same agent over another window (days, or `Infinity` for everything after its warm-up), for a closer look at one agent. */
 export async function rescore(a: Agent, window: number): Promise<Agent | null> {
+  if (a.made) return a.market ? scoreMade(a.made, a.market, await hashkeyDaily(a.market), window) : null;
   if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), window) : null;
   return a.market ? scorePosition(a.rule as PositionRule, a.market, await hashkeyDaily(a.market), window, await refBars(a.market)) : null;
 }
@@ -472,6 +487,13 @@ export const byMerit = (a: Agent, b: Agent) => a.tier - b.tier || Number(idle(a)
 export async function positionAgents(m: cex.Market): Promise<Agent[]> {
   const [bars, ref] = await Promise.all([hashkeyDaily(m), refBars(m)]);
   return POSITION_RULES.map((r) => scorePosition(r.id, m, bars, WINDOW, ref)).filter((a): a is Agent => a !== null);
+}
+/** The agents someone made for this market, scored on the same candles. */
+export async function madeAgents(m: cex.Market): Promise<Agent[]> {
+  const mine = madeList().filter((s) => s.market === m.symbol);
+  if (!mine.length) return [];
+  const bars = await hashkeyDaily(m);
+  return mine.map((s) => scoreMade(s, m, bars)).filter((a): a is Agent => a !== null);
 }
 /** The other major coin, for dual momentum: ETH when the market is BTC, BTC for everything else. Missing is not fatal. */
 function refBars(m: cex.Market): Promise<Bar[]> {
@@ -498,6 +520,10 @@ export async function loadAgents(): Promise<Agent[]> {
 
 /** Any agent by id: `${rule}-${HashKey symbol}` for position agents, `${rule}-${coin}` for collect agents. */
 export async function agentById(id: string): Promise<Agent | null> {
+  if (id.startsWith(MADE_PREFIX)) {
+    const spec = madeById(id), m = spec && cex.MARKETS.find((x) => x.symbol === spec.market);
+    return spec && m ? scoreMade(spec, m, await hashkeyDaily(m)) : null;
+  }
   const cut = id.indexOf('-');
   if (cut < 0) return null;
   const rule = id.slice(0, cut), rest = id.slice(cut + 1);

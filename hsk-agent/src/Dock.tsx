@@ -10,9 +10,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
-import { byMerit, collectAgents, isRunnable, positionAgents, rescore, PROOF, type Agent, type Mark } from './agents.ts';
+import { byMerit, collectAgents, isRunnable, madeAgents, positionAgents, rescore, PROOF, type Agent, type Mark } from './agents.ts';
+import { useMade } from './madeStore.ts';
 import { readLevel, recommend } from './recommend.ts';
-import { AgentCard, agentName, drop, pct, sourceLine, statePill, Face } from './AgentCard.tsx';
+import { AgentCard, agentName, drop, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
 import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 import { Icon, Spark } from './Icons.tsx';
@@ -28,12 +29,15 @@ export function useMarketAgents(venue: 'cex' | 'dex', market: cex.Market, asset:
   const [list, setList] = useState<Agent[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [again, setAgain] = useState(0);
+  const mine = useMade();
   useEffect(() => {
     let alive = true;
     setList(null); setFailed(false);
-    (venue === 'cex' ? positionAgents(market) : collectAgents(asset)).then((xs) => alive && setList(xs), () => alive && setFailed(true));
+    // The market's own agents, then the ones the user made for it.
+    (venue === 'cex' ? Promise.all([positionAgents(market), madeAgents(market)]).then(([a, b]) => [...a, ...b]) : collectAgents(asset))
+      .then((xs) => alive && setList(xs), () => alive && setFailed(true));
     return () => { alive = false; };
-  }, [venue, market.symbol, asset, again]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [venue, market.symbol, asset, again, mine]); // eslint-disable-line react-hooks/exhaustive-deps
   return { list, failed, retry: () => setAgain((n) => n + 1) };
 }
 
@@ -201,7 +205,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
           <div><dt>{t.mFreq}</dt><dd><Meter frac={Math.sqrt(Math.min(1, p.perYear / 60))} /></dd><dd className="m-val"><b>{t.tagFreq[p.freq]}</b><span>{t.perYear(p.perYear >= 10 ? p.perYear.toFixed(0) : p.perYear.toFixed(1))}</span></dd></div>
           {a.kind === 'position' && <div><dt>{t.mHold}</dt><dd><Meter frac={a.inMarket} /></dd><dd className="m-val"><b>{t.tagHold[p.hold]}</b><span>{Math.round(a.inMarket * 100)}%</span></dd></div>}
         </dl>
-        <ul className="bt-rules">{t.agRules[a.rule].slice(0, 2).map((r) => <li key={r}>{r}</li>)}</ul>
+        <ul className="bt-rules">{ruleLines(t, a).map((r) => <li key={r}>{r}</li>)}</ul>
         <div className="bt-cta">
           {a.runnable && <button className="btn-primary hire" onClick={() => onHire(year)}>{t.acHire}</button>}
           <button className="btn" onClick={() => onAsk(year)}><Spark size={14} />{t.acAsk}</button>
@@ -303,10 +307,10 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
 
 type Tab = 'list' | 'bt' | 'swaps';
 
-export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, cursor = null, onRetry, onSelect, onHire, onAsk, swaps }: {
+export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, cursor = null, onRetry, onBuild, onSelect, onHire, onAsk, swaps }: {
   venue: 'cex' | 'dex'; coin: string; list: Agent[] | null; failed: boolean;
   /** The agent picked (its one-year numbers, as in the list) and the backtest on screen (one year or all history). */
-  sel: Agent | null; shown: Agent | null; period: Period; setPeriod: (p: Period) => void; busy?: boolean; onRetry?: () => void;
+  sel: Agent | null; shown: Agent | null; period: Period; setPeriod: (p: Period) => void; busy?: boolean; onRetry?: () => void; onBuild?: () => void;
   /** The replay's day, when one is open: the backtest then shows only what had happened by then. */
   cursor?: number | null;
   onSelect: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; swaps?: ReactNode;
@@ -320,14 +324,14 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const all = useMemo(() => (list ? [...list].sort(byMerit) : []), [list]);
   // With enough published strategies for the market, the rules without a published source wait behind one row.
   const [more, setMore] = useState(false);
-  const classics = all.filter((a) => a.tier === 1);
+  const classics = all.filter((a) => a.tier === 1 || a.made);
   const fold = classics.length >= 4 && classics.length < all.length;
   const ranked = fold && !more && !(sel && sel.tier !== 1) ? classics : all;
   const best = list ? recommend(list, { coin, level: readLevel() })?.pick.id : undefined;
   const top = ranked[0];
   const hint = venue === 'dex' ? t.mkHintDex : isRunnable(coin) ? t.mkHintCex(coin) : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
-  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? (top ? `${t.agNick[top.rule]}: ${t.rankWhy(top.tier === 1, drop(top.maxDd))}` : hint) : '';
+  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? (top ? `${top.made?.name ?? t.agNick[top.rule]}: ${t.rankWhy(top.tier === 1, drop(top.maxDd))}` : hint) : '';
 
   return (
     <section className="tdock" aria-label={t.mkTitle}>
@@ -337,12 +341,13 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
           <button role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'on' : ''} onClick={() => setTab('list')}>{t.mkTitle}</button>
           {sel && (
             <button role="tab" aria-selected={tab === 'bt'} className={tab === 'bt' ? 'on' : ''} onClick={() => setTab('bt')}>
-              {t.btTab}<span className="tdock-tab-sub">{t.agNick[sel.rule]}</span>
+              {t.btTab}<span className="tdock-tab-sub">{sel.made?.name ?? t.agNick[sel.rule]}</span>
             </button>
           )}
           {swaps && <button role="tab" aria-selected={tab === 'swaps'} className={tab === 'swaps' ? 'on' : ''} onClick={() => setTab('swaps')}>{t.recentSwaps}</button>}
         </div>
         <p className="tdock-note">{note}</p>
+        {tab === 'list' && onBuild && <button className="btn sm tdock-build" onClick={onBuild}><Icon name="plus" size={14} />{t.mkBuild}</button>}
         {tab === 'bt' && sel && (
           <div className={`seg${busy ? ' busy' : ''}`} role="group" aria-label={t.thPeriod} aria-busy={busy}>
             {busy && <span className="spin" aria-hidden />}
@@ -360,7 +365,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             </div>
             {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
             {!list && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="frow skel-block" aria-hidden />)}
-            {ranked.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === best} onPick={() => onSelect(a)} />)}
+            {ranked.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === best} onPick={() => { onSelect(a); setTab('bt'); }} />)}
             {fold && <button className="frow-more" onClick={() => setMore((v) => !v)}>{more ? t.dkLess : t.dkMore(all.length - classics.length)}<Icon name="down" size={14} /></button>}
           </div>
         )}
