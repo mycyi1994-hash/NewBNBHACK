@@ -16,7 +16,13 @@ A vault from the deployed factory can have its limits changed or removed there b
 For new vaults to start without limits, deploy a new factory with the steps below and point
 `MOA_FACTORY_ADDRESS` at it.
 
-**The vault has since changed (version 2)** and needs a new factory deployed with the steps below:
+**Current factory (version 2 of the vault), deployed 26 Nov 2026, source published:**
+[`0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546`](https://hsk.blockscout.com/address/0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546).
+Read back from the chain: the agent, USDT, router and the three markets as planned; vaults start with no spending
+limit, a 1.5% slippage ceiling and the stop-loss off. One vault has been made by it so far, for the wallet that
+logged in to the app; no trade or stop-loss has happened on it yet.
+
+What version 2 changed:
 - the spending limits apply to buys only, so selling back to USDT is never held up by them (in the first version a
   sell counted towards the day's limit and could be refused on a day the limit was used up);
 - a stop-loss the owner sets in the account menu: once a holding is worth that much less than it cost, anyone may

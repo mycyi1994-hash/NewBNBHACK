@@ -63,17 +63,30 @@ test('it sells what it holds when the signal goes off, and never more than the v
   assert.equal(store.list(OWNER)[0].fills.length, 2);
 });
 
-test('without a daily limit on the vault, a locked vault or a paused agent, nothing is sent', async () => {
-  for (const [vault, over] of [[{ maxDailyUsdt: undefined }, {}], [{ paused: true }, {}], [{}, { paused: true }], [{ configured: false }, {}]] as const) {
+test('with a locked vault, a paused agent or no vault, nothing is sent', async () => {
+  for (const [vault, over] of [[{ paused: true }, {}], [{}, { paused: true }], [{ configured: false }, {}]] as const) {
     const store = openStore();
     store.put(OWNER, agent(over));
     const w = world({ kind: 'position', live: true }, vault);
     await tick(store, w.deps, NOW);
     assert.equal(w.sent.length, 0, JSON.stringify([vault, over]));
   }
-  assert.equal(autoBlock({ configured: true }), 'needLimit');
-  assert.equal(autoBlock({ configured: false, maxDailyUsdt: '10' }), 'noVault');
-  assert.equal(autoBlock({ configured: true, maxDailyUsdt: '10' }), undefined);
+  assert.equal(autoBlock({ configured: false }), 'noVault');
+  assert.equal(autoBlock({ configured: true }), undefined);
+});
+
+test('limits are the owner\'s choice: with none set on the vault, an agent on auto still works inside its own budget', async () => {
+  const store = openStore();
+  store.put(OWNER, agent({ budgetUsd: 15 }));
+  const w = world({ kind: 'position', live: true }, { maxDailyUsdt: undefined, maxTradeUsdt: undefined });
+  await tick(store, w.deps, NOW);
+  assert.deepEqual(w.sent.map((x) => x.amount), [10]);
+  // sold, signal on again: only what is left of its budget
+  w.state.signal = { kind: 'position', live: false };
+  await tick(store, w.deps, NOW + 300_000);
+  w.state.signal = { kind: 'position', live: true };
+  await tick(store, w.deps, NOW + 600_000);
+  assert.deepEqual(w.sent.map((x) => [x.side, x.amount]).at(-1), ['buy', 5]);
 });
 
 test('an order the vault refuses is logged and not sent again every five minutes', async () => {

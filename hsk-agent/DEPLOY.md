@@ -10,7 +10,7 @@ Run exactly one instance: the agent wallet sends one transaction at a time, and 
 | --- | --- |
 | Branch | `claude/dazzling-thompson-1kj2p2` |
 | Root Directory | `hsk-agent` |
-| Language | Node (not Docker: the Dockerfile at the repository root belongs to another project) |
+| Language | Node |
 | Build Command | `npm install --include=dev && npm run build` |
 | Start Command | `npm start` |
 | Instance | the smallest paid one. A free instance sleeps when idle, which stops the agents |
@@ -54,9 +54,10 @@ Node 22.6 or newer. Settings come from the environment, or from `.env.local` nex
 ## What was checked
 
 On a local fork of HSK mainnet, with this server (not the development server): the page, a deep link and the
-market-data pass-through are served; log in, vault made, deposit; putting an agent on auto is refused in the
-hire sheet and by the server while the vault has no daily limit; with a daily limit and a stop-loss set, an agent
-put on auto bought within a minute with nobody approving, did not buy again the same day, and showed up in the
-app with its receipt; pausing it from the app reached the server.
+market-data pass-through are served; log in, vault made, deposit; an agent put on auto bought within a minute with
+nobody approving, did not buy again the same day, and showed up in the app with its receipt; pausing it from the
+app reached the server. Hiring on auto from the sheet saves the daily limit and the stop-loss on the vault with the
+same button (two confirmations in the wallet) and asks for none the second time.
 
-Not checked: Render itself. The settings above are what this code needs; the dashboard's own wording may differ.
+On Render: the service is up at https://grabitmoa.onrender.com and `/api/health` reports the factory as usable.
+A trade by an agent on auto has not been watched there yet.

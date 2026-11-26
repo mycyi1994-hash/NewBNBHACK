@@ -3,8 +3,55 @@
 Entry for the HSK Chain Horizon Hackathon · Seoul (AI Agent Trading track).
 
 Moa watches the coin market with you, picks a trading agent that fits you, and hands it the job. Each agent follows
-one fixed rule on one coin, asks you before every trade, and trades from your own vault on HSKSwap inside limits the
-vault contract enforces.
+one fixed, published rule on one coin. It either asks you before every trade or trades on its own, and it always
+trades from **your own vault** on HSKSwap: a contract only you can withdraw from, with the limits and the stop-loss
+you set enforced on-chain.
+
+**Open it:** https://grabitmoa.onrender.com (log in with a wallet on HSK Chain; without one the whole app still
+works as a demo that sends nothing).
+
+## On HSK Chain mainnet
+
+| What | Where |
+| --- | --- |
+| MoaVaultFactory (current, source published) | [`0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546`](https://hsk.blockscout.com/address/0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546) |
+| A user's vault, made by the server when that wallet logged in | [`0x6A355aE335f06971C337c900783C2e016410b33C`](https://hsk.blockscout.com/address/0x6A355aE335f06971C337c900783C2e016410b33C) · [creation](https://hsk.blockscout.com/tx/0x3b69260d046140866ca1b5429c625c69e9a5f1cf93efd3c54c5d84f60f1afb0b) |
+| First trade through a vault: $1 of WBTC on HSKSwap, asked for in the chat (first version of the vault) | [transaction](https://hsk.blockscout.com/tx/0x955cd89b5e89200d606300df1afeca3c3adb337c200e6743af7b64595c2441ee) |
+| Agent wallet (can only call `trade` and `stopOut`; cannot withdraw) | [`0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE`](https://hsk.blockscout.com/address/0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE) |
+
+Not on mainnet yet, as of 26 Nov 2026: a trade and a stop-loss on a vault of the current version. Both were run on
+a local fork of mainnet (below). The contracts are unaudited.
+
+## Three minutes
+
+1. **Log in** (top right). One free signature; no transaction. Your vault is made for you: the server pays the gas,
+   your wallet is the owner.
+2. **Deposit** USDT from the account menu: the vault's address, a QR code, or one click from your wallet.
+3. On the trade screen pick an agent under the chart. Its buys and sells are drawn on the chart; press **Replay**
+   to watch its three-year backtest play out day by day.
+4. **Hire** it. Choose *Asks me first* or *Trades on its own*. For the second, the sheet recommends a daily limit
+   and a stop-loss for your vault and saves them with the same button.
+5. Ask Moa: "what is in my vault?", "pick an agent for me", "how are my agents doing?".
+6. **Withdraw** everything from the account menu whenever you like.
+
+## What the vault enforces
+
+`contracts/src/MoaVault.sol`, one per user, made by `contracts/src/MoaVaultFactory.sol`:
+
+- **Only the owner withdraws.** The agent key can call `trade` (USDT ↔ WHSK, WETH, WBTC on HSKSwap) and nothing else.
+- **Limits are the owner's.** A per-trade and a per-day limit on what agents may spend, and the worst price accepted
+  against the pool. A vault starts with no spending limit: the owner sets one in the account menu or while hiring,
+  where it is recommended and filled in. Selling back to USDT is never held up by a spending limit.
+- **Stop-loss on-chain.** The vault tracks what each holding cost. Once a holding is worth less than the owner's
+  stop-loss allows, **anyone** can call `stopOut(token)`: the vault sells all of it and keeps the USDT. It does not
+  depend on Moa's server. It refuses while the pool price is away from its own 10-minute average, so a price pushed
+  for one transaction can neither set it off nor make the sale cheap.
+- **Lock.** The owner can stop the agent at any time; deposits, withdrawals and the stop-loss keep working.
+
+Checked on a fork of mainnet (`contracts/scripts/fork-test.mjs`, 42 checks): a second user gets a different vault and
+cannot touch the first; an order over a limit is refused by the contract; a sell goes through on a day whose
+spending limit is used up; the stop-loss is refused right after the price is pushed down and carried out by a
+stranger once the price has held, with the stranger getting nothing.
 
 ## How the screen is organised
 
@@ -51,10 +98,16 @@ vault contract enforces.
   change. A made rule is data, not code (`src/spec.ts`): a few conditions of the form "this is above/below that",
   run by one interpreter that decides on past days only, long-only, daily, one coin. The sentence reader is a fixed
   set of patterns, not a model, and says what it could not read. Twelve built-in strategies are expressible as this
-  data and a test checks they decide identically. Made agents are saved per account (`src/madeStore.ts`; until
-  sign-in exists the account is "guest", this browser), show under their coin's chart with the full backtest and
-  replay, are labelled "made by you, no published test", and are hired through the same sheet as any agent: the
-  same per-trade approval and the same vault limits apply.
+  data and a test checks they decide identically. Made agents are saved per account (`src/madeStore.ts`: the wallet
+  that logged in, or this browser before that), show under their coin's chart with the full backtest and replay,
+  are labelled "made by you, no published test", and are hired through the same sheet as any agent. Making one is
+  four short steps (`src/Builder.tsx`): the coin, a starting point (published strategies grouped as long term, swing
+  and short term, each with what it returned on that coin; or your own words; or an empty rule), the buy and sell
+  conditions, then a name.
+- **Long term, swing, short term.** Every strategy is placed by how much history its rule looks at (`HORIZON` in
+  `src/agents.ts`): months to a year, a few weeks, or days. The list under the chart is grouped that way, with Moa's
+  pick in each group, and the HSKSwap tab lists the same strategies as the exchange tab (signals come from the
+  exchange's daily candles, trades happen on HSKSwap) plus the agents that buy on a schedule.
 - **Agents have names and faces.** Each rule has a short name and its own coloured mark ("BTC Turtle", "ETH
   Guardian"); the rule it follows and where the rule comes from stay beside it as the subtitle and the origin tag.
 - **The vault is on screen, not in a footnote.** `src/VaultCard.tsx` shows the same vault three ways (sidebar,
@@ -107,9 +160,9 @@ vault contract enforces.
 | Agents (`src/agents.ts`) | 47 agents: 27 can be hired (BTC, ETH, HSK on HSKSwap; 0.3% fee in the backtest), 20 "signal only" for coins HSKSwap does not list (**demo**, 0.1% fee) |
 | Moa's brain (`server/moaAgent.ts`) | Claude Sonnet 5.5, tools `get_market`, `propose_plan`, `recommend_agent`, `execute_trade`. Falls back to the on-device parser when the API is unreachable. Agent requests (pick one, stop, how is it doing) are answered without the AI |
 | Account (`src/account.ts`, `src/Account.tsx`, `server/session.ts`) | **Log in** at the top right with a wallet: one free signature, no transaction. The account shows a nickname and the address; its menu shows the wallet's own vault with **Deposit** (address, QR code, or send from the wallet), **Withdraw**, **Limits** and **Lock trading**, all sent by the user's wallet. With several wallets in the browser, logging in asks which one. Made agents, hired agents and trade history are kept per wallet (per browser before logging in) |
-| Hired agents | Two ways of working, chosen when hiring. **Asks first**: every order waits for the user's OK while the app is open (kept in the browser, under the logged-in wallet). **On its own** (`server/autoRunner.ts`): the server runs the same rule every five minutes and sends the order at once, app open or not; only for a vault whose owner set a daily limit, so the contract caps what an unattended agent can spend. The server also carries out stop-losses that are due |
-| Production server (`server/main.ts`, [`DEPLOY.md`](DEPLOY.md)) | One Node process for the built app, the API and the agents on auto. Tried against a local fork; not yet running on a public host |
-| Vaults (`contracts/src/MoaVaultFactory.sol`, `contracts/src/MoaVault.sol`) | One vault per user. The factory makes it when the wallet first logs in; the server pays the gas, the wallet is the owner and signs nothing. Limits are the owner's own choice: per trade and per day on what the agent may spend, the worst price accepted, and a stop-loss, set in the account menu (or none at all) and enforced by the vault contract; the owner can also lock trading. Selling is never held up by the spending limits. Once a holding is worth less than the stop-loss allows, anyone can make the vault sell it, so the stop works without Moa's server. Only the owner can withdraw. Tested on a local fork of HSK mainnet (42 checks). **The first version's factory is on HSK Chain mainnet** (26 Nov 2026; the current version, with the stop-loss, still has to be deployed): [`0x49807417fcebfb90e59933f0c44e4f1edf96444c`](https://hsk.blockscout.com/address/0x49807417fcebfb90e59933f0c44e4f1edf96444c), [deployment transaction](https://hsk.blockscout.com/tx/0xedb6a15b62c220ccd46df7927685de73fa516e1fb76ad1c220a5c4c4e37f6ebf). Unaudited |
+| Hired agents | Two ways of working, chosen when hiring. **Asks first**: every order waits for the user's OK while the app is open. **On its own** (`server/autoRunner.ts`): the server runs the same rule every five minutes and sends the order at once, app open or not, inside the agent's own budget and whatever limits the owner set on the vault. The server also carries out stop-losses that are due, and an agent does not buy straight back in after one |
+| Production server (`server/main.ts`, [`DEPLOY.md`](DEPLOY.md)) | One Node process for the built app, the API and the agents on auto. Running at https://grabitmoa.onrender.com |
+| Vaults (`contracts/src/MoaVaultFactory.sol`, `contracts/src/MoaVault.sol`) | One vault per user, made when the wallet first logs in; the server pays the gas, the wallet is the owner and signs nothing. The current factory is on mainnet with its source published (addresses above). 42 checks on a fork of mainnet |
 | Execution (`server/executor.ts`) | Approved agent orders and “실행”/“execute” in the chat go to the vault of the wallet that is logged in, and only with that wallet's session; an order without one is refused. Not logged in, or on a server without a factory, the app is a **demo**: agents ask, nothing is sent |
 | Pause | In the app it stops new orders. Locking a vault on-chain is the owner's `pause` (`contracts/scripts/vault.mjs`) |
 

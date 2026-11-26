@@ -1,8 +1,8 @@
 // The agents on "auto": every few minutes the server asks each one what it wants to do (the same decide() the app
 // uses) and, when it wants to trade, sends the order to its owner's vault at once. No model is involved.
 // It also carries out any stop-loss that is due on a vault it knows about; the vault decides whether one applies.
-// An agent only works on its own while its owner has a daily spending limit on the vault: an unattended agent
-// without one could spend the whole balance in a day.
+// A daily spending limit and a stop-loss on the vault are recommended in the hire sheet and are the owner's choice:
+// the agent's own budget is the only cap this runner applies by itself.
 import { agentById, dailyHistory, scoreMade, SIGNAL_MARKETS } from '../src/agents.ts';
 import { loadQuotes } from '../src/market.ts';
 import { book, chainNote, decide, newId, settle, type HiredAgent, type Order, type Signal } from '../src/runner.ts';
@@ -24,9 +24,8 @@ export interface Deps {
 }
 
 /** Why an agent cannot be put on auto for this vault, or nothing when it can. */
-export function autoBlock(v: { configured: boolean; maxDailyUsdt?: string }): 'noVault' | 'needLimit' | undefined {
-  if (!v.configured) return 'noVault';
-  return v.maxDailyUsdt === undefined ? 'needLimit' : undefined;
+export function autoBlock(v: { configured: boolean }): 'noVault' | undefined {
+  return v.configured ? undefined : 'noVault';
 }
 
 /** One pass over every owner. Returns what happened, for the log. */
@@ -61,7 +60,6 @@ export async function tick(store: AutoStore, deps: Deps, now = Date.now()): Prom
 
     for (const h of store.list(owner)) {
       if (h.mode !== 'auto' || h.paused) continue;
-      if (autoBlock(v)) continue;   // the owner removed the daily limit: wait until there is one again
       if (v.paused) continue;
       let s: Signal | undefined;
       try { s = await deps.signal(h); } catch (e) { out.push(`${owner}/${h.id}: no signal (${e instanceof Error ? e.message : String(e)})`); continue; }

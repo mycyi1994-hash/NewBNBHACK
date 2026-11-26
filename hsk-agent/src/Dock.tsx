@@ -7,13 +7,13 @@
 //    so agents compare like for like; "All history" reruns it over everything the exchange has.
 //  - "Recent swaps" (HSKSwap view only).
 // Hiring happens from the backtest, after the evidence, through the same hire sheet as everywhere else.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
-import { byMerit, collectAgents, isRunnable, madeAgents, positionAgents, rescore, PROOF, type Agent, type Mark } from './agents.ts';
+import { byMerit, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
+import { TEMPLATES } from './spec.ts';
 import { useMade } from './madeStore.ts';
-import { readLevel, recommend } from './recommend.ts';
-import { AgentCard, agentName, drop, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
+import { AgentCard, agentName, condText, drop, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
 import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 import { Icon, Spark } from './Icons.tsx';
@@ -24,7 +24,7 @@ import { StateBox } from './ui.tsx';
 export const px = (v: number) => (v >= 1000 ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
   : v >= 1 ? v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : fmtPrice(v));
 
-/** The agents for the market on the chart: position agents (HashKey market) or collect agents (HSKSwap coin). */
+/** The agents for the market on the chart: the strategies that follow a signal, the user's own, and on the HSKSwap tab the ones that buy on a schedule. */
 export function useMarketAgents(venue: 'cex' | 'dex', market: cex.Market, asset: Asset) {
   const [list, setList] = useState<Agent[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -33,8 +33,10 @@ export function useMarketAgents(venue: 'cex' | 'dex', market: cex.Market, asset:
   useEffect(() => {
     let alive = true;
     setList(null); setFailed(false);
-    // The market's own agents, then the ones the user made for it.
-    (venue === 'cex' ? Promise.all([positionAgents(market), madeAgents(market)]).then(([a, b]) => [...a, ...b]) : collectAgents(asset))
+    // The market's own agents, then the ones the user made for it. On the HSKSwap tab the same strategies are
+    // listed (their signals come from the exchange's daily candles; the trades happen on HSKSwap), plus the agents
+    // that buy on a schedule, which only exist there.
+    Promise.all([positionAgents(market), madeAgents(market), venue === 'dex' ? collectAgents(asset) : Promise.resolve([] as Agent[])]).then(([a, b, c]) => [...a, ...b, ...c])
       .then((xs) => alive && setList(xs), () => alive && setFailed(true));
     return () => { alive = false; };
   }, [venue, market.symbol, asset, again, mine]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -116,11 +118,6 @@ export function profile(a: Agent) {
  * The agent's curve against just holding, in money, with the market's other agents faint behind it (tap one to
  * open it). During a replay only the days up to the cursor are drawn, on the full backtest's scale.
  */
-/** A thin bar: how far along a scale something is. */
-function Meter({ frac, tone }: { frac: number; tone?: 'hi' | 'mid' | 'lo' }) {
-  return <span className={`meter${tone ? ` risk-${tone}` : ''}`} aria-hidden><i style={{ width: `${Math.round(Math.max(0.04, Math.min(1, frac)) * 100)}%` }} /></span>;
-}
-
 function Curves({ a, peers, upto, label, onPick }: { a: Agent; peers: Agent[]; upto: number | null; label: (mult: number) => string; onPick: (p: Agent) => void }) {
   const W = 400, H = 100;
   if (a.equity.length < 2) return null;
@@ -168,8 +165,13 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
   const seen = (time: number) => !live || time <= cursor;
   const rounds = a.kind === 'position' ? trips(a).filter((r) => seen(r.buy.time)) : [];
   const buys = a.kind === 'collect' ? [...a.marks].filter((m) => seen(m.time)).reverse().slice(0, 120) : [];
-  const at = ranked.findIndex((x) => x.id === year.id);
-  const step = (n: number) => { const next = ranked[(at + n + ranked.length) % ranked.length]; if (next) onSelect(next); };
+  // Its place among the strategies with the same horizon; the arrows walk the whole list.
+  const hz = horizonOf(year);
+  const peers = ranked.filter((x) => horizonOf(x) === hz);
+  const at = peers.findIndex((x) => x.id === year.id);
+  const here = ranked.findIndex((x) => x.id === year.id);
+  const step = (n: number) => { const next = ranked[(here + n + ranked.length) % ranked.length]; if (next) onSelect(next); };
+  const conds = a.made ?? (a.rule !== 'made' ? TEMPLATES[a.rule] : undefined);
   // Money: what the amount put in would be worth, for the agent and for just holding, on the day shown.
   const cash = usePrincipal(lang);
   const now = standing(a, cursor);
@@ -186,7 +188,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
         <div className="bt-title">
           <Face rule={a.rule} size="lg" />
           <div className="bt-name"><b>{agentName(t, a)}</b><small>{t.agRule[a.rule]} · {sourceLine(t, a)}</small></div>
-          {at >= 0 && ranked.length > 1 && (
+          {here >= 0 && ranked.length > 1 && (
             <span className="bt-step">
               <button className="icon-btn sm" onClick={() => step(-1)} aria-label={t.btPrev} data-tip={t.btPrev}><Icon name="chevron" size={14} /></button>
               <button className="icon-btn sm" onClick={() => step(1)} aria-label={t.btNext} data-tip={t.btNext}><Icon name="chevron" size={14} /></button>
@@ -194,18 +196,23 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
           )}
         </div>
         <div className="bt-badges">
-          {at >= 0 && <span className="rank-chip">{t.btRank(at + 1, ranked.length)}</span>}
+          {at >= 0 && <span className={`hz-chip hz-${hz}`} data-tip={t.hzSub[hz]}>{t.btRankIn(t.hz[hz], at + 1, peers.length)}</span>}
+          <span className={`badge ${pill.cls}`} data-tip={a.kind === 'collect' ? t.stCollect : year.live ? t.stHold : t.stWait}><i />{pill.text}</span>
           <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span>
         </div>
-        {/* What it is doing right now, in one coloured line. */}
-        <p className={`bt-state ${pill.cls}`}><i /><b>{pill.text}</b><span>{a.kind === 'collect' ? t.stCollect : year.live ? t.stHold : t.stWait}</span></p>
-        {/* Its character, each with the number it comes from. */}
-        <dl className="bt-meters" data-tip={t.tagNote}>
-          <div><dt>{t.mRisk}</dt><dd><Meter frac={a.maxDd / 0.8} tone={p.risk} /></dd><dd className="m-val"><b className={`risk-${p.risk}`}>{t.tagRisk[p.risk]}</b><span>{t.mDd} {drop(a.maxDd)}</span></dd></div>
-          <div><dt>{t.mFreq}</dt><dd><Meter frac={Math.sqrt(Math.min(1, p.perYear / 60))} /></dd><dd className="m-val"><b>{t.tagFreq[p.freq]}</b><span>{t.perYear(p.perYear >= 10 ? p.perYear.toFixed(0) : p.perYear.toFixed(1))}</span></dd></div>
-          {a.kind === 'position' && <div><dt>{t.mHold}</dt><dd><Meter frac={a.inMarket} /></dd><dd className="m-val"><b>{t.tagHold[p.hold]}</b><span>{Math.round(a.inMarket * 100)}%</span></dd></div>}
-        </dl>
-        <ul className="bt-rules">{ruleLines(t, a).map((r) => <li key={r}>{r}</li>)}</ul>
+        {/* Its character in three words; each comes from a number in its own backtest, shown on hover and beside the curve. */}
+        <div className="bt-tags">
+          <span className={`risk-${p.risk}`} data-tip={`${t.mDd} ${drop(a.maxDd)}`}>{t.tagRisk[p.risk]}</span>
+          <span data-tip={t.perYear(p.perYear >= 10 ? p.perYear.toFixed(0) : p.perYear.toFixed(1))}>{t.tagFreq[p.freq]}</span>
+          {a.kind === 'position' && <span data-tip={`${Math.round(a.inMarket * 100)}%`}>{t.tagHold[p.hold]}</span>}
+        </div>
+        {/* Its rule: when it buys and when it sells where that can be said in one line each, else its own steps. */}
+        {conds ? (
+          <div className="bt-rule">
+            <p><span className="wz-tag buy">{t.cuBuy}</span>{conds.buy.map((c) => condText(t, c)).join(` ${t.cuAnd} `)}</p>
+            <p><span className="wz-tag sell">{t.cuSell}</span>{conds.sell.length ? conds.sell.map((c) => condText(t, c)).join(` ${t.cuOr} `) : t.wzSellAuto}</p>
+          </div>
+        ) : <ul className="bt-rule list">{ruleLines(t, a).map((r) => <li key={r}>{r}</li>)}</ul>}
         <div className="bt-cta">
           {a.runnable && <button className="btn-primary hire" onClick={() => onHire(year)}>{t.acHire}</button>}
           <button className="btn" onClick={() => onAsk(year)}><Spark size={14} />{t.acAsk}</button>
@@ -251,22 +258,18 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
           <button role="tab" aria-selected={side === 'log'} className={side === 'log' ? 'on' : ''} onClick={() => setSide('log')}>{t.tabLog}</button>
         </div>
         {side === 'about' ? (
-          <div className="bt-about">
-            <section className="ab-card">
-              <h4>{t.abForYou}</h4>
-              <p className="ab-fit">{t.agFit[a.rule]}</p>
-              <div className="ab-two">
-                <div className="ab-good"><b><Icon name="check" size={14} />{t.abGood}</b><p>{t.agGood[a.rule]}</p></div>
-                <div className="ab-weak"><b><Icon name="close" size={14} />{t.abWeak}</b><p>{t.agRisk[a.rule]}</p></div>
-              </div>
-            </section>
-            <section className="ab-card">
-              <h4>{t.abTrust}<span className={`proof lv-${PROOF[a.rule]}`}>{t.agProofLv[PROOF[a.rule]]}</span></h4>
-              <p>{t.agProof[a.rule]}</p>
-              <p className="ab-line"><b>{t.abUsers}</b>{t.agUsers[a.rule]}</p>
-              <p className="ab-line src"><b>{t.abSourceShow}</b>{t.agFrom[a.rule]}</p>
-              {!a.runnable && <p className="bt-demo">{t.whyNot(a.base)}</p>}
-            </section>
+          <div className="ab2">
+            <p className="ab2-fit">{t.agFit[a.rule]}</p>
+            <div className="ab2-two">
+              <div className="good"><b><Icon name="check" size={14} />{t.abGood}</b><p>{t.agGood[a.rule]}</p></div>
+              <div className="weak"><b><Icon name="close" size={14} />{t.abWeak}</b><p>{t.agRisk[a.rule]}</p></div>
+            </div>
+            <dl className="ab2-facts">
+              <div><dt>{t.abProofRow}</dt><dd><span className={`proof lv-${PROOF[a.rule]}`}>{t.agProofLv[PROOF[a.rule]]}</span>{t.agProof[a.rule]}</dd></div>
+              <div><dt>{t.abUsers}</dt><dd>{t.agUsers[a.rule]}</dd></div>
+              <div><dt>{t.abSourceShow}</dt><dd className="src">{t.agFrom[a.rule]}</dd></div>
+            </dl>
+            {!a.runnable && <p className="bt-demo">{t.whyNot(a.base)}</p>}
           </div>
         ) : a.kind === 'position' ? (
           <>
@@ -326,12 +329,17 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const [more, setMore] = useState(false);
   const classics = all.filter((a) => a.tier === 1 || a.made);
   const fold = classics.length >= 4 && classics.length < all.length;
-  const ranked = fold && !more && !(sel && sel.tier !== 1) ? classics : all;
-  const best = list ? recommend(list, { coin, level: readLevel() })?.pick.id : undefined;
-  const top = ranked[0];
-  const hint = venue === 'dex' ? t.mkHintDex : isRunnable(coin) ? t.mkHintCex(coin) : t.mkHintSignal(coin);
+  const open = fold && !more && !(sel && sel.tier !== 1) ? classics : all;
+  // Grouped by how long the strategy is built to hold: long, swing, short. One of them, or all three in that order.
+  const [hz, setHz] = useState<'all' | Horizon>('all');
+  const groups = HORIZONS.map((h) => ({ h, rows: open.filter((a) => horizonOf(a) === h) })).filter((g) => g.rows.length && (hz === 'all' || hz === g.h));
+  const ranked = groups.flatMap((g) => g.rows);
+  /** Moa's pick in each group: the first in its order that actually traded in the backtest. */
+  const pickOf = (h: Horizon) => all.find((a) => horizonOf(a) === h && !idle(a))?.id;
+  const count = (h: Horizon) => open.filter((a) => horizonOf(a) === h).length;
+  const hint = isRunnable(coin) ? t.mkSignalTrade : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
-  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? (top ? `${top.made?.name ?? t.agNick[top.rule]}: ${t.rankWhy(top.tier === 1, drop(top.maxDd))}` : hint) : '';
+  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? hint : '';
 
   return (
     <section className="tdock" aria-label={t.mkTitle}>
@@ -347,6 +355,12 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
           {swaps && <button role="tab" aria-selected={tab === 'swaps'} className={tab === 'swaps' ? 'on' : ''} onClick={() => setTab('swaps')}>{t.recentSwaps}</button>}
         </div>
         <p className="tdock-note">{note}</p>
+        {tab === 'list' && (
+          <div className="seg" role="group" aria-label={t.hzLabel}>
+            <button className={hz === 'all' ? 'on' : ''} aria-pressed={hz === 'all'} onClick={() => setHz('all')}>{t.hzAll}</button>
+            {HORIZONS.filter((h) => count(h) > 0).map((h) => <button key={h} className={hz === h ? 'on' : ''} aria-pressed={hz === h} onClick={() => setHz(h)} data-tip={t.hzSub[h]}>{t.hz[h]}<small>{count(h)}</small></button>)}
+          </div>
+        )}
         {tab === 'list' && onBuild && <button className="btn sm tdock-build" onClick={onBuild}><Icon name="plus" size={14} />{t.mkBuild}</button>}
         {tab === 'bt' && sel && (
           <div className={`seg${busy ? ' busy' : ''}`} role="group" aria-label={t.thPeriod} aria-busy={busy}>
@@ -365,7 +379,12 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             </div>
             {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
             {!list && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="frow skel-block" aria-hidden />)}
-            {ranked.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === best} onPick={() => { onSelect(a); setTab('bt'); }} />)}
+            {groups.map((g) => (
+              <Fragment key={g.h}>
+                {hz === 'all' && <div className={`frow-group hz-${g.h}`}><b>{t.hz[g.h]}</b><span>{t.hzSub[g.h]}</span></div>}
+                {g.rows.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === pickOf(g.h)} onPick={() => { onSelect(a); setTab('bt'); }} />)}
+              </Fragment>
+            ))}
             {fold && <button className="frow-more" onClick={() => setMore((v) => !v)}>{more ? t.dkLess : t.dkMore(all.length - classics.length)}<Icon name="down" size={14} /></button>}
           </div>
         )}

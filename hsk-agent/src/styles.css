@@ -1405,3 +1405,144 @@ select { padding-right: 8px; }
 .hire-modes small { font-size: 12.5px; line-height: 17px; color: var(--ink-3); }
 .field .hire-sub { margin-top: 0; }
 .auto-tag { display: inline-flex; align-items: center; height: 18px; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: var(--accent-tint); color: var(--accent-ink); font-size: 11px; font-weight: 700; vertical-align: middle; }
+
+/* ---------- under the chart: groups by horizon, the agent's column, the strategy in rows ---------- */
+.tdock-head .seg button small { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--ink-3); }
+.frow-group { display: flex; align-items: baseline; gap: 10px; height: 34px; padding: 0 16px; border-top: 1px solid var(--line); background: var(--rail); animation: none !important; }
+.frow-group b { font-size: 13px; font-weight: 700; color: var(--ink-title); }
+.frow-group b::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: #9aa0a6; vertical-align: 1px; }
+.frow-group.hz-long b::before { background: #1a73e8; } .frow-group.hz-swing b::before { background: #9334e6; } .frow-group.hz-short b::before { background: #e37400; }
+.frow-group span { font-size: 12px; color: var(--ink-3); }
+.hz-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.hz-chip.hz-long { background: #e8f0fe; color: #1558b8; } .hz-chip.hz-swing { background: #f3e8fd; color: #7627bb; } .hz-chip.hz-short { background: #fef0db; color: #a35200; }
+
+.bt-rule { margin: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--fill); }
+.bt-rule p { margin: 0; display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 24px; color: var(--ink); }
+.bt-rule.list { list-style: none; gap: 4px; }
+.bt-rule.list li { position: relative; padding-left: 14px; font-size: 13.5px; line-height: 21px; color: var(--ink); }
+.bt-rule.list li::before { content: ''; position: absolute; left: 2px; top: 9px; width: 4px; height: 4px; border-radius: 50%; background: var(--ink-3); }
+.bt-facts { margin: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+.bt-facts > div { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; }
+.bt-facts dt { font-size: 11.5px; font-weight: 600; color: var(--ink-3); }
+.bt-facts dd { margin: 0; font-size: 14px; font-weight: 700; color: var(--ink-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-facts dd.risk-hi { color: var(--neg); } .bt-facts dd.risk-mid { color: #b06000; } .bt-facts dd.risk-lo { color: var(--pos); }
+.bt-facts small { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.ab2 { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; overflow-y: auto; }
+.ab2-fit { margin: 0; font-size: 15px; line-height: 22px; font-weight: 700; color: var(--ink-title); letter-spacing: -0.01em; }
+.ab2-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ab2-two > div { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; }
+.ab2-two .good { background: #eaf6ee; } .ab2-two .weak { background: #fdeeec; }
+.ab2-two b { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; }
+.ab2-two .good b { color: #137333; } .ab2-two .weak b { color: #b3261e; }
+.ab2-two p { margin: 0; font-size: 13px; line-height: 19px; color: var(--ink); }
+.ab2-facts { margin: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; }
+.ab2-facts > div { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 10px; padding: 9px 12px; }
+.ab2-facts > div + div { border-top: 1px solid var(--line); }
+.ab2-facts dt { font-size: 12px; font-weight: 700; color: var(--ink-3); line-height: 20px; }
+.ab2-facts dd { margin: 0; font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.ab2-facts dd .proof { margin-right: 8px; }
+.ab2-facts dd.src { font-size: 12.5px; color: var(--ink-3); }
+@media (max-width: 560px) { .ab2-two { grid-template-columns: 1fr; } .ab2-facts > div { grid-template-columns: 1fr; gap: 2px; } }
+
+/* hire sheet: two amounts side by side, and the vault's safety settings right there */
+.hire-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hire-safe { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--rail); }
+.hire-safe > header { display: flex; flex-direction: column; gap: 2px; }
+.hire-safe > header b { font-size: 14px; font-weight: 700; color: var(--ink-title); }
+.hire-safe > header small { font-size: 12.5px; line-height: 18px; color: var(--ink-3); }
+.hire-safe-row { display: flex; align-items: center; gap: 12px; }
+.hire-safe-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hire-safe-text b { font-size: 14px; font-weight: 600; color: var(--ink-title); }
+.hire-safe-text small { font-size: 12.5px; line-height: 17px; color: var(--ink-3); }
+.hire-safe .fund-input.sm { flex: none; width: 150px; min-width: 0; background: var(--bg); }
+.hire-safe .hire-sub { margin-top: -4px; }
+.switch { flex: none; position: relative; width: 40px; height: 24px; padding: 0; border: 0; border-radius: 999px; background: #c4c7c5; transition: background-color var(--d2) var(--ease); }
+.switch i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform var(--d2) var(--ease); }
+.switch.on { background: var(--accent); } .switch.on i { transform: translateX(16px); }
+@media (max-width: 560px) { .hire-two { grid-template-columns: 1fr; } .hire-safe-row { flex-wrap: wrap; } .hire-safe .fund-input.sm { width: 100%; margin-left: 52px; } }
+
+/* the vault's safety settings: what is set now, two switches, the rest folded away, and the lock */
+.lim { display: flex; flex-direction: column; gap: 12px; }
+.lim-now { margin: 0; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 10px; background: var(--fill); font-size: 13px; font-weight: 600; color: var(--ink); }
+.lim .hire-safe { gap: 14px; }
+.lim .hire-safe .fund-input.sm { width: auto; min-width: 150px; }
+.lim-more > summary { display: flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 2px; font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer; list-style: none; }
+.lim-more > summary::-webkit-details-marker { display: none; }
+.lim-more > summary svg { transition: transform var(--d2) var(--ease); }
+.lim-more[open] > summary svg { transform: rotate(180deg); }
+.lim-more[open] > summary { margin-bottom: 8px; }
+.switch-gap { flex: none; width: 40px; }
+
+/* ---------- make an agent, simpler: a slim line of steps, three coins, one switch for how to start ---------- */
+.wz-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; grid-template-columns: none; }
+.wz-steps li + li::before { content: ''; position: static; display: inline-block; flex: none; width: 18px; height: 2px; margin: 0 4px; border-radius: 2px; background: var(--line); vertical-align: middle; }
+.wz-steps li { display: flex; align-items: center; }
+.wz-steps button { width: auto; flex-direction: row; gap: 7px; padding: 5px 10px 5px 6px; border-radius: 999px; }
+.wz-steps button:not(:disabled):hover { background: var(--hover); }
+.wz-steps button:not(:disabled):hover .wz-dot { box-shadow: none; }
+.wz-dot { width: 22px; height: 22px; border-width: 1.5px; font-size: 12px; }
+.wz-steps li.now .wz-dot { box-shadow: none; }
+.wz-steps b { font-size: 13.5px; font-weight: 600; color: var(--ink-3); }
+.wz-steps li.now b, .wz-steps li.done b { color: var(--ink-title); }
+.wz-steps small { font-size: 12.5px; font-weight: 600; color: var(--accent-ink); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wz-steps li.now button { background: var(--accent-tint); }
+.wz-head h2 { font-size: 21px; line-height: 28px; }
+.wz-panel { gap: 16px; padding: 22px 24px 18px; }
+
+.wz-coins { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wz-coin { flex-direction: column; align-items: center; gap: 10px; padding: 22px 12px 18px; text-align: center; }
+.wz-coin b { font-size: 17px; font-weight: 700; color: var(--ink-title); }
+.wz-coin .coin::before { width: 44px; height: 44px; }
+.wz-others > summary { display: flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 2px; font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer; list-style: none; }
+.wz-others > summary::-webkit-details-marker { display: none; }
+.wz-others > summary svg { transition: transform var(--d2) var(--ease); }
+.wz-others[open] > summary svg { transform: rotate(180deg); }
+.wz-others p { margin: 6px 0 10px; font-size: 12.5px; color: var(--ink-3); }
+.wz-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wz-chips .fchip .coin-letter { width: 16px; height: 16px; font-size: 10px; }
+
+.wz-mode-seg { align-self: flex-start; padding: 3px; border-radius: 10px; }
+.wz-mode-seg button { height: 32px; padding: 0 14px; gap: 7px; display: inline-flex; align-items: center; font-size: 13.5px; border-radius: 8px; }
+.wz-group h3 { align-items: center; }
+.wz-cards { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.wz-card { gap: 6px; padding: 12px; }
+.wz-card-top > b { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; color: var(--ink-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wz-card-top .wz-card-perf { flex: none; min-height: 0; padding: 0; border: 0; }
+.wz-card-perf b { font-size: 14.5px; }
+.wz-card-line { font-size: 12.5px; line-height: 18px; color: var(--ink-3); }
+.wz-side .bu-stats { grid-template-columns: repeat(3, auto); }
+@media (max-width: 760px) { .wz-coins { grid-template-columns: repeat(3, minmax(0, 1fr)); } .wz-coin { padding: 16px 8px 12px; } .wz-steps small { display: none; } .wz-steps li + li::before { width: 8px; margin: 0 1px; } .wz-steps button { padding: 5px 6px; } }
+
+/* self-review, round one: the hire button must never fall below the fold, and narrow columns must not wrap words */
+.bt-who .bt-cta { position: sticky; bottom: 0; margin-top: auto; padding: 10px 0 2px; background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--bg) 10px); z-index: 1; }
+.bt-facts { gap: 0; border: 1px solid var(--line); border-radius: 10px; }
+.bt-facts > div { padding: 7px 10px; border: 0; border-radius: 0; }
+.bt-facts > div + div { border-left: 1px solid var(--line); }
+.bt-facts dt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-facts dd { font-size: 13.5px; }
+.bt-rule { padding: 10px 12px; gap: 6px; }
+.bt-log { container-type: inline-size; }
+.ab2-two b { white-space: nowrap; }
+@container (max-width: 400px) { .ab2-two { grid-template-columns: 1fr; } .ab2-facts > div { grid-template-columns: 1fr; gap: 0; } .ab2 { padding: 12px 14px 14px; gap: 10px; } }
+.frow-group { height: 30px; }
+
+/* self-review, round two */
+.bt-badges { flex-wrap: wrap; row-gap: 6px; }
+.bt-who { gap: 10px; }
+.hire-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.hire-two .field { min-width: 0; }
+.stepper { min-width: 0; }
+.stepper-in input { width: 0; }
+.hire-safe-text { flex: 1 1 160px; }
+/* in the vault's dialog a setting's number sits on its own line under its name, so nothing gets squeezed */
+.lim .hire-safe-row { flex-wrap: wrap; row-gap: 8px; }
+.lim .hire-safe .fund-input.sm { flex: 1 1 100%; width: auto; margin-left: 52px; }
+.lim .hire-safe-text { flex: 1 1 200px; }
+
+.bt-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.bt-tags span { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.bt-tags span.risk-hi { color: var(--neg); border-color: #f3c6c2; } .bt-tags span.risk-mid { color: #b06000; border-color: #f0d9a8; } .bt-tags span.risk-lo { color: var(--pos); border-color: #bfe3c9; }
+
+/* the rule is the part that gives way when the column is short: it scrolls, the tags and the button stay */
+.bt-who .bt-rule { flex: 0 1 auto; min-height: 40px; overflow-y: auto; }

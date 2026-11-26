@@ -274,20 +274,18 @@ function Withdraw({ vault, owner, onClose, onDone }: { vault: VaultInfo; owner: 
   );
 }
 
-/** One limit: either none, or an amount the owner types. */
-function LimitField({ id, label, note, on, amount, onToggle, onAmount }: { id: string; label: string; note: string; on: boolean; amount: string; onToggle: (on: boolean) => void; onAmount: (v: string) => void }) {
-  const { t } = useT();
+/** One safety setting: a switch, what it is in a line, and its number when it is on. */
+function SafeRow({ id, title, hint, on, onToggle, value, onValue, unit, bad, quick }: { id: string; title: string; hint: string; on: boolean; onToggle: (on: boolean) => void; value: string; onValue: (v: string) => void; unit: string; bad: boolean; quick?: string[] }) {
   return (
-    <div className="field">
-      <span>{label}</span>
-      <div className="lim-row">
-        <div className="seg" role="group" aria-label={label}>
-          <button type="button" className={on ? '' : 'on'} onClick={() => onToggle(false)}>{t.lmNoLimit}</button>
-          <button type="button" className={on ? 'on' : ''} onClick={() => onToggle(true)}>{t.lmSet}</button>
+    <div className="hire-safe-row">
+      <button type="button" role="switch" aria-checked={on} className={`switch${on ? ' on' : ''}`} onClick={() => onToggle(!on)} aria-label={title}><i /></button>
+      <div className="hire-safe-text"><b>{title}</b><small>{hint}</small></div>
+      {on && (
+        <div className="fund-input sm">
+          <input id={id} inputMode="decimal" value={value} onChange={(e) => onValue(e.target.value.trim())} aria-label={title} aria-invalid={bad} /><span>{unit}</span>
+          {quick?.map((n) => <button key={n} type="button" className={value === n ? 'on' : ''} onClick={() => onValue(n)}>{n}</button>)}
         </div>
-        {on && <div className="fund-input sm"><input id={id} inputMode="decimal" value={amount} onChange={(e) => onAmount(e.target.value.trim())} aria-label={label} aria-invalid={!(AMOUNT.test(amount) && Number(amount) > 0)} /><span>USDT</span></div>}
-      </div>
-      <small className="lim-note">{note}</small>
+      )}
     </div>
   );
 }
@@ -297,7 +295,7 @@ function Limits({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => v
   const { t } = useT();
   const toast = useToast();
   const note = useSendNote();
-  const [tradeOn, setTradeOn] = useState(vault.maxTradeUsdt !== undefined);
+  const [tradeOn, setTradeOn] = useState(vault.maxTradeUsdt !== undefined && vault.maxTradeUsdt !== vault.maxDailyUsdt);
   const [trade, setTrade] = useState(vault.maxTradeUsdt ?? '100');
   const [dayOn, setDayOn] = useState(vault.maxDailyUsdt !== undefined);
   const [day, setDay] = useState(vault.maxDailyUsdt ?? '300');
@@ -313,7 +311,9 @@ function Limits({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => v
   const stopBps = stopOn ? Math.round(Number(stop) * 100) : 0;
   const stopOk = !stopOn || (/^\d+(\.\d{1,2})?$/.test(stop) && stopBps >= 100 && stopBps <= 9000);
   const valid = (!tradeOn || good(trade)) && (!dayOn || good(day)) && slipOk && order && stopOk;
-  const limitsSame = (tradeOn ? trade : undefined) === vault.maxTradeUsdt && (dayOn ? day : undefined) === vault.maxDailyUsdt && slipBps === (vault.maxSlippageBps ?? 150);
+  // With a daily limit and no per-trade one, the contract holds the daily amount as both.
+  const tradeAs = tradeOn ? trade : dayOn ? day : undefined;
+  const limitsSame = tradeAs === vault.maxTradeUsdt && (dayOn ? day : undefined) === vault.maxDailyUsdt && slipBps === (vault.maxSlippageBps ?? 150);
   const stopSame = stopBps === (vault.stopLossBps ?? 0);
   const same = limitsSame && stopSame;
   /** Limits and the stop-loss are separate settings on the contract, so changing both asks the wallet twice. */
@@ -333,35 +333,31 @@ function Limits({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => v
       <button className="btn-text" onClick={onClose}>{t.close}</button>
       <button className="btn-primary" disabled={!valid || same || !!busy} onClick={() => void run('save', saveAll, t.lmSaved)}>{busy === 'save' ? t.txWaiting : t.lmSave}</button>
     </>}>
-      <div className="fund">
-        <p className="fund-lead">{t.lmLead}</p>
-        <LimitField id="lim-trade" label={t.lmTrade} note={dayOn && !tradeOn ? t.lmTradeNote : ''} on={tradeOn} amount={trade} onToggle={setTradeOn} onAmount={setTrade} />
-        <LimitField id="lim-day" label={t.lmDay} note={t.lmDayNote} on={dayOn} amount={day} onToggle={setDayOn} onAmount={setDay} />
-        {!order && <p className="fund-note warn">{t.lmBad}</p>}
-        <label className="field" htmlFor="lim-slip">
-          <span>{t.lmSlip}</span>
-          <div className="fund-input sm"><input id="lim-slip" inputMode="decimal" value={slip} onChange={(e) => setSlip(e.target.value.trim())} aria-invalid={!slipOk} /><span>%</span>
-            {['0.5', '1.5', '3'].map((n) => <button key={n} type="button" className={slip === n ? 'on' : ''} onClick={() => setSlip(n)}>{n}</button>)}</div>
-          <small className="lim-note">{t.lmSlipNote}</small>
-        </label>
-        <div className="field">
-          <span>{t.lmStop}</span>
-          <div className="lim-row">
-            <div className="seg" role="group" aria-label={t.lmStop}>
-              <button type="button" className={stopOn ? '' : 'on'} onClick={() => setStopOn(false)}>{t.lmStopOff}</button>
-              <button type="button" className={stopOn ? 'on' : ''} onClick={() => setStopOn(true)}>{t.lmStopOn}</button>
+      <div className="lim">
+        <p className="lim-now"><Icon name="shield" size={14} />{t.lmNow(`${limitsText(t, vault)}${vault.stopLossBps ? ` · ${t.lmStopShort(String(vault.stopLossBps / 100))}` : ''}`)}</p>
+        <section className="hire-safe">
+          <SafeRow id="lim-day" title={t.lmDay} hint={t.lmDayNote} on={dayOn} onToggle={setDayOn} value={day} onValue={setDay} unit="USDT" bad={!good(day)} />
+          <SafeRow id="lim-stop" title={t.lmStop} hint={t.lmStopNote} on={stopOn} onToggle={setStopOn} value={stop} onValue={setStop} unit="%" bad={!stopOk} quick={['5', '10', '20']} />
+        </section>
+        <details className="lim-more">
+          <summary>{t.lmMore}<Icon name="down" size={14} /></summary>
+          <section className="hire-safe">
+            <SafeRow id="lim-trade" title={t.lmTrade} hint={t.lmTradeNote} on={tradeOn} onToggle={setTradeOn} value={trade} onValue={setTrade} unit="USDT" bad={!good(trade)} />
+            <div className="hire-safe-row">
+              <span className="switch-gap" aria-hidden />
+              <div className="hire-safe-text"><b>{t.lmSlip}</b><small>{t.lmSlipNote}</small></div>
+              <div className="fund-input sm"><input id="lim-slip" inputMode="decimal" value={slip} onChange={(e) => setSlip(e.target.value.trim())} aria-label={t.lmSlip} aria-invalid={!slipOk} /><span>%</span>
+                {['0.5', '1.5', '3'].map((n) => <button key={n} type="button" className={slip === n ? 'on' : ''} onClick={() => setSlip(n)}>{n}</button>)}</div>
             </div>
-            {stopOn && <div className="fund-input sm"><input id="lim-stop" inputMode="decimal" value={stop} onChange={(e) => setStop(e.target.value.trim())} aria-label={t.lmStop} aria-invalid={!stopOk} /><span>%</span>
-              {['5', '10', '20'].map((n) => <button key={n} type="button" className={stop === n ? 'on' : ''} onClick={() => setStop(n)}>{n}</button>)}</div>}
-          </div>
-          <small className="lim-note">{t.lmStopNote}</small>
-        </div>
+          </section>
+        </details>
+        {!order && <p className="fund-note warn">{t.lmBad}</p>}
         <div className="lim-lock">
           <div><b>{vault.paused ? t.lmLocked : t.lmLock}</b><small>{t.lmLockNote}</small></div>
           <button className="btn" disabled={!!busy} onClick={() => void run('lock', () => setPaused(vault.net!, vault.vault!, !vault.paused), vault.paused ? t.lmUnlocked : t.lmLocked)}>{busy === 'lock' ? t.txWaiting : vault.paused ? t.lmUnlock : t.lmLock}</button>
         </div>
         {error && <p className="fund-note warn">{error}</p>}
-        <p className="fund-note">{t.dpGas}</p>
+        <p className="fund-note">{!limitsSame && !stopSame ? t.hsWallet(2) : t.dpGas}</p>
       </div>
     </Modal>
   );

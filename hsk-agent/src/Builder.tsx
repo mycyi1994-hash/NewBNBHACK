@@ -7,7 +7,7 @@
 // Nothing here decides with a model: the sentence reader is a fixed set of patterns, and the rule is plain data.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as cex from './cex.ts';
-import { SIGNAL_MARKETS, dailyHistory, isRunnable, scoreMade, type Agent, type RuleId } from './agents.ts';
+import { HORIZON, HORIZONS, SIGNAL_MARKETS, dailyHistory, isRunnable, scoreMade, type Agent, type RuleId } from './agents.ts';
 import { MAX_CONDS, TEMPLATE_IDS, TERM_KINDS, TERM_N, fromTemplate, parse, problems, scaleOf, type Cond, type MadeSpec, type Term, type TermKind } from './spec.ts';
 import { MADE_PREFIX, newMadeId, removeMade, saveMade, useMade } from './madeStore.ts';
 import { useSession } from './account.ts';
@@ -27,13 +27,8 @@ type Step = 0 | 1 | 2 | 3;
 const P: Term = { k: 'price' };
 const blank = (market: string): Draft => ({ market, name: '', buy: [{ a: P, op: 'above', b: { k: 'sma', n: 200 } }], sell: [] });
 const marketFor = (coin?: string) => SIGNAL_MARKETS.find((m) => m.base === coin) ?? SIGNAL_MARKETS[0];
-/** The published strategies this builder can start from, grouped by how they trade. */
-const GROUPS: { key: 'trend' | 'mom' | 'break' | 'dip'; ids: RuleId[] }[] = [
-  { key: 'trend', ids: ['trend200', 'golden', 'ma520', 'triple'] },
-  { key: 'mom', ids: ['tsmom', 'cryptoMom'] },
-  { key: 'break', ids: ['break', 'turtle2', 'donchian'] },
-  { key: 'dip', ids: ['rsi2', 'rsi', 'boll'] },
-];
+/** The published strategies this builder can start from, grouped by how long they are built to hold. */
+const GROUPS = HORIZONS.map((key) => ({ key, ids: TEMPLATE_IDS.filter((r) => r !== 'made' && HORIZON[r] === key) })).filter((g) => g.ids.length);
 const MODE_ICON: Record<Mode, IconName> = { classic: 'medal', words: 'chat', blank: 'edit' };
 /** One-click conditions for the rule step. */
 const QUICK: Cond[] = [
@@ -183,7 +178,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
   );
   const panel = (title: string, sub: string, body: ReactNode) => (
     <section className="wz-panel" key={step}>
-      <header className="wz-head"><span className="wz-count">{t.wzStepOf(step + 1, 4)}</span><h2>{title}</h2><p>{sub}</p></header>
+      <header className="wz-head"><h2>{title}</h2><p>{sub}</p></header>
       {body}
       {nav}
     </section>
@@ -191,71 +186,73 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
 
   return (
     <div className="page build-page">
-      <header className="page-head"><div><h1>{t.buTitle}</h1><p className="muted">{t.buSub}</p></div>
+      <header className="page-head"><div><h1>{t.buTitle}</h1></div>
         {(started || d.id) && <button className="btn" onClick={() => reset(d.market)}><Icon name="plus" size={14} />{t.buNew}</button>}
       </header>
 
       <ol className="wz-steps" aria-label={t.buTitle}>
-        {t.wzSteps.map((label, i) => {
-          const state = i === step ? 'now' : i < step ? 'done' : '';
-          return (
-            <li key={label} className={state}>
-              <button disabled={!reach(i as Step)} onClick={() => go(i as Step)} aria-current={i === step ? 'step' : undefined}>
-                <span className="wz-dot">{i < step ? <Icon name="check" size={14} /> : i + 1}</span>
-                <span className="wz-step-text"><b>{label}</b><small>{stepSub[i] || ' '}</small></span>
-              </button>
-            </li>
-          );
-        })}
+        {t.wzSteps.map((label, i) => (
+          <li key={label} className={i === step ? 'now' : i < step ? 'done' : ''}>
+            <button disabled={!reach(i as Step)} onClick={() => go(i as Step)} aria-current={i === step ? 'step' : undefined}>
+              <span className="wz-dot">{i < step ? <Icon name="check" size={12} /> : i + 1}</span>
+              <b>{label}</b>
+              {i < step && stepSub[i] && <small>{stepSub[i]}</small>}
+            </button>
+          </li>
+        ))}
       </ol>
 
       <div className="wz-grid">
         {step === 0 && panel(t.wzCoinTitle, t.wzCoinSub, (
-          <div className="wz-coins">
-            {SIGNAL_MARKETS.map((m) => {
-              const real = isRunnable(m.base);
-              return (
+          <>
+            <div className="wz-coins">
+              {SIGNAL_MARKETS.filter((m) => isRunnable(m.base)).map((m) => (
                 <button key={m.symbol} className={`wz-coin${m.symbol === d.market ? ' on' : ''}`} aria-pressed={m.symbol === d.market} onClick={() => pickCoin(m.symbol)}>
                   <CoinMark base={m.base} big />
-                  <span className="wz-coin-text"><b>{m.base}</b><small className={real ? 'real' : ''}>{real ? t.wzCanTrade : t.wzSignalOnly}</small></span>
-                  <Icon name="chevron" size={16} />
+                  <b>{m.base}</b>
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+            <details className="wz-others" open={!isRunnable(market.base)}>
+              <summary>{t.wzOtherCoins}<Icon name="down" size={14} /></summary>
+              <p>{t.wzOtherSub}</p>
+              <div className="wz-chips">
+                {SIGNAL_MARKETS.filter((m) => !isRunnable(m.base)).map((m) => <button key={m.symbol} className={`fchip${m.symbol === d.market ? ' on' : ''}`} aria-pressed={m.symbol === d.market} onClick={() => pickCoin(m.symbol)}><CoinMark base={m.base} />{m.base}</button>)}
+              </div>
+            </details>
+          </>
         ))}
 
         {step === 1 && panel(t.wzStartTitle(market.base), t.wzStartSub, (
           <>
-            <div className="wz-modes" role="tablist">
+            <div className="seg wz-mode-seg" role="tablist">
               {(['classic', 'words', 'blank'] as Mode[]).map((m) => (
-                <button key={m} role="tab" aria-selected={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
-                  <span className="wz-mode-ic"><Icon name={MODE_ICON[m]} size={18} /></span>
-                  <span><b>{t.wzModes[m]}</b><small>{t.wzModeSub[m]}</small></span>
-                </button>
+                <button key={m} role="tab" aria-selected={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}><Icon name={MODE_ICON[m]} size={14} />{t.wzModes[m]}</button>
               ))}
             </div>
             {!isRunnable(market.base) && <p className="bu-note warn">{t.buDemo(market.base)}</p>}
 
             {mode === 'classic' && GROUPS.map((g) => (
               <div key={g.key} className="wz-group">
-                <h3>{t.wzGroup[g.key]}<small>{t.wzGroupSub[g.key]}</small></h3>
+                <h3><span className={`hz-chip hz-${g.key}`}>{t.hz[g.key]}</span><small>{t.hzSub[g.key]}</small></h3>
                 <div className="wz-cards">
                   {g.ids.map((r) => {
                     const s = shelf[r];
                     return (
                       <button key={r} className={`wz-card${d.from === r && started ? ' on' : ''}`} aria-pressed={d.from === r && started} onClick={() => pickTemplate(r)}>
-                        <span className="wz-card-top"><Face rule={r} size="sm" /><span><b>{t.agNick[r]}</b><small>{t.agRule[r]}</small></span></span>
-                        <span className="wz-card-line">{t.agLine[r]}</span>
-                        <span className="wz-card-perf">
-                          {!ready ? <i className="spin" aria-hidden /> : s ? <><b className={s.total >= 0 ? 'pos' : 'neg'}>{pct(s.total)}</b><small>{t.wzPerf(drop(s.maxDd))}</small></> : <small>{t.wzNoPerf}</small>}
+                        <span className="wz-card-top">
+                          <Face rule={r} size="sm" />
+                          <b>{t.agNick[r]}</b>
+                          <span className="wz-card-perf">{!ready ? <i className="spin" aria-hidden /> : s ? <b className={s.total >= 0 ? 'pos' : 'neg'}>{pct(s.total)}</b> : <small>—</small>}</span>
                         </span>
+                        <span className="wz-card-line">{t.agLine[r]}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
             ))}
+            {mode === 'classic' && <p className="bu-note">{t.wzPerfNote}</p>}
 
             {mode === 'words' && (
               <div className="wz-words">
@@ -308,6 +305,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
             <label className="wz-name"><span>{t.buName}</span><input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value.slice(0, 40) })} placeholder={autoName} /></label>
             {result && result.trades < 5 && <p className="bu-note warn">{t.buFew(result.trades)}</p>}
             <p className="bu-note warn">{t.buUnproven}</p>
+            {result && <p className="bu-note">{t.acFoot(`${(result.fee * 100).toFixed(1)}%`, result.days)}</p>}
             <div className="wz-save">
               <button className="btn-primary" disabled={!!issues.length || !result} onClick={() => save(true)}>{t.buSaveOpen}</button>
               <button className="btn" disabled={!!issues.length} onClick={() => save(false)}>{d.id ? t.buUpdate : t.buSave}</button>
@@ -348,9 +346,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
                         <div><dt>{t.thEdge}</dt><dd className={edge >= 0 ? 'pos' : 'neg'}>{pct(edge)}</dd></div>
                         <div><dt>{t.thDd}</dt><dd>{drop(result.maxDd)}</dd></div>
                         <div><dt>{t.thTrades}</dt><dd>{t.btTimes(result.trades)}</dd></div>
-                        <div><dt>{t.btHeldStat}</dt><dd>{Math.round(result.inMarket * 100)}%</dd></div>
                       </dl>
-                      <p className="bu-note">{t.acFoot(`${(result.fee * 100).toFixed(1)}%`, result.days)}</p>
                     </>
                   )}
             </>

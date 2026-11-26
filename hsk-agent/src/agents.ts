@@ -53,6 +53,25 @@ export const TIER: Record<RuleId, Tier> = {
  *  common: a widely followed signal with no single author; none: nothing published, only the backtest here.
  */
 export type Proof = 'paper' | 'record' | 'book' | 'common' | 'none';
+/**
+ * How long a strategy is built to hold, from the length of the history its rule looks at: months to a year (long),
+ * a few weeks (swing), or days (short). It is a property of the rule, not of how one backtest happened to go.
+ */
+export type Horizon = 'long' | 'swing' | 'short';
+export const HORIZONS: Horizon[] = ['long', 'swing', 'short'];
+export const HORIZON: Record<Exclude<RuleId, 'made'>, Horizon> = {
+  tsmom: 'long', multiTrend: 'long', dualMom: 'long', trend200: 'long', golden: 'long', turtle2: 'long',
+  daily: 'long', smart: 'long', trendDca: 'long', rsiDca: 'long',
+  break: 'swing', donchian: 'swing', macd: 'swing', ichimoku: 'swing', keltner: 'swing', adx: 'swing', aroon: 'swing', cryptoMom: 'swing', trend: 'swing', ema: 'swing', boll: 'swing',
+  ma520: 'short', triple: 'short', psar: 'short', rsi2: 'short', double7: 'short', rsi: 'short',
+};
+/** A made rule is placed by the longest stretch of days any of its conditions looks at. */
+export function horizonOf(a: { rule: RuleId; made?: MadeSpec }): Horizon {
+  if (a.rule !== 'made') return HORIZON[a.rule];
+  const days = Math.max(0, ...[...(a.made?.buy ?? []), ...(a.made?.sell ?? [])].flatMap((c) => [c.a, c.b]).filter((x) => x.k !== 'num').map((x) => x.n ?? 0));
+  return days >= 100 ? 'long' : days >= 15 ? 'swing' : 'short';
+}
+
 export const PROOF: Record<RuleId, Proof> = {
   tsmom: 'paper', multiTrend: 'paper', dualMom: 'paper', trend200: 'paper', cryptoMom: 'paper',
   break: 'record', turtle2: 'record',

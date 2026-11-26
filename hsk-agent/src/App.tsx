@@ -296,7 +296,7 @@ function Shell() {
     void autoPut(h).then((r) => {
       if (r.ok) return;
       update(h.id, (x) => ({ ...x, mode: 'ask' }));
-      toast(r.why === 'needLimit' ? t.hsAutoNeedLimit : r.why === 'noVault' || r.why === 'login' ? t.hsAutoLogin : t.autoFailed);
+      toast(r.why === 'noVault' || r.why === 'login' ? t.hsAutoLogin : t.autoFailed);
     });
   };
   const autoOf = (id: string) => { const h = hiredRef.current.find((x) => x.id === id); return h?.mode === 'auto' ? h : undefined; };
@@ -396,7 +396,7 @@ function Shell() {
         </button>
       )}
       <TabBar view={view} go={go} count={hired.length} asks={asks} onMoa={() => setMoaOpen((v) => !v)} />
-      {sheet && <HireSheet target={sheet} vault={vault} onClose={() => setSheet(null)} onConfirm={confirmSheet} />}
+      {sheet && <HireSheet target={sheet} vault={vault} onClose={() => setSheet(null)} onConfirm={confirmSheet} onReloadVault={reloadVault} />}
     </div>
   );
 }

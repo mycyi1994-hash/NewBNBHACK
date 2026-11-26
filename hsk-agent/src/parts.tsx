@@ -18,7 +18,9 @@ export interface VaultInfo {
 
 /** The vault's limits in one line: "$10 per trade · $30 per day", or that there are none. */
 export function limitsText(t: { limTrade: (a: string) => string; limDay: (a: string) => string; limNone: string }, v: VaultInfo): string {
-  const parts = [v.maxTradeUsdt !== undefined ? t.limTrade(v.maxTradeUsdt) : '', v.maxDailyUsdt !== undefined ? t.limDay(v.maxDailyUsdt) : ''].filter(Boolean);
+  // A per-trade limit equal to the daily one says nothing more than the daily one does.
+  const trade = v.maxTradeUsdt !== undefined && v.maxTradeUsdt !== v.maxDailyUsdt ? t.limTrade(v.maxTradeUsdt) : '';
+  const parts = [trade, v.maxDailyUsdt !== undefined ? t.limDay(v.maxDailyUsdt) : ''].filter(Boolean);
   return parts.length ? parts.join(' · ') : t.limNone;
 }
 
