@@ -2,8 +2,12 @@
 
 Moa gives every user their own vault. One contract, the **MoaVaultFactory**, is deployed once; after that the app
 makes a **MoaVault** for each wallet that logs in. Everything below is run on your own computer, from
-`hsk-agent/contracts`. Nothing here has been run against mainnet yet: the scripts and the app flow were exercised
-on a local fork of mainnet only. The contracts are unaudited. Start with small amounts.
+`hsk-agent/contracts`. The contracts are unaudited. Start with small amounts.
+
+**Deployed 26 Nov 2026:** factory [`0x49807417fcebfb90e59933f0c44e4f1edf96444c`](https://hsk.blockscout.com/address/0x49807417fcebfb90e59933f0c44e4f1edf96444c)
+([transaction](https://hsk.blockscout.com/tx/0xedb6a15b62c220ccd46df7927685de73fa516e1fb76ad1c220a5c4c4e37f6ebf)).
+Read back from the chain afterwards: the agent, USDT, router, the three markets and the limits ($10 per trade,
+$30 per day, 1.5%) are as planned. Steps 1 to 3 below are done; the app flow on mainnet (step 5) is not checked yet.
 
 ## Who can do what
 
@@ -146,4 +150,4 @@ Not checked:
 - `scripts/verify.mjs` has not been run against a real deployment.
 - A real wallet extension (MetaMask): the browser run used a stand-in that signs with a fork test account.
 - Wallets that are contracts (multisigs, smart accounts) cannot log in yet: the login checks an ordinary signature.
-- Nothing has been sent on mainnet.
+- On mainnet only the factory deployment has happened: no vault has been made and no trade sent there yet.
