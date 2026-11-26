@@ -3,7 +3,7 @@
 // Deposits and withdrawals are transactions from the user's own wallet: the server cannot move funds in or out.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { VaultInfo } from './parts.tsx';
-import { deposit, logIn, logOut, nickOf, saveNick, shortAddress, useSession, withdraw, type SendResult } from './account.ts';
+import { deposit, logIn, logOut, nickOf, saveNick, shortAddress, useSession, wallets, withdraw, type SendResult, type WalletChoice } from './account.ts';
 import { vaultUse } from './VaultCard.tsx';
 import { useT } from './i18n.ts';
 import { Icon } from './Icons.tsx';
@@ -27,25 +27,31 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [noWallet, setNoWallet] = useState(false);
+  const [choices, setChoices] = useState<WalletChoice[] | null>(null);
   const [dialog, setDialog] = useState<'deposit' | 'withdraw' | null>(null);
   const [naming, setNaming] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open && !noWallet) return;
-    const onDown = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) { setOpen(false); setNoWallet(false); setNaming(null); } };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); setNoWallet(false); setNaming(null); } };
+    if (!open && !noWallet && !choices) return;
+    const shut = () => { setOpen(false); setNoWallet(false); setChoices(null); setNaming(null); };
+    const onDown = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) shut(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') shut(); };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
-  }, [open, noWallet]);
+  }, [open, noWallet, choices]);
 
-  const enter = async () => {
+  /** Log in. With several wallets in the browser and none picked yet, show the list instead. */
+  const enter = async (walletId?: string) => {
+    if (!walletId && choices) { setChoices(null); return; }
+    setChoices(null); setNoWallet(false);
     setBusy(true);
-    const r = await logIn();
+    const r = await logIn(walletId);
     setBusy(false);
     if (r.ok) { setOpen(true); return; }
-    if (r.why === 'nowallet') setNoWallet(true);
+    if (r.why === 'choose') setChoices(wallets());
+    else if (r.why === 'nowallet') setNoWallet(true);
     else toast(r.why === 'rejected' ? t.acRejected : t.acFailed(r.detail ?? ''));
   };
 
@@ -53,6 +59,23 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
     return (
       <div className="acct" ref={root}>
         <button className="btn-primary acct-login" onClick={() => void enter()} disabled={busy}>{busy ? t.acLoggingIn : t.acLogin}</button>
+        {choices && (
+          <div className="acct-pop pick" role="dialog" aria-label={t.acPick}>
+            <b>{t.acPick}</b>
+            <ul>
+              {choices.map((w) => (
+                <li key={w.id}>
+                  <button onClick={() => void enter(w.id)}>
+                    {w.icon ? <img src={w.icon} alt="" width={28} height={28} /> : <span className="acct-wicon" aria-hidden><Icon name="shield" size={16} /></span>}
+                    <span>{w.name}</span>
+                    <Icon name="chevron" size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <small>{t.acPickNote}</small>
+          </div>
+        )}
         {noWallet && (
           <div className="acct-pop note" role="dialog" aria-label={t.acLogin}>
             <b>{t.acNoWalletTitle}</b>

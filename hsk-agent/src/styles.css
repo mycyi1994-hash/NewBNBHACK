@@ -1200,3 +1200,13 @@ select { padding-right: 8px; }
   .acct-name { max-width: 96px; }
   .acct-pop { position: fixed; top: 56px; left: 12px; right: 12px; width: auto; }
 }
+.acct-pop.pick { width: 300px; gap: 10px; padding: 14px; }
+.acct-pop.pick > b { font-size: 15px; color: var(--ink-title); padding: 0 4px; }
+.acct-pop.pick ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.acct-pop.pick li button { width: 100%; display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 12px 0 10px; border: 1px solid var(--line-btn); border-radius: 12px; background: var(--bg); font-size: 15px; font-weight: 600; color: var(--ink-title); text-align: left; transition: background-color var(--d1) linear, border-color var(--d1) linear; }
+.acct-pop.pick li button:hover { background: var(--hover); border-color: #bdbdbd; }
+.acct-pop.pick li button > span:not(.acct-wicon) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-pop.pick img, .acct-wicon { flex: none; width: 28px; height: 28px; border-radius: 8px; }
+.acct-wicon { display: grid; place-items: center; background: var(--fill); color: var(--ink-3); }
+.acct-pop.pick li button > svg { color: var(--ink-3); }
+.acct-pop.pick small { font-size: 12.5px; line-height: 18px; color: var(--ink-3); padding: 0 4px; }

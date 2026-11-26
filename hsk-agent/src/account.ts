@@ -8,7 +8,36 @@ interface Eip1193 {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
   on?(event: string, handler: (...args: unknown[]) => void): void;
 }
-export const walletProvider = (): Eip1193 | null => (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193 }).ethereum) || null;
+
+/* ---------- which wallet ---------- */
+// A browser can hold several wallets (MetaMask, OKX, Binance…), and they fight over `window.ethereum`: whichever
+// loaded last wins. So wallets are found the standard way instead (EIP-6963: each one announces itself with a name
+// and an icon), the user picks one when there are several, and the pick is remembered for deposits and withdrawals.
+export interface WalletChoice { id: string; name: string; icon?: string }
+interface Announced { info: { uuid: string; name: string; icon: string; rdns: string }; provider: Eip1193 }
+const announced: Announced[] = [];
+const WALLET_KEY = 'moa.wallet.v1';
+if (typeof window !== 'undefined') {
+  window.addEventListener('eip6963:announceProvider', (e) => {
+    const d = (e as CustomEvent<Announced>).detail;
+    if (d?.info?.rdns && d.provider && !announced.some((a) => a.info.rdns === d.info.rdns)) announced.push(d);
+  });
+  window.dispatchEvent(new Event('eip6963:requestProvider'));
+}
+/** The wallet that took `window.ethereum`, for browsers whose wallets do not announce themselves. */
+const legacy = (): Eip1193 | null => (typeof window !== 'undefined' && (window as unknown as { ethereum?: Eip1193 }).ethereum) || null;
+const LEGACY_ID = 'injected';
+
+/** The wallets found in this browser. Empty means none is installed. */
+export function wallets(): WalletChoice[] {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('eip6963:requestProvider'));   // late-loading wallets answer too
+  if (announced.length) return announced.map((a) => ({ id: a.info.rdns, name: a.info.name, icon: a.info.icon }));
+  return legacy() ? [{ id: LEGACY_ID, name: 'Browser wallet' }] : [];
+}
+const providerOf = (id: string | null | undefined): Eip1193 | null => announced.find((a) => a.info.rdns === id)?.provider ?? (id === LEGACY_ID || !announced.length ? legacy() : null);
+const remembered = () => { try { return localStorage.getItem(WALLET_KEY); } catch { return null; } };
+/** The wallet this session logged in with: the one that signs its deposits and withdrawals. */
+export const walletProvider = (): Eip1193 | null => providerOf(remembered()) ?? (announced.length === 1 ? announced[0].provider : null) ?? legacy();
 
 export interface Session { address: string; token: string; expiresAt: number }
 export interface Net { chainId: number; explorer: string; usdt: string; tokens: { symbol: string; address: string; decimals: number }[] }
@@ -16,7 +45,7 @@ export interface Net { chainId: number; explorer: string; usdt: string; tokens: 
 const KEY = 'moa.session.v1';
 const listeners = new Set<() => void>();
 let current: Session | null = load();
-let watching = false;
+const watched = new WeakSet<object>();
 
 function load(): Session | null {
   try {
@@ -43,10 +72,14 @@ const code = (e: unknown) => (e && typeof e === 'object' && 'code' in e ? Number
 const text = (e: unknown) => (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e));
 const post = (url: string, body: unknown) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify(body) });
 
-export type LoginResult = { ok: true } | { ok: false; why: 'nowallet' | 'rejected' | 'failed'; detail?: string };
-/** Connect the wallet, sign the server's message, keep the session. */
-export async function logIn(): Promise<LoginResult> {
-  const p = walletProvider();
+export type LoginResult = { ok: true } | { ok: false; why: 'nowallet' | 'choose' | 'rejected' | 'failed'; detail?: string };
+/** Connect the chosen wallet, sign the server's message, keep the session. With several wallets and no choice: 'choose'. */
+export async function logIn(walletId?: string): Promise<LoginResult> {
+  const found = wallets();
+  if (!found.length) return { ok: false, why: 'nowallet' };
+  if (!walletId && found.length > 1) return { ok: false, why: 'choose' };
+  const id = walletId ?? found[0].id;
+  const p = providerOf(id);
   if (!p) return { ok: false, why: 'nowallet' };
   try {
     const accounts = (await p.request({ method: 'eth_requestAccounts' })) as string[];
@@ -59,11 +92,12 @@ export async function logIn(): Promise<LoginResult> {
     const r = await post('/api/login', { address, issuedAt, signature });
     const j = (await r.json().catch(() => null)) as { token?: string; address?: string; expiresAt?: number; error?: string } | null;
     if (!r.ok || !j?.token || !j.address || !j.expiresAt) return { ok: false, why: 'failed', detail: j?.error ?? `HTTP ${r.status}` };
+    try { localStorage.setItem(WALLET_KEY, id); } catch { /* this visit only */ }
     set({ address: j.address, token: j.token, expiresAt: j.expiresAt });
-    if (!watching && p.on) {
-      watching = true;
+    if (!watched.has(p) && p.on) {
+      watched.add(p);
       // Switching to another account in the wallet ends this session: the vault on screen belongs to the first one.
-      p.on('accountsChanged', (list) => { const now = (list as string[] | undefined)?.[0]; if (current && now?.toLowerCase() !== current.address.toLowerCase()) logOut(); });
+      p.on('accountsChanged', (list) => { const now = (list as string[] | undefined)?.[0]; if (current && walletProvider() === p && now?.toLowerCase() !== current.address.toLowerCase()) logOut(); });
     }
     return { ok: true };
   } catch (e) {
@@ -112,6 +146,9 @@ async function send(net: Net, to: string, data: string): Promise<SendResult> {
   const p = walletProvider();
   if (!p || !current) return { ok: false, why: 'nowallet' };
   try {
+    // The wallet must still be on the account that logged in: the vault belongs to that one.
+    const accounts = (await p.request({ method: 'eth_requestAccounts' })) as string[];
+    if (accounts?.[0]?.toLowerCase() !== current.address.toLowerCase()) return { ok: false, why: 'failed', detail: `the wallet is on another account (${accounts?.[0] ? shortAddress(accounts[0]) : 'none'}); switch back to ${shortAddress(current.address)}` };
     await onChain(p, net);
     const txHash = (await p.request({ method: 'eth_sendTransaction', params: [{ from: current.address, to, data }] })) as string;
     for (let i = 0; i < 90; i++) {
