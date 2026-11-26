@@ -3,7 +3,7 @@
 // Deposits and withdrawals are transactions from the user's own wallet: the server cannot move funds in or out.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { limitsText, type VaultInfo } from './parts.tsx';
-import { deposit, logIn, logOut, nickOf, saveNick, setLimits, setPaused, shortAddress, useSession, wallets, withdraw, type SendResult, type WalletChoice } from './account.ts';
+import { deposit, logIn, logOut, nickOf, saveNick, setLimits, setPaused, setStopLoss, shortAddress, useSession, wallets, withdraw, type SendResult, type WalletChoice } from './account.ts';
 import { vaultUse } from './VaultCard.tsx';
 import { useT } from './i18n.ts';
 import { Icon } from './Icons.tsx';
@@ -132,11 +132,11 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
               <>
                 <div className="acct-bal"><b>${money(vault!.usdtBalance)}</b><span>USDT</span></div>
                 {vault!.holdings && vault!.holdings.length > 0 && (
-                  <ul className="acct-held">{vault!.holdings.map((h) => <li key={h.symbol}><span>{h.symbol}</span><b>{qty(h.amount)}</b></li>)}</ul>
+                  <ul className="acct-held">{vault!.holdings.map((h) => { const cost = Number(h.costUsdt ?? 0), value = Number(h.valueUsdt ?? 0); const gain = cost > 0 ? value / cost - 1 : null; return <li key={h.symbol}><span>{h.symbol} <b>{qty(h.amount)}</b></span><span className="acct-worth">${money(value)}{gain !== null && <em className={gain >= 0 ? 'pos' : 'neg'}>{gain >= 0 ? '+' : '−'}{Math.abs(gain * 100).toFixed(1)}%</em>}</span></li>; })}</ul>
                 )}
                 {Number(vault!.usdtBalance) === 0 && !vault!.holdings?.length && <p className="acct-msg">{t.acEmpty}</p>}
                 <div className="acct-lim">
-                  <div className="acct-lim-top"><span>{limitsText(t, vault!)}</span><button className="link" onClick={() => { setOpen(false); setDialog('limits'); }}>{t.lmOpen}</button></div>
+                  <div className="acct-lim-top"><span>{limitsText(t, vault!)}{vault!.stopLossBps ? ` · ${t.lmStopShort(String(vault!.stopLossBps / 100))}` : ''}</span><button className="link" onClick={() => { setOpen(false); setDialog('limits'); }}>{t.lmOpen}</button></div>
                   {!u!.none && <span className={`gauge${u!.frac >= 0.9 ? ' full' : ''}`} role="img" aria-label={t.vcUsed(money(u!.used), money(u!.max))}><i style={{ width: `${Math.round(u!.frac * 100)}%` }} /></span>}
                   {!u!.none && <small>{t.vcSide(money(u!.left))}</small>}
                 </div>
@@ -302,14 +302,25 @@ function Limits({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => v
   const [dayOn, setDayOn] = useState(vault.maxDailyUsdt !== undefined);
   const [day, setDay] = useState(vault.maxDailyUsdt ?? '300');
   const [slip, setSlip] = useState(String((vault.maxSlippageBps ?? 150) / 100));
+  const [stopOn, setStopOn] = useState(!!vault.stopLossBps);
+  const [stop, setStop] = useState(String((vault.stopLossBps || 1000) / 100));
   const [busy, setBusy] = useState<'save' | 'lock' | null>(null);
   const [error, setError] = useState('');
   const good = (v: string) => AMOUNT.test(v) && Number(v) > 0;
   const slipBps = Math.round(Number(slip) * 100);
   const slipOk = /^\d+(\.\d{1,2})?$/.test(slip) && slipBps >= 50 && slipBps <= 1000;
   const order = !(tradeOn && dayOn) || Number(day) >= Number(trade);
-  const valid = (!tradeOn || good(trade)) && (!dayOn || good(day)) && slipOk && order;
-  const same = (tradeOn ? trade : undefined) === vault.maxTradeUsdt && (dayOn ? day : undefined) === vault.maxDailyUsdt && slipBps === (vault.maxSlippageBps ?? 150);
+  const stopBps = stopOn ? Math.round(Number(stop) * 100) : 0;
+  const stopOk = !stopOn || (/^\d+(\.\d{1,2})?$/.test(stop) && stopBps >= 100 && stopBps <= 9000);
+  const valid = (!tradeOn || good(trade)) && (!dayOn || good(day)) && slipOk && order && stopOk;
+  const limitsSame = (tradeOn ? trade : undefined) === vault.maxTradeUsdt && (dayOn ? day : undefined) === vault.maxDailyUsdt && slipBps === (vault.maxSlippageBps ?? 150);
+  const stopSame = stopBps === (vault.stopLossBps ?? 0);
+  const same = limitsSame && stopSame;
+  /** Limits and the stop-loss are separate settings on the contract, so changing both asks the wallet twice. */
+  const saveAll = async (): Promise<SendResult> => {
+    if (!limitsSame) { const r = await setLimits(vault.net!, vault.vault!, tradeOn ? trade : null, dayOn ? day : null, slipBps); if (!r.ok) return r; if (stopSame) return r; }
+    return setStopLoss(vault.net!, vault.vault!, stopBps);
+  };
   const run = async (what: 'save' | 'lock', job: () => Promise<SendResult>, done: string) => {
     if (!vault.net || !vault.vault) return;
     setBusy(what); setError('');
@@ -320,7 +331,7 @@ function Limits({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => v
   return (
     <Modal title={t.lmTitle} onClose={onClose} actions={<>
       <button className="btn-text" onClick={onClose}>{t.close}</button>
-      <button className="btn-primary" disabled={!valid || same || !!busy} onClick={() => void run('save', () => setLimits(vault.net!, vault.vault!, tradeOn ? trade : null, dayOn ? day : null, slipBps), t.lmSaved)}>{busy === 'save' ? t.txWaiting : t.lmSave}</button>
+      <button className="btn-primary" disabled={!valid || same || !!busy} onClick={() => void run('save', saveAll, t.lmSaved)}>{busy === 'save' ? t.txWaiting : t.lmSave}</button>
     </>}>
       <div className="fund">
         <p className="fund-lead">{t.lmLead}</p>
@@ -333,6 +344,18 @@ function Limits({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => v
             {['0.5', '1.5', '3'].map((n) => <button key={n} type="button" className={slip === n ? 'on' : ''} onClick={() => setSlip(n)}>{n}</button>)}</div>
           <small className="lim-note">{t.lmSlipNote}</small>
         </label>
+        <div className="field">
+          <span>{t.lmStop}</span>
+          <div className="lim-row">
+            <div className="seg" role="group" aria-label={t.lmStop}>
+              <button type="button" className={stopOn ? '' : 'on'} onClick={() => setStopOn(false)}>{t.lmStopOff}</button>
+              <button type="button" className={stopOn ? 'on' : ''} onClick={() => setStopOn(true)}>{t.lmStopOn}</button>
+            </div>
+            {stopOn && <div className="fund-input sm"><input id="lim-stop" inputMode="decimal" value={stop} onChange={(e) => setStop(e.target.value.trim())} aria-label={t.lmStop} aria-invalid={!stopOk} /><span>%</span>
+              {['5', '10', '20'].map((n) => <button key={n} type="button" className={stop === n ? 'on' : ''} onClick={() => setStop(n)}>{n}</button>)}</div>}
+          </div>
+          <small className="lim-note">{t.lmStopNote}</small>
+        </div>
         <div className="lim-lock">
           <div><b>{vault.paused ? t.lmLocked : t.lmLock}</b><small>{t.lmLockNote}</small></div>
           <button className="btn" disabled={!!busy} onClick={() => void run('lock', () => setPaused(vault.net!, vault.vault!, !vault.paused), vault.paused ? t.lmUnlocked : t.lmLocked)}>{busy === 'lock' ? t.txWaiting : vault.paused ? t.lmUnlock : t.lmLock}</button>

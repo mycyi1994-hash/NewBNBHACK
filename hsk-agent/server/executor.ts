@@ -132,15 +132,20 @@ export async function vaultStatus(cfg: ExecConfig) {
   const pub = clientOf(cfg);
   const read = (functionName: string, args: unknown[] = []) => pub.readContract({ address: cfg.vault!, abi, functionName, args }) as Promise<unknown>;
   const balance = (token: Address, who: Address) => pub.readContract({ address: token, abi: balanceAbi, functionName: 'balanceOf', args: [who] });
-  const [maxTrade, maxDaily, slippage, remaining, paused, usdtBal, walletUsdt, ...held] = await Promise.all([
-    read('maxTradeUsdt'), read('maxDailyUsdt'), read('maxSlippageBps'), read('remainingToday'), read('paused'),
+  const [maxTrade, maxDaily, slippage, remaining, paused, stopLoss, usdtBal, walletUsdt, ...held] = await Promise.all([
+    read('maxTradeUsdt'), read('maxDailyUsdt'), read('maxSlippageBps'), read('remainingToday'), read('paused'), read('stopLossBps'),
     balance(USDT, cfg.vault), cfg.owner ? balance(USDT, cfg.owner) : Promise.resolve(0n),
-    ...Object.values(TOKENS).map((t) => balance(t.address, cfg.vault!)),
+    // held, what it cost, what it is worth at the pool price now, and the value under which the stop-loss applies
+    ...Object.values(TOKENS).map((t) => read('position', [t.address]) as Promise<readonly [bigint, bigint, bigint, bigint]>),
   ]);
   return {
     configured: true as const,
     ...base,
-    holdings: Object.values(TOKENS).map((t, i) => ({ symbol: t.symbol, address: t.address, decimals: t.decimals, amount: formatUnits(held[i] as bigint, t.decimals) })).filter((h) => Number(h.amount) > 0),
+    holdings: Object.values(TOKENS).map((t, i) => {
+      const [qty, cost, value, stop] = held[i] as readonly [bigint, bigint, bigint, bigint];
+      return { symbol: t.symbol, address: t.address, decimals: t.decimals, amount: formatUnits(qty, t.decimals), costUsdt: formatUnits(cost, 6), valueUsdt: formatUnits(value, 6), stopUsdt: stop > 0n ? formatUnits(stop, 6) : undefined, stopDue: stop > 0n && cost > 0n && value < stop };
+    }).filter((h) => Number(h.amount) > 0),
+    stopLossBps: Number(stopLoss),
     walletUsdt: formatUnits(walletUsdt as bigint, 6),
     vault: cfg.vault,
     explorerUrl: `${cfg.explorer}/address/${cfg.vault}`,
@@ -152,6 +157,34 @@ export async function vaultStatus(cfg: ExecConfig) {
     paused: paused as boolean,
     usdtBalance: formatUnits(usdtBal as bigint, 6),
   };
+}
+
+export type StopResult = { ok: true; txHash: Hex; explorerUrl: string; symbol: string; amountOut: string } | { ok: false; reason: string };
+/**
+ * Carry out a stop-loss that is due on this vault. Anyone may do this on-chain; the server does it from the agent
+ * key so the owner does not have to be there. The vault itself decides whether the stop applies.
+ */
+export function stopOut(cfg: ExecConfig, asset: Asset): Promise<StopResult> {
+  return inLine(async () => {
+    if (!cfg.vault || !cfg.agentKey) return { ok: false, reason: 'No vault or agent key.' };
+    const token = TOKENS[asset];
+    const account = privateKeyToAccount(cfg.agentKey);
+    const pub = clientOf(cfg);
+    try {
+      const { request } = await pub.simulateContract({ address: cfg.vault, abi, functionName: 'stopOut', args: [token.address], account });
+      const wallet = createWalletClient({ account, chain: chainOf(cfg), transport: http(cfg.rpcUrl) });
+      const txHash = await wallet.writeContract(request);
+      const receipt = await pub.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.status !== 'success') return { ok: false, reason: `Transaction ${txHash} reverted.` };
+      let amountOut = 0n;
+      for (const log of receipt.logs) {
+        try { const ev = decodeEventLog({ abi, data: log.data, topics: log.topics }); if (ev.eventName === 'StoppedOut') amountOut = (ev.args as unknown as { amountOut: bigint }).amountOut; } catch { /* not a vault event */ }
+      }
+      return { ok: true, txHash, explorerUrl: `${cfg.explorer}/tx/${txHash}`, symbol: token.symbol, amountOut: formatUnits(amountOut, 6) };
+    } catch (e) {
+      return { ok: false, reason: explain(e) };
+    }
+  });
 }
 
 export function executeTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResult> {

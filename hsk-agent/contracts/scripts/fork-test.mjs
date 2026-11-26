@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createPublicClient, createTestClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { executeTrade, vaultStatus, createVault, vaultOf, forOwner, TOKENS, USDT } from '../../server/executor.ts';
+import { executeTrade, vaultStatus, createVault, vaultOf, forOwner, stopOut, TOKENS, USDT } from '../../server/executor.ts';
 
 const RPC = 'http://127.0.0.1:8546';
 const ROUTER = '0x2c16f75b95Cf1390c328aB70e2CEE7f4b80bD8F3';
@@ -48,7 +48,7 @@ try {
 
   // the factory: every vault starts with $50 per trade, $120 per day, 1.5% slippage floor and the three markets
   const assets = ['HSK', 'ETH', 'BTC'];
-  const deployHash = await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: [agent.address, USDT, ROUTER, 50_000_000n, 120_000_000n, 150, assets.map((a) => TOKENS[a].address), assets.map((a) => POOLS[a])] });
+  const deployHash = await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: [agent.address, USDT, ROUTER, 50_000_000n, 120_000_000n, 150, 0, assets.map((a) => TOKENS[a].address), assets.map((a) => POOLS[a])] });
   const deployed = await pub.waitForTransactionReceipt({ hash: deployHash });
   const factory = deployed.contractAddress;
   console.log('factory', factory, 'gas', deployed.gasUsed);
@@ -110,6 +110,16 @@ try {
   const r5 = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 30, note: 'over the day' });
   check('a 4th buy over $120/day is refused', !r5.ok && /DailyCapExceeded/.test(r5.reason), r5.ok ? 'executed!' : r5.reason.slice(0, 120));
 
+  // 3b) the day's spending limit is used up, yet selling still works: getting out is never held up by it
+  const weth = await pub.readContract({ address: TOKENS.ETH.address, abi: erc20, functionName: 'balanceOf', args: [vault] });
+  check('the vault records what each holding cost', (await read(vault, 'costUsdt', [TOKENS.ETH.address])) === 40_000_000n && (await read(vault, 'costUsdt', [TOKENS.BTC.address])) === 20_000_000n);
+  const out = await executeTrade(cfg, { asset: 'ETH', side: 'sell', amount: Number(formatUnits(weth / 2n, 18)), note: 'out on a full day' });
+  check('with the day\'s limit used up, a sell still goes through', out.ok, out.ok ? `${out.amountIn} ${out.tokenIn} -> ${out.amountOut} ${out.tokenOut}` : out.reason);
+  const halfCost = await read(vault, 'costUsdt', [TOKENS.ETH.address]);
+  check('selling half leaves half the cost on the books', halfCost >= 19_999_990n && halfCost <= 20_000_010n, String(halfCost));
+  const r5b = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 30, note: 'still over the day' });
+  check('and the sell did not free up room to buy more', !r5b.ok && /DailyCapExceeded/.test(r5b.reason));
+
   // 4) slippage floor: agent tries minOut = 0 directly
   let slipReverted = false;
   try { await pub.simulateContract({ address: vault, abi, functionName: 'trade', args: [TOKENS.HSK.address, true, 1_000_000n, 0n, 'no floor'], account: agent }); } catch (e) { slipReverted = /SlippageTooLoose/.test(String(e.message)); }
@@ -152,6 +162,52 @@ try {
   await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setPaused', args: [true] }) });
   const r7 = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 2, note: 'paused' });
   check('trades are refused while paused', !r7.ok && /IsPaused/.test(r7.reason), r7.ok ? 'executed!' : r7.reason.slice(0, 100));
+
+  // 7b) the stop-loss: set by the owner, carried out by anyone, and not fooled by a price pushed for one block
+  const hskToken = TOKENS.HSK.address;
+  const stopCall = (account) => pub.simulateContract({ address: vault, abi, functionName: 'stopOut', args: [hskToken], account });
+  const refusal = async (account) => { try { await stopCall(account); return 'went through'; } catch (e) { return /(NoStopLoss|StopNotReached|PriceMoving|NothingToSell)/.exec(String(e.message))?.[1] ?? String(e.message).slice(0, 80); } };
+  check('with no stop-loss set, nobody can sell the holding', (await refusal(carol)) === 'NoStopLoss');
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setLimits', args: [NO_LIMIT, NO_LIMIT, 300] }) });
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setStopLoss', args: [1000] }) });
+  const before7 = await read(vault, 'position', [hskToken]);
+  console.log('WHSK position: held', formatUnits(before7[0], 18), 'cost', formatUnits(before7[1], 6), 'worth', formatUnits(before7[2], 6), 'stop under', formatUnits(before7[3], 6));
+  check('a 10% stop-loss does not fire while the holding is worth about what it cost', (await refusal(carol)) === 'StopNotReached');
+  let agentStopRefused = false;
+  try { await pub.simulateContract({ address: vault, abi, functionName: 'setStopLoss', args: [0], account: agent }); } catch (e) { agentStopRefused = /NotOwner/.test(String(e.message)); }
+  check('the agent key cannot change the stop-loss', agentStopRefused);
+
+  // someone dumps WHSK into the pool until the holding is down more than 10%
+  const dumper = privateKeyToAccount('0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a');
+  const dumperW = createWalletClient({ account: dumper, chain, transport: http(RPC) });
+  await test.setBalance({ address: dumper.address, value: 10n ** 25n });
+  const whskAbi = [{ type: 'function', name: 'deposit', stateMutability: 'payable', inputs: [], outputs: [] }, { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 's', type: 'address' }, { name: 'v', type: 'uint256' }], outputs: [{ type: 'bool' }] }];
+  const routerAbi = [{ type: 'function', name: 'exactInputSingle', stateMutability: 'payable', inputs: [{ name: 'p', type: 'tuple', components: [{ name: 'tokenIn', type: 'address' }, { name: 'tokenOut', type: 'address' }, { name: 'fee', type: 'uint24' }, { name: 'recipient', type: 'address' }, { name: 'amountIn', type: 'uint256' }, { name: 'amountOutMinimum', type: 'uint256' }, { name: 'sqrtPriceLimitX96', type: 'uint160' }] }], outputs: [{ type: 'uint256' }] }];
+  await pub.waitForTransactionReceipt({ hash: await dumperW.writeContract({ address: hskToken, abi: whskAbi, functionName: 'deposit', value: 5n * 10n ** 24n }) });
+  await pub.waitForTransactionReceipt({ hash: await dumperW.writeContract({ address: hskToken, abi: whskAbi, functionName: 'approve', args: [ROUTER, 5n * 10n ** 24n] }) });
+  let pos = before7;
+  for (let i = 0; i < 40 && pos[2] * 100n >= pos[1] * 86n; i++) {
+    await pub.waitForTransactionReceipt({ hash: await dumperW.writeContract({ address: ROUTER, abi: routerAbi, functionName: 'exactInputSingle', args: [{ tokenIn: hskToken, tokenOut: USDT, fee: 3000, recipient: dumper.address, amountIn: 10n ** 23n, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n }] }) });
+    pos = await read(vault, 'position', [hskToken]);
+  }
+  console.log('after the dump: worth', formatUnits(pos[2], 6), 'against a stop under', formatUnits(pos[3], 6));
+  check('the holding is now worth less than the stop allows', pos[2] < pos[3]);
+  check('right after the price was pushed, the stop is refused: the price is away from its 10-minute average', (await refusal(carol)) === 'PriceMoving');
+  await test.increaseTime({ seconds: 660 });
+  await test.mine({ blocks: 1 });
+  check('the vault is still paused for the agent', (await read(vault, 'paused')) === true);
+  const usdtBefore = await usdtBal();
+  const carolW = createWalletClient({ account: carol, chain, transport: http(RPC) });
+  await test.setBalance({ address: carol.address, value: 10n ** 20n });
+  const stopReceipt = await pub.waitForTransactionReceipt({ hash: await carolW.writeContract({ address: vault, abi, functionName: 'stopOut', args: [hskToken] }) });
+  const afterStop = await read(vault, 'position', [hskToken]);
+  const got = (await usdtBal()) - usdtBefore;
+  check('once the price has held for 10 minutes, a stranger carries out the stop and the USDT stays in the vault', stopReceipt.status === 'success' && afterStop[0] === 0n && afterStop[1] === 0n && got > 0n, `sold ${formatUnits(pos[0], 18)} WHSK for ${formatUnits(got, 6)} USDT (cost ${formatUnits(pos[1], 6)})`);
+  const carolGot = await pub.readContract({ address: USDT, abi: erc20, functionName: 'balanceOf', args: [carol.address] });
+  check('the stranger got nothing out of it', carolGot === 0n);
+  check('with the holding gone there is nothing left to stop out', (await refusal(carol)) === 'NothingToSell');
+  const serverStop = await stopOut(cfg, 'HSK');
+  check('the server\'s own stop-loss check reports the vault\'s refusal instead of sending', !serverStop.ok && /NothingToSell/.test(serverStop.reason), serverStop.ok ? 'sent!' : serverStop.reason);
 
   // 8) no vault configured -> executor refuses before touching the chain
   const r8 = await executeTrade({ ...cfg, vault: undefined }, { asset: 'HSK', side: 'buy', amount: 5, note: 'x' });

@@ -4,7 +4,7 @@ Moa gives every user their own vault. One contract, the **MoaVaultFactory**, is 
 makes a **MoaVault** for each wallet that logs in. Everything below is run on your own computer, from
 `hsk-agent/contracts`. The contracts are unaudited. Start with small amounts.
 
-**Deployed 26 Nov 2026:** factory [`0x49807417fcebfb90e59933f0c44e4f1edf96444c`](https://hsk.blockscout.com/address/0x49807417fcebfb90e59933f0c44e4f1edf96444c)
+**Deployed 26 Nov 2026 (first version of the vault, superseded):** factory [`0x49807417fcebfb90e59933f0c44e4f1edf96444c`](https://hsk.blockscout.com/address/0x49807417fcebfb90e59933f0c44e4f1edf96444c)
 ([transaction](https://hsk.blockscout.com/tx/0xedb6a15b62c220ccd46df7927685de73fa516e1fb76ad1c220a5c4c4e37f6ebf)).
 Read back from the chain afterwards: the agent, USDT, router, the three markets and the limits ($10 per trade,
 $30 per day, 1.5%) are as planned. Steps 1 to 3 below are done; the app flow on mainnet (step 5) is not checked yet.
@@ -15,6 +15,16 @@ account menu has **Limits** (per trade, per day, worst price accepted, each with
 A vault from the deployed factory can have its limits changed or removed there by its owner, in one transaction.
 For new vaults to start without limits, deploy a new factory with the steps below and point
 `MOA_FACTORY_ADDRESS` at it.
+
+**The vault has since changed (version 2)** and needs a new factory deployed with the steps below:
+- the spending limits apply to buys only, so selling back to USDT is never held up by them (in the first version a
+  sell counted towards the day's limit and could be refused on a day the limit was used up);
+- a stop-loss the owner sets in the account menu: once a holding is worth that much less than it cost, anyone may
+  call `stopOut(token)` and the vault sells all of it for USDT, which stays in the vault. It checks that the pool
+  price is within the slippage ceiling of its own 10-minute average, so a price pushed for one transaction can
+  neither set it off nor make the sale cheap; in a fast fall that means it waits until the price has held. The
+  agent's own sell is not delayed by this.
+Vaults made by the first factory keep working as they are; funds in them can be withdrawn at any time.
 
 ## Who can do what
 
@@ -144,12 +154,16 @@ Checked on 26 Nov 2026:
   liquidity, and comes from that same factory. The deploy script repeats these checks every time and stops on any mismatch.
 - The explorer accepts compiler `v0.8.26+commit.8a97fa7a`, EVM version `cancun` and standard-JSON-input verification.
 - On a local fork of mainnet, with Hardhat's public test keys:
-  - `scripts/fork-test.mjs`, 28 checks: the server makes a vault for a wallet that signs nothing; it starts with the
+  - `scripts/fork-test.mjs`, 42 checks: the server makes a vault for a wallet that signs nothing; it starts with the
     three markets listed; asking twice gives the same vault; a second user gets a different vault and cannot withdraw
     from the first; the daily cap on vault creation; an order on an empty vault is refused; every trading guard
     (per-trade cap, daily cap, slippage floor, owner-only withdrawal, pause); and the owner's own limits (the agent
     cannot change them; with none a larger order fills; new ones are reported and enforced; a tighter price floor
-    still fills).
+    still fills). For the second version of the vault: a sell goes through on a day whose spending limit is used
+    up; the cost of each holding is tracked through buys, sells and withdrawals; the stop-loss does not fire at a
+    small loss, is refused right after the price is pushed down (the price is away from its 10-minute average),
+    and once the price has held a stranger carries it out, the USDT stays in the vault and the stranger gets nothing;
+    it works while the vault is paused; the agent cannot change it.
   - The deploy script (dry run, a refused confirmation, the hidden key prompt: the key does not appear in the
     terminal output) and the `vault.mjs` commands.
   - In a browser against the fork: log in, vault made, deposit 20 USDT, an order with the session (filled), the same

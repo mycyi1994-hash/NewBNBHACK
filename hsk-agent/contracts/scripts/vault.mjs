@@ -7,6 +7,8 @@
 //   node scripts/vault.mjs withdraw USDT 20       take 20 USDT back to my wallet (also WHSK, WETH, WBTC; "all" for everything)
 //   node scripts/vault.mjs pause | unpause        stop or allow the agent's trades on my vault
 //   node scripts/vault.mjs limits 10 30 150       per-trade USDT, per-day USDT, slippage ceiling in bps ("none" for no limit)
+//   node scripts/vault.mjs stop 10 | stop off     stop-loss: sell a holding once it is worth 10% less than it cost
+//   node scripts/vault.mjs stopout WHSK           carry out a stop that is due (anyone's key works; the USDT stays in the vault)
 //   node scripts/vault.mjs agent 0x…              replace my vault's agent wallet (e.g. if its key may have leaked)
 //
 // The factory address comes from MOA_FACTORY_ADDRESS, or from deployments/hsk-mainnet.json.
@@ -35,14 +37,16 @@ const vaultOf = async (owner) => {
 async function status(vault) {
   const read = (functionName, args = []) => pub.readContract({ address: vault, abi, functionName, args });
   const [owner, agent, paused, maxTrade, maxDaily, slip, left] = await Promise.all(['owner', 'agent', 'paused', 'maxTradeUsdt', 'maxDailyUsdt', 'maxSlippageBps', 'remainingToday'].map((f) => read(f)));
+  const stop = Number(await read('stopLossBps'));
   console.log(`\nVault ${vault}\n  ${EXPLORER}/address/${vault}`);
   console.log(`  owner   ${owner}`);
   console.log(`  agent   ${agent}   (${Number(formatEther(await pub.getBalance({ address: agent }))).toFixed(2)} HSK for gas)`);
-  console.log(`  limits  per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)}${cap(maxDaily) === 'no limit' ? '' : ` ($${usd(left)} left today)`} · ${Number(slip) / 100}% slippage ceiling${paused ? '   PAUSED' : ''}`);
+  console.log(`  limits  per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)}${cap(maxDaily) === 'no limit' ? '' : ` ($${usd(left)} left today)`} · ${Number(slip) / 100}% slippage ceiling · stop-loss: ${stop ? `${stop / 100}%` : 'off'}${paused ? '   PAUSED' : ''}`);
   for (const [name, t] of Object.entries(TOKENS)) {
     const bal = await balanceOf(t.token, vault);
     const market = name === 'USDT' ? null : await read('markets', [t.token]);
-    console.log(`  ${name.padEnd(5)} ${formatUnits(bal, t.decimals)}${market ? (market[3] ? '   (listed)' : '   (not listed)') : ''}`);
+    const pos = market && bal > 0n ? await read('position', [t.token]) : null;
+    console.log(`  ${name.padEnd(5)} ${formatUnits(bal, t.decimals)}${market ? (market[3] ? '   (listed)' : '   (not listed)') : ''}${pos ? `   cost $${usd(pos[1])} · worth $${usd(pos[2])}${pos[3] ? ` · stop under $${usd(pos[3])}` : ''}` : ''}`);
   }
   console.log('');
 }
@@ -54,7 +58,7 @@ if (cmd === 'status' && rest[0]) {
   await status(v);
   process.exit(0);
 }
-if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'agent'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
+if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
 
 const key = await ownerKey('the vault owner\'s wallet');
 if (!key) fail(cmd === 'status' ? 'usage: status <owner address>' : 'the key is missing or is not a 64-hex private key.');
@@ -108,6 +112,10 @@ if (cmd === 'fund') {
   const trade = asked > daily ? daily : asked;   // no per-trade limit under a daily limit = the daily limit
   if (trade <= 0n || daily <= 0n || !(bps > 0 && bps <= 1000)) fail('usage: limits <per-trade USDT|none> <per-day USDT|none> <slippage bps, 1 to 1000>');
   await run(`Set limits to per trade: ${cap(trade)}, per day: ${cap(daily)}, ${bps / 100}% slippage ceiling.`, 'limits', call('setLimits', [trade, daily, bps]));
+} else if (cmd === 'stop') {
+  const bps = rest[0] === 'off' ? 0 : Math.round(Number(rest[0]) * 100);
+  if (!(bps >= 0 && bps <= 9000)) fail('usage: stop <percent, up to 90> | stop off');
+  await run(bps ? `Set the stop-loss: anyone may sell a holding once it is worth ${bps / 100}% less than it cost.` : 'Turn the stop-loss off.', 'stop', call('setStopLoss', [bps]));
 } else if (cmd === 'agent') {
   if (!isAddress(rest[0] ?? '')) fail('usage: agent <new agent address>');
   if (same(rest[0], owner)) fail('the agent must be a different wallet from the owner.');

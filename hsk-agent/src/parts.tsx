@@ -9,7 +9,9 @@ import type { Net } from './account.ts';
 export interface VaultInfo {
   configured: boolean; service?: boolean; signedIn?: boolean; owner?: string; making?: boolean; makeError?: string;
   vault?: string; explorerUrl?: string; localFork?: boolean; paused?: boolean; net?: Net;
-  usdtBalance?: string; walletUsdt?: string; holdings?: { symbol: string; address: string; decimals: number; amount: string }[];
+  usdtBalance?: string; walletUsdt?: string; holdings?: { symbol: string; address: string; decimals: number; amount: string; costUsdt?: string; valueUsdt?: string; stopUsdt?: string; stopDue?: boolean }[];
+  /** 0 or missing = no stop-loss; otherwise the loss on a holding (in basis points) at which anyone may sell it */
+  stopLossBps?: number;
   /** The owner's limits on the agent. A missing value means the owner set no limit. */
   remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string; maxSlippageBps?: number;
 }

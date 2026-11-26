@@ -2,9 +2,12 @@
 pragma solidity 0.8.26;
 
 /// @title MoaVault
-/// @notice Holds a user's funds on HSK Chain. The owner deposits and withdraws; the Moa agent key may only
-///         swap between USDT and an allow-listed token on HSKSwap (Uniswap V3), within hard limits:
-///         a per-trade cap, a per-day cap (both in USDT), and a slippage floor checked against the pool price.
+/// @notice Holds one user's funds on HSK Chain. The owner deposits and withdraws; the Moa agent key may only
+///         swap between USDT and an allow-listed token on HSKSwap (Uniswap V3), inside what the owner allows:
+///         a per-trade and a per-day limit on what it may spend (both in USDT), and a price floor checked against
+///         the pool price. Selling back to USDT is never held up by the spending limits.
+///         The owner can also set a stop-loss: once a holding is worth that much less than it cost, anyone may
+///         make the vault sell it, so the stop does not depend on Moa's server being up.
 ///         The agent can never move funds out of the vault.
 
 interface IERC20 {
@@ -18,6 +21,7 @@ interface IUniswapV3Pool {
     function token0() external view returns (address);
     function token1() external view returns (address);
     function fee() external view returns (uint24);
+    function observe(uint32[] calldata secondsAgos) external view returns (int56[] memory tickCumulatives, uint160[] memory);
 }
 
 interface ISwapRouter02 {
@@ -42,25 +46,34 @@ contract MoaVault {
         bool enabled;
     }
 
+    /// The stop-loss compares the pool price now with its average over this long, so that a price pushed around
+    /// inside one block cannot set a stop off.
+    uint32 public constant STOP_WINDOW = 10 minutes;
+
     address public immutable owner;
     address public immutable usdt;
     ISwapRouter02 public immutable router;
 
     address public agent;
     bool public paused;
-    uint256 public maxTradeUsdt; // per trade, USDT base units (6 decimals)
-    uint256 public maxDailyUsdt; // per UTC day
-    uint16 public maxSlippageBps; // vs the pool price at execution time
+    uint256 public maxTradeUsdt; // most USDT the agent may spend in one buy (6 decimals)
+    uint256 public maxDailyUsdt; // most USDT the agent may spend on buys per UTC day
+    uint16 public maxSlippageBps; // worst price accepted, against the pool price at execution time
+    uint16 public stopLossBps; // 0 = no stop-loss; otherwise the loss on a holding at which anyone may sell it
 
     mapping(address token => Market) public markets;
     mapping(uint256 day => uint256 usdt) public spentOnDay;
+    /// What the token the vault holds now cost, in USDT. Buys add to it; sells and withdrawals take their share out.
+    mapping(address token => uint256 usdt) public costUsdt;
 
     event AgentSet(address agent);
     event LimitsSet(uint256 maxTradeUsdt, uint256 maxDailyUsdt, uint16 maxSlippageBps);
+    event StopLossSet(uint16 stopLossBps);
     event MarketSet(address token, address pool, uint24 fee, bool enabled);
     event Paused(bool paused);
     event Withdrawn(address token, uint256 amount);
     event Traded(address indexed token, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 notionalUsdt, string note);
+    event StoppedOut(address indexed token, address indexed caller, uint256 amountIn, uint256 amountOut, uint256 costUsdt);
 
     error NotOwner();
     error NotAgent();
@@ -70,6 +83,10 @@ contract MoaVault {
     error DailyCapExceeded(uint256 wouldSpend, uint256 cap);
     error SlippageTooLoose(uint256 minOut, uint256 floor);
     error BadLimits();
+    error NoStopLoss();
+    error NothingToSell();
+    error StopNotReached(uint256 valueUsdt, uint256 stopUsdt);
+    error PriceMoving(int24 tickNow, int24 tickAverage);
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -86,6 +103,7 @@ contract MoaVault {
         uint256 maxTrade_,
         uint256 maxDaily_,
         uint16 slippageBps_,
+        uint16 stopLossBps_,
         address[] memory tokens,
         address[] memory pools
     ) {
@@ -96,6 +114,7 @@ contract MoaVault {
         usdt = usdt_;
         router = ISwapRouter02(router_);
         _setLimits(maxTrade_, maxDaily_, slippageBps_);
+        _setStopLoss(stopLossBps_);
         emit AgentSet(agent_);
         for (uint256 i = 0; i < tokens.length; i++) _setMarket(tokens[i], pools[i], true);
     }
@@ -111,18 +130,13 @@ contract MoaVault {
         _setLimits(maxTrade_, maxDaily_, slippageBps_);
     }
 
-    function setMarket(address token, address pool, bool enabled) external onlyOwner {
-        _setMarket(token, pool, enabled);
+    /// @param stopLossBps_ 0 turns the stop-loss off; 1000 means "sell a holding once it is worth 10% less than it cost"
+    function setStopLoss(uint16 stopLossBps_) external onlyOwner {
+        _setStopLoss(stopLossBps_);
     }
 
-    function _setMarket(address token, address pool, bool enabled) internal {
-        IUniswapV3Pool p = IUniswapV3Pool(pool);
-        address t0 = p.token0();
-        address t1 = p.token1();
-        require((t0 == token && t1 == usdt) || (t1 == token && t0 == usdt), "pool is not token/USDT");
-        uint24 fee = p.fee();
-        markets[token] = Market({pool: pool, fee: fee, tokenIsToken0: t0 == token, enabled: enabled});
-        emit MarketSet(token, pool, fee, enabled);
+    function setMarket(address token, address pool, bool enabled) external onlyOwner {
+        _setMarket(token, pool, enabled);
     }
 
     function setPaused(bool paused_) external onlyOwner {
@@ -132,6 +146,8 @@ contract MoaVault {
 
     /// @notice Only the owner can take funds out, and only to the owner.
     function withdraw(address token, uint256 amount) external onlyOwner {
+        uint256 held = IERC20(token).balanceOf(address(this));
+        if (held > 0 && costUsdt[token] > 0) costUsdt[token] = amount >= held ? 0 : (costUsdt[token] * (held - amount)) / held;
         require(IERC20(token).transfer(owner, amount), "transfer failed");
         emit Withdrawn(token, amount);
     }
@@ -157,27 +173,51 @@ contract MoaVault {
         if (minOut < floor) revert SlippageTooLoose(minOut, floor);
 
         uint256 notional = isBuy ? amountIn : expectedOut;
-        if (notional > maxTradeUsdt) revert TradeTooLarge(notional, maxTradeUsdt);
-        uint256 day = block.timestamp / 1 days;
-        uint256 wouldSpend = spentOnDay[day] + notional;
-        if (wouldSpend > maxDailyUsdt) revert DailyCapExceeded(wouldSpend, maxDailyUsdt);
-        spentOnDay[day] = wouldSpend;
-
-        address tokenIn = isBuy ? usdt : token;
-        address tokenOut = isBuy ? token : usdt;
-        require(IERC20(tokenIn).approve(address(router), amountIn), "approve failed"); // exact amount only
-        amountOut = router.exactInputSingle(
-            ISwapRouter02.ExactInputSingleParams({
-                tokenIn: tokenIn,
-                tokenOut: tokenOut,
-                fee: m.fee,
-                recipient: address(this),
-                amountIn: amountIn,
-                amountOutMinimum: minOut,
-                sqrtPriceLimitX96: 0
-            })
-        );
+        if (isBuy) {
+            // The limits are on what the agent may spend. Getting back out to USDT is never held up by them.
+            if (notional > maxTradeUsdt) revert TradeTooLarge(notional, maxTradeUsdt);
+            uint256 day = block.timestamp / 1 days;
+            uint256 wouldSpend = spentOnDay[day] + notional;
+            if (wouldSpend > maxDailyUsdt) revert DailyCapExceeded(wouldSpend, maxDailyUsdt);
+            spentOnDay[day] = wouldSpend;
+            amountOut = _swap(usdt, token, m.fee, amountIn, minOut);
+            costUsdt[token] += amountIn;
+        } else {
+            uint256 held = IERC20(token).balanceOf(address(this));
+            amountOut = _swap(token, usdt, m.fee, amountIn, minOut);
+            costUsdt[token] = amountIn >= held ? 0 : (costUsdt[token] * (held - amountIn)) / held;
+        }
         emit Traded(token, isBuy, amountIn, amountOut, notional, note);
+    }
+
+    // ----- anyone -----
+
+    /// @notice Sell the whole holding of `token` for USDT once it is worth less than the owner's stop-loss allows.
+    ///         Anyone may call this; the proceeds stay in the vault. It works while the vault is paused, because
+    ///         pausing is for stopping the agent, not for trapping a falling position.
+    ///         It refuses while the pool price is away from its recent average, so a price pushed around for one
+    ///         transaction can neither set the stop off nor make the sale cheap.
+    function stopOut(address token) external returns (uint256 amountOut) {
+        if (stopLossBps == 0) revert NoStopLoss();
+        Market memory m = markets[token];
+        if (m.pool == address(0)) revert MarketDisabled();
+        uint256 held = IERC20(token).balanceOf(address(this));
+        uint256 cost = costUsdt[token];
+        if (held == 0 || cost == 0) revert NothingToSell();
+
+        (, int24 tickNow,,,,,) = IUniswapV3Pool(m.pool).slot0();
+        int24 tickAverage = _averageTick(m.pool);
+        int24 gap = tickNow > tickAverage ? tickNow - tickAverage : tickAverage - tickNow;
+        // one tick is 0.01% in price, the same size as one basis point
+        if (uint24(gap) > maxSlippageBps) revert PriceMoving(tickNow, tickAverage);
+
+        uint256 value = _quote(m, false, held);
+        uint256 stopAt = (cost * (10_000 - stopLossBps)) / 10_000;
+        if (value >= stopAt) revert StopNotReached(value, stopAt);
+
+        amountOut = _swap(token, usdt, m.fee, held, (value * (10_000 - maxSlippageBps)) / 10_000);
+        costUsdt[token] = 0;
+        emit StoppedOut(token, msg.sender, held, amountOut, cost);
     }
 
     // ----- views -----
@@ -192,6 +232,16 @@ contract MoaVault {
         return spent >= maxDailyUsdt ? 0 : maxDailyUsdt - spent;
     }
 
+    /// @notice A holding at a glance: how much, what it cost, what it is worth at the pool price now, and the
+    ///         value under which the stop-loss lets anyone sell it (0 when there is no stop-loss).
+    function position(address token) external view returns (uint256 held, uint256 cost, uint256 valueUsdt, uint256 stopUsdt) {
+        held = IERC20(token).balanceOf(address(this));
+        cost = costUsdt[token];
+        Market memory m = markets[token];
+        valueUsdt = m.pool == address(0) || held == 0 ? 0 : _quote(m, false, held);
+        stopUsdt = stopLossBps == 0 ? 0 : (cost * (10_000 - stopLossBps)) / 10_000;
+    }
+
     // ----- internal -----
 
     function _setLimits(uint256 maxTrade_, uint256 maxDaily_, uint16 slippageBps_) internal {
@@ -200,6 +250,49 @@ contract MoaVault {
         maxDailyUsdt = maxDaily_;
         maxSlippageBps = slippageBps_;
         emit LimitsSet(maxTrade_, maxDaily_, slippageBps_);
+    }
+
+    function _setStopLoss(uint16 stopLossBps_) internal {
+        if (stopLossBps_ > 9_000) revert BadLimits();
+        stopLossBps = stopLossBps_;
+        emit StopLossSet(stopLossBps_);
+    }
+
+    function _setMarket(address token, address pool, bool enabled) internal {
+        IUniswapV3Pool p = IUniswapV3Pool(pool);
+        address t0 = p.token0();
+        address t1 = p.token1();
+        require((t0 == token && t1 == usdt) || (t1 == token && t0 == usdt), "pool is not token/USDT");
+        uint24 fee = p.fee();
+        markets[token] = Market({pool: pool, fee: fee, tokenIsToken0: t0 == token, enabled: enabled});
+        emit MarketSet(token, pool, fee, enabled);
+    }
+
+    function _swap(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint256 minOut) internal returns (uint256) {
+        require(IERC20(tokenIn).approve(address(router), amountIn), "approve failed"); // exact amount only
+        return router.exactInputSingle(
+            ISwapRouter02.ExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: fee,
+                recipient: address(this),
+                amountIn: amountIn,
+                amountOutMinimum: minOut,
+                sqrtPriceLimitX96: 0
+            })
+        );
+    }
+
+    /// The pool's own time-weighted average tick over STOP_WINDOW.
+    function _averageTick(address pool) internal view returns (int24) {
+        uint32[] memory ago = new uint32[](2);
+        ago[0] = STOP_WINDOW;
+        ago[1] = 0;
+        (int56[] memory cumulative,) = IUniswapV3Pool(pool).observe(ago);
+        int56 delta = cumulative[1] - cumulative[0];
+        int56 average = delta / int56(uint56(STOP_WINDOW));
+        if (delta < 0 && (delta % int56(uint56(STOP_WINDOW)) != 0)) average--; // round towards the lower tick
+        return int24(average);
     }
 
     /// price of token0 in token1 = (sqrtP / 2^96)^2

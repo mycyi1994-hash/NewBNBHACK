@@ -10,6 +10,7 @@
 //   --max-trade none     MOA_MAX_TRADE_USDT     what every new vault starts with as its per-trade limit in USDT (default none)
 //   --max-daily none     MOA_MAX_DAILY_USDT     what every new vault starts with as its per-day limit in USDT (default none)
 //   --slippage-bps 150   MOA_MAX_SLIPPAGE_BPS   what every new vault starts with as its slippage ceiling, 150 = 1.5% (default 150)
+//   --stop-loss-bps 0    MOA_STOP_LOSS_BPS      what every new vault starts with as its stop-loss, 1000 = 10% (default 0: off)
 // Limits are each user's own choice: a vault starts with none, and its owner sets, changes or removes them in the
 // app's account menu (or scripts/vault.mjs limits). Without limits, a leaked agent key could trade a vault's whole
 // balance back and forth and lose it to fees and bad prices; it still could not withdraw.
@@ -43,12 +44,14 @@ const maxDaily = limitOf(option('max-daily', 'MOA_MAX_DAILY_USDT'));
 const maxTradeAsked = limitOf(option('max-trade', 'MOA_MAX_TRADE_USDT'));
 const maxTrade = maxTradeAsked > maxDaily ? maxDaily : maxTradeAsked;   // no per-trade limit under a daily limit = the daily limit
 const slip = Number(option('slippage-bps', 'MOA_MAX_SLIPPAGE_BPS') ?? 150);
+const stop = Number(option('stop-loss-bps', 'MOA_STOP_LOSS_BPS') ?? 0);
+if (!(Number.isInteger(stop) && stop >= 0 && stop <= 9000)) fail('stop-loss: 0 (off) to 9000 bps.');
 if (maxTrade <= 0n || maxDaily <= 0n || !(Number.isInteger(slip) && slip > 0 && slip <= 1000)) fail('limits: an amount above 0 or "none" for each, and slippage 1 to 1000 bps.');
 
 const pub = client();
 const { abi, bytecode } = artifact('MoaVaultFactory');
 const tokens = Object.values(MARKETS).map((m) => m.token), pools = Object.values(MARKETS).map((m) => m.pool);
-const args = [agent, USDT, ROUTER, maxTrade, maxDaily, slip, tokens, pools];
+const args = [agent, USDT, ROUTER, maxTrade, maxDaily, slip, stop, tokens, pools];
 
 console.log(`\nMoaVaultFactory → ${WHERE} (${RPC})\n`);
 const problems = await checkAddresses(pub);
@@ -60,13 +63,13 @@ const [balance, gasPrice, agentBalance, agentCode] = await Promise.all([pub.getB
 if (agentCode && agentCode !== '0x') fail('the agent address is a contract, not a wallet.');
 const gas = await pub.estimateGas({ account: from, data: encodeDeployData({ abi, bytecode, args }) }).catch(() => 2_600_000n);
 const cost = gas * gasPrice;
-const VAULT_GAS = 1_250_000n;   // measured on a fork: making one user's vault uses about 1.2M gas
+const VAULT_GAS = 1_800_000n;   // measured on a fork: making one user's vault uses about 1.76M gas
 const hsk = (v) => Number(formatEther(v)).toFixed(2);
 
 console.log(`  deploying wallet (pays the gas, gets no control)   ${from}`);
 console.log(`  agent (trades for every vault, inside its limits)  ${agent}`);
-console.log(`  each new vault starts with                         per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)} · ${slip / 100}% slippage ceiling`);
-console.log('                                                     (each owner sets their own limits afterwards)');
+console.log(`  each new vault starts with                         per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)} · ${slip / 100}% slippage ceiling · stop-loss: ${stop ? `${stop / 100}%` : 'off'}`);
+console.log('                                                     (each owner sets their own limits and stop-loss afterwards)');
 console.log(`  markets                                            ${Object.keys(MARKETS).join(', ')} against USDT on HSKSwap`);
 console.log('  transactions                                       1 (the factory)');
 console.log(`  estimated gas                                      ${gas} × ${Number(gasPrice) / 1e9} gwei ≈ ${hsk(cost)} HSK`);
@@ -89,7 +92,7 @@ const factory = receipt.contractAddress;
 mkdirSync(new URL('./', RECORD), { recursive: true });
 writeFileSync(RECORD, JSON.stringify({
   chainId: 177, factory, deployer: from, agent, usdt: USDT, router: ROUTER, markets: MARKETS,
-  limits: { maxTradeUsdt: maxTrade.toString(), maxDailyUsdt: maxDaily.toString(), maxSlippageBps: slip },
+  limits: { maxTradeUsdt: maxTrade.toString(), maxDailyUsdt: maxDaily.toString(), maxSlippageBps: slip, stopLossBps: stop },
   transactions: { deploy: hash }, deployedAt: new Date().toISOString(),
   verify: {
     compiler: 'v0.8.26+commit.8a97fa7a', optimizer: { enabled: true, runs: 200 }, viaIR: true, evmVersion: 'cancun',

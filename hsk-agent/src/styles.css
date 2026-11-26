@@ -1391,3 +1391,7 @@ select { padding-right: 8px; }
   .wz-review > div { grid-template-columns: 72px minmax(0, 1fr) auto; }
 }
 @media (prefers-reduced-motion: reduce) { .wz-panel, .wz-ghost i { animation: none; } }
+
+.acct-held li > span:first-child { display: inline-flex; align-items: baseline; gap: 6px; }
+.acct-worth { display: inline-flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.acct-worth em { font-style: normal; font-size: 12px; font-weight: 600; } .acct-worth em.pos { color: var(--pos); } .acct-worth em.neg { color: var(--neg); }

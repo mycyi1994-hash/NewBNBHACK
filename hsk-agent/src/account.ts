@@ -189,3 +189,8 @@ export function setLimits(net: Net, vault: string, perTrade: string | null, perD
 /** Lock or unlock my vault for agents. Deposits and withdrawals are not affected. */
 export const setPaused = (net: Net, vault: string, paused: boolean) =>
   send(net, vault, encodeFunctionData({ abi: SET_PAUSED, functionName: 'setPaused', args: [paused] }));
+
+const SET_STOP = [{ type: 'function', name: 'setStopLoss', stateMutability: 'nonpayable', inputs: [{ name: 'stopLossBps', type: 'uint16' }], outputs: [] }] as const;
+/** My stop-loss: once a holding is worth this much less than it cost, anyone may make the vault sell it. 0 = off. */
+export const setStopLoss = (net: Net, vault: string, bps: number) =>
+  send(net, vault, encodeFunctionData({ abi: SET_STOP, functionName: 'setStopLoss', args: [bps] }));

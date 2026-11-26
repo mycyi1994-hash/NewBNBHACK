@@ -27,7 +27,7 @@ if (args[0] === 'vault') {
   const vault = await pub.readContract({ address: rec.factory, abi: artifact('MoaVaultFactory').abi, functionName: 'vaultOf', args: [owner] });
   if (vault === zeroAddress) fail(`${owner} has no vault yet.`);
   const tokens = Object.values(rec.markets).map((m) => m.token), pools = Object.values(rec.markets).map((m) => m.pool);
-  const values = [owner, rec.agent, rec.usdt, rec.router, BigInt(rec.limits.maxTradeUsdt), BigInt(rec.limits.maxDailyUsdt), rec.limits.maxSlippageBps, tokens, pools];
+  const values = [owner, rec.agent, rec.usdt, rec.router, BigInt(rec.limits.maxTradeUsdt), BigInt(rec.limits.maxDailyUsdt), rec.limits.maxSlippageBps, rec.limits.stopLossBps ?? 0, tokens, pools];
   target = { address: vault, name: 'MoaVault', constructorArgs: encodeAbiParameters(artifact('MoaVault').abi.find((x) => x.type === 'constructor').inputs, values) };
 }
 

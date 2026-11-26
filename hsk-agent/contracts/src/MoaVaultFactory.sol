@@ -5,8 +5,8 @@ import {MoaVault} from "./MoaVault.sol";
 
 /// @title MoaVaultFactory
 /// @notice Makes one MoaVault per owner, the same way for everyone: the same USDT, router, agent, markets and
-///         starting limits. Anyone may pay to create a vault for an address; that address is the vault's owner and
-///         the only one who can withdraw, change its limits, replace its agent or pause it.
+///         starting limits and stop-loss. Anyone may pay to create a vault for an address; that address is the
+///         vault's owner and the only one who can withdraw, change its limits and stop-loss, replace its agent or pause it.
 ///         The factory has no owner and no setting that can change after deployment, and it never holds funds.
 contract MoaVaultFactory {
     address public immutable usdt;
@@ -15,6 +15,7 @@ contract MoaVaultFactory {
     uint256 public immutable maxTradeUsdt;
     uint256 public immutable maxDailyUsdt;
     uint16 public immutable maxSlippageBps;
+    uint16 public immutable stopLossBps;
 
     address[] private _tokens;
     address[] private _pools;
@@ -31,6 +32,7 @@ contract MoaVaultFactory {
         uint256 maxTrade_,
         uint256 maxDaily_,
         uint16 slippageBps_,
+        uint16 stopLossBps_,
         address[] memory tokens_,
         address[] memory pools_
     ) {
@@ -42,6 +44,7 @@ contract MoaVaultFactory {
         maxTradeUsdt = maxTrade_;
         maxDailyUsdt = maxDaily_;
         maxSlippageBps = slippageBps_;
+        stopLossBps = stopLossBps_;
         _tokens = tokens_;
         _pools = pools_;
     }
@@ -52,7 +55,7 @@ contract MoaVaultFactory {
         if (vault != address(0)) return vault;
         vault = address(
             new MoaVault{salt: bytes32(uint256(uint160(owner_)))}(
-                owner_, agent, usdt, router, maxTradeUsdt, maxDailyUsdt, maxSlippageBps, _tokens, _pools
+                owner_, agent, usdt, router, maxTradeUsdt, maxDailyUsdt, maxSlippageBps, stopLossBps, _tokens, _pools
             )
         );
         vaultOf[owner_] = vault;

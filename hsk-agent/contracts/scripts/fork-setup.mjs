@@ -24,7 +24,7 @@ const ownerW = createWalletClient({ account: owner, chain, transport: http(RPC) 
 
 const factoryArtifact = JSON.parse(readFileSync(new URL('../out/MoaVaultFactory.json', import.meta.url)));
 const agent = privateKeyToAccount(AGENT_KEY).address;
-const factory = (await pub.waitForTransactionReceipt({ hash: await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: [agent, USDT, ROUTER, 2n ** 256n - 1n, 2n ** 256n - 1n, 150, Object.keys(MARKETS), Object.values(MARKETS)] }) })).contractAddress;
+const factory = (await pub.waitForTransactionReceipt({ hash: await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: [agent, USDT, ROUTER, 2n ** 256n - 1n, 2n ** 256n - 1n, 150, 0, Object.keys(MARKETS), Object.values(MARKETS)] }) })).contractAddress;
 // Give the first Hardhat test account 500 USDT (taken from the WHSK pool's balance) so it can log in and deposit.
 const whale = MARKETS['0xB210D2120d57b758EE163cFfb43e73728c471Cf1'];
 await test.impersonateAccount({ address: whale });
