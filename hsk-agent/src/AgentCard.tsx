@@ -37,6 +37,7 @@ export function Equity({ pts, up, wide }: { pts: { value: number }[]; up: boolea
 }
 
 const ICON: Record<RuleId, string> = {
+  tsmom: 'M3 15l4-4 3 2 6-7M13 6h4v4M3 17h14', trend200: 'M3 14c5 0 9-2 14-7M3 17h14', golden: 'M3 15c5 0 7-9 14-9M3 8c5 0 8 7 14 7',
   trend: 'M3 15l5-5 3 3 6-7', ema: 'M3 14c4 0 5-7 9-7 2 0 3 1 5 1M3 10c4 0 6 4 9 4 2 0 3-2 5-3',
   break: 'M3 13h5l2-6 2 9 2-5h3', rsi: 'M3 6h14M3 14h14M4 12l3-5 3 7 3-6 3 4', boll: 'M3 5c5 3 9 3 14 0M3 15c5-3 9-3 14 0M3 10h14',
   daily: 'M4 16h3v-3h3v-3h3V7h3', smart: 'M3 7c3 0 4 7 7 7s4-7 7-7M6 16h8', trendDca: 'M3 13l4-4 3 2 7-6M3 17h14', rsiDca: 'M4 16V9M8 16V5M12 16v-4M16 16V8',
@@ -46,8 +47,8 @@ export function RuleIcon({ rule }: { rule: RuleId }) {
 }
 
 
-export function AgentCard({ agent: a, size, picked, best, onPick, actions }: {
-  agent: Agent; size: 'tile' | 'chat'; picked?: boolean; best?: boolean; onPick?: () => void; actions?: ReactNode;
+export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions }: {
+  agent: Agent; size: 'tile' | 'chat'; picked?: boolean; best?: boolean; rank?: number; onPick?: () => void; actions?: ReactNode;
 }) {
   const { t } = useT();
   const pill = statePill(t, a);
@@ -58,13 +59,15 @@ export function AgentCard({ agent: a, size, picked, best, onPick, actions }: {
     // their own columns so they line up down the table. The lead number is how it did against just holding.
     return (
       <button className={`frow${picked ? ' on' : ''}`} onClick={onPick} aria-pressed={picked}>
+        <span className={`frow-rank${rank && rank <= 3 ? ' top' : ''}`}>{rank}</span>
         <span className="frow-who">
           <span className="frow-ic" aria-hidden><RuleIcon rule={a.rule} /></span>
           <span className="frow-main">
-            <span className="frow-title"><b>{t.agRule[a.rule]}</b>{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
+            <span className="frow-title"><b>{t.agRule[a.rule]}</b>{a.tier === 1 && <span className="frow-star" data-tip={t.agOrigin[a.rule]}>★</span>}{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
             <span className="frow-desc">{t.agLine[a.rule]}</span>
           </span>
         </span>
+        <span className="frow-origin"><span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span></span>
         <span className="frow-state"><span className={`badge ${pill.cls}`}><i />{pill.text}</span></span>
         <span className="frow-eq" aria-hidden><Equity pts={a.equity} up={a.total >= a.hold} /></span>
         <span className={`frow-n lead ${edge >= 0 ? 'pos' : 'neg'}`}>{pct(edge)}</span>
@@ -91,7 +94,7 @@ export function AgentCard({ agent: a, size, picked, best, onPick, actions }: {
     return (
       <div className="acard">
         {head}
-        <p className="ag-line">{t.agLine[a.rule]}</p>
+        <p className="ag-line">{t.agLine[a.rule]} <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span></p>
         <div className="ag-stats">
           <span>{t.acEdge}<b className={edge >= 0 ? 'pos' : 'neg'}>{pct(edge)}</b></span>
           <span>{t.acTotal}<b>{pct(a.total)}</b></span>

@@ -2,16 +2,17 @@
 //  1. Only agents that can trade on HSKSwap (runnable).
 //  2. The coin the user is looking at or named; if no runnable agent trades it, all runnable agents.
 //  3. Risk within the user's level: "new" keeps risk 1–2, everyone else 1–3.
-//  4. The smallest worst drop in the backtest wins (ties: higher period return, then id).
+//  4. Published classics before indicator rules before Moa's variations (agents.ts TIER); within the same
+//     group the smallest worst drop in the backtest wins (ties: higher period return, then id).
 // It never ranks by past return first: the top of many backtests is usually the one that got lucky.
-import type { Agent, Risk } from './agents.ts';
+import { byMerit, type Agent, type Risk } from './agents.ts';
 
 export type Level = 'new' | 'some' | 'pro';
 export interface Recommendation { pick: Agent; others: Agent[]; scope: 'coin' | 'all'; pool: number }
 
 export const maxRiskFor = (level?: Level | null): Risk => (level === 'new' ? 2 : 3);
 
-const byDrop = (a: Agent, b: Agent) => a.maxDd - b.maxDd || b.total - a.total || a.id.localeCompare(b.id);
+const byDrop = byMerit;
 
 export function recommend(agents: Agent[], opts: { coin?: string; level?: Level | null; exclude?: string[] } = {}): Recommendation | null {
   const runnable = agents.filter((a) => a.runnable);

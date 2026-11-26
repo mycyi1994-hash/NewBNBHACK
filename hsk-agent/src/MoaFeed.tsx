@@ -445,8 +445,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
   return (
     <aside className="dock feed-dock" aria-label="Moa">
       <header className="feed-head">
-        <span className="feed-title"><Spark size={16} />Moa</span>
-        <span className="feed-status"><span className="live-dot" /> {level ? t.live : t.feedWatching}</span>
+        <span className="feed-title"><span className={`moa-avatar${busy ? ' busy' : ''}`} aria-hidden><Spark size={13} /></span>Moa<span className="ai-badge" data-tip={level ? t.live : t.feedWatching}><span className="live-dot" />{t.aiBadge}</span></span>
         {level && (
           <div className="depth-switch has-pill" role="tablist" aria-label={t.depthLabel}>
             <SlidePill dep={level} />
@@ -463,7 +462,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
         ) : (
           <article key={n.id} className={`note fade-up${n.sky ? ' brief' : ''}`}>
             {/* Messenger grouping: name and time only on the first of consecutive Moa lines. */}
-            {(k === 0 || notes[k - 1].role !== 'moa' || n.at - notes[k - 1].at > 60_000) && <div className="note-meta">Moa<time>{time(n.at, lang)}</time></div>}
+            {(k === 0 || notes[k - 1].role !== 'moa' || n.at - notes[k - 1].at > 60_000) && <div className="note-meta"><span className="moa-avatar sm" aria-hidden><Spark size={9} /></span>Moa<time>{time(n.at, lang)}</time></div>}
             {n.text && <div className="note-text">{/\n/.test(n.text) ? <RichText text={n.text} /> : <Stream text={n.text} />}</div>}
             {n.offline && <p className="note-offline">{t.offline}</p>}
             {n.sky && <SkyCard level={n.sky.level} list={n.sky.list} />}
@@ -523,7 +522,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
         ))}
         {(typing || busy) && (
           <div className="note typing-note" role="status">
-            <div className="note-meta">Moa</div>
+            <div className="note-meta"><span className="moa-avatar sm busy" aria-hidden><Spark size={9} /></span>Moa</div>
             {busy
               ? (
                 <div className="thoughts">

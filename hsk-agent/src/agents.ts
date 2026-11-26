@@ -1,7 +1,8 @@
 // Moa's agents: one fixed rule on one coin. One scoring module serves the agent market, the agents under
 // the chart, Moa's cards and the server's recommend tool, so the same agent shows the same numbers everywhere.
-//  - Position agents (trend, EMA cross, breakout, RSI bounce, Bollinger): long or flat, decided at each daily
-//    close on HashKey Global candles.
+//  - Position agents: long or flat, decided at each daily close on HashKey Global candles. The published
+//    classics come first (12-month time-series momentum, the Turtle 20/10 breakout, the 200-day average timing
+//    rule, the 50/200 golden cross), then standard indicator rules (MA50, EMA 20/50, RSI bounce, Bollinger).
 //  - Collect agents (daily, smart, trend-filter and RSI-weighted DCA): a buy every day on Gate daily candles,
 //    bigger on some days, smaller or skipped on others. Their returns are on the money put in so far.
 // Every agent is scored over the same last 365 days, so returns and worst drops compare like for like.
@@ -13,16 +14,38 @@ import { gateCandles } from './gate.ts';
 import * as I from './indicators.ts';
 import type { Asset } from './intent.ts';
 
-export type PositionRule = 'trend' | 'ema' | 'break' | 'rsi' | 'boll';
+export type PositionRule = 'tsmom' | 'break' | 'trend200' | 'golden' | 'trend' | 'ema' | 'rsi' | 'boll';
 export type CollectRule = 'daily' | 'smart' | 'trendDca' | 'rsiDca';
 export type RuleId = PositionRule | CollectRule;
 export type Style = 'trend' | 'revert' | 'collect';
 export type Risk = 1 | 2 | 3;
 
+/**
+ * Where a rule comes from, which is also the first key of every default order:
+ *  1: a published strategy with a record in the industry or the literature
+ *     (tsmom: Moskowitz, Ooi and Pedersen 2012, the core of managed-futures funds; break: the Turtle traders'
+ *     System 1 entry and exit, Dennis and Eckhardt 1983; trend200: Faber's 10-month average timing rule, 2007,
+ *     checked daily here; golden: the 50/200-day cross, the most widely followed long-term trend signal);
+ *  2: a standard indicator rule traders know (MA50, EMA cross, Wilder's RSI, Bollinger bands, plain DCA);
+ *  3: Moa's own variation of one of those.
+ * The names and the caveats shown to the user are in i18n (agOrigin, agOriginNote).
+ */
+export type Tier = 1 | 2 | 3;
+export const TIER: Record<RuleId, Tier> = {
+  tsmom: 1, break: 1, trend200: 1, golden: 1,
+  trend: 2, ema: 2, rsi: 2, boll: 2, daily: 2,
+  smart: 3, trendDca: 3, rsiDca: 3,
+};
+/** Days of history a rule needs before its first decision (the slow ones need their long averages). */
+const NEED: Partial<Record<RuleId, number>> = { tsmom: 365, trend200: 200, golden: 200 };
+
 export const POSITION_RULES: { id: PositionRule; style: Style; risk: Risk }[] = [
+  { id: 'tsmom', style: 'trend', risk: 2 },
+  { id: 'break', style: 'trend', risk: 3 },
+  { id: 'trend200', style: 'trend', risk: 2 },
+  { id: 'golden', style: 'trend', risk: 2 },
   { id: 'trend', style: 'trend', risk: 2 },
   { id: 'ema', style: 'trend', risk: 2 },
-  { id: 'break', style: 'trend', risk: 3 },
   { id: 'rsi', style: 'revert', risk: 3 },
   { id: 'boll', style: 'revert', risk: 1 },
 ];
@@ -45,7 +68,8 @@ export const SIGNAL_MARKETS = ['BTCUSDT-PERPETUAL', 'ETHUSDT-PERPETUAL', 'HSKUSD
 export const FEE_HSKSWAP = 0.003;
 export const FEE_HASHKEY = 0.001;
 const WARMUP = 60;          // days of indicator warm-up before the first decision
-const WINDOW = 365;         // every agent is scored over the last 365 days
+export const WINDOW = 365;  // every agent is scored over the last 365 days
+const HISTORY = 1000;       // daily candles asked for: the long averages need them, and "all history" shows them
 const BASE_USD = 10;        // collect backtests buy $10 × the day's multiplier
 
 export interface Agent {
@@ -54,6 +78,7 @@ export interface Agent {
   rule: RuleId;
   style: Style;
   risk: Risk;
+  tier: Tier;
   base: string;
   runnable: boolean;
   source: 'hashkey' | 'gate';
@@ -108,8 +133,8 @@ function cached(key: string, load: () => Promise<Bar[]>): Promise<Bar[]> {
   p.catch(() => { if (cache.get(key)?.p === p) cache.delete(key); });
   return p;
 }
-const hashkeyDaily = (m: cex.Market) => cached(`hk:${m.symbol}`, () => cex.klines(m, '1d', WARMUP + WINDOW + 20));
-const gateDaily = (a: Asset) => cached(`gate:${a}`, () => gateCandles(a, '1d', WARMUP + WINDOW + 20));
+const hashkeyDaily = (m: cex.Market) => cached(`hk:${m.symbol}`, () => cex.klines(m, '1d', HISTORY));
+const gateDaily = (a: Asset) => cached(`gate:${a}`, () => gateCandles(a, '1d', HISTORY));
 
 /* ---------- position agents ---------- */
 
@@ -118,6 +143,9 @@ export function positions(rule: PositionRule, bars: Bar[]): boolean[] {
   const c = bars.map((b) => b.close);
   const pos: boolean[] = [];
   let on = false;
+  if (rule === 'tsmom') return c.map((x, i) => i >= 365 && x > c[i - 365]);
+  if (rule === 'trend200') { const ma = I.sma(c, 200); return c.map((x, i) => Number.isFinite(ma[i]) && x > ma[i]); }
+  if (rule === 'golden') { const f = I.sma(c, 50), s = I.sma(c, 200); return c.map((_, i) => Number.isFinite(s[i]) && f[i] > s[i]); }
   if (rule === 'trend') { const ma = I.sma(c, 50); return c.map((x, i) => Number.isFinite(ma[i]) && x > ma[i]); }
   if (rule === 'ema') { const f = I.ema(c, 20), s = I.ema(c, 50); return c.map((_, i) => Number.isFinite(s[i]) && f[i] > s[i]); }
   if (rule === 'rsi') {
@@ -148,10 +176,16 @@ function stats(rets: number[]) {
   return sd > 0 ? (mean / sd) * Math.sqrt(365) : 0;
 }
 
-/** Long-only backtest over the window. Fees on every entry and exit. */
-export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[]): Agent | null {
-  if (bars.length < WARMUP + 90) return null;
-  const start = Math.max(WARMUP, bars.length - 1 - WINDOW);
+/**
+ * Long-only backtest over the window (the last 365 days, or `Infinity` for all the history there is).
+ * Fees on every entry and exit. A rule that cannot be scored over the full window on this market (not enough
+ * history for its long average) is left out rather than scored over a shorter one.
+ */
+export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window = WINDOW): Agent | null {
+  const need = NEED[rule] ?? WARMUP;
+  if (bars.length < need + 90) return null;
+  if (need > WARMUP && Number.isFinite(window) && bars.length - 1 - window < need) return null;
+  const start = Math.max(need, bars.length - 1 - window);
   const def = POSITION_RULES.find((r) => r.id === rule)!;
   const runnable = isRunnable(market.base);
   const fee = runnable ? FEE_HSKSWAP : FEE_HASHKEY;
@@ -178,7 +212,7 @@ export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[
   const days = bars.length - 1 - start;
   const live = pos[bars.length - 1];
   return {
-    id: `${rule}-${market.symbol}`, kind: 'position', rule, style: def.style, risk: def.risk, base: market.base,
+    id: `${rule}-${market.symbol}`, kind: 'position', rule, style: def.style, risk: def.risk, tier: TIER[rule], base: market.base,
     runnable, source: 'hashkey', market, fee,
     days, from: bars[start].time, to: bars[bars.length - 1].time,
     total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets),
@@ -199,13 +233,13 @@ function collectMult(rule: CollectRule, price: number, ma20: number, ma50: numbe
 }
 
 /** A buy every day over the window; decisions use yesterday's indicators so the test never peeks. */
-export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[]): Agent | null {
+export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], window = WINDOW): Agent | null {
   if (bars.length < WARMUP + 90) return null;
   const def = COLLECT_RULES.find((r) => r.id === rule)!;
   const fee = FEE_HSKSWAP;
   const c = bars.map((b) => b.close);
   const ma20 = I.sma(c, 20), ma50 = I.sma(c, 50), r = I.rsi(c);
-  const start = Math.max(WARMUP, c.length - WINDOW);
+  const start = Math.max(WARMUP, c.length - window);
   let qty = 0, put = 0, buys = 0, peak = 1, maxDd = 0, prev = 1;
   const rets: number[] = [];
   const equity: { time: number; value: number }[] = [];
@@ -226,7 +260,7 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[]): Agen
   const mult = Math.round(collectMult(rule, c[last], ma20[last], ma50[last], r[last]) * 100) / 100;
   const days = c.length - start;
   return {
-    id: `${rule}-${asset}`, kind: 'collect', rule, style: 'collect', risk: def.risk, base: asset,
+    id: `${rule}-${asset}`, kind: 'collect', rule, style: 'collect', risk: def.risk, tier: TIER[rule], base: asset,
     runnable: true, source: 'gate', fee,
     days, from: bars[start].time, to: bars[last].time,
     total: prev - 1, hold: c[last] / c[start] - 1, maxDd, sharpe: stats(rets),
@@ -236,7 +270,21 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[]): Agen
 
 /* ---------- loading ---------- */
 
-/** The five position agents for any HashKey market (the chart's market may not be in the listing). */
+/** The same agent over all the history its exchange has (after its warm-up), for a closer look at one agent. */
+export async function fullBacktest(a: Agent): Promise<Agent | null> {
+  if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), Infinity) : null;
+  return a.market ? scorePosition(a.rule as PositionRule, a.market, await hashkeyDaily(a.market), Infinity) : null;
+}
+
+/** An agent that never traded in the window has no worst drop to judge, so it does not outrank one that did. */
+export const idle = (a: Agent) => a.trades === 0;
+/**
+ * The default order everywhere: published classics first, then the smaller worst drop, then the better return.
+ * Within a group, agents that did not trade at all in the window come last.
+ */
+export const byMerit = (a: Agent, b: Agent) => a.tier - b.tier || Number(idle(a)) - Number(idle(b)) || a.maxDd - b.maxDd || b.total - a.total || a.id.localeCompare(b.id);
+
+/** The position agents for any HashKey market (the chart's market may not be in the listing). */
 export async function positionAgents(m: cex.Market): Promise<Agent[]> {
   const bars = await hashkeyDaily(m);
   return POSITION_RULES.map((r) => scorePosition(r.id, m, bars)).filter((a): a is Agent => a !== null);

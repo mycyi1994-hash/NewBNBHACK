@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreCollect, scorePosition, FEE_HASHKEY, FEE_HSKSWAP, type Agent } from './agents.ts';
+import { scoreCollect, scorePosition, positions, FEE_HASHKEY, FEE_HSKSWAP, TIER, type Agent } from './agents.ts';
 import { recommend } from './recommend.ts';
 import { MARKETS } from './cex.ts';
 
@@ -49,8 +49,32 @@ test('the backtest records what it did: entries and exits for a position agent, 
   assert.ok(c.marks.every((m) => m.side === 'buy' && (m.mult ?? 0) > 0));
 });
 
+test('the published classics decide the way their sources say, and are left out without enough history', () => {
+  const b = bars([...rising(500), ...Array.from({ length: 300 }, (_, i) => 100 * 1.003 ** 499 * 0.995 ** (i + 1))]);
+  const mom = positions('tsmom', b), c = b.map((x) => x.close);
+  for (const i of [364, 365, 500, 700, 799]) assert.equal(mom[i], i >= 365 && c[i] > c[i - 365], `12-month momentum at day ${i}`);
+  assert.equal(positions('trend200', b)[150], false, 'no 200-day average yet');
+  assert.equal(positions('golden', b)[450], true, 'the 50-day average is above the 200-day in a steady rise');
+  assert.equal(scorePosition('tsmom', market('BTCUSDT-PERPETUAL'), bars(rising(600))), null, '600 days cannot hold 365 of look-back and a 365-day test');
+  const full = scorePosition('tsmom', market('BTCUSDT-PERPETUAL'), b)!;
+  assert.equal(full.days, 365);
+  assert.equal(full.tier, 1);
+  assert.ok(scorePosition('tsmom', market('BTCUSDT-PERPETUAL'), b, Infinity)!.days > 365, 'all history starts right after the warm-up');
+  assert.deepEqual([TIER.break, TIER.trend, TIER.smart], [1, 2, 3]);
+});
+
+test('an agent that never traded in the window does not outrank one that did', () => {
+  const agents = [fake({ id: 'golden-HSK', rule: 'golden', base: 'HSK', maxDd: 0, trades: 0, tier: 1 }), fake({ id: 'break-HSK', rule: 'break', base: 'HSK', maxDd: 0.3, trades: 4, tier: 1 })];
+  assert.equal(recommend(agents, { coin: 'HSK', level: 'pro' })!.pick.id, 'break-HSK');
+});
+
+test('recommend puts a published classic before an indicator rule, even with a larger worst drop', () => {
+  const agents = [fake({ id: 'boll-ETH', rule: 'boll', base: 'ETH', maxDd: 0.05, tier: 2, risk: 1 }), fake({ id: 'trend200-ETH', rule: 'trend200', base: 'ETH', maxDd: 0.2, tier: 1 })];
+  assert.equal(recommend(agents, { coin: 'ETH', level: 'new' })!.pick.id, 'trend200-ETH');
+});
+
 const fake = (p: Partial<Agent>): Agent => ({
-  id: 'x', kind: 'position', rule: 'trend', style: 'trend', risk: 2, base: 'BTC', runnable: true, source: 'hashkey', fee: 0.003,
+  id: 'x', kind: 'position', rule: 'trend', style: 'trend', risk: 2, tier: 2, base: 'BTC', runnable: true, source: 'hashkey', fee: 0.003,
   days: 100, from: 0, to: 0, total: 0, hold: 0, maxDd: 0.2, sharpe: 0, trades: 1, inMarket: 0.5, equity: [], bench: [], marks: [], live: false, mult: 0, price: 1, ...p,
 });
 

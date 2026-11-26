@@ -23,7 +23,10 @@ vault contract enforces.
 - **The trade screen is one screen.** Market and price on top, the chart in the middle, and under it a panel with
   the agents for that market. Picking an agent moves no money: the chart switches to daily candles and marks every
   buy and sell of its backtest, and the panel shows the result against just holding, the two curves and the list of
-  trades (`src/Dock.tsx`; the trades come from `marks` in `src/agents.ts`). Hiring is a button on that backtest.
+  trades (`src/Dock.tsx`; the trades come from `marks` in `src/agents.ts`). The chart also draws the lines the rule
+  itself looks at (its averages, its channel, its RSI levels) and shades the days it was holding. The backtest is
+  one year by default, so agents compare like for like; "All history" reruns the one on screen over everything the
+  exchange has (HashKey's ETH and BTC perpetuals start on 2024-05-29). Hiring is a button on that backtest.
   Moa's agent card and the agent market open the same view ("See the backtest").
 - **Two pages in the market.** "Top agents" ranks the agents that can trade (steady = Sharpe ratio, bold = period
   return) with their equity curves on one chart; "Marketplace" is the searchable, filterable card grid with a "Hire"
@@ -35,9 +38,15 @@ vault contract enforces.
   (`pxToRem` in `vite.config.ts`) turns them into rem and the root font size steps up on wider screens, so a 2560px
   monitor gets a proportionally larger interface instead of small type in a wide frame. Latin and digits are
   Google Sans Flex, Korean is Pretendard.
+- **Well-known strategies come first.** Every rule carries its origin (`TIER` in `src/agents.ts`): published
+  classics (12-month time-series momentum, the Turtle 20/10 breakout, the 200-day average timing rule, the 50/200
+  golden cross), then standard indicator rules (MA50, EMA cross, RSI, Bollinger, plain DCA), then Moa's own DCA
+  variations. That is the first key of every default order: the list under the chart, the marketplace, the
+  "Published classics" tab of the leaderboard, and Moa's pick. The origin and what differs from the source (long
+  only, daily checks, no position sizing) are shown on each agent; nothing claims a fund runs these agents.
 - **The recommendation is a rule, not a model** (`src/recommend.ts`): only agents that can trade on HSKSwap → the coin
-  on screen or named → risk 1–2 for first-timers, 1–3 otherwise → the smallest worst drop in the backtest.
-  The AI only says which coin the user means.
+  on screen or named → risk 1–2 for first-timers, 1–3 otherwise → published classics before the rest → the smallest
+  worst drop in the backtest (an agent that never traded in the window does not outrank one that did).
 - **The hire sheet is the only place money settings change** (`src/HireSheet.tsx`): amount per buy, total budget,
   "asks me before each trade", the vault limits. Hiring from the market, from Moa's card, from a plan Moa drafted,
   and changing the amount later all open this sheet.

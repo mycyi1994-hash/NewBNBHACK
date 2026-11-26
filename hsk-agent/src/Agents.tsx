@@ -9,14 +9,14 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SlidePill } from './motion.tsx';
 import { useT, type Strings } from './i18n.ts';
-import { type Agent, type Style } from './agents.ts';
+import { byMerit, idle, type Agent, type Style, type Tier } from './agents.ts';
 import { agentName, drop, pct, statePill, Equity, RuleIcon } from './AgentCard.tsx';
 import { CoinMark } from './CoinMark.tsx';
 import { Icon, Spark } from './Icons.tsx';
 
 type Tab = 'top' | 'market';
-type Rank = 'steady' | 'bold';
-type Sort = 'dd' | 'total' | 'sharpe';
+type Rank = 'classic' | 'steady' | 'bold';
+type Sort = 'pick' | 'dd' | 'total' | 'sharpe';
 type Use = 'run' | 'signal' | 'all';
 const LINE = ['#3b5bdb', '#12b886', '#15aabf', '#f08c00', '#e03131', '#9c36b5', '#868e96', '#f783ac', '#4dabf7', '#fab005'];
 const sign = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
@@ -82,26 +82,30 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
 }) {
   const { t } = useT();
   const [tab, setTab] = useState<Tab>('top');
-  const [rank, setRank] = useState<Rank>('steady');
+  const [rank, setRank] = useState<Rank>('classic');
   const [q, setQ] = useState('');
   const [asset, setAsset] = useState('all');
   const [style, setStyle] = useState<'all' | Style>('all');
   const [risk, setRisk] = useState<'all' | '1' | '2' | '3'>('all');
   const [use, setUse] = useState<Use>('run');
-  const [sort, setSort] = useState<Sort>('dd');
+  const [origin, setOrigin] = useState<'all' | '1' | '2' | '3'>('all');
+  const [sort, setSort] = useState<Sort>('pick');
   const [stars, setStars] = useState<Set<string>>(readStars);
 
   const runnable = useMemo(() => (agents ?? []).filter((a) => a.runnable), [agents]);
-  const ranked = useMemo(() => [...runnable].sort((p, r) => (rank === 'steady' ? r.sharpe - p.sharpe : r.total - p.total)), [runnable, rank]);
+  // "Published classics" is the first tab: only strategies with a public record, best risk-adjusted result first.
+  const ranked = useMemo(() => (rank === 'classic' ? runnable.filter((a) => a.tier === 1) : [...runnable])
+    .sort((p, r) => Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank]);
   const top = ranked.slice(0, 10);
   const assets = useMemo(() => (agents ?? []).map((a) => a.base).filter((b, i, xs) => xs.indexOf(b) === i), [agents]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const xs = (agents ?? []).filter((a) => (use === 'all' || a.runnable === (use === 'run'))
       && (asset === 'all' || a.base === asset) && (style === 'all' || a.style === style) && (risk === 'all' || String(a.risk) === risk)
+      && (origin === 'all' || String(a.tier) === origin)
       && (!needle || agentName(t, a).toLowerCase().includes(needle)));
-    return xs.sort((p, r) => (sort === 'sharpe' ? r.sharpe - p.sharpe : sort === 'total' ? r.total - p.total : p.maxDd - r.maxDd));
-  }, [agents, q, asset, style, risk, use, sort, t]);
+    return xs.sort((p, r) => (sort === 'pick' ? byMerit(p, r) : sort === 'sharpe' ? r.sharpe - p.sharpe : sort === 'total' ? r.total - p.total : p.maxDd - r.maxDd));
+  }, [agents, q, asset, style, risk, use, sort, origin, t]);
 
   const star = (id: string) => setStars((cur) => {
     const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id);
@@ -129,7 +133,7 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
         <>
           <div className="rank-tabs has-line" role="tablist">
             <SlidePill dep={rank} />
-            {(['steady', 'bold'] as Rank[]).map((k) => <button key={k} role="tab" aria-selected={rank === k} className={rank === k ? 'on' : ''} onClick={() => setRank(k)}>{k === 'steady' ? t.topSteady : t.topBold}</button>)}
+            {(['classic', 'steady', 'bold'] as Rank[]).map((k) => <button key={k} role="tab" aria-selected={rank === k} className={rank === k ? 'on' : ''} onClick={() => setRank(k)}>{k === 'classic' ? t.topClassic : k === 'steady' ? t.topSteady : t.topBold}</button>)}
           </div>
 
           <section className="top-panel">
@@ -166,7 +170,7 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
                 <span className="rank-n">{i < 3 ? <Icon name="medal" size={16} /> : i + 1}</span>
                 <span className="rank-name">
                   <b>{agentName(t, a)}</b>
-                  <small><span className="orb xs" aria-hidden />{t.mkMaker}<CoinMark base={a.base} /><span className="rank-src">{source(t, a)}</span></small>
+                  <small><span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span><CoinMark base={a.base} /><span className="rank-src">{source(t, a)}</span></small>
                 </span>
                 <span className={sign(a.total - a.hold)}>{pct(a.total - a.hold)}</span>
                 <span className={sign(a.total)}>{pct(a.total)}</span>
@@ -200,12 +204,16 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
               <option value="all">{t.fRisk}</option>
               {([1, 2, 3] as const).map((k) => <option key={k} value={String(k)}>{t.fRisk}: {t.riskN[k]}</option>)}
             </select>
+            <select value={origin} onChange={(e) => setOrigin(e.target.value as 'all' | '1' | '2' | '3')} aria-label={t.fOrigin}>
+              <option value="all">{t.fOrigin}</option>
+              {([1, 2, 3] as Tier[]).map((k) => <option key={k} value={String(k)}>{t.agTier[k]}</option>)}
+            </select>
             <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label={t.fSort}>
-              {(['dd', 'total', 'sharpe'] as Sort[]).map((k) => <option key={k} value={k}>{t.fSort}: {t.agSort[k]}</option>)}
+              {(['pick', 'dd', 'total', 'sharpe'] as Sort[]).map((k) => <option key={k} value={k}>{t.fSort}: {k === 'pick' ? t.sortPick : t.agSort[k]}</option>)}
             </select>
           </div>
 
-          <div className="mp-grid stagger" key={`${use}-${asset}-${style}-${risk}-${sort}`}>
+          <div className="mp-grid stagger" key={`${use}-${asset}-${style}-${risk}-${sort}-${origin}`}>
             {!agents && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="mp-card mp-skel skel-block" />)}
             {shown.map((a) => {
               const pill = statePill(t, a);
@@ -220,7 +228,7 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
                     <span><CoinMark base={a.base} />{a.base}</span>
                     <span>{t.agStyle[a.style]}</span>
                     <span>{t.fRisk} {t.riskN[a.risk]}</span>
-                    <span><span className="orb xs" aria-hidden />{t.mkMaker}</span>
+                    <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span>
                     <span className={`badge ${pill.cls}`}><i />{pill.text}</span>
                   </div>
                   <div className="mp-lead">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createChart, ColorType, type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
+import { createChart, ColorType, LineType, type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
 import * as cex from './cex.ts';
 import * as I from './indicators.ts';
 import { gateCandles, GATE_SECONDS, type GateInterval } from './gate.ts';
@@ -8,8 +8,8 @@ import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
-import Dock, { px, useMarketAgents } from './Dock.tsx';
-import type { Agent } from './agents.ts';
+import Dock, { px, useBacktest, useMarketAgents } from './Dock.tsx';
+import type { Agent, RuleId } from './agents.ts';
 import { pct } from './AgentCard.tsx';
 import { Icon } from './Icons.tsx';
 import type { MoaContext } from './MoaFeed.tsx';
@@ -58,15 +58,23 @@ function useStoredInds(): [Set<Ind>, (i: Ind) => void] {
 }
 
 /** Candles with indicator overlays. Scroll left to load older candles (onOlder), 20 bars of room on the right. */
-function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range }: {
+/** A label drawn over the chart at one candle: a buy (under its low), a sell (over its high) or a grey note. */
+export interface Badge { time: number; side: 'buy' | 'sell' | 'note'; text: string }
+/** What a backtest adds to the chart: the rule's own lines, its buys and sells, and the days it was holding. */
+export interface Study { rule: RuleId; badges: Badge[]; bands: { from: number; to: number }[] }
+
+function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study }: {
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
   /** Show everything from this time to now (a backtest's window). `key` says when to apply it again. */
   range?: { from: number; key: string };
+  /** Daily candles only: the rule is decided on daily closes. */
+  study?: Study;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const main = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const extra = useRef<ISeriesApi<'Line' | 'Histogram'>[]>([]);
+  const extra = useRef<ISeriesApi<'Line' | 'Histogram' | 'Area'>[]>([]);
+  const layer = useRef<HTMLDivElement>(null);
   const pl = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']> | null>(null);
   const shownKey = useRef<string | null>(null);
   const rangeKey = useRef<string | null>(null);
@@ -106,15 +114,41 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     for (const x of extra.current) c.removeSeries(x);
     extra.current = [];
     const times = candles.map((d) => d.time), close = candles.map((d) => d.close);
-    const showRsi = inds.has('rsi'), showVol = inds.has('vol');
+    const rule = study?.rule;
+    const showRsi = inds.has('rsi') || rule === 'rsi' || rule === 'rsiDca', showVol = inds.has('vol');
     m.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: showRsi ? (showVol ? 0.4 : 0.26) : showVol ? 0.2 : 0.06 } });
     const addLine = (xs: number[], color: string, width: 1 | 2 = 1, scale?: string) => {
       const s = c.addLineSeries({ color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...(scale ? { priceScaleId: scale } : {}) });
       s.setData(line(times, xs)); extra.current.push(s); return s;
     };
-    if (inds.has('ma')) [7, 25, 99].forEach((n, i) => addLine(I.sma(close, n), MA_COLORS[i]));
-    if (inds.has('ema')) addLine(I.ema(close, 20), '#db2777');
-    if (inds.has('boll')) { const b = I.boll(close); addLine(b.up, '#94a3b8'); addLine(b.mid, '#64748b'); addLine(b.lo, '#94a3b8'); }
+    if (study) {
+      // The days the agent was holding, as a soft green band behind the candles.
+      if (study.bands.length) {
+        const held = (time: number) => study.bands.some((b) => time > b.from && time <= b.to);
+        const a = c.addAreaSeries({ priceScaleId: 'band', lineType: LineType.WithSteps, lineVisible: false, topColor: 'rgba(22,163,74,.13)', bottomColor: 'rgba(22,163,74,.13)', priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        a.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+        a.setData(candles.map((d) => ({ time: d.time as UTCTimestamp, value: held(d.time) ? 1 : 0 })));
+        extra.current.push(a);
+      }
+      // The lines the rule itself looks at, so each buy and sell can be read off the chart.
+      const BLUE = '#1a73e8', AMBER = '#f59e0b';
+      if (rule === 'trend' || rule === 'trendDca') addLine(I.sma(close, 50), BLUE, 2);
+      if (rule === 'trend200') addLine(I.sma(close, 200), BLUE, 2);
+      if (rule === 'golden') { addLine(I.sma(close, 50), AMBER, 2); addLine(I.sma(close, 200), BLUE, 2); }
+      if (rule === 'ema') { addLine(I.ema(close, 20), AMBER, 2); addLine(I.ema(close, 50), BLUE, 2); }
+      if (rule === 'smart') addLine(I.sma(close, 20), BLUE, 2);
+      if (rule === 'boll') { const b = I.boll(close); addLine(b.up, BLUE, 2); addLine(b.mid, '#64748b'); addLine(b.lo, BLUE, 2); }
+      if (rule === 'tsmom') addLine(close.map((_, i) => (i >= 365 ? close[i - 365] : NaN)), BLUE, 2);
+      if (rule === 'break') {
+        const hi = candles.map((_, i) => (i < 20 ? NaN : Math.max(...candles.slice(i - 20, i).map((x) => x.high))));
+        const lo = candles.map((_, i) => (i < 10 ? NaN : Math.min(...candles.slice(i - 10, i).map((x) => x.low))));
+        addLine(hi, '#16a34a'); addLine(lo, '#dc2626');
+      }
+    } else {
+      if (inds.has('ma')) [7, 25, 99].forEach((n, i) => addLine(I.sma(close, n), MA_COLORS[i]));
+      if (inds.has('ema')) addLine(I.ema(close, 20), '#db2777');
+      if (inds.has('boll')) { const b = I.boll(close); addLine(b.up, '#94a3b8'); addLine(b.mid, '#64748b'); addLine(b.lo, '#94a3b8'); }
+    }
     if (showVol) {
       const v = c.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
       v.priceScale().applyOptions({ scaleMargins: { top: showRsi ? 0.64 : 0.82, bottom: showRsi ? 0.23 : 0 } });
@@ -125,8 +159,10 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
       const r = addLine(I.rsi(close), '#7c5cf0', 1, 'rsi');
       r.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0.02 } });
       r.applyOptions({ lastValueVisible: true });
-      r.createPriceLine({ price: 70, color: '#e8a0a0', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
-      r.createPriceLine({ price: 30, color: '#9fd3b0', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
+      // The levels drawn are the ones the rule on screen acts on (30/55, 35/65), else the usual 30/70.
+      const [low, high] = rule === 'rsi' ? [30, 55] : rule === 'rsiDca' ? [35, 65] : [30, 70];
+      r.createPriceLine({ price: high, color: '#e8a0a0', lineWidth: 1, lineStyle: 2, axisLabelVisible: !!rule, title: '' });
+      r.createPriceLine({ price: low, color: '#9fd3b0', lineWidth: 1, lineStyle: 2, axisLabelVisible: !!rule, title: '' });
     }
 
     m.setMarkers(markers ?? []);
@@ -143,15 +179,64 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     }
     if (range && rangeKey.current !== `${range.key}|${resetKey}`) {
       // A backtest was opened: bring its whole window into view, so every buy and sell is on screen.
+      // (Once the chart has a width: a range set before the first layout is dropped.)
       const at = candles.findIndex((x) => x.time >= range.from);
-      ts.setVisibleLogicalRange({ from: Math.max(0, at < 0 ? 0 : at) - 4, to: candles.length + 6 });
+      const want = { from: Math.max(0, at < 0 ? 0 : at) - 4, to: candles.length + 6 };
+      const apply = (tries: number) => {
+        if (chart.current !== c) return;
+        if (ts.width() > 0 || tries <= 0) ts.setVisibleLogicalRange(want); else requestAnimationFrame(() => apply(tries - 1));
+      };
+      apply(30);
       rangeKey.current = `${range.key}|${resetKey}`;
     }
     if (!range) rangeKey.current = null;
     prevFirst.current = candles[0].time;
-  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey, range?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey, range?.key, study]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <div ref={box} className="chart" />;
+  // Buys and sells as filled labels over the chart, kept on their candles as the chart moves.
+  useEffect(() => {
+    const el = layer.current, c = chart.current, m = main.current;
+    if (!el) return;
+    el.replaceChildren();
+    const badges = study?.badges ?? [];
+    if (!c || !m || !badges.length || !candles.length) return;
+    const byTime = new Map(candles.map((x) => [x.time, x]));
+    const nodes = badges.map((b) => {
+      const n = document.createElement('span');
+      n.className = `cb cb-${b.side}`;
+      const arrow = document.createElement('i'); arrow.textContent = b.side === 'buy' ? '▲' : b.side === 'sell' ? '▼' : '•';
+      const text = document.createElement('b'); text.textContent = b.text;
+      n.append(arrow, text);
+      el.appendChild(n);
+      return n;
+    });
+    let raf = 0, sig = '';
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const ts = c.timeScale();
+      const r = ts.getVisibleLogicalRange();
+      const w = el.clientWidth - m.priceScale().width(), h = el.clientHeight - ts.height();
+      const key = `${r?.from.toFixed(2)}|${r?.to.toFixed(2)}|${w}|${h}|${m.priceToCoordinate(candles[candles.length - 1].close)?.toFixed(1)}`;
+      if (key === sig) return;
+      sig = key;
+      const last = { buy: -1e9, sell: -1e9, note: -1e9 };
+      badges.forEach((b, i) => {
+        const n = nodes[i], cd = byTime.get(b.time);
+        const x = ts.timeToCoordinate(b.time as UTCTimestamp);
+        const y = cd ? m.priceToCoordinate(b.side === 'buy' ? cd.low : cd.high) : null;
+        if (x === null || y === null || x < 0 || x > w || y < 0 || y > h) { n.style.display = 'none'; return; }
+        n.style.display = '';
+        // Too close to the one before: keep the arrow, drop the words.
+        n.classList.toggle('tight', x - last[b.side] < 70);
+        last[b.side] = x;
+        n.style.left = `${x}px`; n.style.top = `${y}px`;
+      });
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [study, candles]);
+
+  return <div className="chart-wrap"><div ref={box} className="chart" /><div ref={layer} className="chart-badges" aria-hidden /></div>;
 }
 
 function IndMenu({ on, toggle }: { on: Set<Ind>; toggle: (i: Ind) => void }) {
@@ -251,47 +336,49 @@ function useCex(m: cex.Market) {
   return { t, mi };
 }
 
-/** The backtest's buys and sells as chart markers, each pinned to the candle that holds that day's close. */
-function agentMarkers(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string; btRest: string }): SeriesMarker<Time>[] {
-  if (!candles.length) return [];
+/** A backtest for the chart: the rule's lines, the buys and sells pinned to the candle that holds that day's close, the holding days. */
+function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string; btRest: string; btStart: string }): Study {
   const DAY = 86_400;
   const at = (dayOpen: number) => {
     const close = dayOpen + DAY - 1;
-    if (close < candles[0].time) return null;
+    if (!candles.length || close < candles[0].time) return null;
     let lo = 0, hi = candles.length - 1;
     while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (candles[mid].time <= close) lo = mid; else hi = mid - 1; }
-    return candles[lo].time as UTCTimestamp;
+    return candles[lo].time;
   };
-  const out: SeriesMarker<Time>[] = [];
+  const badges: Badge[] = [];
+  const bands: { from: number; to: number }[] = [];
+  const first = at(a.from);
+  if (first !== null) badges.push({ time: first, side: 'note', text: t.btStart });
   if (a.kind === 'position') {
+    let open: number | null = null;
     for (const m of a.marks) {
       const time = at(m.time);
+      if (m.side === 'buy') open = m.time; else if (open !== null) { bands.push({ from: open, to: m.time }); open = null; }
       if (time === null) continue;
-      out.push(m.side === 'buy'
-        ? { time, position: 'belowBar', color: '#16a34a', shape: 'arrowUp', text: t.buy, size: 1.4 }
-        : { time, position: 'aboveBar', color: '#dc2626', shape: 'arrowDown', text: `${t.sell} ${pct(m.ret ?? 0)}`, size: 1.4 });
+      badges.push(m.side === 'buy' ? { time, side: 'buy', text: t.buy } : { time, side: 'sell', text: `${t.sell} ${pct(m.ret ?? 0)}` });
     }
-    return out;
+    if (open !== null) bands.push({ from: open, to: Infinity });
+    return { rule: a.rule, badges, bands };
   }
   // Collect agents buy almost every day, so only the changes are marked: buying more, less, the usual amount, or a pause.
   const bucket = (x: number) => (x > 1.25 ? 'more' : x < 0.75 ? 'less' : 'same');
-  let prev = '';
-  let last = 0;
+  let prev = '', last = 0;
   for (const m of a.marks) {
     if (last && m.time - last > DAY * 1.5) {
       const time = at(last + DAY);
-      if (time !== null) out.push({ time, position: 'aboveBar', color: '#80868b', shape: 'square', text: t.btRest, size: 0.9 });
+      if (time !== null) badges.push({ time, side: 'note', text: t.btRest });
       prev = '';
     }
     const b = bucket(m.mult ?? 1);
     if (b !== prev) {
       const time = at(m.time);
-      if (time !== null) out.push({ time, position: 'belowBar', color: b === 'more' ? '#16a34a' : b === 'less' ? '#e37400' : '#1a73e8', shape: b === 'more' ? 'arrowUp' : 'circle', text: `×${m.mult ?? 1}`, size: b === 'more' ? 1.3 : 0.9 });
+      if (time !== null) badges.push({ time, side: 'buy', text: `×${m.mult ?? 1}` });
       prev = b;
     }
     last = m.time;
   }
-  return out;
+  return { rule: a.rule, badges, bands };
 }
 
 /** The line in the chart toolbar that says whose buys and sells are on the candles. */
@@ -300,7 +387,10 @@ function BacktestChip({ a, onClose }: { a: Agent; onClose: () => void }) {
   return (
     <span className="bt-chip">
       <b>{t.btOn(t.agRule[a.rule])}</b>
-      <span className="pos">▲ {t.buy}</span>{a.kind === 'position' && <span className="neg">▼ {t.sell}</span>}
+      {t.ovLabel[a.rule] && <span className="bt-key"><i className="k-line" />{t.ovLabel[a.rule]}</span>}
+      <span className="bt-key"><i className="k-buy">▲</i>{t.buy}</span>
+      {a.kind === 'position' && <span className="bt-key"><i className="k-sell">▼</i>{t.sell}</span>}
+      {a.kind === 'position' && <span className="bt-key"><i className="k-band" />{t.btHeld}</span>}
       <button className="icon-btn sm" onClick={onClose} aria-label={t.btBack} data-tip={t.btBack}><Icon name="close" size={14} /></button>
     </span>
   );
@@ -392,7 +482,8 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
   const sel = list?.find((a) => a.id === selId) ?? null;
   // A backtest runs on daily candles: show it on the daily chart (the user can still change the interval after).
   useEffect(() => { if (sel) setIv('1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const markers = useMemo(() => (sel ? agentMarkers(sel, candles, s) : undefined), [sel, candles, s]);
+  const { period, setPeriod, shown } = useBacktest(sel);
+  const study = useMemo(() => (shown && interval === '1d' ? studyOf(shown, candles, s) : undefined), [shown, candles, s, interval]);
   const chg = t ? (t.last / t.open - 1) * 100 : 0;
   const up = chg >= 0;
   const perp = market.kind === 'perp';
@@ -421,10 +512,10 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
           <IndMenu on={inds} toggle={toggleInd} />
           {sel ? <BacktestChip a={sel} onClose={() => setSel(null)} /> : <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} markers={markers} range={sel ? { from: sel.from, key: sel.id } : undefined} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} study={study} range={shown ? { from: shown.from, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
       </section>
 
-      <Dock venue="cex" coin={market.base} list={list} failed={failed} sel={sel} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
+      <Dock venue="cex" coin={market.base} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
     </>
   );
 }
@@ -445,7 +536,8 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   const { list, failed } = useMarketAgents('dex', market, asset);
   const sel = list?.find((a) => a.id === selId) ?? null;
   useEffect(() => { if (sel) setIv('1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const botMarks = useMemo(() => (sel ? agentMarkers(sel, candles, s) : null), [sel, candles, s]);
+  const { period, setPeriod, shown } = useBacktest(sel);
+  const study = useMemo(() => (shown && iv === '1d' ? studyOf(shown, candles, s) : undefined), [shown, candles, s, iv]);
 
   // Real HSKSwap swaps, pinned to the Gate candle they fall in.
   const markers = useMemo(() => {
@@ -495,9 +587,9 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
           {sel ? <BacktestChip a={sel} onClose={() => setSel(null)} />
             : <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={botMarks ?? markers} range={sel ? { from: sel.from, key: sel.id } : undefined} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} range={shown ? { from: shown.from, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
       </section>
-      <Dock venue="dex" coin={asset} list={list} failed={failed} sel={sel} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
+      <Dock venue="dex" coin={asset} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
         <div className="swaps">
           <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
           {detail?.swaps.slice(0, 20).map((x) => (
