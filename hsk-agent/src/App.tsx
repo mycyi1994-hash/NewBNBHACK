@@ -22,10 +22,10 @@ import MoaFeed, { type MoaAsk, type MoaContext, type MoaInject } from './MoaFeed
 import HireSheet, { type HireTarget } from './HireSheet.tsx';
 import { agentById, loadAgents, type Agent } from './agents.ts';
 import type { Asset } from './intent.ts';
-import { chainNote, decide, newId, type Amounts, type HiredAgent, type Signal } from './runner.ts';
+import { chainNote, decide, newId, type HireChoice, type HiredAgent, type Signal } from './runner.ts';
 import { hiredName } from './hiredText.ts';
 import { agentName } from './AgentCard.tsx';
-import { sendAgentTrade } from './moaClient.ts';
+import { autoList, autoPut, autoRemove, sendAgentTrade } from './moaClient.ts';
 import type { VaultInfo } from './parts.tsx';
 import { ToastProvider, useToast } from './ui.tsx';
 
@@ -226,6 +226,7 @@ function Shell() {
   useEffect(() => {
     const at = Date.now();
     for (const h of hired) {
+      if (h.mode === 'auto') continue;   // the server runs these, app open or not
       const s = signalOf(h);
       if (!s) continue;
       const d = decide(h, s, at, { maxTradeUsd });
@@ -280,33 +281,76 @@ function Shell() {
     };
   });
 
-  const pause = (id: string) => update(id, (x) => {
+  const pauseLocal = (id: string) => update(id, (x) => {
     if (x.paused) return x;
     const at = Date.now();
     const drop = x.pending && !sendingRef.current.has(x.pending.id) ? x.pending : undefined;
     return { ...x, paused: true, pending: drop ? undefined : x.pending, log: [...x.log, ...(drop ? [{ at, k: 'expired' as const, orderId: drop.id }] : []), { at, k: 'paused' }] };
   });
-  const resume = (id: string) => update(id, (x) => (x.paused ? { ...x, paused: false, declined: undefined, log: [...x.log, { at: Date.now(), k: 'resumed' }] } : x));
+  const resumeLocal = (id: string) => update(id, (x) => (x.paused ? { ...x, paused: false, declined: undefined, log: [...x.log, { at: Date.now(), k: 'resumed' }] } : x));
+
+  /* ----- agents that work on their own: the server holds them, this browser shows them ----- */
+  const session = useSession();
+  /** Tell the server about an auto agent (new, new amounts, paused or resumed). If it refuses, the agent goes back to asking. */
+  const pushAuto = (h: HiredAgent) => {
+    void autoPut(h).then((r) => {
+      if (r.ok) return;
+      update(h.id, (x) => ({ ...x, mode: 'ask' }));
+      toast(r.why === 'needLimit' ? t.hsAutoNeedLimit : r.why === 'noVault' || r.why === 'login' ? t.hsAutoLogin : t.autoFailed);
+    });
+  };
+  const autoOf = (id: string) => { const h = hiredRef.current.find((x) => x.id === id); return h?.mode === 'auto' ? h : undefined; };
+  const pause = (id: string) => { const a = autoOf(id); pauseLocal(id); if (a) pushAuto({ ...a, paused: true }); };
+  const resume = (id: string) => { const a = autoOf(id); resumeLocal(id); if (a) pushAuto({ ...a, paused: false }); };
+  const removeHired = (id: string) => { if (autoOf(id)) void autoRemove(id); remove(id); };
+  const token = session?.token;
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    const pull = () => void autoList().then((list) => {
+      if (!alive || !list) return;
+      for (const s of list) {
+        const local = hiredRef.current.find((x) => x.id === s.id);
+        if (!local) { add(s); continue; }
+        if (local.mode !== 'auto') continue;
+        if (s.fills.length === local.fills.length && s.log.length === local.log.length && s.paused === local.paused) continue;
+        update(s.id, () => s);
+        if (s.fills.length > local.fills.length) { toast(t.autoFilled(hiredName(t, s))); tell({ kind: 'status', hiredId: s.id }); }
+      }
+      // An auto agent the server does not have yet (hired a moment ago, or the server lost its file): send it.
+      for (const l of hiredRef.current) if (l.mode === 'auto' && !list.some((s) => s.id === l.id)) void autoPut(l);
+    });
+    pull();
+    const x = setInterval(pull, 30_000);
+    return () => { alive = false; clearInterval(x); };
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** The hire sheet's button: the only place a hired agent is created or its amounts change. */
-  const confirmSheet = (v: Amounts) => {
+  const confirmSheet = (choice: HireChoice) => {
     if (!sheet) return;
     const at = Date.now();
+    const v = { perBuyUsd: choice.perBuyUsd, budgetUsd: choice.budgetUsd };
+    const mode = choice.mode;
     if (sheet.kind === 'edit') {
       const from = { perBuyUsd: sheet.hired.perBuyUsd, budgetUsd: sheet.hired.budgetUsd };
-      update(sheet.hired.id, (x) => ({ ...x, ...v, log: [...x.log, { at, k: 'changed', from, to: v }] }));
+      const was = sheet.hired.mode;
+      update(sheet.hired.id, (x) => ({ ...x, ...v, mode, pending: mode === 'auto' ? undefined : x.pending, log: [...x.log, { at, k: 'changed', from, to: v }] }));
+      if (mode === 'auto') pushAuto({ ...sheet.hired, ...v, mode, pending: undefined });
+      // Back to asking: the server lets go of it, and what it did there comes home with it.
+      else if (was === 'auto') void autoRemove(sheet.hired.id).then((last) => { if (last) update(last.id, (x) => ({ ...last, ...v, mode: 'ask', paused: x.paused })); });
       tell({ kind: 'hired', hiredId: sheet.hired.id, changed: { from, to: v } });
     } else {
       let h: HiredAgent;
       if (sheet.kind === 'agent') {
         const a = sheet.agent;
         setExtra((cur) => ({ ...cur, [a.id]: a }));
-        h = { id: newId(), createdAt: at, source: { type: 'market', agentId: a.id, kind: a.kind, rule: a.rule, base: a.base }, asset: a.base as Asset, ...v, mode: 'ask', paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
+        h = { id: newId(), createdAt: at, source: { type: 'market', agentId: a.id, kind: a.kind, rule: a.rule, base: a.base }, asset: a.base as Asset, ...v, mode, spec: a.made, paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
       } else {
         const first = sheet.plan.steps.find((s) => 'asset' in s) as { asset?: Asset } | undefined;
-        h = { id: newId(), createdAt: at, source: { type: 'custom', goal: sheet.goal, plan: sheet.plan }, asset: first?.asset ?? 'HSK', ...v, mode: 'ask', paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
+        h = { id: newId(), createdAt: at, source: { type: 'custom', goal: sheet.goal, plan: sheet.plan }, asset: first?.asset ?? 'HSK', ...v, mode, paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
       }
       add(h);
+      if (mode === 'auto') pushAuto(h);
       toast(t.hiredSay(hiredName(t, h)));
       tell({ kind: 'hired', hiredId: h.id });
     }
@@ -333,7 +377,7 @@ function Shell() {
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
-            onPause={pause} onResume={resume} onRemove={remove} onOpen={(id) => tell({ kind: 'status', hiredId: id })}
+            onPause={pause} onResume={resume} onRemove={removeHired} onOpen={(id) => tell({ kind: 'status', hiredId: id })}
             onRecommend={() => tell({ kind: 'recommend' })} />
         )}
       </main>

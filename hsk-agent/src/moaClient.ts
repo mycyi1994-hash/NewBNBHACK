@@ -106,3 +106,31 @@ export async function sendAgentTrade(req: { asset: string; side: 'buy' | 'sell';
     return { ok: false, reason: `The server is not reachable (${e instanceof Error ? e.message : String(e)}).` };
   }
 }
+
+/* ---------- agents that work on their own (kept on the server) ---------- */
+import type { HiredAgent } from './runner.ts';
+
+const postAuto = (body: unknown) => fetch('/api/auto', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify(body) });
+/** The server's copy of this wallet's auto agents, or null when it cannot be read (logged out, server down). */
+export async function autoList(): Promise<HiredAgent[] | null> {
+  try {
+    const r = await fetch('/api/auto', { headers: authHeaders() });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { agents?: HiredAgent[] };
+    return Array.isArray(j.agents) ? j.agents : null;
+  } catch { return null; }
+}
+export type AutoPut = { ok: true; agent: HiredAgent } | { ok: false; why: 'noVault' | 'needLimit' | 'login' | 'failed' };
+/** Put an agent on auto, or send its new amounts or pause. What it already did stays as the server has it. */
+export async function autoPut(agent: HiredAgent): Promise<AutoPut> {
+  try {
+    const r = await postAuto({ agent });
+    const j = (await r.json().catch(() => null)) as { ok?: boolean; agent?: HiredAgent; why?: 'noVault' | 'needLimit' } | null;
+    if (r.ok && j?.agent) return { ok: true, agent: j.agent };
+    return { ok: false, why: r.status === 401 ? 'login' : j?.why ?? 'failed' };
+  } catch { return { ok: false, why: 'failed' }; }
+}
+/** Take an agent off the server. Returns the server's last copy of it, with everything it did. */
+export async function autoRemove(id: string): Promise<HiredAgent | null> {
+  try { const r = await postAuto({ op: 'remove', id }); return r.ok ? ((await r.json()) as { agent?: HiredAgent | null }).agent ?? null : null; } catch { return null; }
+}

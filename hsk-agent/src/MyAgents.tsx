@@ -57,7 +57,7 @@ export default function MyAgents({ hired, quotes, vault, execs, now, onEdit, onP
               <Fragment key={h.id}>
                 <div className={`tbl-row st-${st}`} role="row">
                   <span role="cell" className="tbl-main">
-                    <button className="tbl-link" onClick={() => onOpen(h.id)}>{hiredName(t, h)}</button>
+                    <button className="tbl-link" onClick={() => onOpen(h.id)}>{hiredName(t, h)}</button>{h.mode === 'auto' && <span className="auto-tag">{t.autoBadge}</span>}
                     <small>{h.source.type === 'market' ? t.mineFromMarket : `${t.mineCustom} · “${h.source.goal}”`}</small>
                   </span>
                   <span role="cell" className="tbl-main">

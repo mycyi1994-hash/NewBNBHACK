@@ -24,7 +24,7 @@ export default function MyAgentsBar({ hired, quotes, now, sending, onOpen, onPau
           <span key={h.id} className={`agent-chip st-${st}`}>
             <button className="chip-main" onClick={() => onOpen(h.id)}>
               <span className={`chip-dot ${st}`} aria-hidden />
-              <b>{hiredName(t, h)}</b>
+              <b>{hiredName(t, h)}</b>{h.mode === 'auto' && <span className="auto-tag">{t.autoBadge}</span>}
               <span className="chip-st">{busy ? t.stSending : statusText(t, h, now)}</span>
               <span className={`chip-pl ${m.cls}`}>{m.text}</span>
             </button>

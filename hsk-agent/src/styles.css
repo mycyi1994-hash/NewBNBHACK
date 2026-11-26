@@ -1395,3 +1395,13 @@ select { padding-right: 8px; }
 .acct-held li > span:first-child { display: inline-flex; align-items: baseline; gap: 6px; }
 .acct-worth { display: inline-flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 .acct-worth em { font-style: normal; font-size: 12px; font-weight: 600; } .acct-worth em.pos { color: var(--pos); } .acct-worth em.neg { color: var(--neg); }
+
+/* how a hired agent works: asks first, or on its own */
+.hire-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hire-modes button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 1.5px solid var(--line-btn); border-radius: 12px; background: var(--bg); text-align: left; transition: border-color var(--d1) linear, background-color var(--d1) linear; }
+.hire-modes button:hover { background: var(--rail); }
+.hire-modes button.on { border-color: var(--accent); background: var(--accent-tint); }
+.hire-modes b { font-size: 14px; font-weight: 700; color: var(--ink-title); }
+.hire-modes small { font-size: 12.5px; line-height: 17px; color: var(--ink-3); }
+.field .hire-sub { margin-top: 0; }
+.auto-tag { display: inline-flex; align-items: center; height: 18px; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: var(--accent-tint); color: var(--accent-ink); font-size: 11px; font-weight: 700; vertical-align: middle; }

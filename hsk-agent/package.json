@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": { "node": ">=22.6" },
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5180 --strictPort",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4180 --strictPort",
+    "start": "node --experimental-strip-types server/main.ts",
     "test": "node --experimental-strip-types --test src/*.test.ts server/*.test.ts"
   },
   "dependencies": {

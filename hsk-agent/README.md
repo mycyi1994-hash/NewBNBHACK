@@ -107,7 +107,8 @@ vault contract enforces.
 | Agents (`src/agents.ts`) | 47 agents: 27 can be hired (BTC, ETH, HSK on HSKSwap; 0.3% fee in the backtest), 20 "signal only" for coins HSKSwap does not list (**demo**, 0.1% fee) |
 | Moa's brain (`server/moaAgent.ts`) | Claude Sonnet 5.5, tools `get_market`, `propose_plan`, `recommend_agent`, `execute_trade`. Falls back to the on-device parser when the API is unreachable. Agent requests (pick one, stop, how is it doing) are answered without the AI |
 | Account (`src/account.ts`, `src/Account.tsx`, `server/session.ts`) | **Log in** at the top right with a wallet: one free signature, no transaction. The account shows a nickname and the address; its menu shows the wallet's own vault with **Deposit** (address, QR code, or send from the wallet), **Withdraw**, **Limits** and **Lock trading**, all sent by the user's wallet. With several wallets in the browser, logging in asks which one. Made agents, hired agents and trade history are kept per wallet (per browser before logging in) |
-| Hired agents | Saved in this browser under the logged-in wallet. Ask before each trade while the app is open |
+| Hired agents | Two ways of working, chosen when hiring. **Asks first**: every order waits for the user's OK while the app is open (kept in the browser, under the logged-in wallet). **On its own** (`server/autoRunner.ts`): the server runs the same rule every five minutes and sends the order at once, app open or not; only for a vault whose owner set a daily limit, so the contract caps what an unattended agent can spend. The server also carries out stop-losses that are due |
+| Production server (`server/main.ts`, [`DEPLOY.md`](DEPLOY.md)) | One Node process for the built app, the API and the agents on auto. Tried against a local fork; not yet running on a public host |
 | Vaults (`contracts/src/MoaVaultFactory.sol`, `contracts/src/MoaVault.sol`) | One vault per user. The factory makes it when the wallet first logs in; the server pays the gas, the wallet is the owner and signs nothing. Limits are the owner's own choice: per trade and per day on what the agent may spend, the worst price accepted, and a stop-loss, set in the account menu (or none at all) and enforced by the vault contract; the owner can also lock trading. Selling is never held up by the spending limits. Once a holding is worth less than the stop-loss allows, anyone can make the vault sell it, so the stop works without Moa's server. Only the owner can withdraw. Tested on a local fork of HSK mainnet (42 checks). **The first version's factory is on HSK Chain mainnet** (26 Nov 2026; the current version, with the stop-loss, still has to be deployed): [`0x49807417fcebfb90e59933f0c44e4f1edf96444c`](https://hsk.blockscout.com/address/0x49807417fcebfb90e59933f0c44e4f1edf96444c), [deployment transaction](https://hsk.blockscout.com/tx/0xedb6a15b62c220ccd46df7927685de73fa516e1fb76ad1c220a5c4c4e37f6ebf). Unaudited |
 | Execution (`server/executor.ts`) | Approved agent orders and “실행”/“execute” in the chat go to the vault of the wallet that is logged in, and only with that wallet's session; an order without one is refused. Not logged in, or on a server without a factory, the app is a **demo**: agents ask, nothing is sent |
 | Pause | In the app it stops new orders. Locking a vault on-chain is the owner's `pause` (`contracts/scripts/vault.mjs`) |
@@ -130,7 +131,8 @@ MOA_RPC_URL=https://mainnet.hsk.xyz
 ```bash
 npm install
 npm run dev      # http://127.0.0.1:5180
-npm test         # parser, agent scoring, recommend rule, runner and login-session tests
+npm test         # parser, agent scoring, recommend rule, runner, login-session and auto-runner tests
+npm start        # the production server: needs `npm run build` first (see DEPLOY.md)
 npm run build
 ```
 

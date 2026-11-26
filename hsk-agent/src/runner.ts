@@ -1,8 +1,13 @@
 // A hired agent's working rules, as pure functions: what it holds, what it wants to do next, and the
-// one-word state the bar shows. The app calls decide() on a timer while it is open; every order waits for
-// the user's OK ("ask before each trade") and then goes to the vault, which enforces its own limits.
+// one-word state the bar shows. Two ways of working, chosen in the hire sheet:
+//  - "ask": the app calls decide() on a timer while it is open, and every order waits for the user's OK;
+//  - "auto": the server calls the same decide() on its own timer and sends the order at once, app open or not.
+// Either way the order goes to the owner's vault, which enforces the owner's limits again.
 import type { Asset, Plan } from './intent.ts';
 import type { RuleId } from './agents.ts';
+import type { MadeSpec } from './spec.ts';
+
+export type Mode = 'ask' | 'auto';
 
 export const DAY = 86_400_000;
 const PERIOD = { hour: 3_600_000, day: DAY, week: 7 * DAY } as const;
@@ -20,6 +25,8 @@ export type SkipWhy = { k: 'belowMa' } | { k: 'tooSmall' } | { k: 'overMax'; max
 export interface Order { id: string; at: number; side: Side; usd?: number; qty?: number; why: Why }
 export interface Fill { at: number; side: Side; usd: number; qty: number; txHash?: string; explorerUrl?: string }
 export interface Amounts { perBuyUsd: number; budgetUsd: number }
+/** What the hire sheet hands back: the amounts and how the agent should work. */
+export interface HireChoice extends Amounts { mode: Mode }
 export type LogEvent =
   | { at: number; k: 'hired'; to: Amounts }
   | { at: number; k: 'asked'; order: Order }
@@ -41,7 +48,9 @@ export interface HiredAgent extends Amounts {
   createdAt: number;
   source: Source;
   asset: Asset;
-  mode: 'ask';
+  mode: Mode;
+  /** The rule of an agent the user made, carried along so the server can run it without the browser. */
+  spec?: MadeSpec;
   paused: boolean;
   pending?: Order;
   /** Last time a collect or plan buy was asked, filled, skipped or declined. */
@@ -169,10 +178,30 @@ export function lastEvent<K extends LogEvent['k']>(h: HiredAgent, ...kinds: K[])
 }
 
 /** The note stored on-chain with the trade (the vault keeps 120 characters). */
-export function chainNote(name: string, why: Why): string {
+export function chainNote(name: string, why: Why, mode: Mode = 'ask'): string {
   const w = why.k === 'signalOn' ? 'signal on' : why.k === 'signalOff' ? 'signal off' : why.k === 'daily' ? `daily buy x${why.mult}`
     : why.k === 'plan' ? 'plan buy' : why.k === 'stop' ? `stop-loss -${why.pct}%` : `take-profit +${why.pct}%`;
-  return `Moa agent ${name}: ${w}, approved by the owner`.slice(0, 120);
+  return `Moa agent ${name}: ${w}, ${mode === 'auto' ? 'standing order from the owner' : 'approved by the owner'}`.slice(0, 120);
 }
 
 export const newId = () => Math.random().toString(36).slice(2, 10);
+
+/** What came back from the vault for one order. */
+export type Outcome =
+  | { ok: true; amountIn: string; amountOut: string; txHash?: string; explorerUrl?: string }
+  | { ok: false; reason: string; demo?: boolean };
+
+/**
+ * The agent after one of its orders was sent: the fill on its books, or the failure in its log. A failed or refused
+ * order is not retried at once: a position agent waits for its signal to flip, a collect agent for its next period.
+ */
+export function settle(h: HiredAgent, o: Order, r: Outcome, at: number): HiredAgent {
+  const position = h.source.type === 'market' && h.source.kind === 'position';
+  const key = 'key' in o.why ? o.why.key : undefined;
+  const base = { ...h, pending: h.pending?.id === o.id ? undefined : h.pending, fired: key && !h.fired.includes(key) ? [...h.fired, key] : h.fired };
+  if (r.ok) {
+    const fill: Fill = { at, side: o.side, usd: Number(o.side === 'buy' ? r.amountIn : r.amountOut), qty: Number(o.side === 'buy' ? r.amountOut : r.amountIn), txHash: r.txHash, explorerUrl: r.explorerUrl };
+    return { ...base, fills: [...h.fills, fill], lastRunAt: o.side === 'buy' ? at : h.lastRunAt, log: [...h.log, { at, k: 'filled', orderId: o.id, fill }] };
+  }
+  return { ...base, declined: position ? o.side : h.declined, lastRunAt: position || o.side === 'sell' ? h.lastRunAt : at, log: [...h.log, { at, k: 'failed', orderId: o.id, reason: r.reason, demo: r.demo }] };
+}

@@ -9,7 +9,7 @@ import { useT } from './i18n.ts';
 import { limitsText, type VaultInfo } from './parts.tsx';
 import { Modal } from './ui.tsx';
 import { agentName } from './AgentCard.tsx';
-import { book, type Amounts, type HiredAgent } from './runner.ts';
+import { book, type Amounts, type HireChoice, type HiredAgent, type Mode } from './runner.ts';
 import { hiredName, money } from './hiredText.ts';
 
 export type HireTarget =
@@ -42,7 +42,7 @@ function Stepper({ id, value, options, onChange, label }: { id: string; value: n
 }
 
 export default function HireSheet({ target, vault, onClose, onConfirm }: {
-  target: HireTarget; vault: VaultInfo | null; onClose: () => void; onConfirm: (v: Amounts) => void;
+  target: HireTarget; vault: VaultInfo | null; onClose: () => void; onConfirm: (v: HireChoice) => void;
 }) {
   const { t, lang } = useT();
   // The user's own per-trade limit on their vault, if they set one. Nothing caps the amount otherwise.
@@ -61,7 +61,12 @@ export default function HireSheet({ target, vault, onClose, onConfirm }: {
   const [budget, setBudget] = useState(start.budgetUsd);
 
   const setPerKeep = (v: number) => { setPer(v); if (budget < v) setBudget(BUDGET.find((b) => b >= v) ?? v); };
-  const valid = per > 0 && budget >= per;
+  const startMode: Mode = target.kind === 'edit' ? target.hired.mode : 'ask';
+  const [mode, setMode] = useState<Mode>(startMode);
+  // Working on its own needs a real vault and a daily limit the owner set: the contract then caps what an
+  // unattended agent can spend in a day.
+  const autoWhy = !vault?.configured ? 'login' : vault.maxDailyUsdt === undefined ? 'limit' : null;
+  const valid = per > 0 && budget >= per && !(mode === 'auto' && autoWhy);
 
   const name = target.kind === 'agent' ? agentName(t, target.agent) : target.kind === 'custom'
     ? t.customName((target.plan.steps.find((s) => 'asset' in s) as { asset?: string } | undefined)?.asset ?? 'HSK') : hiredName(t, target.hired);
@@ -70,13 +75,13 @@ export default function HireSheet({ target, vault, onClose, onConfirm }: {
   const plan = target.kind === 'custom' ? target.plan : target.kind === 'edit' && target.hired.source.type === 'custom' ? target.hired.source.plan : undefined;
   const noBuy = plan && !plan.steps.some((s) => s.kind === 'accumulate');
   const editing = target.kind === 'edit';
-  const changed = per !== start.perBuyUsd || budget !== start.budgetUsd;
+  const changed = per !== start.perBuyUsd || budget !== start.budgetUsd || mode !== startMode;
   const diff = (a: number, b: number) => (editing && a !== b ? `$${money(a)} → ` : '');
 
   return (
     <Modal title={editing ? t.hsEditTitle(name) : t.hsTitle(name)} onClose={onClose} actions={<>
       <button className="btn-text" onClick={onClose}>{t.cancel}</button>
-      <button className={editing ? 'btn-primary' : 'btn-primary hire'} disabled={!valid || (editing && !changed)} onClick={() => onConfirm({ perBuyUsd: per, budgetUsd: budget })}>{editing ? t.hsSave : t.hsHire}</button>
+      <button className={editing ? 'btn-primary' : 'btn-primary hire'} disabled={!valid || (editing && !changed)} onClick={() => onConfirm({ perBuyUsd: per, budgetUsd: budget, mode })}>{editing ? t.hsSave : t.hsHire}</button>
     </>}>
       <div className="hire">
         <label className="field" htmlFor="hire-per">
@@ -90,7 +95,18 @@ export default function HireSheet({ target, vault, onClose, onConfirm }: {
           <Stepper id="hire-budget" label={t.hsBudget} value={budget} options={BUDGET} onChange={setBudget} />
         </label>
         {editing && <p className="hire-sub">{t.hsSpent(money(book(target.hired).spent))}</p>}
-        <div className="field"><span>{t.hsMode}</span><div className="field-ro">{t.hsModeAsk}</div></div>
+        <div className="field">
+          <span>{t.hsMode}</span>
+          <div className="hire-modes" role="radiogroup" aria-label={t.hsMode}>
+            {(['ask', 'auto'] as Mode[]).map((m) => (
+              <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
+                <b>{m === 'ask' ? t.hsModeAsk : t.hsModeAuto}</b><small>{m === 'ask' ? t.hsModeAskSub : t.hsModeAutoSub}</small>
+              </button>
+            ))}
+          </div>
+          {mode === 'auto' && autoWhy && <p className="hire-sub warn">{autoWhy === 'login' ? t.hsAutoLogin : t.hsAutoNeedLimit}</p>}
+          {mode === 'auto' && !autoWhy && <p className="hire-sub">{t.hsAutoNote(vault?.maxDailyUsdt ?? '')}</p>}
+        </div>
         <div className="field"><span>{t.hsVault}</span><div className="field-ro">{vault?.configured ? limitsText(t, vault) : vault?.service ? t.hsVaultLogin : t.hsVaultOff}</div></div>
         {plan && (
           <div className="field">
