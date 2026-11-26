@@ -1,7 +1,7 @@
 // The vault, shown the same way wherever it appears: what it is (connected or demo), the limits the contract
 // enforces, and how much of today's limit is used. Three sizes: the sidebar line, the line under Moa's input,
 // and the full card on "My agents". Without a vault nothing is sent, and the card says so calmly, once.
-import type { VaultInfo } from './parts.tsx';
+import { vaultWhy, type VaultInfo } from './parts.tsx';
 import { useT } from './i18n.ts';
 import { Icon } from './Icons.tsx';
 import { CopyAddress } from './ui.tsx';
@@ -24,8 +24,9 @@ export function VaultMini({ vault }: { vault: VaultInfo | null }) {
   const { t } = useT();
   const on = !!vault?.configured;
   const u = on ? vaultUse(vault!) : null;
+  const why = vaultWhy(vault);
   return (
-    <div className={`vault-mini${on ? ' on' : ''}`} data-tip={on ? t.vcSide(usd(u!.left)) : t.vcDemoLine}>
+    <div className={`vault-mini${on ? ' on' : ''}`} data-tip={on ? t.vcSide(usd(u!.left)) : why === 'login' ? t.vcLoginLine : why === 'making' ? t.acMaking : t.vcDemoLine}>
       <span className="nav-icon"><Icon name="shield" size={18} /></span>
       <span className="nav-text">
         <span className="vm-top"><b>{t.mineVault}</b><span className={`vm-state${on ? ' on' : ''}`}><i />{on ? t.vcLive : t.vcDemo}</span></span>
@@ -38,13 +39,15 @@ export function VaultMini({ vault }: { vault: VaultInfo | null }) {
 /** Under Moa's input: the limits in one line. */
 export function VaultLine({ vault }: { vault: VaultInfo | null }) {
   const { t } = useT();
-  if (!vault?.configured) return <><Icon name="shield" size={14} /><span>{t.vcDemo}</span><span className="vl-sep">·</span><span>{t.vcDemoShort}</span></>;
+  const why = vaultWhy(vault);
+  if (!vault?.configured) return <><Icon name="shield" size={14} /><span>{t.vcDemo}</span><span className="vl-sep">·</span><span>{why === 'login' ? t.vcLoginShort : why === 'making' ? t.vcMaking : t.vcDemoShort}</span></>;
   const u = vaultUse(vault);
+  const empty = num(vault.usdtBalance) === 0 && !vault.holdings?.length;
   return (
     <>
       <Icon name="shield" size={14} />
       <span>{t.perTrade} ${vault.maxTradeUsdt}</span><span className="vl-sep">·</span>
-      <Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} /><span>{t.vcSide(usd(u.left))}</span>
+      {empty ? <span className="vl-warn">{t.vcEmptyShort}</span> : <><Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} /><span>{t.vcSide(usd(u.left))}</span></>}
       {vault.vault && <CopyAddress value={vault.vault} label={t.copyAddress} done={t.addressCopied} />}
       {vault.localFork && <span className="fork-badge">{t.localFork}</span>}
     </>
@@ -62,7 +65,7 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
         <span className="vc-ic" aria-hidden><Icon name="shield" size={18} /></span>
         <b>{t.mineVault}</b>
         <span className={`vm-state${on ? ' on' : ''}`}><i />{on ? t.vcLive : t.vcDemo}</span>
-        {vault?.localFork && <span className="fork-badge">{t.localFork}</span>}
+        {on && vault?.localFork && <span className="fork-badge">{t.localFork}</span>}
         {on && vault!.vault && <span className="vc-addr"><CopyAddress value={vault!.vault} label={t.copyAddress} done={t.addressCopied} />{vault!.explorerUrl && <a href={vault!.explorerUrl} target="_blank" rel="noreferrer">{t.vcExplorer} ↗</a>}</span>}
       </header>
       {u ? (
@@ -77,7 +80,7 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
             <div><dt>{t.balance}</dt><dd>{usd(num(vault!.usdtBalance))}</dd></div>
           </dl>
         </div>
-      ) : <p className="vc-demo">{t.vcDemoLine}</p>}
+      ) : <p className="vc-demo">{vaultWhy(vault) === 'login' ? t.vcLoginLine : vaultWhy(vault) === 'making' ? t.acMaking : t.vcDemoLine}</p>}
       <ul className="vc-safe">{t.vcSafe.map((s) => <li key={s}><Icon name="check" size={14} />{s}</li>)}</ul>
     </section>
   );

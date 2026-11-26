@@ -1,12 +1,11 @@
-// Agents someone made, kept under their account.
-// There is no sign-in yet (Google and wallet sign-in are planned), so today the account is "guest": this browser.
-// Everything is stored per owner, so when sign-in arrives the same code reads the signed-in account's agents and
-// the guest ones can be offered for moving over. Nothing here talks to a server.
+// Agents someone made, kept under their account: the wallet that logged in, or "guest" (this browser) before that.
+// Everything is stored per owner. The first time a wallet logs in with nothing saved, the guest's agents come along.
+// Nothing here talks to a server.
 import { useSyncExternalStore } from 'react';
 import type { MadeSpec } from './spec.ts';
+import { onOwnerChange, owner } from './account.ts';
 
-/** Who is making agents. Sign-in will set this; until then everyone on this browser is the guest. */
-export const owner = (): string => 'guest';
+export { owner };
 const key = () => `moa.made.v1.${owner()}`;
 export const MADE_PREFIX = 'made:';
 
@@ -25,6 +24,14 @@ function write(list: MadeSpec[]) {
   try { localStorage.setItem(key(), JSON.stringify(list)); } catch { /* storage unavailable: kept for this visit only */ }
   listeners.forEach((f) => f());
 }
+
+// Logging in or out switches whose agents are shown.
+onOwnerChange(() => {
+  if (owner() !== 'guest' && !read().length) {
+    try { const guest = JSON.parse(localStorage.getItem('moa.made.v1.guest') ?? '[]') as MadeSpec[]; if (Array.isArray(guest) && guest.length) { write(guest); return; } } catch { /* nothing to bring */ }
+  }
+  listeners.forEach((f) => f());
+});
 
 export const madeList = (): MadeSpec[] => read();
 export const madeById = (agentId: string): MadeSpec | undefined => read().find((s) => MADE_PREFIX + s.id === agentId);

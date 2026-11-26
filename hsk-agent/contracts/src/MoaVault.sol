@@ -76,13 +76,28 @@ contract MoaVault {
         _;
     }
 
-    constructor(address owner_, address agent_, address usdt_, address router_, uint256 maxTrade_, uint256 maxDaily_, uint16 slippageBps_) {
+    /// @param tokens  tokens the agent may trade against USDT from the start
+    /// @param pools   the HSKSwap pool of each token against USDT, in the same order
+    constructor(
+        address owner_,
+        address agent_,
+        address usdt_,
+        address router_,
+        uint256 maxTrade_,
+        uint256 maxDaily_,
+        uint16 slippageBps_,
+        address[] memory tokens,
+        address[] memory pools
+    ) {
+        require(owner_ != address(0) && owner_ != agent_, "bad owner");
+        require(tokens.length == pools.length, "markets mismatch");
         owner = owner_;
         agent = agent_;
         usdt = usdt_;
         router = ISwapRouter02(router_);
         _setLimits(maxTrade_, maxDaily_, slippageBps_);
         emit AgentSet(agent_);
+        for (uint256 i = 0; i < tokens.length; i++) _setMarket(tokens[i], pools[i], true);
     }
 
     // ----- owner -----
@@ -97,6 +112,10 @@ contract MoaVault {
     }
 
     function setMarket(address token, address pool, bool enabled) external onlyOwner {
+        _setMarket(token, pool, enabled);
+    }
+
+    function _setMarket(address token, address pool, bool enabled) internal {
         IUniswapV3Pool p = IUniswapV3Pool(pool);
         address t0 = p.token0();
         address t1 = p.token1();

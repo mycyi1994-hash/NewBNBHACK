@@ -1,43 +1,43 @@
-// The owner's controls for a deployed MoaVault on HSK Chain mainnet.
+// A vault owner's controls from the command line. The app's account menu does deposit and withdraw; this is the
+// same and more, for when the app is not at hand.
 //
-//   node scripts/vault.mjs status                 what the vault holds and its limits (reads only, no key needed)
-//   node scripts/vault.mjs fund 20                send 20 USDT from the owner wallet to the vault
-//   node scripts/vault.mjs withdraw USDT 20       take 20 USDT back to the owner (also WHSK, WETH, WBTC; "all" for everything)
-//   node scripts/vault.mjs pause | unpause        stop or allow the agent's trades
+//   node scripts/vault.mjs status 0x…             the vault of that owner: what it holds and its limits (reads only, no key)
+//   node scripts/vault.mjs create                 make my vault (the app normally does this for you when you log in)
+//   node scripts/vault.mjs fund 20                send 20 USDT from my wallet to my vault
+//   node scripts/vault.mjs withdraw USDT 20       take 20 USDT back to my wallet (also WHSK, WETH, WBTC; "all" for everything)
+//   node scripts/vault.mjs pause | unpause        stop or allow the agent's trades on my vault
 //   node scripts/vault.mjs limits 10 30 150       per-trade USDT, per-day USDT, slippage ceiling in bps
-//   node scripts/vault.mjs agent 0x…              replace the agent wallet (e.g. if its key may have leaked)
+//   node scripts/vault.mjs agent 0x…              replace my vault's agent wallet (e.g. if its key may have leaked)
 //
-// The vault address comes from MOA_VAULT_ADDRESS, or from deployments/hsk-mainnet.json.
-// Everything except `status` needs the owner's key: MOA_OWNER_PRIVATE_KEY if set, otherwise asked for with the typing
-// hidden (never written to a file, never printed). Each command shows what it will do and asks you to type a word first.
-import { existsSync, readFileSync } from 'node:fs';
-import { createWalletClient, http, isAddress, parseUnits, formatUnits, formatEther, encodeFunctionData } from 'viem';
+// The factory address comes from MOA_FACTORY_ADDRESS, or from deployments/hsk-mainnet.json.
+// Everything except `status` needs the vault owner's key: MOA_OWNER_PRIVATE_KEY if set, otherwise asked for with the
+// typing hidden (never written to a file, never printed). Each command shows what it will do and asks you to type a word first.
+import { createWalletClient, http, isAddress, getAddress, parseUnits, formatUnits, formatEther, encodeFunctionData, zeroAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CHAIN, RPC, USDT, MARKETS, ERC20, FORK, RECORD, artifact, client, confirm, ownerKey, txUrl, usd, same, EXPLORER } from './hsk.mjs';
+import { CHAIN, RPC, USDT, MARKETS, ERC20, FORK, WHERE, artifact, client, confirm, ownerKey, record, txUrl, usd, same, fail, EXPLORER } from './hsk.mjs';
 
-const [cmd, ...rest] = process.argv.slice(2);
-const fail = (msg) => { console.error(`Cannot continue: ${msg}`); process.exit(1); };
-const vault = process.env.MOA_VAULT_ADDRESS || (existsSync(RECORD) ? JSON.parse(readFileSync(RECORD, 'utf8')).vault : undefined);
-if (!vault || !isAddress(vault)) fail('no vault address: set MOA_VAULT_ADDRESS or deploy first.');
+const [cmd = 'status', ...rest] = process.argv.slice(2);
+const factory = process.env.MOA_FACTORY_ADDRESS || record()?.factory;
+if (!factory || !isAddress(factory)) fail('no factory address: set MOA_FACTORY_ADDRESS or deploy first.');
 const pub = client();
-const { abi } = artifact();
-const TOKENS = {
-  USDT: { token: USDT, decimals: 6 },
-  WHSK: { token: MARKETS.WHSK.token, decimals: 18 },
-  WETH: { token: MARKETS.WETH.token, decimals: 18 },
-  WBTC: { token: MARKETS.WBTC.token, decimals: 8 },
-};
-const read = (functionName, args = []) => pub.readContract({ address: vault, abi, functionName, args });
+const { abi } = artifact('MoaVault');
+const factoryAbi = artifact('MoaVaultFactory').abi;
+const TOKENS = { USDT: { token: USDT, decimals: 6 }, ...Object.fromEntries(Object.entries(MARKETS).map(([name, m]) => [name, { token: m.token, decimals: m.decimals }])) };
 const balanceOf = (token, who) => pub.readContract({ address: token, abi: ERC20, functionName: 'balanceOf', args: [who] });
 const amountOf = (text, decimals) => { try { return parseUnits(text ?? '', decimals); } catch { return 0n; } };
+const vaultOf = async (owner) => {
+  const code = await pub.getCode({ address: factory });
+  if (!code || code === '0x') fail(`there is no contract at ${factory} on this chain.`);
+  const v = await pub.readContract({ address: factory, abi: factoryAbi, functionName: 'vaultOf', args: [owner] });
+  return v === zeroAddress ? null : v;
+};
 
-async function status() {
-  const code = await pub.getCode({ address: vault });
-  if (!code || code === '0x') fail(`there is no contract at ${vault} on this chain.`);
+async function status(vault) {
+  const read = (functionName, args = []) => pub.readContract({ address: vault, abi, functionName, args });
   const [owner, agent, paused, maxTrade, maxDaily, slip, left] = await Promise.all(['owner', 'agent', 'paused', 'maxTradeUsdt', 'maxDailyUsdt', 'maxSlippageBps', 'remainingToday'].map((f) => read(f)));
   console.log(`\nVault ${vault}\n  ${EXPLORER}/address/${vault}`);
   console.log(`  owner   ${owner}`);
-  console.log(`  agent   ${agent}   (${formatEther(await pub.getBalance({ address: agent }))} HSK for gas)`);
+  console.log(`  agent   ${agent}   (${Number(formatEther(await pub.getBalance({ address: agent }))).toFixed(2)} HSK for gas)`);
   console.log(`  limits  $${usd(maxTrade)} per trade · $${usd(maxDaily)} per day ($${usd(left)} left today) · ${Number(slip) / 100}% slippage ceiling${paused ? '   PAUSED' : ''}`);
   for (const [name, t] of Object.entries(TOKENS)) {
     const bal = await balanceOf(t.token, vault);
@@ -45,35 +45,52 @@ async function status() {
     console.log(`  ${name.padEnd(5)} ${formatUnits(bal, t.decimals)}${market ? (market[3] ? '   (listed)' : '   (not listed)') : ''}`);
   }
   console.log('');
-  return { owner };
 }
 
-if (!cmd || cmd === 'status') { await status(); process.exit(0); }
+if (cmd === 'status' && rest[0]) {
+  if (!isAddress(rest[0])) fail('usage: status <owner address>');
+  const v = await vaultOf(getAddress(rest[0]));
+  if (!v) { console.log(`\n${rest[0]} has no vault yet.\n`); process.exit(0); }
+  await status(v);
+  process.exit(0);
+}
+if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'agent'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
 
-if (!['fund', 'withdraw', 'pause', 'unpause', 'limits', 'agent'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
-const key = await ownerKey();
-if (!key) fail('the owner key is missing or is not a 64-hex private key.');
+const key = await ownerKey('the vault owner\'s wallet');
+if (!key) fail(cmd === 'status' ? 'usage: status <owner address>' : 'the key is missing or is not a 64-hex private key.');
 const account = privateKeyToAccount(key);
 const chainId = await pub.getChainId();
 if (chainId !== 177 && !FORK) fail(`chain id is ${chainId}, expected 177.`);
-const { owner } = await status();
-if (!same(owner, account.address)) fail(`this key is ${account.address}, but the vault's owner is ${owner}.`);
 const wallet = createWalletClient({ account, chain: CHAIN, transport: http(RPC) });
+let vault = await vaultOf(account.address);
+
 const run = async (what, word, tx) => {
-  await confirm(word, `${what}\nFrom ${account.address} on ${FORK ? 'a LOCAL FORK' : 'HSK Chain mainnet'}.`);
+  await confirm(word, `${what}\nFrom ${account.address} on ${WHERE}.`);
   const hash = await wallet.sendTransaction(tx);
   console.log(`  sent: ${txUrl(hash)}`);
   const r = await pub.waitForTransactionReceipt({ hash });
   console.log(r.status === 'success' ? '  done.' : '  REVERTED.');
-  await status();
+  vault = await vaultOf(account.address);
+  if (vault) await status(vault);
 };
+
+if (cmd === 'create') {
+  if (vault) { console.log(`\n${account.address} already has a vault.`); await status(vault); process.exit(0); }
+  await run(`Make the vault of ${account.address}. It starts empty; this costs gas only.`, 'create', { to: factory, data: encodeFunctionData({ abi: factoryAbi, functionName: 'createVault', args: [account.address] }) });
+  process.exit(0);
+}
+if (!vault) fail(`${account.address} has no vault yet. Log in to the app, or run: node scripts/vault.mjs create`);
+const owner = await pub.readContract({ address: vault, abi, functionName: 'owner' });
+if (!same(owner, account.address)) fail(`this key is ${account.address}, but the vault's owner is ${owner}.`);
+await status(vault);
 const call = (functionName, args) => ({ to: vault, data: encodeFunctionData({ abi, functionName, args }) });
 
+if (cmd === 'status') process.exit(0);
 if (cmd === 'fund') {
   const amount = amountOf(rest[0], 6);
   if (amount <= 0n) fail('usage: fund <USDT amount>');
   const have = await balanceOf(USDT, account.address);
-  if (have < amount) fail(`the owner wallet holds ${usd(have)} USDT, less than ${usd(amount)}.`);
+  if (have < amount) fail(`this wallet holds ${usd(have)} USDT, less than ${usd(amount)}.`);
   await run(`Send ${usd(amount)} USDT to the vault. Only the owner can take it back out.`, 'fund', { to: USDT, data: encodeFunctionData({ abi: ERC20, functionName: 'transfer', args: [vault, amount] }) });
 } else if (cmd === 'withdraw') {
   const name = (rest[0] ?? '').toUpperCase();
@@ -93,5 +110,5 @@ if (cmd === 'fund') {
 } else if (cmd === 'agent') {
   if (!isAddress(rest[0] ?? '')) fail('usage: agent <new agent address>');
   if (same(rest[0], owner)) fail('the agent must be a different wallet from the owner.');
-  await run(`Replace the agent wallet with ${rest[0]}. The old one can no longer trade.`, 'agent', call('setAgent', [rest[0]]));
-} else fail(`unknown command "${cmd}". See the top of this file.`);
+  await run(`Replace the agent wallet with ${rest[0]}. The old one can no longer trade.`, 'agent', call('setAgent', [getAddress(rest[0])]));
+}

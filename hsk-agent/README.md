@@ -106,9 +106,11 @@ vault contract enforces.
 | Market data: HashKey Global candles, HSKSwap pool price from HSK Chain mainnet (chain 177), Gate spot | Live |
 | Agents (`src/agents.ts`) | 47 agents: 27 can be hired (BTC, ETH, HSK on HSKSwap; 0.3% fee in the backtest), 20 "signal only" for coins HSKSwap does not list (**demo**, 0.1% fee) |
 | Moa's brain (`server/moaAgent.ts`) | Claude Sonnet 5.5, tools `get_market`, `propose_plan`, `recommend_agent`, `execute_trade`. Falls back to the on-device parser when the API is unreachable. Agent requests (pick one, stop, how is it doing) are answered without the AI |
-| Hired agents | Saved in this browser. Ask before each trade while the app is open. Running with the app closed comes with the mainnet vault |
-| Execution (`server/executor.ts`, `contracts/src/MoaVault.sol`) | Approved agent orders and “실행”/“execute” in the chat. The vault enforces per-trade and daily caps, a slippage floor and owner-only withdrawals. Tested end to end on a local fork of HSK mainnet; **not deployed to mainnet yet**. Without a vault the app is a **demo**: agents ask, nothing is sent |
-| Pause | In the app it stops new orders. Locking the vault and withdrawing are done from the vault owner's wallet (**demo** until the mainnet vault) |
+| Account (`src/account.ts`, `src/Account.tsx`, `server/session.ts`) | **Log in** at the top right with a wallet: one free signature, no transaction. The account shows a nickname and the address; its menu shows the wallet's own vault with **Deposit** and **Withdraw**, both sent by the user's wallet. Made agents, hired agents and trade history are kept per wallet (per browser before logging in) |
+| Hired agents | Saved in this browser under the logged-in wallet. Ask before each trade while the app is open |
+| Vaults (`contracts/src/MoaVaultFactory.sol`, `contracts/src/MoaVault.sol`) | One vault per user. The factory makes it when the wallet first logs in; the server pays the gas, the wallet is the owner and signs nothing. Each vault enforces a per-trade cap, a per-day cap and a slippage floor, and only its owner can withdraw. Tested on a local fork of HSK mainnet (22 checks); **not deployed to mainnet yet** |
+| Execution (`server/executor.ts`) | Approved agent orders and “실행”/“execute” in the chat go to the vault of the wallet that is logged in, and only with that wallet's session; an order without one is refused. Not logged in, or on a server without a factory, the app is a **demo**: agents ask, nothing is sent |
+| Pause | In the app it stops new orders. Locking a vault on-chain is the owner's `pause` (`contracts/scripts/vault.mjs`) |
 
 UI reference: Google AI Studio web (via Mobbin). `src/styles.css` is built from measured captures: 208px sidebar, hairlines, 14/20 type, outlined buttons, grey selected chips with a dot, blue links and assistant marks. The layout (sidebar, screen, Moa on the right) is Moa's own.
 
@@ -118,32 +120,33 @@ Put the server-side secrets in `.env.local` (git-ignored):
 
 ```
 ANTHROPIC_API_KEY=...
-# optional: execute through a deployed MoaVault
-MOA_VAULT_ADDRESS=0x...
+# optional: real vaults. The factory makes one vault per logged-in wallet; the agent key trades for them.
+MOA_FACTORY_ADDRESS=0x...
 MOA_AGENT_PRIVATE_KEY=0x...
 MOA_RPC_URL=https://mainnet.hsk.xyz
+# optional: MOA_MAX_VAULTS_PER_DAY=20 (vaults this server pays to make per day), MOA_SESSION_SECRET=...
 ```
 
 ```bash
 npm install
 npm run dev      # http://127.0.0.1:5180
-npm test         # parser, agent scoring, recommend rule and runner tests
+npm test         # parser, agent scoring, recommend rule, runner and login-session tests
 npm run build
 ```
 
-### Deploy the vault to HSK Chain mainnet
+### Deploy the vaults to HSK Chain mainnet
 
-[`contracts/MAINNET.md`](contracts/MAINNET.md) has the steps: make the agent key, dry run, deploy, publish the source on the
-explorer, fund, first trade, and the owner's controls (pause, withdraw, limits). The scripts check every address on-chain
-before sending, show the plan and gas cost first, and ask for a typed word before each transaction. The owner's key is
-typed into a hidden prompt and is never stored.
+[`contracts/MAINNET.md`](contracts/MAINNET.md) has the steps: make the agent key, dry run, deploy the factory (one
+transaction), publish the source on the explorer, then log in to the app, deposit and trade. The scripts check every
+address on-chain before sending, show the plan and gas cost first, and ask for a typed word before each transaction.
+The deploying wallet's key is typed into a hidden prompt and is never stored.
 
 ### Try execution on a local fork of HSK mainnet (no real funds)
 
 ```bash
 cd contracts && npm install && node scripts/compile.cjs
-node --experimental-strip-types scripts/fork-test.mjs      # vault + executor checks
+node --experimental-strip-types scripts/fork-test.mjs      # factory, vault and executor checks
 npx hardhat node --port 8546 &                              # keep running
-node scripts/fork-setup.mjs                                 # deploys a funded test vault, writes ../.env.fork.local
-cd .. && npx vite --mode fork                               # hire a collect agent and approve its first buy, or chat “ETH 15달러어치 지금 실행해줘”
+node scripts/fork-setup.mjs                                 # deploys the factory, gives a test wallet 500 USDT, writes ../.env.fork.local
+cd .. && npx vite --mode fork                               # log in with the first Hardhat test account (add the fork to your wallet as chain 177, RPC http://127.0.0.1:8546), deposit, then hire an agent and approve its first buy
 ```

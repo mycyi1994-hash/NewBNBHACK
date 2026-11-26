@@ -1,11 +1,12 @@
-// End-to-end test on a local fork of HSK Chain mainnet: deploy MoaVault, fund it, trade through the real
-// HSKSwap pools with the server executor, and check every guard. No real funds are used.
+// End-to-end test on a local fork of HSK Chain mainnet: deploy the factory, let the server make each user's vault,
+// fund one, trade through the real HSKSwap pools with the server executor, and check every guard.
+// No real funds are used.
 // Usage: node --experimental-strip-types scripts/fork-test.mjs   (from hsk-agent/contracts)
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createPublicClient, createTestClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { executeTrade, vaultStatus, TOKENS, USDT } from '../../server/executor.ts';
+import { executeTrade, vaultStatus, createVault, vaultOf, forOwner, TOKENS, USDT } from '../../server/executor.ts';
 
 const RPC = 'http://127.0.0.1:8546';
 const ROUTER = '0x2c16f75b95Cf1390c328aB70e2CEE7f4b80bD8F3';
@@ -13,7 +14,9 @@ const POOLS = { HSK: '0x4ff515761864e7838b0adb8b5b2b8b7a068905dc', ETH: '0xb92b7
 // Hardhat's well-known local test keys (public, never funded on any real chain)
 const OWNER_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 const AGENT_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
-const { abi, bytecode } = JSON.parse(readFileSync(new URL('../out/MoaVault.json', import.meta.url)));
+const CAROL_KEY = '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a';
+const factoryArtifact = JSON.parse(readFileSync(new URL('../out/MoaVaultFactory.json', import.meta.url)));
+const { abi } = JSON.parse(readFileSync(new URL('../out/MoaVault.json', import.meta.url)));
 const erc20 = [
   { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'v', type: 'uint256' }], outputs: [{ type: 'bool' }] },
@@ -42,14 +45,40 @@ try {
   const agentW = createWalletClient({ account: agent, chain, transport: http(RPC) });
   console.log('fork block', await pub.getBlockNumber());
 
-  // deploy: $50 per trade, $120 per day, 1.5% slippage floor
-  const deployHash = await ownerW.deployContract({ abi, bytecode, args: [owner.address, agent.address, USDT, ROUTER, 50_000_000n, 120_000_000n, 150] });
-  const vault = (await pub.waitForTransactionReceipt({ hash: deployHash })).contractAddress;
-  console.log('vault', vault);
-  for (const a of ['HSK', 'ETH', 'BTC']) {
-    const h = await ownerW.writeContract({ address: vault, abi, functionName: 'setMarket', args: [TOKENS[a].address, POOLS[a], true] });
-    await pub.waitForTransactionReceipt({ hash: h });
-  }
+  // the factory: every vault starts with $50 per trade, $120 per day, 1.5% slippage floor and the three markets
+  const assets = ['HSK', 'ETH', 'BTC'];
+  const deployHash = await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: [agent.address, USDT, ROUTER, 50_000_000n, 120_000_000n, 150, assets.map((a) => TOKENS[a].address), assets.map((a) => POOLS[a])] });
+  const deployed = await pub.waitForTransactionReceipt({ hash: deployHash });
+  const factory = deployed.contractAddress;
+  console.log('factory', factory, 'gas', deployed.gasUsed);
+  const base = { rpcUrl: RPC, chainId: 177, factory, agentKey: AGENT_KEY, explorer: 'https://hsk.blockscout.com', minOutBufferBps: 100, maxVaultsPerDay: 2 };
+
+  // the server makes the owner's vault; the owner signs nothing
+  check('a wallet has no vault before it logs in', (await vaultOf(base, owner.address)) === undefined);
+  const made = await createVault(base, owner.address);
+  const vault = made.ok ? made.vault : undefined;
+  if (!vault) throw new Error(`vault was not made: ${made.reason}`);
+  const makeGas = (await pub.getTransactionReceipt({ hash: made.txHash })).gasUsed;
+  console.log('vault', vault, 'gas', makeGas);
+  const read = (address, functionName, args = []) => pub.readContract({ address, abi, functionName, args });
+  check('the server made the vault and the wallet is its owner', (await read(vault, 'owner')) === owner.address && (await read(vault, 'agent')) === agent.address);
+  const listed = await Promise.all(assets.map((a) => read(vault, 'markets', [TOKENS[a].address])));
+  check('the vault starts with HSK, ETH and BTC listed, without the owner signing', listed.every((m, i) => m[3] === true && m[0].toLowerCase() === POOLS[assets[i]]));
+  const again = await createVault(base, owner.address);
+  check('asking again returns the same vault and sends nothing', again.ok && again.vault === vault && !again.txHash);
+  check('the agent wallet cannot own a vault', !(await createVault(base, agent.address)).ok);
+
+  // a second user gets their own vault; nobody else can touch the first one
+  const carol = privateKeyToAccount(CAROL_KEY);
+  const carolMade = await createVault(base, carol.address);
+  check('a second wallet gets a different vault', carolMade.ok && carolMade.vault !== vault && (await read(carolMade.vault, 'owner')) === carol.address);
+  let carolRefused = false;
+  try { await pub.simulateContract({ address: vault, abi, functionName: 'withdraw', args: [USDT, 1n], account: carol }); } catch (e) { carolRefused = /NotOwner/.test(String(e.message)); }
+  check('another user cannot withdraw from this vault', carolRefused);
+  const third = await createVault(base, privateKeyToAccount('0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6').address);
+  check('the server stops paying for new vaults at its daily cap (2 here)', !third.ok && /today/.test(third.reason));
+  const noFunds = await executeTrade(await forOwner(base, carol.address), { asset: 'HSK', side: 'buy', amount: 5, note: 'empty vault' });
+  check('an order on an empty vault is refused before anything is sent', !noFunds.ok && /Deposit USDT first/.test(noFunds.reason), noFunds.ok ? 'executed!' : noFunds.reason);
 
   // fund the vault with 200 USDT taken from the WHSK/USDT pool's balance (fork only)
   await test.impersonateAccount({ address: POOLS.HSK });
@@ -60,7 +89,8 @@ try {
   const usdtBal = () => pub.readContract({ address: USDT, abi: erc20, functionName: 'balanceOf', args: [vault] });
   check('vault funded with 200 USDT', (await usdtBal()) === 200_000_000n);
 
-  const cfg = { rpcUrl: RPC, chainId: 177, vault, agentKey: AGENT_KEY, explorer: 'https://hsk.blockscout.com', minOutBufferBps: 100 };
+  const cfg = await forOwner(base, owner.address);
+  check('the server finds the logged-in wallet\'s vault', cfg.vault === vault);
   console.log('vault status', JSON.stringify(await vaultStatus(cfg)));
 
   // 1) executor buys $20 of BTC through HSKSwap
@@ -106,7 +136,9 @@ try {
 
   // 8) no vault configured -> executor refuses before touching the chain
   const r8 = await executeTrade({ ...cfg, vault: undefined }, { asset: 'HSK', side: 'buy', amount: 5, note: 'x' });
-  check('without a vault the executor refuses', !r8.ok && /not configured/.test(r8.reason));
+  check('without a vault the executor refuses', !r8.ok && /No vault/.test(r8.reason));
+  const carolUsdt = await pub.readContract({ address: USDT, abi: erc20, functionName: 'balanceOf', args: [carolMade.vault] });
+  check('the other user\'s vault was never touched', carolUsdt === 0n);
 } catch (e) {
   fail++;
   console.error('ERROR', e);

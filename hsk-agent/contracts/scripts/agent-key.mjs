@@ -1,4 +1,4 @@
-// Makes the agent's key: a new wallet that can only call trade() on the vault, inside its limits.
+// Makes the agent's key: a new wallet that can only call trade() on users' vaults, inside each vault's limits.
 // The key is written straight into ../.env.local (which git ignores) and is never printed. Only the address is shown:
 // the deploy script needs the address, and the wallet needs a little HSK for gas.
 import { existsSync, readFileSync, appendFileSync } from 'node:fs';
@@ -14,4 +14,4 @@ if (had) {
   appendFileSync(file, `${text && !text.endsWith('\n') ? '\n' : ''}# Moa's agent key: can only trade through the vault, inside its limits. Never commit or share.\nMOA_AGENT_PRIVATE_KEY=${key}\n`);
   console.log(`New agent key written to hsk-agent/.env.local (not shown). Its address:\n  ${privateKeyToAccount(key).address}`);
 }
-console.log('Send this address a little HSK for gas, and pass it to the deploy script as MOA_AGENT_ADDRESS.');
+console.log('Send this address HSK for gas: it pays for each user\'s vault and for every trade. The deploy script reads this address by itself.');

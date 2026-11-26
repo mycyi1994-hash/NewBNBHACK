@@ -80,7 +80,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm }: {
         </label>
         {editing && <p className="hire-sub">{t.hsSpent(money(book(target.hired).spent))}</p>}
         <div className="field"><span>{t.hsMode}</span><div className="field-ro">{t.hsModeAsk}</div></div>
-        <div className="field"><span>{t.hsVault}</span><div className="field-ro">{vault?.configured ? t.hsVaultOn(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?') : t.hsVaultOff}</div></div>
+        <div className="field"><span>{t.hsVault}</span><div className="field-ro">{vault?.configured ? t.hsVaultOn(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?') : vault?.service ? t.hsVaultLogin : t.hsVaultOff}</div></div>
         {plan && (
           <div className="field">
             <span>{t.hsPlan}</span>
@@ -89,7 +89,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm }: {
           </div>
         )}
         <p className="hire-note">{t.hsNote} {t.hsWithdraw}</p>
-        {!vault?.configured && <p className="hire-note demo">{t.hsDemo}</p>}
+        {!vault?.configured && <p className="hire-note demo">{vault?.service ? t.hsLogin : t.hsDemo}</p>}
       </div>
     </Modal>
   );

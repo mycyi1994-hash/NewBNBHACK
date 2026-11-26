@@ -1,6 +1,7 @@
 // Talking to Moa's server brain (/api/moa, NDJSON stream) and sending a hired agent's approved order
 // to the vault (/api/agent-trade).
 import type { Step } from './intent.ts';
+import { authHeaders } from './account.ts';
 
 export type StepKey = 'thinking' | 'market' | 'plan' | 'agents' | 'execute' | 'writing';
 export interface Exec { ok: boolean; reason?: string; txHash?: string; explorerUrl?: string; amountIn?: string; amountOut?: string; tokenIn?: string; tokenOut?: string; request: { asset: string; side: string; amount: number } }
@@ -64,7 +65,7 @@ export async function askMoa(history: { role: 'moa' | 'you'; text: string }[], o
 async function readMoa(history: { role: 'moa' | 'you'; text: string }[], onStep: (s: StepKey) => void, signal: AbortSignal, heard: () => void, context?: MoaCtx): Promise<MoaResult> {
   const r = await fetch('/api/moa', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ history: toApiHistory(history), context }),
     signal,
   });
@@ -97,7 +98,7 @@ export type TradeResult =
 /** One approved order from a hired agent. buy: amount is USDT; sell: amount is the coin quantity. */
 export async function sendAgentTrade(req: { asset: string; side: 'buy' | 'sell'; amount: number; note: string }): Promise<TradeResult> {
   try {
-    const r = await fetch('/api/agent-trade', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req) });
+    const r = await fetch('/api/agent-trade', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify(req) });
     const j = (await r.json().catch(() => null)) as TradeResult | { error?: string } | null;
     if (j && 'ok' in j) return j;
     return { ok: false, reason: (j && 'error' in j && j.error) || `Server answered HTTP ${r.status}.` };

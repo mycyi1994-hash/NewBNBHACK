@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 5180 --strictPort",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4180 --strictPort",
-    "test": "node --experimental-strip-types --test src/*.test.ts"
+    "test": "node --experimental-strip-types --test src/*.test.ts server/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

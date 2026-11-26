@@ -6,13 +6,14 @@
 //    user's OK in Moa's conversation before it goes to the vault (which enforces its limits again)
 //  - pausing works from the bar without Moa or the AI
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fmtPrice, loadQuotes, type Quote } from './market.ts';
+import { loadQuotes, type Quote } from './market.ts';
 import { useExecutions, useHired } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
-import { RollNum } from './motion.tsx';
 import { Icon, type IconName } from './Icons.tsx';
 import Trade, { type ShowAgent } from './Trade.tsx';
 import { VaultMini } from './VaultCard.tsx';
+import AccountButton from './Account.tsx';
+import { authHeaders, logOut, useSession } from './account.ts';
 import Builder, { type BuildDraft } from './Builder.tsx';
 import Agents from './Agents.tsx';
 import MyAgents from './MyAgents.tsx';
@@ -43,11 +44,37 @@ function useQuotes() {
   return quotes;
 }
 
+/**
+ * The logged-in wallet's vault. A wallet that logs in for the first time has none yet: the server makes it (and pays
+ * for it) once, here, without the user signing anything. Logged out, or on a server without the vault service, the
+ * answer is "not configured" and the app stays a demo.
+ */
 function useVault() {
+  const s = useSession();
+  const token = s?.token;
   const [v, setV] = useState<VaultInfo | null>(null);
-  const load = useCallback(() => { fetch('/api/vault').then((r) => r.json()).then(setV).catch(() => setV({ configured: false })); }, []);
-  useEffect(() => { load(); const t = setInterval(load, 30_000); return () => clearInterval(t); }, [load]);
-  return { vault: v, reloadVault: load };
+  const [make, setMake] = useState<{ for: string; busy: boolean; error?: string } | null>(null);
+  const load = useCallback(() => {
+    fetch('/api/vault', { headers: authHeaders() }).then((r) => r.json()).then((j: VaultInfo) => {
+      // The server no longer knows this session (it expired, or the server restarted with a new secret).
+      if (token && j.signedIn === false) logOut();
+      setV(j);
+    }).catch(() => setV({ configured: false }));
+  }, [token]);
+  useEffect(() => { setV(null); load(); const t = setInterval(load, 30_000); return () => clearInterval(t); }, [load]);
+  const create = useCallback((address: string) => {
+    setMake({ for: address, busy: true });
+    fetch('/api/vault/create', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: '{}' })
+      .then((r) => r.json()).then((j: { ok?: boolean; reason?: string; error?: string }) => { setMake({ for: address, busy: false, error: j.ok ? undefined : j.reason ?? j.error ?? 'unknown error' }); load(); })
+      .catch((e: unknown) => setMake({ for: address, busy: false, error: e instanceof Error ? e.message : String(e) }));
+  }, [load]);
+  const address = s?.address;
+  useEffect(() => {
+    if (address && v?.signedIn && v.service && !v.configured && make?.for !== address) create(address);
+  }, [address, v, make, create]);
+  const mine = make && make.for === address ? make : null;
+  const vault: VaultInfo | null = v && !v.configured && mine ? { ...v, making: mine.busy, makeError: mine.error } : v;
+  return { vault, reloadVault: load, retryVault: () => { if (address) create(address); } };
 }
 
 /** A clock that ticks, so time-based states ("bought today", "next buy") move on their own. */
@@ -112,8 +139,7 @@ function TabBar({ view, go, count, asks, onMoa }: { view: View; go: (v: View) =>
   );
 }
 
-function Topbar({ title, quotes, onMenu }: { title: string; quotes: Quote[]; onMenu: () => void }) {
-  const hsk = quotes.find((q) => q.asset === 'HSK');
+function Topbar({ title, vault, onMenu, onReload, onRetryVault }: { title: string; vault: VaultInfo | null; onMenu: () => void; onReload: () => void; onRetryVault: () => void }) {
   return (
     <header className="topbar">
       <div className="topbar-title">
@@ -122,7 +148,7 @@ function Topbar({ title, quotes, onMenu }: { title: string; quotes: Quote[]; onM
         <span className="desktop-only">{title}</span>
       </div>
       <div className="topbar-right">
-        {hsk?.pool !== undefined && <span className="top-meta">HSK <RollNum text={fmtPrice(hsk.pool)} /></span>}
+        <AccountButton vault={vault} onReload={onReload} onRetryVault={onRetryVault} />
       </div>
     </header>
   );
@@ -133,7 +159,7 @@ function Shell() {
   const toast = useToast();
   const [view, setView] = useState<View>('trade');
   const quotes = useQuotes();
-  const { vault, reloadVault } = useVault();
+  const { vault, reloadVault, retryVault } = useVault();
   const { hired, add, update, remove } = useHired();
   const { execs, record } = useExecutions();
   const now = useNow(30_000);
@@ -224,8 +250,8 @@ function Shell() {
     setSending((cur) => new Set(cur).add(orderId));
     const amount = o.side === 'buy' ? o.usd ?? 0 : o.qty ?? 0;
     const enName = h.source.type === 'market' ? agentName(STRINGS.en, h.source) : STRINGS.en.customName(h.asset);
-    // Demo (the server reports no vault): the answer is recorded, nothing is sent.
-    const demo = vaultRef.current?.configured === false;
+    // Demo (no vault: not logged in, or this server has no vault service): the answer is recorded, nothing is sent.
+    const demo = !vaultRef.current?.configured;
     const r = demo ? { ok: false as const, reason: 'No vault is connected (demo).' } : await sendAgentTrade({ asset: h.asset, side: o.side, amount, note: chainNote(enName, o.why) });
     const at = Date.now();
     const position = h.source.type === 'market' && h.source.kind === 'position';
@@ -298,7 +324,7 @@ function Shell() {
     <div className={`app${moaOpen ? ' moa-open' : ''}${navMini ? ' nav-mini' : ''}`}>
       <Sidebar view={view} go={go} hired={hired} vault={vault} onOpenHired={(id) => tell({ kind: 'status', hiredId: id })} />
       <main className="main">
-        <Topbar title={title} quotes={quotes} onMenu={() => setNavMini((v) => !v)} />
+        <Topbar title={title} vault={vault} onMenu={() => setNavMini((v) => !v)} onReload={reloadVault} onRetryVault={retryVault} />
         <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />
         {view === 'trade' && <Trade quotes={quotes} show={show} onContext={setTradeCtx} onAsk={askMoaAbout} onBuild={(coin) => openBuilder({ coin })} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
