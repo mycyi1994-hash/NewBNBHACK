@@ -446,7 +446,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
   return (
     <aside className="dock feed-dock" aria-label="Moa">
       <header className="feed-head">
-        <span className="feed-title"><span className={`moa-avatar${busy ? ' busy' : ''}`} aria-hidden><Spark size={13} /></span>Moa<span className="ai-badge" data-tip={level ? t.live : t.feedWatching}><span className="live-dot" />{t.aiBadge}</span></span>
+        <span className="feed-title"><span className={`moa-avatar${busy ? ' busy' : ''}`} aria-hidden><Spark size={13} /></span>Moa<span className="ai-badge" data-tip={level ? t.live : t.feedWatching}><span className="live-dot" /><span className="ai-long">{t.aiBadge}</span><span className="ai-short">{t.aiShort}</span></span></span>
         {level && (
           <div className="depth-switch has-pill" role="tablist" aria-label={t.depthLabel}>
             <SlidePill dep={level} />

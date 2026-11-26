@@ -17,6 +17,7 @@ import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 import { Icon, Spark } from './Icons.tsx';
 import { SlidePill } from './motion.tsx';
+import { StateBox } from './ui.tsx';
 
 /** Price with sensible decimals for anything from BTC to DOGE. */
 export const px = (v: number) => (v >= 1000 ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
@@ -26,13 +27,14 @@ export const px = (v: number) => (v >= 1000 ? v.toLocaleString('en-US', { minimu
 export function useMarketAgents(venue: 'cex' | 'dex', market: cex.Market, asset: Asset) {
   const [list, setList] = useState<Agent[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [again, setAgain] = useState(0);
   useEffect(() => {
     let alive = true;
     setList(null); setFailed(false);
     (venue === 'cex' ? positionAgents(market) : collectAgents(asset)).then((xs) => alive && setList(xs), () => alive && setFailed(true));
     return () => { alive = false; };
-  }, [venue, market.symbol, asset]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { list, failed };
+  }, [venue, market.symbol, asset, again]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { list, failed, retry: () => setAgain((n) => n + 1) };
 }
 
 export type Period = 'year' | 'std' | 'all';
@@ -47,7 +49,9 @@ export function useBacktest(sel: Agent | null) {
     rescore(sel, period === 'year' ? 365 : Infinity).then((a: Agent | null) => { if (alive && a) setOther({ agent: a, period }); }, () => undefined);
     return () => { alive = false; };
   }, [sel?.id, period]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { period, setPeriod, shown: sel && period !== 'std' && other?.period === period && other.agent.id === sel.id ? other.agent : sel };
+  const ready = !!sel && period !== 'std' && other?.period === period && other.agent.id === sel.id;
+  // While another period is being scored the standard one stays on screen, with a small "working" mark.
+  return { period, setPeriod, shown: ready ? other!.agent : sel, busy: !!sel && period !== 'std' && !ready };
 }
 
 /** Round trips of a position agent, newest first. The last one may still be open (valued at the last close). */
@@ -194,10 +198,10 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
 
 type Tab = 'list' | 'bt' | 'swaps';
 
-export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, onSelect, onHire, onAsk, swaps }: {
+export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, onRetry, onSelect, onHire, onAsk, swaps }: {
   venue: 'cex' | 'dex'; coin: string; list: Agent[] | null; failed: boolean;
   /** The agent picked (its one-year numbers, as in the list) and the backtest on screen (one year or all history). */
-  sel: Agent | null; shown: Agent | null; period: Period; setPeriod: (p: Period) => void;
+  sel: Agent | null; shown: Agent | null; period: Period; setPeriod: (p: Period) => void; busy?: boolean; onRetry?: () => void;
   onSelect: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; swaps?: ReactNode;
 }) {
   const { t } = useT();
@@ -228,7 +232,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
         </div>
         <p className="tdock-note">{note}</p>
         {tab === 'bt' && sel && (
-          <div className="seg" role="group" aria-label={t.thPeriod}>
+          <div className={`seg${busy ? ' busy' : ''}`} role="group" aria-label={t.thPeriod} aria-busy={busy}>
+            {busy && <span className="spin" aria-hidden />}
             {(['year', 'std', 'all'] as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} aria-pressed={period === p} onClick={() => setPeriod(p)}>{p === 'year' ? t.btYear : p === 'std' ? t.btStd : t.btAll}</button>)}
           </div>
         )}
@@ -241,7 +246,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             <div className="frow-head" aria-hidden>
               <span>{t.thRank}</span><span>{t.thName}</span><span>{t.thOrigin}</span><span>{t.thState}</span><span>{t.thCurve}</span><span>{t.thEdge}</span><span>{t.thTotal}</span><span>{t.thDd}</span><span />
             </div>
-            {failed && <p className="bt-none">{t.agFailed}</p>}
+            {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
             {!list && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="frow skel-block" aria-hidden />)}
             {ranked.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === best} onPick={() => onSelect(a)} />)}
           </div>

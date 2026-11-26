@@ -8,6 +8,7 @@
 // no creators, followers or subscriber counts here.
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SlidePill } from './motion.tsx';
+import { StateBox } from './ui.tsx';
 import { useT } from './i18n.ts';
 import { byMerit, idle, type Agent, type Tier } from './agents.ts';
 import { agentName, drop, pct, statePill, Equity, Face } from './AgentCard.tsx';
@@ -74,8 +75,8 @@ function TopChart({ agents }: { agents: Agent[] }) {
   );
 }
 
-export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: {
-  agents: Agent[] | null; failed: boolean; onHire: (a: Agent) => void; onOpen: (a: Agent) => void; onRecommend: () => void;
+export default function Agents({ agents, failed, onRetry, onHire, onOpen, onRecommend }: {
+  agents: Agent[] | null; failed: boolean; onRetry: () => void; onHire: (a: Agent) => void; onOpen: (a: Agent) => void; onRecommend: () => void;
 }) {
   const { t } = useT();
   const [tab, setTab] = useState<Tab>('top');
@@ -120,9 +121,10 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
         <button className="btn-dark" onClick={onRecommend}><Spark size={14} />{t.barRecommend}</button>
       </header>
 
-      {failed && <p className="muted">{t.agFailed}</p>}
+      {failed && <StateBox title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
+      {/* Nothing to rank or list without the candles: the message above is the whole page. */}
 
-      {tab === 'top' && (
+      {!failed && tab === 'top' && (
         <>
           <div className="rank-tabs has-line" role="tablist">
             <SlidePill dep={rank} />
@@ -135,7 +137,7 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
               {agents ? <TopChart key={rank} agents={top} /> : <div className="top-skel skel-block" />}
             </div>
             <div className="top-legend">
-              <div className="top-legend-head"><span>{t.topLegendA}</span><span>{t.topLegendB(top[0]?.days ?? 365)}</span></div>
+              <div className="top-legend-head"><span>{t.topLegendA}</span><span>{top[0] ? t.topLegendB(top[0].days) : ''}</span></div>
               <ol>
                 {(agents ? top : Array.from({ length: 10 }, (_, i) => i)).map((a, i) => typeof a === 'number'
                   ? <li key={i}><span className="skel" style={{ width: '70%' }} /></li>
@@ -178,7 +180,7 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
         </>
       )}
 
-      {tab === 'market' && (
+      {!failed && tab === 'market' && (
         <>
           <div className="mp-filters">
             <label className="mp-search"><Icon name="search" size={16} /><input id="mp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.mpSearch} aria-label={t.mpSearch} autoComplete="off" /></label>

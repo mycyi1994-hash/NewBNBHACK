@@ -46,6 +46,10 @@ vault contract enforces.
   mode: orders are not sent", once and calmly.
 - **One accent.** Primary actions are one filled blue button everywhere; green and red mean gain, loss, buy and
   sell and nothing else. Numbers use one format (a true minus sign, one decimal).
+- **When data does not load, the screen says so.** The chart, the agents under it and the agent market each show
+  what failed, in one line, with "Try again" (`StateBox` in `src/ui.tsx`); loading shows a spinner with words, not
+  an empty box. RSI and the momentum rule's 12-month return are drawn in a pane of their own under the price chart,
+  with their own axis, scrolling in step with it.
 - **Moa never leaves you waiting.** Each model call is streamed and has a 90-second deadline with one retry
   (`server/moaAgent.ts`); the server sends a line every 5 seconds while it works, and the browser stops waiting after
   25 seconds of silence or 150 seconds in total and answers with the on-device parser, marked as offline.

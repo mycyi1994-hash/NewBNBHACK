@@ -157,13 +157,15 @@ function Shell() {
   const attention = () => { if (window.matchMedia(NARROW).matches) setMoaOpen(true); };
 
   // Agent scores for the market, Moa's picks and the runner. Refreshed every 10 minutes so live signals move.
+  const [agentsTry, setAgentsTry] = useState(0);
   useEffect(() => {
     let alive = true;
+    setAgentsFailed(false);
     const load = () => loadAgents().then((a) => { if (alive) { setAgents(a); setAgentsFailed(false); } }, () => { if (alive) setAgentsFailed(true); });
     load();
     const x = setInterval(load, 10 * 60_000);
     return () => { alive = false; clearInterval(x); };
-  }, []);
+  }, [agentsTry]);
 
   // Hired agents that are not in the market listing (e.g. hired from the tiles of a spot market) load on their own.
   const missing = hired.flatMap((h) => (h.source.type === 'market' && !agents?.some((a) => a.id === (h.source as { agentId: string }).agentId) ? [h.source.agentId] : []));
@@ -294,7 +296,7 @@ function Shell() {
         <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />
         {view === 'trade' && <Trade quotes={quotes} show={show} onContext={setTradeCtx} onAsk={askMoaAbout} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
-        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} />}
+        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} />}
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}

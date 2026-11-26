@@ -179,3 +179,16 @@ export function RichText({ text }: { text: string }) {
   flushPara(); flushList();
   return <div className="rich">{blocks}</div>;
 }
+
+/** Something did not load: what, why in one line, and a way to try again. Used wherever data can fail. */
+export function StateBox({ title, text, retry, onRetry, compact }: { title: string; text?: string; retry?: string; onRetry?: () => void; compact?: boolean }) {
+  return (
+    <div className={`state-box${compact ? ' compact' : ''}`} role="alert">
+      <span className="sb-ic" aria-hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5h.01M10.3 4.2 2.9 17a2 2 0 0 0 1.7 3h14.8a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </span>
+      <div className="sb-text"><b>{title}</b>{text && <p>{text}</p>}</div>
+      {onRetry && retry && <button className="btn" onClick={onRetry}>{retry}</button>}
+    </div>
+  );
+}
