@@ -71,6 +71,21 @@ function inLine<T>(job: () => Promise<T>): Promise<T> {
   return run;
 }
 
+export type FactoryCheck = 'ok' | 'none' | 'old' | 'unreachable';
+/**
+ * Is the configured factory the one this server's code was written for? An earlier factory makes vaults without the
+ * stop-loss, which this code cannot read. Pointing at one must not half-work: it is reported and left unused.
+ */
+export async function checkFactory(cfg: ExecConfig): Promise<FactoryCheck> {
+  if (!cfg.factory) return 'none';
+  const pub = clientOf(cfg);
+  try {
+    const code = await pub.getCode({ address: cfg.factory });
+    if (!code || code === '0x') return 'old';
+  } catch { return 'unreachable'; }
+  try { await pub.readContract({ address: cfg.factory, abi: factoryAbi, functionName: 'stopLossBps' }); return 'ok'; } catch { return 'old'; }
+}
+
 /** The vault the factory made for this wallet, or undefined when it has none yet. */
 export async function vaultOf(cfg: ExecConfig, owner: Address): Promise<Address | undefined> {
   if (!cfg.factory) return undefined;

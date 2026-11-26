@@ -19,14 +19,22 @@ export function sessionSecret(env: Record<string, string | undefined>): string {
 const mac = (secret: string, text: string) => createHmac('sha256', secret).update(text).digest('hex');
 const nonceOf = (secret: string, address: Address, host: string, issuedAt: number) => mac(secret, `nonce|${address.toLowerCase()}|${host}|${issuedAt}`).slice(0, 16);
 
-/** The text the wallet shows. It names the site, so a signature made for another site is useless here. */
+/**
+ * The text the wallet shows, in the standard "Sign-In with Ethereum" form (EIP-4361), so wallets recognise it as a
+ * login, show it as one, and can check that the site asking is the site named in it.
+ * It names the site, so a signature made for another site is useless here.
+ */
 export function loginMessage(address: Address, host: string, issuedAt: number, nonce: string): string {
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host);
   return [
-    `${host} wants you to log in to Moa with your wallet:`,
+    `${host} wants you to sign in with your Ethereum account:`,
     address,
     '',
-    'Signing this is free. It sends no transaction and moves no funds.',
+    'Log in to Moa. Signing is free: it sends no transaction and moves no funds.',
     '',
+    `URI: ${local ? 'http' : 'https'}://${host}`,
+    'Version: 1',
+    'Chain ID: 177',
     `Nonce: ${nonce}`,
     `Issued At: ${new Date(issuedAt).toISOString()}`,
   ].join('\n');

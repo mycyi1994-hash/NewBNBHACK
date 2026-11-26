@@ -10,7 +10,8 @@ const secret = 'test-secret', host = 'moa.example', now = 1_800_000_000_000;
 
 test('a wallet that signs the challenge gets a token that names it', async () => {
   const c = challenge(secret, alice.address, host, now)!;
-  assert.match(c.message, /moa\.example wants you to log in/);
+  assert.match(c.message, /^moa\.example wants you to sign in with your Ethereum account:\n0x[0-9a-fA-F]{40}\n\n/);
+  assert.match(c.message, /\nURI: https:\/\/moa\.example\nVersion: 1\nChain ID: 177\nNonce: [0-9a-f]{16}\nIssued At: /);
   assert.match(c.message, /sends no transaction/);
   const signature = await alice.signMessage({ message: c.message });
   const r = await login(secret, { address: alice.address.toLowerCase(), issuedAt: c.issuedAt, signature }, host, now + 5_000);

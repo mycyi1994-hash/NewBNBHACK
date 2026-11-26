@@ -4,7 +4,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createVault, execConfigFromEnv, executeTrade, forOwner, serviceOn, vaultStatus } from './executor.ts';
+import { checkFactory, createVault, execConfigFromEnv, executeTrade, forOwner, serviceOn, vaultStatus, type ExecConfig, type FactoryCheck } from './executor.ts';
 import * as session from './session.ts';
 import { openStore, storeFile, type AutoStore } from './autoStore.ts';
 import { autoBlock, startRunner } from './autoRunner.ts';
@@ -29,9 +29,17 @@ function cleanAgent(x: unknown): HiredAgent | null {
 }
 
 export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
-  const base = execConfigFromEnv(env);
+  const asSet = execConfigFromEnv(env);
   const secret = session.sessionSecret(env);
   const store = opts.store ?? openStore(storeFile(env));
+  // A factory from an earlier version of the vault is not used: the server then runs as a demo and says why.
+  let factory: FactoryCheck = asSet.factory ? 'unreachable' : 'none';
+  let base: ExecConfig = { ...asSet, factory: undefined };
+  const settle = checkFactory(asSet).then((r) => {
+    factory = r;
+    if (r === 'ok') base = asSet;
+    else if (r !== 'none') console.error(`[moa] MOA_FACTORY_ADDRESS ${asSet.factory} is not usable (${r === 'old' ? 'it is not the current MoaVaultFactory: deploy the current one' : 'the chain could not be reached'}). Running as a demo.`);
+  });
 
   const handler = async (req: IncomingMessage, res: ServerResponse, next: Next) => {
     if (!req.url?.startsWith('/api/')) return next();
@@ -54,6 +62,7 @@ export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
       return null;
     };
     try {
+      await settle;
       const host = String(req.headers.host ?? '');
       // Who is asking: the wallet that logged in, or nobody.
       const who = session.fromHeader(secret, req.headers.authorization);
@@ -109,7 +118,7 @@ export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
         const dir = process.cwd();
         const files = ['.env', '.env.local', '.env.development', '.env.development.local'].filter((f) => existsSync(join(dir, f)));
         const key = env.ANTHROPIC_API_KEY ?? '';
-        const out: Record<string, unknown> = { envDir: dir, envFiles: files, anthropicKey: key ? `set (${key.length} chars, starts ${key.slice(0, 7)}…)` : 'missing', factory: env.MOA_FACTORY_ADDRESS ? 'configured' : 'not configured', agentKey: env.MOA_AGENT_PRIVATE_KEY ? 'set' : 'missing', autoOwners: store.owners().length };
+        const out: Record<string, unknown> = { envDir: dir, envFiles: files, anthropicKey: key ? `set (${key.length} chars, starts ${key.slice(0, 7)}…)` : 'missing', factory: factory === 'ok' ? `ok (${asSet.factory})` : factory === 'none' ? 'not configured' : factory === 'old' ? `${asSet.factory} is not the current MoaVaultFactory: deploy the current one and set its address` : `${asSet.factory}: the chain could not be reached at start`, agentKey: env.MOA_AGENT_PRIVATE_KEY ? 'set' : 'missing', autoOwners: store.owners().length };
         if (key && req.url.includes('ping')) {
           try {
             const { default: Anthropic } = await import('@anthropic-ai/sdk');
@@ -170,6 +179,6 @@ export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
   return {
     handler,
     /** Start the agents that work on their own. Only where the server can trade at all. */
-    startAuto: () => (serviceOn(base) ? startRunner(base, store) : () => undefined),
+    startAuto: () => { let stop = () => {}; void settle.then(() => { if (serviceOn(base)) stop = startRunner(base, store); }); return () => stop(); },
   };
 }
