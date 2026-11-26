@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createChart, ColorType, LineType, type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
+import { createChart, ColorType, LineType, type SeriesType, type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
 import * as cex from './cex.ts';
 import * as I from './indicators.ts';
 import { gateCandles, GATE_SECONDS, type GateInterval } from './gate.ts';
@@ -9,6 +9,7 @@ import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
+import { LEAD_DAYS, SPEEDS, useReplay, type Replay } from './replay.ts';
 import Dock, { px, useBacktest, useMarketAgents } from './Dock.tsx';
 import { collectHistory, dailyHistory, type Agent, type RuleId } from './agents.ts';
 import { pct } from './AgentCard.tsx';
@@ -81,12 +82,14 @@ export interface Badge { time: number; side: 'buy' | 'sell' | 'note'; text: stri
 /** What a backtest adds to the chart: the rule's own lines, its buys and sells, and the days it was holding. */
 export interface Study { rule: RuleId; badges: Badge[]; bands: { from: number; to: number }[] }
 
-function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study }: {
+function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until }: {
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
   /** Show everything from this time to now (a backtest's window). `key` says when to apply it again. */
   range?: { from: number; key: string };
   /** Daily candles only: the rule is decided on daily closes. */
   study?: Study;
+  /** Replay: draw nothing after this day (seconds). Undefined shows everything. */
+  until?: number;
 }) {
   const { t } = useT();
   const box = useRef<HTMLDivElement>(null);
@@ -99,6 +102,19 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
   const sub = useRef<{ chart: IChartApi; series: ISeriesApi<'Line'>; lines: ReturnType<ISeriesApi<'Line'>['createPriceLine']>[] } | null>(null);
   const paneKind: 'mom' | 'rsi' | null = study?.rule === 'tsmom' ? 'mom' : inds.has('rsi') || study?.rule === 'rsi' || study?.rule === 'rsiDca' ? 'rsi' : null;
   const extra = useRef<ISeriesApi<'Line' | 'Histogram' | 'Area'>[]>([]);
+  // Every series with all its points. A replay shows a prefix of each; without one, all of them.
+  const layers = useRef<{ s: ISeriesApi<SeriesType>; data: { time: UTCTimestamp }[] }[]>([]);
+  const untilRef = useRef(until); untilRef.current = until;
+  const held = useRef<{ from: number; to: number } | null>(null);
+  const drawn = useRef(false);
+  const draw = () => {
+    const u = untilRef.current;
+    // Days after the cursor stay on the time axis as empty slots, so every bar keeps its place.
+    for (const L of layers.current) (L.s as ISeriesApi<'Line'>).setData((u === undefined ? L.data : L.data.map((d) => (d.time <= u ? d : { time: d.time }))) as never);
+    // The library keeps the last real bar at the same distance from the right edge, which would slide the
+    // view along with the cursor. A replay stays on the backtest's whole window, so the candles fill it from the left.
+    if (u !== undefined && held.current && chart.current) chart.current.timeScale().setVisibleLogicalRange(held.current);
+  };
   const layer = useRef<HTMLDivElement>(null);
   const pl = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']> | null>(null);
   const shownKey = useRef<string | null>(null);
@@ -114,7 +130,12 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     box.current.querySelector('a')?.setAttribute('aria-label', 'TradingView Lightweight Charts');
     // Near the left edge: ask for older candles.
     c.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (r && r.from < 30) older.current?.(); });
-    return () => { c.remove(); chart.current = null; main.current = null; extra.current = []; pl.current = null; };
+    return () => {
+      c.remove(); chart.current = null; main.current = null; extra.current = []; pl.current = null;
+      // What was applied belonged to that chart. The next one (a remount, or React's second pass over effects
+      // in development) starts clean, or it would be left on the library's default view.
+      layers.current = []; shownKey.current = null; rangeKey.current = null; prevFirst.current = null; held.current = null; drawn.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -150,7 +171,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     const before = ts.getVisibleLogicalRange();
     const added = prevFirst.current !== null && candles[0].time < prevFirst.current && shownKey.current === resetKey
       ? candles.findIndex((x) => x.time === prevFirst.current) : 0;
-    m.setData(candles.map((d) => ({ ...d, time: d.time as UTCTimestamp })));
+    layers.current = [{ s: m, data: candles.map((d) => ({ ...d, time: d.time as UTCTimestamp })) }];
 
     for (const x of extra.current) c.removeSeries(x);
     extra.current = [];
@@ -160,15 +181,15 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     m.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: showVol ? 0.2 : 0.06 } });
     const addLine = (xs: number[], color: string, width: 1 | 2 = 1, scale?: string) => {
       const s = c.addLineSeries({ color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...(scale ? { priceScaleId: scale } : {}) });
-      s.setData(line(times, xs)); extra.current.push(s); return s;
+      layers.current.push({ s, data: line(times, xs) }); extra.current.push(s); return s;
     };
     if (study) {
       // The days the agent was holding, as a soft green band behind the candles.
       if (study.bands.length) {
-        const held = (time: number) => study.bands.some((b) => time > b.from && time <= b.to);
+        const holding = (time: number) => study.bands.some((b) => time > b.from && time <= b.to);
         const a = c.addAreaSeries({ priceScaleId: 'band', lineType: LineType.WithSteps, lineVisible: false, topColor: 'rgba(22,163,74,.13)', bottomColor: 'rgba(22,163,74,.13)', priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
         a.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
-        a.setData(candles.map((d) => ({ time: d.time as UTCTimestamp, value: held(d.time) ? 1 : 0 })));
+        layers.current.push({ s: a, data: candles.map((d) => ({ time: d.time as UTCTimestamp, value: holding(d.time) ? 1 : 0 })) });
         extra.current.push(a);
       }
       // The lines the rule itself looks at, so each buy and sell can be read off the chart.
@@ -192,14 +213,14 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     if (showVol) {
       const v = c.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
       v.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-      v.setData(candles.map((d) => ({ time: d.time as UTCTimestamp, value: d.volume, color: d.close >= d.open ? 'rgba(22,163,74,.35)' : 'rgba(220,38,38,.35)' })));
+      layers.current.push({ s: v, data: candles.map((d) => ({ time: d.time as UTCTimestamp, value: d.volume, color: d.close >= d.open ? 'rgba(22,163,74,.35)' : 'rgba(220,38,38,.35)' })) });
       extra.current.push(v);
     }
     const pane = sub.current;
     if (pane && paneKind) {
       // Every bar gets a point (an empty one where there is no value yet) so both charts count bars alike.
       const vals = paneKind === 'mom' ? close.map((x, i) => (i >= 365 ? (x / close[i - 365] - 1) * 100 : NaN)) : I.rsi(close);
-      pane.series.setData(times.map((time, i) => (Number.isFinite(vals[i]) ? { time: time as UTCTimestamp, value: vals[i] } : { time: time as UTCTimestamp })));
+      layers.current.push({ s: pane.series, data: times.map((time, i) => (Number.isFinite(vals[i]) ? { time: time as UTCTimestamp, value: vals[i] } : { time: time as UTCTimestamp })) });
       for (const l of pane.lines) pane.series.removePriceLine(l);
       // The levels are the ones the rule on screen acts on: zero for momentum, 30/55 or 35/65 for the RSI rules, else 30/70.
       const levels: [number, string][] = paneKind === 'mom' ? [[0, '#5f6368']]
@@ -207,6 +228,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
       pane.lines = levels.map(([price, color]) => pane.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' }));
     }
 
+    draw();
     m.setMarkers(markers ?? []);
     if (pl.current) { m.removePriceLine(pl.current); pl.current = null; }
     if (priceLine) pl.current = m.createPriceLine({ price: priceLine.price, color: '#7c5cf0', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: priceLine.title });
@@ -224,18 +246,25 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
       // (Once the chart has a width: a range set before the first layout is dropped.)
       const at = candles.findIndex((x) => x.time >= range.from);
       const want = { from: Math.max(0, at < 0 ? 0 : at) - 4, to: candles.length + 6 };
+      held.current = want;
+      // A chart that has just been created puts itself on its default view at its first paint, after anything set
+      // here, so the window is set now and again over the next frames (setting the same range twice changes nothing).
       const apply = (tries: number) => {
-        if (chart.current !== c) return;
-        if (ts.width() > 0 || tries <= 0) ts.setVisibleLogicalRange(want); else requestAnimationFrame(() => apply(tries - 1));
+        if (chart.current !== c || held.current !== want) return;
+        if (ts.width() > 0) ts.setVisibleLogicalRange(want);
+        if (tries > 0) requestAnimationFrame(() => apply(tries - 1));
       };
-      apply(30);
+      apply(4);
       rangeKey.current = `${range.key}|${resetKey}`;
     }
     // After any change above, put the pane on the bars the price chart shows.
     requestAnimationFrame(() => { const r = chart.current === c ? ts.getVisibleLogicalRange() : null; if (r && sub.current) sub.current.chart.timeScale().setVisibleLogicalRange(r); });
-    if (!range) rangeKey.current = null;
+    if (!range) { rangeKey.current = null; held.current = null; }
     prevFirst.current = candles[0].time;
   }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey, range?.key, study, paneKind]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The replay moved a day: show that much of every series. (Not on mount: the data was just drawn.)
+  useEffect(() => { if (!drawn.current) { drawn.current = true; return; } if (chart.current && layers.current.length) draw(); }, [until]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Buys and sells as filled labels over the chart, kept on their candles as the chart moves.
   useEffect(() => {
@@ -260,7 +289,8 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
       const ts = c.timeScale();
       const r = ts.getVisibleLogicalRange();
       const w = el.clientWidth - m.priceScale().width(), h = el.clientHeight - ts.height();
-      const key = `${r?.from.toFixed(2)}|${r?.to.toFixed(2)}|${w}|${h}|${m.priceToCoordinate(candles[candles.length - 1].close)?.toFixed(1)}`;
+      const u = untilRef.current;
+      const key = `${r?.from.toFixed(2)}|${r?.to.toFixed(2)}|${w}|${h}|${u}|${m.priceToCoordinate(candles[candles.length - 1].close)?.toFixed(1)}`;
       if (key === sig) return;
       sig = key;
       const last = { buy: -1e9, sell: -1e9, note: -1e9 };
@@ -268,7 +298,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
         const n = nodes[i], cd = byTime.get(b.time);
         const x = ts.timeToCoordinate(b.time as UTCTimestamp);
         const y = cd ? m.priceToCoordinate(b.side === 'buy' ? cd.low : cd.high) : null;
-        if (x === null || y === null || x < 0 || x > w || y < 0 || y > h) { n.style.display = 'none'; return; }
+        if (x === null || y === null || x < 0 || x > w || y < 0 || y > h || (u !== undefined && b.time > u)) { n.style.display = 'none'; return; }
         n.style.display = '';
         // Too close to the one before: keep the arrow, drop the words. On top of it: one mark is enough.
         const gap = x - last[b.side];
@@ -331,8 +361,14 @@ function IntervalBar<T extends string>({ list, value, set, label }: { list: read
 }
 
 /** Keeps the newest candles fresh and pages older ones in on demand. */
+const NONE: cex.Candle[] = [];
 function useCandles(key: string, latest: (limit: number) => Promise<cex.Candle[]>, olderThan: (first: cex.Candle) => Promise<cex.Candle[]>, refreshMs: number) {
-  const [candles, setCandles] = useState<cex.Candle[]>([]);
+  // The candles are kept with the key they were loaded for. For one render after the market or the interval
+  // changes the old ones are still in state; handing those to the chart under the new key made it frame the
+  // wrong days (it then treated the right candles as "older ones arrived" and slid the view).
+  const [got, setGot] = useState<{ key: string; list: cex.Candle[] }>({ key, list: [] });
+  const candles = got.key === key ? got.list : NONE;
+  const setCandles = (list: cex.Candle[]) => setGot({ key: keyNow.current, list });
   const [err, setErr] = useState<string | null>(null);
   const [again, setAgain] = useState(0);
   const busy = useRef(false), done = useRef(false), cur = useRef<cex.Candle[]>([]), fns = useRef({ latest, olderThan }), keyNow = useRef(key);
@@ -435,10 +471,26 @@ function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string
 }
 
 /** The line in the chart toolbar that says whose buys and sells are on the candles. */
-function BacktestChip({ a, onClose }: { a: Agent; onClose: () => void }) {
-  const { t } = useT();
+function BacktestChip({ a, replay, onClose }: { a: Agent; replay: Replay; onClose: () => void }) {
+  const { t, lang } = useT();
+  if (replay.on) {
+    const day = new Date((replay.cursor ?? 0) * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' });
+    return (
+      <span className="bt-chip player">
+        <button className="rp-play" onClick={replay.toggle} aria-label={replay.playing ? t.rpPause : t.rpResume}><Icon name={replay.playing ? 'pause' : 'play'} size={16} /></button>
+        <input className="rp-bar" type="range" min={0} max={1000} value={Math.round(replay.frac * 1000)} aria-label={t.rpPlay}
+          style={{ '--f': `${(replay.frac * 100).toFixed(1)}%` } as React.CSSProperties} onChange={(e) => replay.seek(Number(e.target.value) / 1000)} />
+        <span className="rp-day">{day}</span>
+        <span className="seg" role="group" aria-label={t.rpSpeed}>
+          {SPEEDS.map((v) => <button key={v} className={replay.speed === v ? 'on' : ''} aria-pressed={replay.speed === v} onClick={() => replay.setSpeed(v)}>{v}×</button>)}
+        </span>
+        <button className="icon-btn sm" onClick={replay.stop} aria-label={t.rpStop} data-tip={t.rpStop}><Icon name="close" size={14} /></button>
+      </span>
+    );
+  }
   return (
     <span className="bt-chip">
+      <button className="rp-start" onClick={replay.start} data-tip={t.rpFrom(LEAD_DAYS)}><Icon name="play" size={14} />{t.rpPlay}</button>
       <b>{t.btOn(t.agNick[a.rule])}</b>
       {t.ovLabel[a.rule] && <span className="bt-key"><i className="k-line" />{t.ovLabel[a.rule]}</span>}
       <span className="bt-key"><i className="k-buy">▲</i>{t.buy}</span>
@@ -539,6 +591,7 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
   useEffect(() => { if (sel) setIv('1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const { period, setPeriod, shown, busy } = useBacktest(sel);
   const study = useMemo(() => (shown && interval === '1d' ? studyOf(shown, candles, s) : undefined), [shown, candles, s, interval]);
+  const replay = useReplay(study ? shown : null);
   const chg = t ? (t.last / t.open - 1) * 100 : 0;
   const up = chg >= 0;
   const perp = market.kind === 'perp';
@@ -565,12 +618,12 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
         <div className="chart-toolbar">
           <IntervalBar list={CEX_IV} value={interval} set={pickIv} label={(v) => s.ivLabel[v]} />
           <IndMenu on={inds} toggle={toggleInd} />
-          {sel ? <BacktestChip a={sel} onClose={() => setSel(null)} /> : <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>}
+          {sel ? <BacktestChip a={sel} replay={replay} onClose={() => setSel(null)} /> : <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} study={study} range={shown ? { from: shown.from, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
 
-      <Dock venue="cex" coin={market.base} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
+      <Dock venue="cex" coin={market.base} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
     </>
   );
 }
@@ -593,6 +646,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   useEffect(() => { if (sel) setIv('1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const { period, setPeriod, shown, busy } = useBacktest(sel);
   const study = useMemo(() => (shown && iv === '1d' ? studyOf(shown, candles, s) : undefined), [shown, candles, s, iv]);
+  const replay = useReplay(study ? shown : null);
 
   // Real HSKSwap swaps, pinned to the Gate candle they fall in.
   const markers = useMemo(() => {
@@ -639,12 +693,12 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
         <div className="chart-toolbar">
           <IntervalBar list={DEX_IV} value={iv} set={pickIv} label={(v) => s.ivLabel[v === '7d' ? '1w' : v]} />
           <IndMenu on={inds} toggle={toggleInd} />
-          {sel ? <BacktestChip a={sel} onClose={() => setSel(null)} />
+          {sel ? <BacktestChip a={sel} replay={replay} onClose={() => setSel(null)} />
             : <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} range={shown ? { from: shown.from, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
-      <Dock venue="dex" coin={asset} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
+      <Dock venue="dex" coin={asset} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
         <div className="swaps">
           <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
           {detail?.swaps.slice(0, 20).map((x) => (

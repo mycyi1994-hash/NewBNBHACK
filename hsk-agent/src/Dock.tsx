@@ -68,49 +68,108 @@ export function trips(a: Agent): Trip[] {
 }
 
 
-/** The agent's curve against just holding, with the market's other agents faint behind it (tap one to open it). */
-function Curves({ a, peers, onPick }: { a: Agent; peers: Agent[]; onPick: (p: Agent) => void }) {
+/* ---------- money: "if you had put in this much" ---------- */
+
+/** The amounts offered, per language (won in Korean, dollars in English). The choice is kept in this browser. */
+const AMOUNTS = { ko: [1_000_000, 5_000_000, 10_000_000, 100_000_000], en: [1_000, 5_000, 10_000, 100_000] } as const;
+function usePrincipal(lang: 'ko' | 'en') {
+  const [at, setAt] = useState(() => { try { const v = Number(localStorage.getItem('moa.principal') ?? 0); return v >= 0 && v < 4 ? Math.floor(v) : 0; } catch { return 0; } });
+  const pick = (n: number) => { setAt(n); try { localStorage.setItem('moa.principal', String(n)); } catch { /* storage unavailable */ } };
+  return { at, pick, amount: AMOUNTS[lang][at], list: AMOUNTS[lang] };
+}
+/** 1,829,000 → "182.9만원" (or "1.83억원"); in English "$1,829". `short` is for the chart's axis. */
+export function moneyText(lang: 'ko' | 'en', v: number, short = false): string {
+  if (lang === 'en') return short ? `$${v.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })}` : `$${Math.round(v).toLocaleString('en-US')}`;
+  if (Math.abs(v) >= 1e8) return `${(v / 1e8).toLocaleString('ko-KR', { maximumFractionDigits: short ? 1 : 2 })}억${short ? '' : '원'}`;
+  const man = v / 1e4;
+  return `${man.toLocaleString('ko-KR', { maximumFractionDigits: short || Math.abs(man) >= 1000 ? 0 : 1 })}만${short ? '' : '원'}`;
+}
+
+/** Where the backtest stands on a day (the replay's cursor), or at its end: the agent's value and holding's, as multiples of the start. */
+export function standing(a: Agent, cursor: number | null) {
+  const last = a.equity.length - 1;
+  if (last < 0) return { eq: 1, hold: 1 };
+  if (cursor === null) return { eq: a.equity[last].value, hold: a.bench[Math.min(last, a.bench.length - 1)]?.value ?? 1 };
+  let k = -1;
+  for (let i = 0; i <= last && a.equity[i].time <= cursor; i++) k = i;
+  return k < 0 ? { eq: 1, hold: 1 } : { eq: a.equity[k].value, hold: a.bench[Math.min(k, a.bench.length - 1)]?.value ?? 1 };
+}
+
+/* ---------- character: what kind of strategy this is, read off its own backtest ---------- */
+
+/** Risk by the worst drop, frequency by trades a year, holding by days in the coin. The cut-offs are shown in the tags' tooltip. */
+export function profile(a: Agent) {
+  const perYear = a.trades / Math.max(1, a.days / 365);
+  return {
+    risk: (a.maxDd >= 0.45 ? 'hi' : a.maxDd >= 0.25 ? 'mid' : 'lo') as 'hi' | 'mid' | 'lo',
+    freq: (a.kind === 'collect' && perYear >= 200 ? 'daily' : perYear >= 12 ? 'often' : perYear >= 3 ? 'some' : 'rare') as 'daily' | 'often' | 'some' | 'rare',
+    hold: (a.inMarket >= 0.7 ? 'most' : a.inMarket >= 0.3 ? 'half' : 'cash') as 'most' | 'half' | 'cash',
+  };
+}
+
+/**
+ * The agent's curve against just holding, in money, with the market's other agents faint behind it (tap one to
+ * open it). During a replay only the days up to the cursor are drawn, on the full backtest's scale.
+ */
+function Curves({ a, peers, upto, label, onPick }: { a: Agent; peers: Agent[]; upto: number | null; label: (mult: number) => string; onPick: (p: Agent) => void }) {
   const W = 400, H = 100;
   if (a.equity.length < 2) return null;
   const t0 = a.equity[0].time, t1 = a.equity[a.equity.length - 1].time;
   // Peers are drawn over the same days, rebased to 1 where this agent's window starts.
-  const others = peers.map((p) => {
+  const others = (upto === null ? peers : []).map((p) => {
     const pts = p.equity.filter((x) => x.time >= t0 && x.time <= t1);
     const base = pts[0]?.value || 1;
     return { p, pts: pts.map((x) => ({ time: x.time, value: x.value / base })) };
   }).filter((o) => o.pts.length > 1);
   const all = [...a.equity, ...a.bench, ...others.flatMap((o) => o.pts)];
-  const lo = Math.min(...all.map((p) => p.value)), hi = Math.max(...all.map((p) => p.value)), span = hi - lo || 1;
-  const d = (pts: { time: number; value: number }[]) => pts.map((p, i) => `${i ? 'L' : 'M'}${(((p.time - t0) / (t1 - t0 || 1)) * W).toFixed(1)},${(H - 3 - ((p.value - lo) / span) * (H - 6)).toFixed(1)}`).join('');
-  const base = H - 3 - ((1 - lo) / span) * (H - 6);
+  const lo = Math.min(1, ...all.map((p) => p.value)), hi = Math.max(1, ...all.map((p) => p.value)), span = hi - lo || 1;
+  const yOf = (v: number) => H - 3 - ((v - lo) / span) * (H - 6);
+  const d = (pts: { time: number; value: number }[]) => pts.filter((p) => upto === null || p.time <= upto).map((p, i) => `${i ? 'L' : 'M'}${(((p.time - t0) / (t1 - t0 || 1)) * W).toFixed(1)},${yOf(p.value).toFixed(1)}`).join('');
+  const base = yOf(1);
+  // Three amounts on the side: the most it was worth, what was put in, the least.
+  const marks = [hi, 1, lo].filter((v, i, xs) => i === 1 ? Math.abs(yOf(1) - yOf(hi)) > 16 && Math.abs(yOf(1) - yOf(lo)) > 16 : xs.indexOf(v) === i);
   return (
-    <svg className="bt-curve" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" key={`${a.id}-${a.days}`}>
-      <line x1="0" x2={W} y1={base} y2={base} className="bt-zero" vectorEffect="non-scaling-stroke" />
-      {others.map((o) => (
-        <g key={o.p.id} className="bt-peer" onClick={() => onPick(o.p)}>
-          <path d={d(o.pts)} className="bt-peer-hit" fill="none" vectorEffect="non-scaling-stroke" />
-          <path d={d(o.pts)} className="bt-peer-line" fill="none" vectorEffect="non-scaling-stroke" />
-        </g>
-      ))}
-      <path d={d(a.bench)} className="bt-hold" fill="none" vectorEffect="non-scaling-stroke" />
-      <path d={d(a.equity)} className="bt-agent" fill="none" vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div className="bt-curve-wrap" key={`${a.id}-${a.days}`}>
+      <svg className="bt-curve" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        <line x1="0" x2={W} y1={base} y2={base} className="bt-zero" vectorEffect="non-scaling-stroke" />
+        {others.map((o) => (
+          <g key={o.p.id} className="bt-peer" onClick={() => onPick(o.p)}>
+            <path d={d(o.pts)} className="bt-peer-hit" fill="none" vectorEffect="non-scaling-stroke" />
+            <path d={d(o.pts)} className="bt-peer-line" fill="none" vectorEffect="non-scaling-stroke" />
+          </g>
+        ))}
+        <path d={d(a.bench)} className="bt-hold" fill="none" vectorEffect="non-scaling-stroke" />
+        <path d={d(a.equity)} className="bt-agent" fill="none" vectorEffect="non-scaling-stroke" />
+      </svg>
+      {marks.map((v) => <span key={v} className={`bt-axis${v === 1 ? ' start' : ''}`} style={{ top: `${(yOf(v) / H) * 100}%` }}>{label(v)}</span>)}
+    </div>
   );
 }
 
-function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
-  a: Agent; year: Agent; ranked: Agent[]; period: Period;
+function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: {
+  a: Agent; year: Agent; ranked: Agent[]; period: Period; cursor: number | null;
   onSelect: (a: Agent) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void;
 }) {
   const { t, lang } = useT();
   const pill = statePill(t, a);
-  const edge = a.total - a.hold;
   const day = (s: number) => new Date(s * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-GB', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'UTC' }).replace(/\.$/, '');
   const sign = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
-  const rounds = a.kind === 'position' ? trips(a) : [];
-  const buys = a.kind === 'collect' ? [...a.marks].reverse().slice(0, 120) : [];
+  const live = cursor !== null;
+  const seen = (time: number) => !live || time <= cursor;
+  const rounds = a.kind === 'position' ? trips(a).filter((r) => seen(r.buy.time)) : [];
+  const buys = a.kind === 'collect' ? [...a.marks].filter((m) => seen(m.time)).reverse().slice(0, 120) : [];
   const at = ranked.findIndex((x) => x.id === year.id);
   const step = (n: number) => { const next = ranked[(at + n + ranked.length) % ranked.length]; if (next) onSelect(next); };
+  // Money: what the amount put in would be worth, for the agent and for just holding, on the day shown.
+  const cash = usePrincipal(lang);
+  const now = standing(a, cursor);
+  const total = now.eq - 1, hold = now.hold - 1, edge = total - hold;
+  const m = (mult: number, short = false) => moneyText(lang, cash.amount * mult, short);
+  const [pre, post] = t.btIf('\u0000', a.kind === 'collect').split('\u0000');
+  const p = profile(a);
+  // The right-hand column: what kind of strategy this is, or its trades. A replay opens the trades.
+  const [side, setSide] = useState<'about' | 'log'>('about');
+  useEffect(() => { if (live) setSide('log'); }, [live]);
   return (
     <div className="bt" key={a.id}>
       <section className="bt-who">
@@ -119,6 +178,12 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
           <div className="bt-name"><b>{agentName(t, a)}</b><small>{t.agRule[a.rule]} · {sourceLine(t, a)}</small></div>
         </div>
         <p className={`bt-now ${pill.cls}`}><i />{t.btNow} · {nowLine(t, year)}</p>
+        <div className="bt-tags" data-tip={t.tagNote}>
+          <span className={`tag-p risk-${p.risk}`}>{t.tagRisk[p.risk]}</span>
+          <span className="tag-p">{t.tagStyle[a.style]}</span>
+          <span className="tag-p">{t.tagFreq[p.freq]}</span>
+          {a.kind === 'position' && <span className="tag-p">{t.tagHold[p.hold]}</span>}
+        </div>
         <div className="bt-rank">
           {at >= 0 && ranked.length > 1 && (
             <>
@@ -129,11 +194,6 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
           )}
           <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span>
         </div>
-        <div className="bt-scroll">
-          <ul className="bt-rules">{t.agRules[a.rule].map((r) => <li key={r}>{r}</li>)}</ul>
-          <p className="bt-origin">{t.agOriginNote[a.rule]}</p>
-          {!a.runnable && <p className="bt-demo">{t.whyNot(a.base)}</p>}
-        </div>
         <div className="bt-cta">
           {a.runnable && <button className="btn-primary hire" onClick={() => onHire(year)}>{t.acHire}</button>}
           <button className="btn" onClick={() => onAsk(year)}><Spark size={14} />{t.acAsk}</button>
@@ -142,19 +202,30 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
 
       <section className="bt-perf">
         <div className="bt-hero">
-          <div className="bt-big"><small>{t.btThis}</small><b className={sign(a.total)}>{pct(a.total)}</b></div>
-          <span className="bt-vs">{t.btVs}</span>
-          <div className="bt-big dim"><small>{t.acHold}</small><b>{pct(a.hold)}</b></div>
-          <span className={`bt-edge ${sign(edge)}`}>{t.vsHold(pct(edge))}</span>
+          <div className="bt-big">
+            <small>
+              {pre}
+              <select className="bt-amt" value={cash.at} onChange={(e) => cash.pick(Number(e.target.value))} aria-label={t.btAmount}>
+                {cash.list.map((v, i) => <option key={v} value={i}>{moneyText(lang, v)}</option>)}
+              </select>
+              {post}
+            </small>
+            <span className="bt-sum"><b className={sign(total)}>{m(now.eq)}</b><em className={sign(total)}>{pct(total)}</em></span>
+          </div>
+          <div className="bt-big dim">
+            <small>{t.btIfHold}</small>
+            <span className="bt-sum"><b>{m(now.hold)}</b><em className={sign(hold)}>{pct(hold)}</em></span>
+          </div>
+          {live ? <span className="bt-edge live"><i />{t.rpAt(day(cursor))}</span> : <span className={`bt-edge ${sign(edge)}`}>{t.vsHold(pct(edge))}</span>}
         </div>
-        <p className="bt-say">{t.btSay({ collect: a.kind === 'collect', better: edge >= 0, trades: a.trades, hold: pct(a.hold), total: pct(a.total), held: `${Math.round(a.inMarket * 100)}%` })}</p>
+        <p className="bt-say">{t.btSay({ collect: a.kind === 'collect', better: a.total >= a.hold, trades: a.trades, hold: pct(a.hold), total: pct(a.total), held: `${Math.round(a.inMarket * 100)}%` })}{t.btFx && <span className="bt-fx"> {t.btFx}</span>}</p>
         <dl className="bt-stats">
           <div><dt>{t.thDd}</dt><dd>{drop(a.maxDd)}</dd></div>
           <div><dt>{t.thSharpe}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
           <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.trades)}</dd></div>
           <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>
         </dl>
-        <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id) : []} onPick={onSelect} />
+        <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id) : []} upto={cursor} label={(v) => m(v, true)} onPick={onSelect} />
         <div className="bt-legend">
           <span><i className="lg-agent" />{t.btAgent}</span><span><i className="lg-hold" />{t.acHold}</span>
           <span className="bt-span">{day(a.from)} – {day(a.to)}</span>
@@ -162,17 +233,36 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
       </section>
 
       <section className="bt-log">
-        {a.kind === 'position' ? (
+        <div className="bt-side-tabs has-line" role="tablist">
+          <SlidePill dep={side} />
+          <button role="tab" aria-selected={side === 'about'} className={side === 'about' ? 'on' : ''} onClick={() => setSide('about')}>{t.tabAbout}</button>
+          <button role="tab" aria-selected={side === 'log'} className={side === 'log' ? 'on' : ''} onClick={() => setSide('log')}>{t.tabLog}</button>
+        </div>
+        {side === 'about' ? (
+          <dl className="bt-about">
+            <div><dt>{t.abFit}</dt><dd>{t.agFit[a.rule]}</dd></div>
+            <div><dt>{t.abGood}</dt><dd>{t.agGood[a.rule]}</dd></div>
+            <div><dt>{t.abWeak}</dt><dd>{t.agRisk[a.rule]}</dd></div>
+            <div><dt>{t.abRules}</dt><dd>{t.agRules[a.rule].slice(0, 2).join(' ')}</dd></div>
+            <div><dt>{t.abSource}</dt><dd>{t.agFrom[a.rule]}</dd></div>
+            <div><dt>{t.abUsers}</dt><dd>{t.agUsers[a.rule]}</dd></div>
+            <div><dt>{t.abProof}</dt><dd>{t.agProof[a.rule]}</dd></div>
+            {!a.runnable && <div><dt /><dd className="bt-demo">{t.whyNot(a.base)}</dd></div>}
+          </dl>
+        ) : a.kind === 'position' ? (
           <>
             <div className="bt-log-head"><span>{t.btBuy}</span><span>{t.btSell}</span><span>{t.btRet}</span></div>
             <div className="bt-log-body">
-              {rounds.map((r) => (
-                <div key={r.buy.time} className="bt-log-row">
-                  <span><b>{day(r.buy.time)}</b><small>{px(r.buy.price)}</small></span>
-                  <span>{r.sell ? <><b>{day(r.sell.time)}</b><small>{px(r.sell.price)}</small></> : <span className="badge sig-good"><i />{t.acHolding}</span>}</span>
-                  <span className={`bt-ret ${sign(r.ret)}`}>{pct(r.ret)}</span>
-                </div>
-              ))}
+              {rounds.map((r) => {
+                const sold = r.sell && seen(r.sell.time) ? r.sell : undefined;
+                return (
+                  <div key={r.buy.time} className="bt-log-row">
+                    <span><b>{day(r.buy.time)}</b><small>{px(r.buy.price)}</small></span>
+                    <span>{sold ? <><b>{day(sold.time)}</b><small>{px(sold.price)}</small></> : <span className="badge sig-good"><i />{t.acHolding}</span>}</span>
+                    <span className={`bt-ret ${sold || !live ? sign(r.ret) : ''}`}>{sold || !live ? pct(r.ret) : t.scNone}</span>
+                  </div>
+                );
+              })}
               {!rounds.length && <p className="bt-none">{t.btNoTrades}</p>}
             </div>
           </>
@@ -180,11 +270,11 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
           <>
             <div className="bt-log-head"><span>{t.btDay}</span><span>{t.price}</span><span>{t.btSize}</span></div>
             <div className="bt-log-body">
-              {buys.map((m) => (
-                <div key={m.time} className="bt-log-row one">
-                  <span><b>{day(m.time)}</b></span>
-                  <span>{px(m.price)}</span>
-                  <span className={`bt-ret ${(m.mult ?? 1) > 1 ? 'pos' : ''}`}>×{m.mult ?? 1}</span>
+              {buys.map((b) => (
+                <div key={b.time} className="bt-log-row one">
+                  <span><b>{day(b.time)}</b></span>
+                  <span>{px(b.price)}</span>
+                  <span className={`bt-ret ${(b.mult ?? 1) > 1 ? 'pos' : ''}`}>×{b.mult ?? 1}</span>
                 </div>
               ))}
               {!buys.length && <p className="bt-none">{t.btNoTrades}</p>}
@@ -198,10 +288,12 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
 
 type Tab = 'list' | 'bt' | 'swaps';
 
-export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, onRetry, onSelect, onHire, onAsk, swaps }: {
+export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, cursor = null, onRetry, onSelect, onHire, onAsk, swaps }: {
   venue: 'cex' | 'dex'; coin: string; list: Agent[] | null; failed: boolean;
   /** The agent picked (its one-year numbers, as in the list) and the backtest on screen (one year or all history). */
   sel: Agent | null; shown: Agent | null; period: Period; setPeriod: (p: Period) => void; busy?: boolean; onRetry?: () => void;
+  /** The replay's day, when one is open: the backtest then shows only what had happened by then. */
+  cursor?: number | null;
   onSelect: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; swaps?: ReactNode;
 }) {
   const { t } = useT();
@@ -251,7 +343,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             {ranked.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === best} onPick={() => onSelect(a)} />)}
           </div>
         )}
-        {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}
+        {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} cursor={cursor} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}
         {tab === 'swaps' && swaps}
       </div>
     </section>

@@ -37,6 +37,13 @@ vault contract enforces.
 - **Moa's briefing.** The conclusion for the coin on screen first, the numbers in one table, one leading choice that
   goes to an agent. Moving to another coin's chart gets that coin's briefing, and a choice always acts on the coin
   it names.
+- **A backtest you can read and replay.** The result is in money ("put in 1,000,000 won → 1,455,000; just holding →
+  840,000", amount selectable, dollars in English) with the same amounts on the curve. Tags read off the backtest
+  say what kind of strategy it is (risk by worst drop, how often it trades, how long it holds; cut-offs in the
+  tooltip), and "About this strategy" says who it suits, where it works and fails, its source, who has used it and
+  how far it has been tested, with "no published test" stated where that is the case. "Replay" plays the backtest a
+  daily candle at a time from 14 days before it starts (`src/replay.ts`): candles, the rule's lines, buys and sells,
+  the money and the trade list all advance together; pause, seek and 1×/4×/16×.
 - **Agents have names and faces.** Each rule has a short name and its own coloured mark ("BTC Turtle", "ETH
   Guardian"); the rule it follows and where the rule comes from stay beside it as the subtitle and the origin tag.
 - **The vault is on screen, not in a footnote.** `src/VaultCard.tsx` shows the same vault three ways (sidebar,

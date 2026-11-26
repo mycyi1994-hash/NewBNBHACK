@@ -616,6 +616,12 @@ select { padding-right: 8px; }
 .bt-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .bt-name b { font-size: 16px; line-height: 21px; font-weight: 700; color: var(--ink-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bt-name small { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* what kind of strategy it is, from its own backtest */
+.bt-tags { flex: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.bt-tags[data-tip]::after { left: 0; transform: none; white-space: normal; width: 280px; }
+.bt-tags[data-tip]:hover::after { transform: none; }
+.tag-p { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; background: var(--fill); font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.tag-p.risk-hi { background: #fce8e6; color: #c5221f; } .tag-p.risk-mid { background: var(--warn-bg); color: var(--warn); } .tag-p.risk-lo { background: #e3f4e8; color: #137333; }
 .bt-rank { flex: none; display: flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
 .bt-rank { flex-wrap: wrap; row-gap: 4px; }
 .bt-rank b { font-weight: 600; color: var(--ink-title); margin: 0 2px; white-space: nowrap; }
@@ -627,15 +633,23 @@ select { padding-right: 8px; }
 .bt-demo { font-size: 12.5px; line-height: 18px; color: var(--warn); }
 .bt-cta { flex: none; display: flex; align-items: center; gap: 8px; }
 .bt-cta .btn-primary.hire { flex: 1; max-width: 200px; height: 34px; }
-.bt-hero { flex: none; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.bt-hero { flex: none; display: flex; align-items: flex-end; gap: 10px 28px; flex-wrap: wrap; }
 .bt-big { display: flex; flex-direction: column; }
-.bt-big small { font-size: 12px; color: var(--ink-3); }
+.bt-big small { display: flex; align-items: center; gap: 2px; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+/* the amount is a choice: it reads as part of the sentence, with a caret */
+.bt-amt { height: 22px; margin: 0 1px; padding: 0 2px 0 6px; border: 1px solid var(--line-btn); border-radius: 7px; background: var(--bg); font-size: 12.5px; font-weight: 700; color: var(--ink-title); }
+.bt-sum { display: flex; align-items: baseline; gap: 8px; }
+.bt-sum em { font-style: normal; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.bt-sum em.pos { color: var(--pos); } .bt-sum em.neg { color: var(--neg); }
+.bt-fx { color: var(--ink-3); font-size: 12px; }
 .bt-big b { font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink-title); }
 .bt-big b.pos { color: var(--pos); } .bt-big b.neg { color: var(--neg); }
 .bt-big.dim b { font-size: 22px; line-height: 30px; font-weight: 600; color: var(--ink-2); }
 .bt-vs { padding-bottom: 6px; font-size: 12.5px; color: var(--ink-3); }
 .bt-edge { margin-left: auto; margin-bottom: 4px; display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--fill); font-size: 12.5px; font-weight: 700; color: var(--ink-2); white-space: nowrap; }
 .bt-edge.pos { background: #e3f4e8; color: #137333; } .bt-edge.neg { background: #fce8e6; color: #c5221f; }
+.bt-edge.live { gap: 6px; background: var(--accent-tint); color: var(--accent-ink); }
+.bt-edge.live i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: breathe 1.2s ease-in-out infinite; }
 .bt-now { flex: none; display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); }
 .bt-now i { width: 7px; height: 7px; border-radius: 50%; flex: none; background: #9aa0a6; }
 .bt-now.sig-good i { background: #1e8e3e; animation: breathe 1.8s ease-in-out infinite; } .bt-now.sig-wait i { background: #f9ab00; }
@@ -646,7 +660,11 @@ select { padding-right: 8px; }
 .bt-stats .lead dd { font-size: 19px; line-height: 22px; font-weight: 700; }
 .bt-stats dd.pos { color: var(--pos); } .bt-stats dd.neg { color: var(--neg); }
 @keyframes reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
-.bt-curve { flex: 1; min-height: 40px; width: 100%; display: block; animation: reveal .8s var(--ease) backwards; }
+.bt-curve-wrap { position: relative; flex: 1; min-height: 44px; }
+.bt-curve { position: absolute; inset: 0; width: 100%; height: 100%; display: block; animation: reveal .8s var(--ease) backwards; }
+/* the amounts the curve reached, on its right edge */
+.bt-axis { position: absolute; right: 0; transform: translateY(-50%); padding: 0 5px; border-radius: 5px; background: rgba(255, 255, 255, .85); font-size: 11px; line-height: 16px; font-weight: 500; color: var(--ink-3); pointer-events: none; white-space: nowrap; }
+.bt-axis.start { color: var(--ink-2); font-weight: 600; }
 .bt-zero { stroke: #d6d6d6; stroke-width: 1; stroke-dasharray: 3 3; }
 .bt-hold { stroke: #9aa0a6; stroke-width: 1.5; }
 .bt-agent { stroke: var(--accent); stroke-width: 2; }
@@ -673,6 +691,28 @@ select { padding-right: 8px; }
 .bt-ret { font-size: 14px; font-weight: 700; }
 .bt-ret.pos { color: var(--pos); } .bt-ret.neg { color: var(--neg); }
 .bt-none { padding: 16px; font-size: 13px; color: var(--ink-3); }
+/* the right-hand column: about the strategy | its trades */
+.bt-side-tabs { flex: none; display: flex; gap: 18px; height: 36px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+.bt-side-tabs button { border: 0; background: none; padding: 0; font-size: 13px; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+.bt-side-tabs button:hover, .bt-side-tabs button.on { color: var(--ink-title); }
+.bt-about { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; margin: 0; padding: 4px 16px 10px; }
+.bt-about > div { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); }
+.bt-about > div:first-child { border-top: 0; }
+.bt-about dt { font-size: 12px; line-height: 18px; font-weight: 600; color: var(--ink-3); }
+.bt-about dd { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink); }
+/* replay: a play button on the backtest chip, then a player in its place */
+.rp-start { display: inline-flex; align-items: center; gap: 5px; height: 24px; margin-left: -6px; padding: 0 10px 0 8px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 700; }
+.rp-start:hover { background: var(--accent-strong); }
+.bt-chip.player { flex: 1; min-width: 300px; max-width: 640px; gap: 10px; padding-left: 4px; animation: none; }
+.rp-play { flex: none; width: 24px; height: 24px; border: 0; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; }
+.rp-play:hover { background: var(--accent-strong); }
+.rp-bar { flex: 1; min-width: 60px; height: 16px; margin: 0; padding: 0; border: 0; background: none; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.rp-bar::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--accent) var(--f, 0%), #c5d7f5 var(--f, 0%)); }
+.rp-bar::-moz-range-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--accent) var(--f, 0%), #c5d7f5 var(--f, 0%)); }
+.rp-bar::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; border: 0; background: var(--accent); }
+.rp-bar::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; border: 0; background: var(--accent); }
+.rp-day { flex: none; min-width: 84px; font-size: 12.5px; font-weight: 600; color: var(--accent-ink); text-align: center; white-space: nowrap; }
+.bt-chip.player .seg { background: rgba(255, 255, 255, .6); } .bt-chip.player .seg button { height: 22px; padding: 0 8px; }
 /* recent swaps: a table */
 .book-card { padding: 16px 20px 12px; }
 .card-title { font-size: 15px; color: var(--ink-title); margin-bottom: 12px; }
@@ -888,7 +928,15 @@ select { padding-right: 8px; }
   .frow-head, .frow { grid-template-columns: 22px minmax(150px, 3fr) 84px minmax(56px, .8fr) repeat(3, minmax(62px, .7fr)) 16px; gap: 10px; }
   .frow-origin, .frow-head > span:nth-child(3) { display: none; }
   .frow-star { display: inline; }
-  .bt .bt-big b { font-size: 22px; line-height: 26px; } .bt .bt-big.dim b { font-size: 18px; line-height: 24px; }
+  .bt .bt-big b { font-size: 20px; line-height: 24px; } .bt .bt-big.dim b { font-size: 17px; line-height: 24px; }
+  .bt .bt-hero { gap: 6px 18px; } .bt .bt-sum em { font-size: 12.5px; } .bt .bt-fx { display: none; }
+  .bt .bt-about > div { grid-template-columns: 64px minmax(0, 1fr); }
+  /* the narrow panel keeps the left column to one line each and gives the curve the room */
+  .bt .bt-now { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .bt .bt-now i { display: inline-block; margin: 0 7px 1px 0; }
+  .bt .bt-tags { flex-wrap: nowrap; overflow: hidden; } .bt .bt-tags .tag-p:nth-child(n+4) { display: none; }
+  .bt .bt-rank .origin { display: none; }
+  .bt .bt-say { display: none; }
   .bt .bt-edge { display: none; }
   .bt .bt-span { display: none; }
   .bt .bt-name b { white-space: normal; line-height: 19px; }

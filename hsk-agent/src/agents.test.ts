@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scoreCollect, scorePosition, positions, FEE_HASHKEY, FEE_HSKSWAP, TIER, type Agent } from './agents.ts';
 import { recommend } from './recommend.ts';
+import { LEAD_DAYS, replayDays } from './replay.ts';
 import { MARKETS } from './cex.ts';
 
 const DAY = 86_400;
@@ -73,6 +74,15 @@ test('an agent that never traded in the window does not outrank one that did', (
 test('recommend puts a published classic before an indicator rule, even with a larger worst drop', () => {
   const agents = [fake({ id: 'boll-ETH', rule: 'boll', base: 'ETH', maxDd: 0.05, tier: 2, risk: 1 }), fake({ id: 'trend200-ETH', rule: 'trend200', base: 'ETH', maxDd: 0.2, tier: 1 })];
   assert.equal(recommend(agents, { coin: 'ETH', level: 'new' })!.pick.id, 'trend200-ETH');
+});
+
+test('a replay covers the lead-in and every day of the backtest, one daily candle at a time', () => {
+  const a = scorePosition('trend', market('BTCUSDT-PERPETUAL'), bars(rising(400)))!;
+  const days = replayDays(a);
+  assert.equal(days[0], a.from - LEAD_DAYS * DAY);
+  assert.equal(days[days.length - 1], a.to);
+  assert.equal(days.length, a.days + LEAD_DAYS + 1);
+  assert.ok(days.every((d, i) => i === 0 || d - days[i - 1] === DAY));
 });
 
 const fake = (p: Partial<Agent>): Agent => ({
