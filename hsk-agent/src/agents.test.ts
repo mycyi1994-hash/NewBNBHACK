@@ -35,9 +35,23 @@ test('a daily collect agent buys every day; the trend filter skips days under th
   assert.equal(tf.mult, 0);
 });
 
+test('the backtest records what it did: entries and exits for a position agent, every buy for a collect agent', () => {
+  // up, then down under the 50-day average, then up again: the trend agent goes in, out, and in.
+  const wave = [...rising(120), ...Array.from({ length: 80 }, (_, i) => 100 * 1.003 ** 119 * 0.99 ** (i + 1)), ...Array.from({ length: 120 }, (_, i) => 60 * 1.01 ** i)];
+  const a = scorePosition('trend', market('BTCUSDT-PERPETUAL'), bars(wave))!;
+  assert.equal(a.marks.filter((m) => m.side === 'buy').length, a.trades, 'one buy mark per entry');
+  assert.ok(a.marks.some((m) => m.side === 'sell' && typeof m.ret === 'number'), 'an exit carries the round trip return');
+  for (let i = 1; i < a.marks.length; i++) assert.notEqual(a.marks[i].side, a.marks[i - 1].side, 'buys and sells alternate');
+  assert.equal(a.bench.length, a.equity.length, 'the hold line covers the same days');
+  assert.ok(Math.abs(a.bench[a.bench.length - 1].value - 1 - a.hold) < 1e-9);
+  const c = scoreCollect('rsiDca', 'HSK', bars(wave))!;
+  assert.equal(c.marks.length, c.trades);
+  assert.ok(c.marks.every((m) => m.side === 'buy' && (m.mult ?? 0) > 0));
+});
+
 const fake = (p: Partial<Agent>): Agent => ({
   id: 'x', kind: 'position', rule: 'trend', style: 'trend', risk: 2, base: 'BTC', runnable: true, source: 'hashkey', fee: 0.003,
-  days: 100, from: 0, to: 0, total: 0, hold: 0, maxDd: 0.2, sharpe: 0, trades: 1, inMarket: 0.5, equity: [], live: false, mult: 0, price: 1, ...p,
+  days: 100, from: 0, to: 0, total: 0, hold: 0, maxDd: 0.2, sharpe: 0, trades: 1, inMarket: 0.5, equity: [], bench: [], marks: [], live: false, mult: 0, price: 1, ...p,
 });
 
 test('recommend: runnable only, the coin asked for, the risk the level allows, smallest worst drop', () => {

@@ -20,6 +20,11 @@ vault contract enforces.
 - **From the conversation to an agent.** "Can you buy for me?", "pick one for me", the bar's "Get a pick from Moa",
   or the AI's `recommend_agent` tool all end in the same agent card inside the conversation, with "Hire",
   "Other agents" and "Why this one?". You never have to open the market to hire.
+- **The trade screen is one screen.** Market and price on top, the chart in the middle, and under it a panel with
+  the agents for that market. Picking an agent moves no money: the chart switches to daily candles and marks every
+  buy and sell of its backtest, and the panel shows the result against just holding, the two curves and the list of
+  trades (`src/Dock.tsx`; the trades come from `marks` in `src/agents.ts`). Hiring is a button on that backtest.
+  Moa's agent card and the agent market open the same view ("See the backtest").
 - **Two pages in the market.** "Top agents" ranks the agents that can trade (steady = Sharpe ratio, bold = period
   return) with their equity curves on one chart; "Marketplace" is the searchable, filterable card grid with a "Hire"
   button on every card. Both read `src/agents.ts`; nothing on them is invented (no creators, no subscriber counts).

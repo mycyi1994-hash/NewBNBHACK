@@ -77,8 +77,8 @@ function TopChart({ agents }: { agents: Agent[] }) {
   );
 }
 
-export default function Agents({ agents, failed, onHire, onAsk, onRecommend }: {
-  agents: Agent[] | null; failed: boolean; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; onRecommend: () => void;
+export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: {
+  agents: Agent[] | null; failed: boolean; onHire: (a: Agent) => void; onOpen: (a: Agent) => void; onRecommend: () => void;
 }) {
   const { t } = useT();
   const [tab, setTab] = useState<Tab>('top');
@@ -144,7 +144,7 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend }: {
                   ? <li key={i}><span className="skel" style={{ width: '70%' }} /></li>
                   : (
                     <li key={a.id}>
-                      <button onClick={() => onAsk(a)}>
+                      <button onClick={() => onOpen(a)}>
                         <span className="lg-n">{i + 1}</span>
                         <i style={{ background: LINE[i % LINE.length] }} />
                         <span className="lg-name">{agentName(t, a)}</span>
@@ -162,7 +162,7 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend }: {
             </div>
             {!agents && !failed && [0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="rank-row skel-block" />)}
             {ranked.map((a, i) => (
-              <button key={a.id} className={`rank-row${i < 3 ? ` medal-${i + 1}` : ''}`} role="row" onClick={() => onAsk(a)}>
+              <button key={a.id} className={`rank-row${i < 3 ? ` medal-${i + 1}` : ''}`} role="row" onClick={() => onOpen(a)}>
                 <span className="rank-n">{i < 3 ? <Icon name="medal" size={16} /> : i + 1}</span>
                 <span className="rank-name">
                   <b>{agentName(t, a)}</b>
@@ -212,7 +212,7 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend }: {
               const edge = a.total - a.hold;
               return (
                 <article key={a.id} className={`mp-card${a.runnable ? '' : ' signal-only'}`}>
-                  <button className="mp-title" onClick={() => onAsk(a)}>
+                  <button className="mp-title" onClick={() => onOpen(a)}>
                     <span className="mp-ic" aria-hidden><RuleIcon rule={a.rule} /></span>
                     <b>{agentName(t, a)}</b>
                   </button>
@@ -244,7 +244,7 @@ export default function Agents({ agents, failed, onHire, onAsk, onRecommend }: {
                     </button>
                     {a.runnable
                       ? <button className="mp-run" onClick={() => onHire(a)}>{t.acHire}</button>
-                      : <button className="mp-run off" onClick={() => onAsk(a)}>{t.acSignal}</button>}
+                      : <button className="mp-run off" onClick={() => onOpen(a)}>{t.acSignal}</button>}
                   </footer>
                 </article>
               );

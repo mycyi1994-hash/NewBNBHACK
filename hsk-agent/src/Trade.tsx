@@ -8,8 +8,10 @@ import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
-import MarketAgents from './Strategies.tsx';
+import Dock, { px, useMarketAgents } from './Dock.tsx';
 import type { Agent } from './agents.ts';
+import { pct } from './AgentCard.tsx';
+import { Icon } from './Icons.tsx';
 import type { MoaContext } from './MoaFeed.tsx';
 import { CoinMark } from './CoinMark.tsx';
 
@@ -56,8 +58,10 @@ function useStoredInds(): [Set<Ind>, (i: Ind) => void] {
 }
 
 /** Candles with indicator overlays. Scroll left to load older candles (onOlder), 20 bars of room on the right. */
-function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey }: {
+function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range }: {
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
+  /** Show everything from this time to now (a backtest's window). `key` says when to apply it again. */
+  range?: { from: number; key: string };
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -65,6 +69,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey }: {
   const extra = useRef<ISeriesApi<'Line' | 'Histogram'>[]>([]);
   const pl = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']> | null>(null);
   const shownKey = useRef<string | null>(null);
+  const rangeKey = useRef<string | null>(null);
   const prevFirst = useRef<number | null>(null);
   const older = useRef(onOlder); older.current = onOlder;
 
@@ -136,8 +141,15 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey }: {
       // Older candles were prepended: keep the same bars in view.
       ts.setVisibleLogicalRange({ from: before.from + added, to: before.to + added });
     }
+    if (range && rangeKey.current !== `${range.key}|${resetKey}`) {
+      // A backtest was opened: bring its whole window into view, so every buy and sell is on screen.
+      const at = candles.findIndex((x) => x.time >= range.from);
+      ts.setVisibleLogicalRange({ from: Math.max(0, at < 0 ? 0 : at) - 4, to: candles.length + 6 });
+      rangeKey.current = `${range.key}|${resetKey}`;
+    }
+    if (!range) rangeKey.current = null;
     prevFirst.current = candles[0].time;
-  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey, range?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={box} className="chart" />;
 }
@@ -239,8 +251,60 @@ function useCex(m: cex.Market) {
   return { t, mi };
 }
 
-/** Price with sensible decimals for anything from BTC to DOGE. */
-const px = (v: number) => (v >= 1000 ? usd(v, 1) : v >= 1 ? usd(v, 2) : fmtPrice(v));
+/** The backtest's buys and sells as chart markers, each pinned to the candle that holds that day's close. */
+function agentMarkers(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string; btRest: string }): SeriesMarker<Time>[] {
+  if (!candles.length) return [];
+  const DAY = 86_400;
+  const at = (dayOpen: number) => {
+    const close = dayOpen + DAY - 1;
+    if (close < candles[0].time) return null;
+    let lo = 0, hi = candles.length - 1;
+    while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (candles[mid].time <= close) lo = mid; else hi = mid - 1; }
+    return candles[lo].time as UTCTimestamp;
+  };
+  const out: SeriesMarker<Time>[] = [];
+  if (a.kind === 'position') {
+    for (const m of a.marks) {
+      const time = at(m.time);
+      if (time === null) continue;
+      out.push(m.side === 'buy'
+        ? { time, position: 'belowBar', color: '#16a34a', shape: 'arrowUp', text: t.buy, size: 1.4 }
+        : { time, position: 'aboveBar', color: '#dc2626', shape: 'arrowDown', text: `${t.sell} ${pct(m.ret ?? 0)}`, size: 1.4 });
+    }
+    return out;
+  }
+  // Collect agents buy almost every day, so only the changes are marked: buying more, less, the usual amount, or a pause.
+  const bucket = (x: number) => (x > 1.25 ? 'more' : x < 0.75 ? 'less' : 'same');
+  let prev = '';
+  let last = 0;
+  for (const m of a.marks) {
+    if (last && m.time - last > DAY * 1.5) {
+      const time = at(last + DAY);
+      if (time !== null) out.push({ time, position: 'aboveBar', color: '#80868b', shape: 'square', text: t.btRest, size: 0.9 });
+      prev = '';
+    }
+    const b = bucket(m.mult ?? 1);
+    if (b !== prev) {
+      const time = at(m.time);
+      if (time !== null) out.push({ time, position: 'belowBar', color: b === 'more' ? '#16a34a' : b === 'less' ? '#e37400' : '#1a73e8', shape: b === 'more' ? 'arrowUp' : 'circle', text: `×${m.mult ?? 1}`, size: b === 'more' ? 1.3 : 0.9 });
+      prev = b;
+    }
+    last = m.time;
+  }
+  return out;
+}
+
+/** The line in the chart toolbar that says whose buys and sells are on the candles. */
+function BacktestChip({ a, onClose }: { a: Agent; onClose: () => void }) {
+  const { t } = useT();
+  return (
+    <span className="bt-chip">
+      <b>{t.btOn(t.agRule[a.rule])}</b>
+      <span className="pos">▲ {t.buy}</span>{a.kind === 'position' && <span className="neg">▼ {t.sell}</span>}
+      <button className="icon-btn sm" onClick={onClose} aria-label={t.btBack} data-tip={t.btBack}><Icon name="close" size={14} /></button>
+    </span>
+  );
+}
 
 /** Market picker (Binance/Upbit style): search, perpetuals first, then spot, each with live price and 24h change. */
 function MarketPicker({ value, onChange }: { value: cex.Market; onChange: (m: cex.Market) => void }) {
@@ -314,7 +378,9 @@ function stored<T extends string>(key: string, list: readonly T[], dflt: T): T {
 }
 const save = (key: string, v: string) => { try { localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
 
-function CexPanel({ market, setMarket, dexPrice, onPick }: { market: cex.Market; setMarket: (m: cex.Market) => void; dexPrice?: number; onPick: (a: Agent) => void }) {
+interface PanelProps { venueTabs: React.ReactNode; selId: string | null; setSel: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void }
+
+function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel, onHire, onAsk }: PanelProps & { market: cex.Market; setMarket: (m: cex.Market) => void; asset: Asset; dexPrice?: number }) {
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>(() => stored('moa.iv', CEX_IV, '4h'));
   const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
@@ -322,13 +388,19 @@ function CexPanel({ market, setMarket, dexPrice, onPick }: { market: cex.Market;
   const [inds, toggleInd] = useStoredInds();
   const key = `cex-${market.symbol}-${interval}`;
   const { candles, more } = useCandles(key, (n) => cex.klines(market, interval, n), (first) => cex.klines(market, interval, 1000, first.time * 1000 - 1), 15000);
+  const { list, failed } = useMarketAgents('cex', market, asset);
+  const sel = list?.find((a) => a.id === selId) ?? null;
+  // A backtest runs on daily candles: show it on the daily chart (the user can still change the interval after).
+  useEffect(() => { if (sel) setIv('1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const markers = useMemo(() => (sel ? agentMarkers(sel, candles, s) : undefined), [sel, candles, s]);
   const chg = t ? (t.last / t.open - 1) * 100 : 0;
   const up = chg >= 0;
   const perp = market.kind === 'perp';
+  const gap = dexPrice !== undefined && t ? dexPrice / t.last - 1 : undefined;
 
   return (
     <>
-      <div className="market-head card">
+      <div className="market-head">
         <MarketPicker value={market} onChange={setMarket} />
         <div className={`last ${up ? 'pos' : 'neg'}`}><RollNum text={t ? px(t.last) : '—'} /></div>
         <div className="stats">
@@ -338,32 +410,28 @@ function CexPanel({ market, setMarket, dexPrice, onPick }: { market: cex.Market;
           <Stat label={s.high24h} value={t ? px(t.high) : '—'} />
           <Stat label={s.low24h} value={t ? px(t.low) : '—'} />
           <Stat label={s.vol24h} value={t ? `${compact(t.volBase)} ${market.base}` : '—'} />
+          {gap !== undefined && dexPrice !== undefined && <Stat label="HSKSwap" value={`$${px(dexPrice)} (${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(2)}%)`} />}
         </div>
+        {venueTabs}
       </div>
 
-      <section className="card chart-card">
+      <section className="chart-card">
         <div className="chart-toolbar">
           <IntervalBar list={CEX_IV} value={interval} set={pickIv} label={(v) => s.ivLabel[v]} />
           <IndMenu on={inds} toggle={toggleInd} />
-          <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>
+          {sel ? <BacktestChip a={sel} onClose={() => setSel(null)} /> : <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
-        {dexPrice !== undefined && t && (
-          <div className="moa-note">
-            <span className="orb sm" aria-hidden />
-            {s.dexVsPerp(`$${px(dexPrice)}`, `${dexPrice >= t.last ? '▲ +' : '▼ '}${((dexPrice / t.last - 1) * 100).toFixed(2)}%`)}
-          </div>
-        )}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} markers={markers} range={sel ? { from: sel.from, key: sel.id } : undefined} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
       </section>
 
-      <MarketAgents venue="cex" market={market} onPick={onPick} />
+      <Dock venue="cex" coin={market.base} list={list} failed={failed} sel={sel} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
     </>
   );
 }
 
 /* ---------- DEX: HSKSwap on HSK Chain ---------- */
 
-function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; setAsset: (a: Asset) => void; detail: PoolDetail | null; quotes: Quote[]; onPick: (a: Agent) => void }) {
+function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, setSel, onHire, onAsk }: PanelProps & { asset: Asset; setAsset: (a: Asset) => void; market: cex.Market; detail: PoolDetail | null; quotes: Quote[] }) {
   const { t: s } = useT();
   const [iv, setIv] = useState<GateInterval>(() => stored('moa.dexiv', DEX_IV, '1h'));
   const pickIv = (v: GateInterval) => { setIv(v); save('moa.dexiv', v); };
@@ -374,6 +442,10 @@ function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; s
   const p = POOLS[asset];
   const gate = quotes.find((q) => q.asset === asset);
   const gap = gate?.gap;
+  const { list, failed } = useMarketAgents('dex', market, asset);
+  const sel = list?.find((a) => a.id === selId) ?? null;
+  useEffect(() => { if (sel) setIv('1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const botMarks = useMemo(() => (sel ? agentMarkers(sel, candles, s) : null), [sel, candles, s]);
 
   // Real HSKSwap swaps, pinned to the Gate candle they fall in.
   const markers = useMemo(() => {
@@ -394,16 +466,17 @@ function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; s
 
   return (
     <>
-      <div className="pair-tabs" role="tablist">
-        {ASSETS.map((a) => <button key={a} role="tab" aria-selected={a === asset} className={a === asset ? 'on' : ''} onClick={() => setAsset(a)}><span className={`coin coin-${a.toLowerCase()}`} />{POOLS[a].symbol}/USDT</button>)}
-      </div>
-      <div className="market-head card">
+      <div className="market-head">
         <div className="pair">
           <span className={`coin coin-${asset.toLowerCase()} big`} />
           <div>
             <div className="pair-name">{p.symbol}/USDT <span className="tag">HSKSwap · {s.spot}</span></div>
             <div className="muted">Uniswap V3 · 0.3% · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></div>
           </div>
+        </div>
+        <div className="coin-switch has-pill" role="tablist" aria-label={s.stratAsset}>
+          <SlidePill dep={asset} />
+          {ASSETS.map((a) => <button key={a} role="tab" aria-selected={a === asset} className={a === asset ? 'on' : ''} onClick={() => setAsset(a)}>{a}</button>)}
         </div>
         <div className="last"><RollNum text={detail ? `$${fmtPrice(detail.price)}` : '—'} /></div>
         <div className="stats">
@@ -413,47 +486,67 @@ function DexPanel({ asset, setAsset, detail, quotes, onPick }: { asset: Asset; s
           <Stat label={s.swaps24h} value={detail ? String(detail.swaps.length) : '—'} />
           <Stat label={s.vol24h} value={detail ? `$${compact(vol)}` : '—'} />
         </div>
+        {venueTabs}
       </div>
-      <section className="card chart-card">
+      <section className="chart-card">
         <div className="chart-toolbar">
           <IntervalBar list={DEX_IV} value={iv} set={pickIv} label={(v) => s.ivLabel[v === '7d' ? '1w' : v]} />
           <IndMenu on={inds} toggle={toggleInd} />
-          <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>
+          {sel ? <BacktestChip a={sel} onClose={() => setSel(null)} />
+            : <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={markers} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={botMarks ?? markers} range={sel ? { from: sel.from, key: sel.id } : undefined} resetKey={key} /> : <div className="chart-empty skel-block" role="status"><span className="sr-only">{s.loadingCandles}</span></div>}
       </section>
-      <MarketAgents venue="dex" asset={asset} setAsset={setAsset} onPick={onPick} />
-      <section className="card book-card">
-        <div className="card-title">{s.recentSwaps}</div>
-        <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
-        {detail?.swaps.slice(0, 8).map((x) => (
-          <a key={x.tx + x.block} className="tape-row four" href={`${EXPLORER}/tx/${x.tx}`} target="_blank" rel="noreferrer">
-            <span className={x.side === 'buy' ? 'pos' : 'neg'}>{arrow(x.side === 'buy')} {x.side === 'buy' ? s.buy : s.sell}</span>
-            <span>{fmtPrice(x.price)}</span>
-            <span>${usd(x.usdt)}</span>
-            <span className="muted">{ago(x.time)}</span>
-          </a>
-        ))}
-        {detail && detail.swaps.length === 0 && <div className="muted pad">{s.noSwaps}</div>}
-      </section>
+      <Dock venue="dex" coin={asset} list={list} failed={failed} sel={sel} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
+        <div className="swaps">
+          <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
+          {detail?.swaps.slice(0, 20).map((x) => (
+            <a key={x.tx + x.block} className="tape-row four" href={`${EXPLORER}/tx/${x.tx}`} target="_blank" rel="noreferrer">
+              <span className={x.side === 'buy' ? 'pos' : 'neg'}>{arrow(x.side === 'buy')} {x.side === 'buy' ? s.buy : s.sell}</span>
+              <span>{fmtPrice(x.price)}</span>
+              <span>${usd(x.usdt)}</span>
+              <span className="muted">{ago(x.time)}</span>
+            </a>
+          ))}
+          {detail && detail.swaps.length === 0 && <div className="muted pad">{s.noSwaps}</div>}
+        </div>
+      )} />
     </>
   );
 }
 
 /* ---------- page ---------- */
 
-export default function Trade({ quotes, onContext, onPick }: { quotes: Quote[]; onContext: (c: MoaContext) => void; onPick: (a: Agent) => void }) {
+/** A request from elsewhere (Moa's card, the agent market) to open one agent's backtest here. */
+export interface ShowAgent { agent: Agent; n: number }
+let shown = 0;   // the last request applied, so coming back to this screen does not replay an old one
+
+export default function Trade({ quotes, show, onContext, onAsk, onHire }: {
+  quotes: Quote[]; show?: ShowAgent | null; onContext: (c: MoaContext) => void; onAsk: (a: Agent) => void; onHire: (a: Agent) => void;
+}) {
   const { t } = useT();
-  const [venue, setVenue] = useState<Venue>('cex');
-  const [asset, setAsset] = useState<Asset>('BTC');
-  const [market, setMarketState] = useState<cex.Market>(() => { try { return cex.marketBySymbol(localStorage.getItem('moa.market') ?? ''); } catch { return cex.DEFAULT_MARKET; } });
+  const fresh = show && show.n > shown ? show.agent : null;
+  const [venue, setVenue] = useState<Venue>(fresh?.kind === 'collect' ? 'dex' : 'cex');
+  const [asset, setAsset] = useState<Asset>(fresh && (ASSETS as readonly string[]).includes(fresh.base) ? fresh.base as Asset : 'BTC');
+  const [market, setMarketState] = useState<cex.Market>(() => { try { return fresh?.market ?? cex.marketBySymbol(localStorage.getItem('moa.market') ?? ''); } catch { return cex.DEFAULT_MARKET; } });
   const setMarket = (m: cex.Market) => { setMarketState(m); save('moa.market', m.symbol); };
+  const [selId, setSelId] = useState<string | null>(fresh?.id ?? null);
   const [detail, setDetail] = useState<PoolDetail | null>(null);
   const ctx: MoaContext = venue === 'cex' ? { venue, label: t.ctxCex(market.base, market.kind === 'perp'), asset: market.base, perp: market.kind === 'perp' } : { venue, label: t.ctxDex(POOLS[asset].symbol), asset, perp: false };
   // Moa sits outside this page; tell it what the user is looking at.
   useEffect(() => { onContext(ctx); }, [ctx.label]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if ((ASSETS as readonly string[]).includes(market.base)) setAsset(market.base as Asset); }, [market.base]);
+
+  // Open the agent someone asked for: its market on the chart, its backtest in the panel below.
+  useEffect(() => {
+    if (!show || show.n <= shown) return;
+    shown = show.n;
+    const a = show.agent;
+    if (a.kind === 'collect') { setVenue('dex'); if ((ASSETS as readonly string[]).includes(a.base)) setAsset(a.base as Asset); }
+    else if (a.market) { setVenue('cex'); setMarketState(a.market); }
+    setSelId(a.id);
+  }, [show?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let alive = true;
@@ -464,19 +557,21 @@ export default function Trade({ quotes, onContext, onPick }: { quotes: Quote[]; 
     return () => { alive = false; clearInterval(x); };
   }, [asset]);
 
+  const venueTabs = (
+    <div className="segmented has-pill venue" role="tablist" aria-label="Venue">
+      <SlidePill dep={venue} />
+      <button role="tab" aria-selected={venue === 'cex'} className={venue === 'cex' ? 'on' : ''} onClick={() => setVenue('cex')}>{t.cex} <span>{t.cexSub}</span></button>
+      <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
+    </div>
+  );
+  const panel = { venueTabs, selId, setSel: (a: Agent | null) => setSelId(a?.id ?? null), onHire, onAsk };
+
   return (
     <div className="trade-page">
       <div className="trade-main">
-        <div className="segmented has-pill" role="tablist" aria-label="Venue">
-          <SlidePill dep={venue} />
-          <button role="tab" aria-selected={venue === 'cex'} className={venue === 'cex' ? 'on' : ''} onClick={() => setVenue('cex')}>{t.cex} <span>{t.cexSub}</span></button>
-          <span className="swap-arrows" aria-hidden>⇄</span>
-          <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
-        </div>
         {venue === 'cex'
-          ? <CexPanel market={market} setMarket={setMarket} dexPrice={market.base === asset ? detail?.price : undefined} onPick={onPick} />
-          : <DexPanel asset={asset} setAsset={setAsset} detail={detail} quotes={quotes} onPick={onPick} />}
-        <p className="muted small">{t.dataNote}</p>
+          ? <CexPanel market={market} setMarket={setMarket} asset={asset} dexPrice={market.base === asset ? detail?.price : undefined} {...panel} />
+          : <DexPanel asset={asset} setAsset={setAsset} market={market} detail={detail} quotes={quotes} {...panel} />}
       </div>
     </div>
   );

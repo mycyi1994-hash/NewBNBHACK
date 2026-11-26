@@ -68,12 +68,12 @@ function coinIn(q: string): string | undefined {
   return undefined;
 }
 
-export default function MoaFeed({ quotes, vault, inject, context, agents, agentsFailed, hired, sending, now, onHire, onEdit, onPause, onResume, onApprove, onDecline, onExecuted, onGoto, onAttention, onClose }: {
+export default function MoaFeed({ quotes, vault, inject, context, agents, agentsFailed, hired, sending, now, onHire, onEdit, onPause, onResume, onApprove, onDecline, onExecuted, onGoto, onShow, onAttention, onClose }: {
   quotes: Quote[]; vault: VaultInfo | null; inject?: MoaInject | null; context: MoaContext;
   agents: Agent[] | null; agentsFailed: boolean; hired: HiredAgent[]; sending: Set<string>; now: number;
   onHire: (target: HireTarget) => void; onEdit: (id: string) => void; onPause: (id: string) => void; onResume: (id: string) => void;
   onApprove: (id: string, orderId: string) => void; onDecline: (id: string, orderId: string) => void;
-  onExecuted: (x: Execution[]) => void; onGoto: (v: 'trade' | 'agents' | 'mine') => void; onAttention: () => void; onClose?: () => void;
+  onExecuted: (x: Execution[]) => void; onGoto: (v: 'trade' | 'agents' | 'mine') => void; onShow: (a: Agent) => void; onAttention: () => void; onClose?: () => void;
 }) {
   const { t, lang } = useT();
   const [notes, setNotes] = useState<Note[]>([]);
@@ -468,8 +468,12 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
             {n.offline && <p className="note-offline">{t.offline}</p>}
             {n.sky && <SkyCard level={n.sky.level} list={n.sky.list} />}
             {n.agent && (
-              <AgentCard agent={n.agent.a} size="chat" actions={n.agent.a.runnable && (
-                <div className="acard-cta"><button className="btn-primary hire" onClick={() => onHire({ kind: 'agent', agent: n.agent!.a })}>{t.acHire}</button></div>
+              <AgentCard agent={n.agent.a} size="chat" actions={(
+                // Evidence first: the main button opens the backtest on the trade screen. Hiring stays one tap away.
+                <div className="acard-cta">
+                  <button className="btn-primary" onClick={() => onShow(n.agent!.a)}>{t.acBacktest}</button>
+                  {n.agent.a.runnable && <button className="btn" onClick={() => onHire({ kind: 'agent', agent: n.agent!.a })}>{t.acHire}</button>}
+                </div>
               )} />
             )}
             {n.list && (

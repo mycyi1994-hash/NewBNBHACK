@@ -11,7 +11,7 @@ import { useExecutions, useHired } from './store.ts';
 import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './i18n.ts';
 import { RollNum } from './motion.tsx';
 import { Icon, type IconName } from './Icons.tsx';
-import Trade from './Trade.tsx';
+import Trade, { type ShowAgent } from './Trade.tsx';
 import Agents from './Agents.tsx';
 import MyAgents from './MyAgents.tsx';
 import MyAgentsBar from './MyAgentsBar.tsx';
@@ -71,8 +71,8 @@ function Sidebar({ view, go, hired, vault, onOpenHired }: { view: View; go: (v: 
   return (
     <aside className="sidebar">
       <div className="brand"><span className="orb sm" aria-hidden /><span className="nav-text">moa</span></div>
-      {item(t.navAgents, 'agents', 'market')}
       {item(t.navTrade, 'trade', 'chart', 'chevron')}
+      {item(t.navAgents, 'agents', 'market')}
       {item(t.navMine, 'mine', 'bot', hired.length ? 'down' : 'chevron')}
       {hired.length > 0 && (
         <div className="nav-sub">
@@ -103,8 +103,8 @@ function TabBar({ view, go, count, asks, onMoa }: { view: View; go: (v: View) =>
   );
   return (
     <nav className="tabbar" aria-label="Main">
-      {tab(t.navAgents, 'agents', 'market')}
       {tab(t.navTrade, 'trade', 'chart')}
+      {tab(t.navAgents, 'agents', 'market')}
       {tab(t.navMine, 'mine', 'bot', count)}
       <button className="tab" onClick={onMoa} aria-label={t.openMoa}>
         <span className="tab-icon"><span className="orb sm" /></span>{t.navMoa}{asks ? <span className="nav-badge ask">{asks}</span> : null}
@@ -132,7 +132,7 @@ function Topbar({ title, quotes, onMenu }: { title: string; quotes: Quote[]; onM
 function Shell() {
   const { t } = useT();
   const toast = useToast();
-  const [view, setView] = useState<View>('agents');
+  const [view, setView] = useState<View>('trade');
   const quotes = useQuotes();
   const { vault, reloadVault } = useVault();
   const { hired, add, update, remove } = useHired();
@@ -144,6 +144,8 @@ function Shell() {
   const [tradeCtx, setTradeCtx] = useState<MoaContext>({ label: '' });
   const [inject, setInject] = useState<MoaInject | null>(null);
   const injectN = useRef(0);
+  const [show, setShow] = useState<ShowAgent | null>(null);
+  const showN = useRef(0);
   const [sheet, setSheet] = useState<HireTarget | null>(null);
   const [moaOpen, setMoaOpen] = useState(false);
   const [navMini, setNavMini] = useState(false);
@@ -152,7 +154,8 @@ function Shell() {
   const hiredRef = useRef(hired); hiredRef.current = hired;
   const vaultRef = useRef(vault); vaultRef.current = vault;
 
-  const go = (v: View) => { setView(v); window.scrollTo(0, 0); };
+  // Leaving the trade screen forgets its market, so coming back never reports the one from the visit before.
+  const go = (v: View) => { if (v !== 'trade') setTradeCtx({ label: '' }); setView(v); window.scrollTo(0, 0); };
   const tell = (x: MoaAsk) => setInject({ ...x, n: ++injectN.current });
   const attention = () => { if (window.matchMedia(NARROW).matches) setMoaOpen(true); };
 
@@ -283,6 +286,8 @@ function Shell() {
   const asks = hired.filter((h) => h.pending).length;
   const title = { trade: t.navTrade, agents: t.agTitle, mine: t.mineTitle }[view];
   const askMoaAbout = (a: Agent) => tell({ kind: 'agent', agent: a });
+  // "See the backtest" from Moa's card or the agent market: the trade screen opens that agent on its own chart.
+  const openBacktest = (a: Agent) => { setShow({ agent: a, n: ++showN.current }); go('trade'); if (window.matchMedia(NARROW).matches) setMoaOpen(false); };
 
   return (
     <div className={`app${moaOpen ? ' moa-open' : ''}${navMini ? ' nav-mini' : ''}`}>
@@ -291,8 +296,8 @@ function Shell() {
         <Topbar title={title} quotes={quotes} onMenu={() => setNavMini((v) => !v)} />
         <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />
-        {view === 'trade' && <Trade quotes={quotes} onContext={setTradeCtx} onPick={askMoaAbout} />}
-        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onAsk={askMoaAbout} onRecommend={() => tell({ kind: 'recommend' })} />}
+        {view === 'trade' && <Trade quotes={quotes} show={show} onContext={setTradeCtx} onAsk={askMoaAbout} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
+        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} />}
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
@@ -305,7 +310,7 @@ function Shell() {
           hired={hired} sending={sending} now={now}
           onHire={setSheet} onEdit={(id) => { const h = hiredRef.current.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
           onPause={pause} onResume={resume} onApprove={(id, o) => void approve(id, o)} onDecline={decline}
-          onExecuted={(x) => { record(x); reloadVault(); }} onGoto={(v) => { go(v); if (window.matchMedia(NARROW).matches) setMoaOpen(false); }}
+          onExecuted={(x) => { record(x); reloadVault(); }} onGoto={(v) => { go(v); if (window.matchMedia(NARROW).matches) setMoaOpen(false); }} onShow={openBacktest}
           onAttention={attention} onClose={() => setMoaOpen(false)} />
       </div>
       {moaOpen && <div className="moa-scrim" onClick={() => setMoaOpen(false)} aria-hidden />}

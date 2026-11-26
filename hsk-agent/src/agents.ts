@@ -72,12 +72,27 @@ export interface Agent {
   trades: number;
   inMarket: number;
   equity: { time: number; value: number }[];
+  /** Buying once at the start and holding, on the same days as `equity` (the line the agent is compared with). */
+  bench: { time: number; value: number }[];
+  /** What the backtest did and when: every entry and exit (position), every buy with its size (collect). */
+  marks: Mark[];
   /** Position: holding right now. Collect: today is a buying day. */
   live: boolean;
   /** Collect: today's buy as a multiple of the base amount (0 = skip). Position: 1 holding, 0 flat. */
   mult: number;
   /** Last close of the candles the agent reads. */
   price: number;
+}
+
+/** One action of the backtest, at the close of the day `time` opens. */
+export interface Mark {
+  time: number;
+  side: 'buy' | 'sell';
+  price: number;
+  /** Collect: the buy as a multiple of the base amount. */
+  mult?: number;
+  /** Position exits: return of that round trip after fees. */
+  ret?: number;
 }
 
 /* ---------- candles, cached for 10 minutes so live signals refresh ---------- */
@@ -144,17 +159,21 @@ export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[
   let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0;
   const rets: number[] = [];
   const equity: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
+  const bench: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
+  const marks: Mark[] = [];
+  let entry = 0;
   for (let i = start; i < bars.length - 1; i++) {
     const was = i > start && pos[i - 1], now = pos[i];
     let day = 1;
-    if (now && !was) { day *= 1 - fee; trades++; }
-    if (!now && was) day *= 1 - fee;
+    if (now && !was) { day *= 1 - fee; trades++; entry = bars[i].close; marks.push({ time: bars[i].time, side: 'buy', price: entry }); }
+    if (!now && was) { day *= 1 - fee; marks.push({ time: bars[i].time, side: 'sell', price: bars[i].close, ret: (bars[i].close / entry) * (1 - fee) ** 2 - 1 }); }
     if (now) { day *= bars[i + 1].close / bars[i].close; inDays++; }
     eq *= day;
     rets.push(day - 1);
     peak = Math.max(peak, eq);
     maxDd = Math.max(maxDd, 1 - eq / peak);
     equity.push({ time: bars[i + 1].time, value: eq });
+    bench.push({ time: bars[i + 1].time, value: bars[i + 1].close / bars[start].close });
   }
   const days = bars.length - 1 - start;
   const live = pos[bars.length - 1];
@@ -163,7 +182,7 @@ export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[
     runnable, source: 'hashkey', market, fee,
     days, from: bars[start].time, to: bars[bars.length - 1].time,
     total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets),
-    trades, inMarket: inDays / days, equity, live, mult: live ? 1 : 0, price: bars[bars.length - 1].close,
+    trades, inMarket: inDays / days, equity, bench, marks, live, mult: live ? 1 : 0, price: bars[bars.length - 1].close,
   };
 }
 
@@ -190,15 +209,18 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[]): Agen
   let qty = 0, put = 0, buys = 0, peak = 1, maxDd = 0, prev = 1;
   const rets: number[] = [];
   const equity: { time: number; value: number }[] = [];
+  const bench: { time: number; value: number }[] = [];
+  const marks: Mark[] = [];
   for (let i = start; i < c.length; i++) {
     const m = collectMult(rule, c[i], ma20[i - 1], ma50[i - 1], r[i - 1]);
-    if (m > 0) { const usd = BASE_USD * m; qty += (usd * (1 - fee)) / c[i]; put += usd; buys++; }
+    if (m > 0) { const usd = BASE_USD * m; qty += (usd * (1 - fee)) / c[i]; put += usd; buys++; marks.push({ time: bars[i].time, side: 'buy', price: c[i], mult: Math.round(m * 100) / 100 }); }
     const e = put > 0 ? (qty * c[i]) / put : 1;
     if (put > 0 && equity.length) rets.push(e / prev - 1);
     prev = e;
     peak = Math.max(peak, e);
     maxDd = Math.max(maxDd, 1 - e / peak);
     equity.push({ time: bars[i].time, value: e });
+    bench.push({ time: bars[i].time, value: c[i] / c[start] });
   }
   const last = c.length - 1;
   const mult = Math.round(collectMult(rule, c[last], ma20[last], ma50[last], r[last]) * 100) / 100;
@@ -208,7 +230,7 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[]): Agen
     runnable: true, source: 'gate', fee,
     days, from: bars[start].time, to: bars[last].time,
     total: prev - 1, hold: c[last] / c[start] - 1, maxDd, sharpe: stats(rets),
-    trades: buys, inMarket: buys / days, equity, live: mult > 0, mult, price: c[last],
+    trades: buys, inMarket: buys / days, equity, bench, marks, live: mult > 0, mult, price: c[last],
   };
 }
 
