@@ -1,7 +1,7 @@
 // The vault, shown the same way wherever it appears: what it is (connected or demo), the limits the contract
 // enforces, and how much of today's limit is used. Three sizes: the sidebar line, the line under Moa's input,
 // and the full card on "My agents". Without a vault nothing is sent, and the card says so calmly, once.
-import { vaultWhy, type VaultInfo } from './parts.tsx';
+import { limitsText, vaultWhy, type VaultInfo } from './parts.tsx';
 import { useT } from './i18n.ts';
 import { Icon } from './Icons.tsx';
 import { CopyAddress } from './ui.tsx';
@@ -9,10 +9,11 @@ import { CopyAddress } from './ui.tsx';
 const num = (s?: string) => { const v = Number(s); return Number.isFinite(v) ? v : 0; };
 const usd = (v: number) => (Math.round(v * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
-/** Today's limit: how much is used and how much is left. */
+/** Today's limit: how much is used and how much is left. `none` when the owner set no daily limit. */
 export function vaultUse(v: VaultInfo) {
+  const none = v.maxDailyUsdt === undefined;
   const max = num(v.maxDailyUsdt), left = Math.min(max, num(v.remainingTodayUsdt)), used = Math.max(0, max - left);
-  return { max, left, used, frac: max > 0 ? Math.min(1, used / max) : 0 };
+  return { none, max, left, used, frac: max > 0 ? Math.min(1, used / max) : 0 };
 }
 
 function Gauge({ frac, label }: { frac: number; label: string }) {
@@ -26,11 +27,11 @@ export function VaultMini({ vault }: { vault: VaultInfo | null }) {
   const u = on ? vaultUse(vault!) : null;
   const why = vaultWhy(vault);
   return (
-    <div className={`vault-mini${on ? ' on' : ''}`} data-tip={on ? t.vcSide(usd(u!.left)) : why === 'login' ? t.vcLoginLine : why === 'making' ? t.acMaking : t.vcDemoLine}>
+    <div className={`vault-mini${on ? ' on' : ''}`} data-tip={on ? (u!.none ? limitsText(t, vault!) : t.vcSide(usd(u!.left))) : why === 'login' ? t.vcLoginLine : why === 'making' ? t.acMaking : t.vcDemoLine}>
       <span className="nav-icon"><Icon name="shield" size={18} /></span>
       <span className="nav-text">
         <span className="vm-top"><b>{t.mineVault}</b><span className={`vm-state${on ? ' on' : ''}`}><i />{on ? t.vcLive : t.vcDemo}</span></span>
-        {u && <><Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} /><small>{t.vcSide(usd(u.left))}</small></>}
+        {u && (u.none ? <small>{limitsText(t, vault!)}</small> : <><Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} /><small>{t.vcSide(usd(u.left))}</small></>)}
       </span>
     </div>
   );
@@ -46,8 +47,7 @@ export function VaultLine({ vault }: { vault: VaultInfo | null }) {
   return (
     <>
       <Icon name="shield" size={14} />
-      <span>{t.perTrade} ${vault.maxTradeUsdt}</span><span className="vl-sep">·</span>
-      {empty ? <span className="vl-warn">{t.vcEmptyShort}</span> : <><Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} /><span>{t.vcSide(usd(u.left))}</span></>}
+      {empty ? <span className="vl-warn">{t.vcEmptyShort}</span> : u.none ? <span>{limitsText(t, vault)}</span> : <>{vault.maxTradeUsdt !== undefined && <><span>{t.limTrade(vault.maxTradeUsdt)}</span><span className="vl-sep">·</span></>}<Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} /><span>{t.vcSide(usd(u.left))}</span></>}
       {vault.vault && <CopyAddress value={vault.vault} label={t.copyAddress} done={t.addressCopied} />}
       {vault.localFork && <span className="fork-badge">{t.localFork}</span>}
     </>
@@ -71,12 +71,16 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
       {u ? (
         <div className="vc-body">
           <div className="vc-day">
-            <div className="vc-day-top"><span>{t.perDay}</span><b>{t.vcUsed(usd(u.used), usd(u.max))}</b></div>
-            <Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} />
-            <small>{t.vcSide(usd(u.left))}</small>
+            {u.none ? <div className="vc-day-top"><span>{t.perDay}</span><b>{t.lmNoLimit}</b></div> : (
+              <>
+                <div className="vc-day-top"><span>{t.perDay}</span><b>{t.vcUsed(usd(u.used), usd(u.max))}</b></div>
+                <Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} />
+                <small>{t.vcSide(usd(u.left))}</small>
+              </>
+            )}
           </div>
           <dl className="vc-nums">
-            <div><dt>{t.perTrade}</dt><dd>${vault!.maxTradeUsdt}</dd></div>
+            <div><dt>{t.perTrade}</dt><dd>{vault!.maxTradeUsdt !== undefined ? `$${vault!.maxTradeUsdt}` : t.lmNoLimit}</dd></div>
             <div><dt>{t.balance}</dt><dd>{usd(num(vault!.usdtBalance))}</dd></div>
           </dl>
         </div>

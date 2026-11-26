@@ -6,7 +6,7 @@
 //   node scripts/vault.mjs fund 20                send 20 USDT from my wallet to my vault
 //   node scripts/vault.mjs withdraw USDT 20       take 20 USDT back to my wallet (also WHSK, WETH, WBTC; "all" for everything)
 //   node scripts/vault.mjs pause | unpause        stop or allow the agent's trades on my vault
-//   node scripts/vault.mjs limits 10 30 150       per-trade USDT, per-day USDT, slippage ceiling in bps
+//   node scripts/vault.mjs limits 10 30 150       per-trade USDT, per-day USDT, slippage ceiling in bps ("none" for no limit)
 //   node scripts/vault.mjs agent 0x…              replace my vault's agent wallet (e.g. if its key may have leaked)
 //
 // The factory address comes from MOA_FACTORY_ADDRESS, or from deployments/hsk-mainnet.json.
@@ -14,7 +14,7 @@
 // typing hidden (never written to a file, never printed). Each command shows what it will do and asks you to type a word first.
 import { createWalletClient, http, isAddress, getAddress, parseUnits, formatUnits, formatEther, encodeFunctionData, zeroAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CHAIN, RPC, USDT, MARKETS, ERC20, FORK, WHERE, artifact, client, confirm, ownerKey, record, txUrl, usd, same, fail, EXPLORER } from './hsk.mjs';
+import { CHAIN, RPC, USDT, MARKETS, ERC20, FORK, WHERE, artifact, client, confirm, ownerKey, record, txUrl, usd, cap, limitOf, same, fail, EXPLORER } from './hsk.mjs';
 
 const [cmd = 'status', ...rest] = process.argv.slice(2);
 const factory = process.env.MOA_FACTORY_ADDRESS || record()?.factory;
@@ -38,7 +38,7 @@ async function status(vault) {
   console.log(`\nVault ${vault}\n  ${EXPLORER}/address/${vault}`);
   console.log(`  owner   ${owner}`);
   console.log(`  agent   ${agent}   (${Number(formatEther(await pub.getBalance({ address: agent }))).toFixed(2)} HSK for gas)`);
-  console.log(`  limits  $${usd(maxTrade)} per trade · $${usd(maxDaily)} per day ($${usd(left)} left today) · ${Number(slip) / 100}% slippage ceiling${paused ? '   PAUSED' : ''}`);
+  console.log(`  limits  per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)}${cap(maxDaily) === 'no limit' ? '' : ` ($${usd(left)} left today)`} · ${Number(slip) / 100}% slippage ceiling${paused ? '   PAUSED' : ''}`);
   for (const [name, t] of Object.entries(TOKENS)) {
     const bal = await balanceOf(t.token, vault);
     const market = name === 'USDT' ? null : await read('markets', [t.token]);
@@ -104,9 +104,10 @@ if (cmd === 'fund') {
   await run(cmd === 'pause' ? 'Pause the vault: the agent cannot trade until you unpause.' : 'Unpause the vault: the agent can trade again.', cmd, call('setPaused', [cmd === 'pause']));
 } else if (cmd === 'limits') {
   const [a, b, c] = rest;
-  const trade = amountOf(a, 6), daily = amountOf(b, 6), bps = Number(c);
-  if (trade <= 0n || daily < trade || !(bps > 0 && bps <= 1000)) fail('usage: limits <per-trade USDT> <per-day USDT> <slippage bps, 1 to 1000>');
-  await run(`Set limits to $${usd(trade)} per trade, $${usd(daily)} per day, ${bps / 100}% slippage ceiling.`, 'limits', call('setLimits', [trade, daily, bps]));
+  const daily = b === undefined ? 0n : limitOf(b), asked = a === undefined ? 0n : limitOf(a), bps = Number(c);
+  const trade = asked > daily ? daily : asked;   // no per-trade limit under a daily limit = the daily limit
+  if (trade <= 0n || daily <= 0n || !(bps > 0 && bps <= 1000)) fail('usage: limits <per-trade USDT|none> <per-day USDT|none> <slippage bps, 1 to 1000>');
+  await run(`Set limits to per trade: ${cap(trade)}, per day: ${cap(daily)}, ${bps / 100}% slippage ceiling.`, 'limits', call('setLimits', [trade, daily, bps]));
 } else if (cmd === 'agent') {
   if (!isAddress(rest[0] ?? '')) fail('usage: agent <new agent address>');
   if (same(rest[0], owner)) fail('the agent must be a different wallet from the owner.');

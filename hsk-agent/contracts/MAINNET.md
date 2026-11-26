@@ -9,6 +9,13 @@ makes a **MoaVault** for each wallet that logs in. Everything below is run on yo
 Read back from the chain afterwards: the agent, USDT, router, the three markets and the limits ($10 per trade,
 $30 per day, 1.5%) are as planned. Steps 1 to 3 below are done; the app flow on mainnet (step 5) is not checked yet.
 
+That factory starts every vault at $10 per trade and $30 per day, which was the scripts' default on that day.
+Since then limits are each user's own choice: the scripts now start vaults with **no limits**, and the app's
+account menu has **Limits** (per trade, per day, worst price accepted, each with "no limit") and **Lock trading**.
+A vault from the deployed factory can have its limits changed or removed there by its owner, in one transaction.
+For new vaults to start without limits, deploy a new factory with the steps below and point
+`MOA_FACTORY_ADDRESS` at it.
+
 ## Who can do what
 
 | | What it can do | Where its key lives |
@@ -17,7 +24,9 @@ $30 per day, 1.5%) are as planned. Steps 1 to 3 below are done; the app flow on 
 | **Agent** (one key for all vaults) | Call `trade()` only: USDT ↔ WHSK / WETH / WBTC on HSKSwap, inside each vault's per-trade cap, per-day cap and slippage floor. Cannot withdraw from any vault. Also pays the gas to make each user's vault. | `hsk-agent/.env.local` on the machine that runs the app (git-ignored). |
 | **Deploying wallet** | Pays the gas for the factory, once. Gets no control: the factory has no owner and nothing in it can be changed. | Yours. Typed into a hidden prompt for the one deploy command; never stored, never printed. |
 
-If the agent key leaks, the worst it can do is trade inside each vault's limits. Each user stops it on their own
+If the agent key leaks, the worst it can do is trade inside each vault's limits. A vault with no limits has no
+such ceiling: the key could trade its whole balance back and forth and lose it to fees and bad prices, though it
+still could not withdraw. Limits and the lock are the owner's protection against that. Each user stops it on their own
 vault with pause or by replacing the agent; a new factory with a new agent key is the fix for everyone.
 
 ## What you need first
@@ -51,8 +60,9 @@ node scripts/compile.cjs
    node scripts/deploy-mainnet.mjs --from 0xYOUR_WALLET_ADDRESS
    ```
 
-   Every new vault starts with $10 per trade, $30 per day and a 1.5% slippage ceiling. To change that add
-   `--max-trade 10 --max-daily 30 --slippage-bps 150`. Each user can change their own vault's limits later.
+   Every new vault starts with no per-trade or per-day limit and a 1.5% slippage ceiling. To start vaults with
+   limits instead, add for example `--max-trade 10 --max-daily 30 --slippage-bps 150`. Either way each user sets
+   their own vault's limits afterwards, in the app's account menu.
 
 3. **Deploy.** Asks for the deploying wallet's key (hidden: nothing appears while you paste), shows the same plan,
    and waits for you to type `deploy`. One transaction. No funds move.
@@ -122,6 +132,7 @@ node scripts/vault.mjs agent 0xNEW_AGENT_ADDRESS
 ```
 
 `withdraw` also takes `WHSK`, `WETH`, `WBTC`, and an amount instead of `all`. `unpause` undoes `pause`.
+`limits` takes `none` for either amount: `limits none none 150` removes both.
 `create` makes your vault if you have not logged in to the app.
 
 ## What was checked, and what was not
@@ -133,15 +144,19 @@ Checked on 26 Nov 2026:
   liquidity, and comes from that same factory. The deploy script repeats these checks every time and stops on any mismatch.
 - The explorer accepts compiler `v0.8.26+commit.8a97fa7a`, EVM version `cancun` and standard-JSON-input verification.
 - On a local fork of mainnet, with Hardhat's public test keys:
-  - `scripts/fork-test.mjs`, 22 checks: the server makes a vault for a wallet that signs nothing; it starts with the
+  - `scripts/fork-test.mjs`, 28 checks: the server makes a vault for a wallet that signs nothing; it starts with the
     three markets listed; asking twice gives the same vault; a second user gets a different vault and cannot withdraw
-    from the first; the daily cap on vault creation; an order on an empty vault is refused; and every trading guard
-    (per-trade cap, daily cap, slippage floor, owner-only withdrawal, pause).
+    from the first; the daily cap on vault creation; an order on an empty vault is refused; every trading guard
+    (per-trade cap, daily cap, slippage floor, owner-only withdrawal, pause); and the owner's own limits (the agent
+    cannot change them; with none a larger order fills; new ones are reported and enforced; a tighter price floor
+    still fills).
   - The deploy script (dry run, a refused confirmation, the hidden key prompt: the key does not appear in the
     terminal output) and the `vault.mjs` commands.
   - In a browser against the fork: log in, vault made, deposit 20 USDT, an order with the session (filled), the same
     order without a session and with an altered session (both refused with HTTP 401), withdraw, rename, log out,
-    and a browser with no wallet.
+    and a browser with no wallet. Also: the deposit QR code reads back as the vault's address; setting limits,
+    an order above them refused and one inside them filled; lock and unlock; removing the limits again; choosing
+    among several wallets.
 
 Not checked:
 

@@ -10,7 +10,14 @@ export interface VaultInfo {
   configured: boolean; service?: boolean; signedIn?: boolean; owner?: string; making?: boolean; makeError?: string;
   vault?: string; explorerUrl?: string; localFork?: boolean; paused?: boolean; net?: Net;
   usdtBalance?: string; walletUsdt?: string; holdings?: { symbol: string; address: string; decimals: number; amount: string }[];
+  /** The owner's limits on the agent. A missing value means the owner set no limit. */
   remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string; maxSlippageBps?: number;
+}
+
+/** The vault's limits in one line: "$10 per trade · $30 per day", or that there are none. */
+export function limitsText(t: { limTrade: (a: string) => string; limDay: (a: string) => string; limNone: string }, v: VaultInfo): string {
+  const parts = [v.maxTradeUsdt !== undefined ? t.limTrade(v.maxTradeUsdt) : '', v.maxDailyUsdt !== undefined ? t.limDay(v.maxDailyUsdt) : ''].filter(Boolean);
+  return parts.length ? parts.join(' · ') : t.limNone;
 }
 
 /** Why orders are or are not real right now. */

@@ -1,7 +1,7 @@
 // Shared by the mainnet scripts: the HSK Chain addresses Moa uses, read-only checks that they belong together,
 // and small helpers. Nothing here sends a transaction.
 import { readFileSync, existsSync } from 'node:fs';
-import { createPublicClient, http, parseAbi, formatUnits } from 'viem';
+import { createPublicClient, http, parseAbi, formatUnits, parseUnits } from 'viem';
 
 export const RPC = process.env.MOA_RPC_URL || 'https://mainnet.hsk.xyz';
 export const EXPLORER = 'https://hsk.blockscout.com';
@@ -27,6 +27,15 @@ const ROUTER_ABI = parseAbi(['function factory() view returns (address)']);
 export const artifact = (name) => JSON.parse(readFileSync(new URL(`../out/${name}.json`, import.meta.url)));
 export const client = () => createPublicClient({ chain: CHAIN, transport: http(RPC) });
 export const usd = (v) => formatUnits(v, 6);
+/** The contract has no "off" for a limit, so "no limit" is the largest number it can hold. */
+export const NO_LIMIT = 2n ** 256n - 1n;
+/** A limit in words: "$10", or "no limit". */
+export const cap = (v) => (v >= 2n ** 200n ? 'no limit' : `$${usd(v)}`);
+/** "none" (or nothing) → no limit; otherwise a USDT amount. Returns 0n for text that is neither. */
+export const limitOf = (text) => {
+  if (text === undefined || /^(none|no|unlimited)$/i.test(text)) return NO_LIMIT;
+  return /^\d+(\.\d{1,6})?$/.test(text) ? parseUnits(text, 6) : 0n;
+};
 export const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 export const txUrl = (hash) => `${EXPLORER}/tx/${hash}`;
 export const fail = (msg) => { console.error(`\nCannot continue: ${msg}`); process.exit(1); };

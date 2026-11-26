@@ -172,3 +172,20 @@ export const deposit = (net: Net, vault: string, usdt: string) =>
 /** A token from my vault back to my wallet. Only the owner's wallet can do this; the contract refuses anyone else. */
 export const withdraw = (net: Net, vault: string, token: { address: string; decimals: number }, amount: string) =>
   send(net, vault, encodeFunctionData({ abi: WITHDRAW, functionName: 'withdraw', args: [token.address as Hex, parseUnits(amount, token.decimals)] }));
+
+const SET_LIMITS = [{ type: 'function', name: 'setLimits', stateMutability: 'nonpayable', inputs: [{ name: 'maxTrade', type: 'uint256' }, { name: 'maxDaily', type: 'uint256' }, { name: 'slippageBps', type: 'uint16' }], outputs: [] }] as const;
+const SET_PAUSED = [{ type: 'function', name: 'setPaused', stateMutability: 'nonpayable', inputs: [{ name: 'paused', type: 'bool' }], outputs: [] }] as const;
+/** The contract has no "off" for a limit, so "no limit" is the largest number it can hold. */
+const NO_LIMIT = 2n ** 256n - 1n;
+/**
+ * My own limits on what agents may trade from my vault: per trade and per day in USDT (null = no limit), and the
+ * worst price accepted in basis points. With a daily limit and no per-trade limit, one trade may use the whole day.
+ */
+export function setLimits(net: Net, vault: string, perTrade: string | null, perDay: string | null, slippageBps: number) {
+  const day = perDay === null ? NO_LIMIT : parseUnits(perDay, 6);
+  const trade = perTrade === null ? day : parseUnits(perTrade, 6);
+  return send(net, vault, encodeFunctionData({ abi: SET_LIMITS, functionName: 'setLimits', args: [trade, day, slippageBps] }));
+}
+/** Lock or unlock my vault for agents. Deposits and withdrawals are not affected. */
+export const setPaused = (net: Net, vault: string, paused: boolean) =>
+  send(net, vault, encodeFunctionData({ abi: SET_PAUSED, functionName: 'setPaused', args: [paused] }));

@@ -13,6 +13,7 @@
     "@anthropic-ai/sdk": "^1.12.0",
     "@fontsource-variable/inter": "^5.2.8",
     "lightweight-charts": "^4.2.3",
+    "qrcode-generator": "^2.0.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "viem": "^2.58.4"

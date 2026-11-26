@@ -122,6 +122,10 @@ export function network(cfg: ExecConfig) {
   };
 }
 
+/** A limit this large is "no limit": the owner chose not to cap the agent (the contract has no separate off switch). */
+const NO_LIMIT = 2n ** 200n;
+const limit = (v: unknown) => ((v as bigint) >= NO_LIMIT ? undefined : formatUnits(v as bigint, 6));
+
 export async function vaultStatus(cfg: ExecConfig) {
   const base = { service: serviceOn(cfg), owner: cfg.owner, localFork: /127\.0\.0\.1|localhost/.test(cfg.rpcUrl), net: network(cfg) };
   if (!cfg.vault) return { configured: false as const, ...base };
@@ -140,10 +144,11 @@ export async function vaultStatus(cfg: ExecConfig) {
     walletUsdt: formatUnits(walletUsdt as bigint, 6),
     vault: cfg.vault,
     explorerUrl: `${cfg.explorer}/address/${cfg.vault}`,
-    maxTradeUsdt: formatUnits(maxTrade as bigint, 6),
-    maxDailyUsdt: formatUnits(maxDaily as bigint, 6),
+    // a missing value means the owner set no limit
+    maxTradeUsdt: limit(maxTrade),
+    maxDailyUsdt: limit(maxDaily),
     maxSlippageBps: Number(slippage),
-    remainingTodayUsdt: formatUnits(remaining as bigint, 6),
+    remainingTodayUsdt: limit(remaining),
     paused: paused as boolean,
     usdtBalance: formatUnits(usdtBal as bigint, 6),
   };
@@ -174,8 +179,12 @@ async function sendTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResul
       return { ok: false, reason: `The vault holds ${have} ${unit}, less than this order needs.${isBuy ? ' Deposit USDT first.' : ''}` };
     }
     const quoted = (await pub.readContract({ address: cfg.vault, abi, functionName: 'quote', args: [token.address, isBuy, amountIn] })) as bigint;
-    // 0.3% pool fee + buffer for price impact; the vault rejects anything looser than its own floor
-    const minOut = (quoted * BigInt(10_000 - 30 - cfg.minOutBufferBps)) / 10_000n;
+    // 0.3% pool fee + buffer for price impact, but never looser than the floor the owner set on the vault:
+    // an owner who tightens the slippage ceiling gets orders that ask for at least that price, not refused ones.
+    const ceiling = BigInt((await pub.readContract({ address: cfg.vault, abi, functionName: 'maxSlippageBps' })) as number);
+    const wanted = (quoted * BigInt(10_000 - 30 - cfg.minOutBufferBps)) / 10_000n;
+    const floor = (quoted * (10_000n - ceiling)) / 10_000n;
+    const minOut = wanted > floor ? wanted : floor;
     const note = req.note.slice(0, 120);
     const { request } = await pub.simulateContract({ address: cfg.vault, abi, functionName: 'trade', args: [token.address, isBuy, amountIn, minOut, note], account });
     const txHash = await wallet.writeContract(request);

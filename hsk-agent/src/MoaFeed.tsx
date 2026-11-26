@@ -11,7 +11,7 @@ import type { Quote } from './market.ts';
 import { useT } from './i18n.ts';
 import { SlidePill } from './motion.tsx';
 import { Icon as SIcon, Spark } from './Icons.tsx';
-import type { VaultInfo } from './parts.tsx';
+import { limitsText, type VaultInfo } from './parts.tsx';
 import { CopyButton, Modal, RichText } from './ui.tsx';
 import { VaultLine } from './VaultCard.tsx';
 import { parse } from './spec.ts';
@@ -564,7 +564,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
           <button className="btn" onClick={() => { const q = confirm; setConfirm(null); void ask(q, true); }}>{t.executeBtn}</button>
         </>}>
           <p className="modal-quote">“{confirm}”</p>
-          <p>{t.confirmBody(vault?.maxTradeUsdt ?? '?', vault?.remainingTodayUsdt ?? '0')}</p>
+          <p>{t.confirmBody(vault ? limitsText(t, vault) : t.limNone)}</p>
         </Modal>
       )}
     </aside>
@@ -625,8 +625,9 @@ function OrderCard({ h, orderId, sending, vault, onApprove, onDecline }: {
       {open && (on ? (
         // What the contract will check, shown before the user says yes.
         <ul className="oc-checks">
-          {o.side === 'buy' && <li><SIcon name="check" size={14} />{t.ocCap(money(usd), vault!.maxTradeUsdt ?? '?')}</li>}
-          <li><SIcon name="check" size={14} />{t.ocLeft(vault!.remainingTodayUsdt ?? '?')}</li>
+          {o.side === 'buy' && vault!.maxTradeUsdt !== undefined && <li><SIcon name="check" size={14} />{t.ocCap(money(usd), vault!.maxTradeUsdt)}</li>}
+          {vault!.remainingTodayUsdt !== undefined && <li><SIcon name="check" size={14} />{t.ocLeft(vault!.remainingTodayUsdt)}</li>}
+          {vault!.maxTradeUsdt === undefined && vault!.remainingTodayUsdt === undefined && <li><SIcon name="check" size={14} />{t.ocNoLimit}</li>}
         </ul>
       ) : <p className="order-demo">{t.obDemo}</p>)}
       {open && (

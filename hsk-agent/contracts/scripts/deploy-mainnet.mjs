@@ -7,17 +7,20 @@
 //   --from 0x…           MOA_DEPLOYER_ADDRESS   the deploying wallet's address, for a dry run. With --send it comes from the key.
 //   --agent 0x…          MOA_AGENT_ADDRESS      the agent wallet's address. Left out: taken from the agent key in ../.env.local
 //                                               (scripts/agent-key.mjs makes it). The agent's key itself is never needed here.
-//   --max-trade 10       MOA_MAX_TRADE_USDT     every new vault's per-trade limit in USDT (default 10)
-//   --max-daily 30       MOA_MAX_DAILY_USDT     every new vault's per-day limit in USDT (default 30)
-//   --slippage-bps 150   MOA_MAX_SLIPPAGE_BPS   every new vault's slippage ceiling, 150 = 1.5% (default 150)
+//   --max-trade none     MOA_MAX_TRADE_USDT     what every new vault starts with as its per-trade limit in USDT (default none)
+//   --max-daily none     MOA_MAX_DAILY_USDT     what every new vault starts with as its per-day limit in USDT (default none)
+//   --slippage-bps 150   MOA_MAX_SLIPPAGE_BPS   what every new vault starts with as its slippage ceiling, 150 = 1.5% (default 150)
+// Limits are each user's own choice: a vault starts with none, and its owner sets, changes or removes them in the
+// app's account menu (or scripts/vault.mjs limits). Without limits, a leaked agent key could trade a vault's whole
+// balance back and forth and lose it to fees and bad prices; it still could not withdraw.
 //
 // The deploying wallet only pays the gas: the factory has no owner, nothing in it can be changed later, and it never
 // holds funds. Each vault it makes belongs to its own user, who can change that vault's limits and agent.
 // The key (--send only) is read from MOA_OWNER_PRIVATE_KEY, or asked for with the typing hidden; it is never stored.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { createWalletClient, http, isAddress, getAddress, parseUnits, formatEther, encodeDeployData, encodeAbiParameters } from 'viem';
+import { createWalletClient, http, isAddress, getAddress, formatEther, encodeDeployData, encodeAbiParameters } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CHAIN, RPC, ROUTER, USDT, MARKETS, FORK, WHERE, RECORD, artifact, client, checkAddresses, confirm, option, ownerKey, usd, same, txUrl, fail, EXPLORER } from './hsk.mjs';
+import { CHAIN, RPC, ROUTER, USDT, MARKETS, FORK, WHERE, RECORD, artifact, client, checkAddresses, confirm, option, ownerKey, cap, limitOf, same, txUrl, fail, EXPLORER } from './hsk.mjs';
 
 const send = process.argv.includes('--send');
 const address = (text, what) => {
@@ -36,11 +39,11 @@ const account = key ? privateKeyToAccount(key) : null;
 const from = account?.address ?? address(option('from', 'MOA_DEPLOYER_ADDRESS') ?? option('owner', 'MOA_OWNER_ADDRESS'), 'The deploying wallet\'s address (--from 0x…)');
 if (same(from, agent)) fail('deploy from your own wallet, not from the agent wallet: the agent\'s key sits on a server.');
 
-const amount = (text) => { try { return parseUnits(text, 6); } catch { return 0n; } };
-const maxTrade = amount(option('max-trade', 'MOA_MAX_TRADE_USDT') ?? '10');
-const maxDaily = amount(option('max-daily', 'MOA_MAX_DAILY_USDT') ?? '30');
+const maxDaily = limitOf(option('max-daily', 'MOA_MAX_DAILY_USDT'));
+const maxTradeAsked = limitOf(option('max-trade', 'MOA_MAX_TRADE_USDT'));
+const maxTrade = maxTradeAsked > maxDaily ? maxDaily : maxTradeAsked;   // no per-trade limit under a daily limit = the daily limit
 const slip = Number(option('slippage-bps', 'MOA_MAX_SLIPPAGE_BPS') ?? 150);
-if (maxTrade <= 0n || maxDaily < maxTrade || !(Number.isInteger(slip) && slip > 0 && slip <= 1000)) fail('limits: per-trade must be above 0, per-day at least per-trade, slippage 1 to 1000 bps.');
+if (maxTrade <= 0n || maxDaily <= 0n || !(Number.isInteger(slip) && slip > 0 && slip <= 1000)) fail('limits: an amount above 0 or "none" for each, and slippage 1 to 1000 bps.');
 
 const pub = client();
 const { abi, bytecode } = artifact('MoaVaultFactory');
@@ -62,7 +65,8 @@ const hsk = (v) => Number(formatEther(v)).toFixed(2);
 
 console.log(`  deploying wallet (pays the gas, gets no control)   ${from}`);
 console.log(`  agent (trades for every vault, inside its limits)  ${agent}`);
-console.log(`  each new vault starts with                         $${usd(maxTrade)} per trade · $${usd(maxDaily)} per day · ${slip / 100}% slippage ceiling`);
+console.log(`  each new vault starts with                         per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)} · ${slip / 100}% slippage ceiling`);
+console.log('                                                     (each owner sets their own limits afterwards)');
 console.log(`  markets                                            ${Object.keys(MARKETS).join(', ')} against USDT on HSKSwap`);
 console.log('  transactions                                       1 (the factory)');
 console.log(`  estimated gas                                      ${gas} × ${Number(gasPrice) / 1e9} gwei ≈ ${hsk(cost)} HSK`);

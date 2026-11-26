@@ -2,12 +2,13 @@
 // wallet address; opening it shows the wallet's own vault (what it holds, its limits) with Deposit and Withdraw.
 // Deposits and withdrawals are transactions from the user's own wallet: the server cannot move funds in or out.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { VaultInfo } from './parts.tsx';
-import { deposit, logIn, logOut, nickOf, saveNick, shortAddress, useSession, wallets, withdraw, type SendResult, type WalletChoice } from './account.ts';
+import { limitsText, type VaultInfo } from './parts.tsx';
+import { deposit, logIn, logOut, nickOf, saveNick, setLimits, setPaused, shortAddress, useSession, wallets, withdraw, type SendResult, type WalletChoice } from './account.ts';
 import { vaultUse } from './VaultCard.tsx';
 import { useT } from './i18n.ts';
 import { Icon } from './Icons.tsx';
 import { CopyAddress, CopyButton, Modal, useToast } from './ui.tsx';
+import Qr from './Qr.tsx';
 
 const money = (s?: string | number) => { const v = Number(s); return (Number.isFinite(v) ? v : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 const qty = (s: string) => { const v = Number(s); return v >= 1 ? v.toLocaleString('en-US', { maximumFractionDigits: 4 }) : v.toPrecision(4).replace(/\.?0+$/, ''); };
@@ -28,7 +29,7 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
   const [busy, setBusy] = useState(false);
   const [noWallet, setNoWallet] = useState(false);
   const [choices, setChoices] = useState<WalletChoice[] | null>(null);
-  const [dialog, setDialog] = useState<'deposit' | 'withdraw' | null>(null);
+  const [dialog, setDialog] = useState<'deposit' | 'withdraw' | 'limits' | null>(null);
   const [naming, setNaming] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
@@ -135,9 +136,9 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
                 )}
                 {Number(vault!.usdtBalance) === 0 && !vault!.holdings?.length && <p className="acct-msg">{t.acEmpty}</p>}
                 <div className="acct-lim">
-                  <span>{t.hsVaultOn(vault!.maxTradeUsdt ?? '?', vault!.maxDailyUsdt ?? '?')}</span>
-                  <span className={`gauge${u!.frac >= 0.9 ? ' full' : ''}`} role="img" aria-label={t.vcUsed(money(u!.used), money(u!.max))}><i style={{ width: `${Math.round(u!.frac * 100)}%` }} /></span>
-                  <small>{t.vcSide(money(u!.left))}</small>
+                  <div className="acct-lim-top"><span>{limitsText(t, vault!)}</span><button className="link" onClick={() => { setOpen(false); setDialog('limits'); }}>{t.lmOpen}</button></div>
+                  {!u!.none && <span className={`gauge${u!.frac >= 0.9 ? ' full' : ''}`} role="img" aria-label={t.vcUsed(money(u!.used), money(u!.max))}><i style={{ width: `${Math.round(u!.frac * 100)}%` }} /></span>}
+                  {!u!.none && <small>{t.vcSide(money(u!.left))}</small>}
                 </div>
                 <div className="acct-addr">
                   <CopyAddress value={vault!.vault!} label={t.copyAddress} done={t.addressCopied} />
@@ -156,6 +157,7 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
       )}
       {dialog === 'deposit' && on && <Deposit vault={vault!} onClose={() => setDialog(null)} onDone={onReload} />}
       {dialog === 'withdraw' && on && <Withdraw vault={vault!} owner={s.address} onClose={() => setDialog(null)} onDone={onReload} />}
+      {dialog === 'limits' && on && <Limits vault={vault!} onClose={() => setDialog(null)} onDone={onReload} />}
     </div>
   );
 }
@@ -191,9 +193,15 @@ function Deposit({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => 
     </>}>
       <div className="fund">
         <p className="fund-lead">{t.dpLead}</p>
-        <div className="field">
-          <span>{t.dpAddress}</span>
-          <div className="fund-addr"><code>{vault.vault}</code><CopyButton text={vault.vault ?? ''} label={t.copyAddress} done={t.addressCopied} /></div>
+        <div className="fund-to">
+          <Qr value={vault.vault ?? ''} label={t.dpQr} />
+          <div className="fund-to-text">
+            <div className="field">
+              <span>{t.dpAddress}</span>
+              <div className="fund-addr"><code>{vault.vault}</code><CopyButton text={vault.vault ?? ''} label={t.copyAddress} done={t.addressCopied} /></div>
+            </div>
+            <small>{t.dpQrNote}</small>
+          </div>
         </div>
         <p className="fund-warn"><Icon name="shield" size={14} />{t.dpNet}</p>
         <div className="fund-or"><span>{t.dpOr}</span></div>
@@ -261,6 +269,76 @@ function Withdraw({ vault, owner, onClose, onDone }: { vault: VaultInfo; owner: 
             <p className="fund-note">{t.dpGas}</p>
           </>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+/** One limit: either none, or an amount the owner types. */
+function LimitField({ id, label, note, on, amount, onToggle, onAmount }: { id: string; label: string; note: string; on: boolean; amount: string; onToggle: (on: boolean) => void; onAmount: (v: string) => void }) {
+  const { t } = useT();
+  return (
+    <div className="field">
+      <span>{label}</span>
+      <div className="lim-row">
+        <div className="seg" role="group" aria-label={label}>
+          <button type="button" className={on ? '' : 'on'} onClick={() => onToggle(false)}>{t.lmNoLimit}</button>
+          <button type="button" className={on ? 'on' : ''} onClick={() => onToggle(true)}>{t.lmSet}</button>
+        </div>
+        {on && <div className="fund-input sm"><input id={id} inputMode="decimal" value={amount} onChange={(e) => onAmount(e.target.value.trim())} aria-label={label} aria-invalid={!(AMOUNT.test(amount) && Number(amount) > 0)} /><span>USDT</span></div>}
+      </div>
+      <small className="lim-note">{note}</small>
+    </div>
+  );
+}
+
+/** The owner's own limits on what agents may trade, and the lock. Each change is one transaction from the owner's wallet. */
+function Limits({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => void; onDone: () => void }) {
+  const { t } = useT();
+  const toast = useToast();
+  const note = useSendNote();
+  const [tradeOn, setTradeOn] = useState(vault.maxTradeUsdt !== undefined);
+  const [trade, setTrade] = useState(vault.maxTradeUsdt ?? '100');
+  const [dayOn, setDayOn] = useState(vault.maxDailyUsdt !== undefined);
+  const [day, setDay] = useState(vault.maxDailyUsdt ?? '300');
+  const [slip, setSlip] = useState(String((vault.maxSlippageBps ?? 150) / 100));
+  const [busy, setBusy] = useState<'save' | 'lock' | null>(null);
+  const [error, setError] = useState('');
+  const good = (v: string) => AMOUNT.test(v) && Number(v) > 0;
+  const slipBps = Math.round(Number(slip) * 100);
+  const slipOk = /^\d+(\.\d{1,2})?$/.test(slip) && slipBps >= 50 && slipBps <= 1000;
+  const order = !(tradeOn && dayOn) || Number(day) >= Number(trade);
+  const valid = (!tradeOn || good(trade)) && (!dayOn || good(day)) && slipOk && order;
+  const same = (tradeOn ? trade : undefined) === vault.maxTradeUsdt && (dayOn ? day : undefined) === vault.maxDailyUsdt && slipBps === (vault.maxSlippageBps ?? 150);
+  const run = async (what: 'save' | 'lock', job: () => Promise<SendResult>, done: string) => {
+    if (!vault.net || !vault.vault) return;
+    setBusy(what); setError('');
+    const r = await job();
+    setBusy(null);
+    if (r.ok) { toast(done); onDone(); onClose(); } else setError(note(r));
+  };
+  return (
+    <Modal title={t.lmTitle} onClose={onClose} actions={<>
+      <button className="btn-text" onClick={onClose}>{t.close}</button>
+      <button className="btn-primary" disabled={!valid || same || !!busy} onClick={() => void run('save', () => setLimits(vault.net!, vault.vault!, tradeOn ? trade : null, dayOn ? day : null, slipBps), t.lmSaved)}>{busy === 'save' ? t.txWaiting : t.lmSave}</button>
+    </>}>
+      <div className="fund">
+        <p className="fund-lead">{t.lmLead}</p>
+        <LimitField id="lim-trade" label={t.lmTrade} note={dayOn && !tradeOn ? t.lmTradeNote : ''} on={tradeOn} amount={trade} onToggle={setTradeOn} onAmount={setTrade} />
+        <LimitField id="lim-day" label={t.lmDay} note={t.lmDayNote} on={dayOn} amount={day} onToggle={setDayOn} onAmount={setDay} />
+        {!order && <p className="fund-note warn">{t.lmBad}</p>}
+        <label className="field" htmlFor="lim-slip">
+          <span>{t.lmSlip}</span>
+          <div className="fund-input sm"><input id="lim-slip" inputMode="decimal" value={slip} onChange={(e) => setSlip(e.target.value.trim())} aria-invalid={!slipOk} /><span>%</span>
+            {['0.5', '1.5', '3'].map((n) => <button key={n} type="button" className={slip === n ? 'on' : ''} onClick={() => setSlip(n)}>{n}</button>)}</div>
+          <small className="lim-note">{t.lmSlipNote}</small>
+        </label>
+        <div className="lim-lock">
+          <div><b>{vault.paused ? t.lmLocked : t.lmLock}</b><small>{t.lmLockNote}</small></div>
+          <button className="btn" disabled={!!busy} onClick={() => void run('lock', () => setPaused(vault.net!, vault.vault!, !vault.paused), vault.paused ? t.lmUnlocked : t.lmLocked)}>{busy === 'lock' ? t.txWaiting : vault.paused ? t.lmUnlock : t.lmLock}</button>
+        </div>
+        {error && <p className="fund-note warn">{error}</p>}
+        <p className="fund-note">{t.dpGas}</p>
       </div>
     </Modal>
   );

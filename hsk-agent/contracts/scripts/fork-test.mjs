@@ -26,11 +26,12 @@ const chain = { id: 177, name: 'HSK fork', nativeCurrency: { name: 'HSK', symbol
 let pass = 0, fail = 0;
 const check = (name, cond, detail = '') => { if (cond) pass++; else fail++; console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); };
 
-const node = spawn('npx', ['hardhat', 'node', '--port', '8546'], { cwd: new URL('..', import.meta.url).pathname, stdio: ['ignore', 'pipe', 'pipe'] });
+// Its own process group, so stopping it also stops the node that npx starts underneath (otherwise the port stays taken).
+const node = spawn('npx', ['hardhat', 'node', '--port', '8546'], { cwd: new URL('..', import.meta.url).pathname, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
 let nodeLog = '';
 node.stdout.on('data', (d) => (nodeLog += d));
 node.stderr.on('data', (d) => (nodeLog += d));
-const stop = () => node.kill('SIGTERM');
+const stop = () => { try { if (process.platform === 'win32') node.kill('SIGTERM'); else process.kill(-node.pid, 'SIGTERM'); } catch { /* already gone */ } };
 process.on('exit', stop);
 
 try {
@@ -129,10 +130,28 @@ try {
   const r6 = await executeTrade(cfg, { asset: 'BTC', side: 'sell', amount: Number(formatUnits(wbtc, 8)), note: 'Fork test: take profit' });
   check('sell the WBTC back for USDT', r6.ok, r6.ok ? `${r6.amountIn} ${r6.tokenIn} -> ${r6.amountOut} ${r6.tokenOut}` : r6.reason);
 
+  // 6b) limits are the owner's to set: with none, a bigger order goes through; the agent cannot change them
+  const NO_LIMIT = 2n ** 256n - 1n;
+  let agentLimitsRefused = false;
+  try { await pub.simulateContract({ address: vault, abi, functionName: 'setLimits', args: [NO_LIMIT, NO_LIMIT, 150], account: agent }); } catch (e) { agentLimitsRefused = /NotOwner/.test(String(e.message)); }
+  check('the agent key cannot change the limits', agentLimitsRefused);
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setLimits', args: [NO_LIMIT, NO_LIMIT, 150] }) });
+  const open = await vaultStatus(cfg);
+  check('after the owner removes the limits, the server reports none', open.maxTradeUsdt === undefined && open.maxDailyUsdt === undefined && open.remainingTodayUsdt === undefined);
+  const big = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 100, note: 'no limits set' });
+  check('a $100 buy (above the old $50 cap) goes through with no limits', big.ok, big.ok ? `${big.amountOut} ${big.tokenOut}` : big.reason);
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setLimits', args: [5_000_000n, 500_000_000n, 100] }) });
+  const tight = await vaultStatus(cfg);
+  check('the owner sets new limits and the server reports them', tight.maxTradeUsdt === '5' && tight.maxDailyUsdt === '500' && tight.maxSlippageBps === 100);
+  const over = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 6, note: 'over my own limit' });
+  check('an order above the owner\'s new limit is refused', !over.ok && /TradeTooLarge/.test(over.reason), over.ok ? 'executed!' : over.reason.slice(0, 100));
+  const snug = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 5, note: 'tighter price floor' });
+  check('with the owner\'s 1% price floor, an order inside the limit still goes through', snug.ok, snug.ok ? `${snug.amountOut} ${snug.tokenOut}` : snug.reason);
+
   // 7) pause stops the agent
   await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setPaused', args: [true] }) });
-  const r7 = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 5, note: 'paused' });
-  check('trades are refused while paused', !r7.ok && /IsPaused/.test(r7.reason));
+  const r7 = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 2, note: 'paused' });
+  check('trades are refused while paused', !r7.ok && /IsPaused/.test(r7.reason), r7.ok ? 'executed!' : r7.reason.slice(0, 100));
 
   // 8) no vault configured -> executor refuses before touching the chain
   const r8 = await executeTrade({ ...cfg, vault: undefined }, { asset: 'HSK', side: 'buy', amount: 5, note: 'x' });
