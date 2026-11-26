@@ -37,6 +37,15 @@ vault contract enforces.
 - **Moa's briefing.** The conclusion for the coin on screen first, the numbers in one table, one leading choice that
   goes to an agent. Moving to another coin's chart gets that coin's briefing, and a choice always acts on the coin
   it names.
+- **Agents have names and faces.** Each rule has a short name and its own coloured mark ("BTC Turtle", "ETH
+  Guardian"); the rule it follows and where the rule comes from stay beside it as the subtitle and the origin tag.
+- **The vault is on screen, not in a footnote.** `src/VaultCard.tsx` shows the same vault three ways (sidebar,
+  under Moa's input, the card on "My agents"): connected or demo, the per-trade limit, and a gauge of today's
+  limit. An order waiting for approval is a card that names the agent, the trade, the reason, and the limits the
+  contract will check; a fill is a receipt with a link to the HSK explorer. Without a vault the app says "Demo
+  mode: orders are not sent", once and calmly.
+- **One accent.** Primary actions are one filled blue button everywhere; green and red mean gain, loss, buy and
+  sell and nothing else. Numbers use one format (a true minus sign, one decimal).
 - **Moa never leaves you waiting.** Each model call is streamed and has a 90-second deadline with one retry
   (`server/moaAgent.ts`); the server sends a line every 5 seconds while it works, and the browser stops waiting after
   25 seconds of silence or 150 seconds in total and answers with the on-device parser, marked as offline.

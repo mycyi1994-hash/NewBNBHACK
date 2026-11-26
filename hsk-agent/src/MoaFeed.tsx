@@ -12,7 +12,8 @@ import { useT } from './i18n.ts';
 import { SlidePill } from './motion.tsx';
 import { Icon as SIcon, Spark } from './Icons.tsx';
 import type { VaultInfo } from './parts.tsx';
-import { CopyAddress, CopyButton, Modal, RichText } from './ui.tsx';
+import { CopyButton, Modal, RichText } from './ui.tsx';
+import { VaultLine } from './VaultCard.tsx';
 import { askMoa, EXECUTE_WORDS, toStep, type Exec, type StepKey } from './moaClient.ts';
 import { describe, parseIntent, type Plan } from './intent.ts';
 import { reply as offlineReply } from './moa.ts';
@@ -21,7 +22,7 @@ import { CoinMark } from './CoinMark.tsx';
 import { loadWeather, skyOf, type Weather } from './weather.ts';
 import { isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
-import { AgentCard, agentName, drop, explainAgent } from './AgentCard.tsx';
+import { AgentCard, agentName, drop, explainAgent, Face } from './AgentCard.tsx';
 import type { HireTarget } from './HireSheet.tsx';
 import { book, lastEvent, statusOf, type Amounts, type HiredAgent } from './runner.ts';
 import { eventLine, hiredName, money, moneyLine, qtyText, skipText, statusText, whyText } from './hiredText.ts';
@@ -546,12 +547,7 @@ export default function MoaFeed({ quotes, vault, inject, context, agents, agents
             : <button className="sq-btn" type="submit" disabled={!draft.trim()} aria-label={t.ask} data-tip={`${t.ask} (Enter)`}><SIcon name="arrowUp" size={16} /></button>}
         </div>
       </form>
-      <div className="feed-foot">
-        <SIcon name="shield" size={14} />
-        {vault?.configured
-          ? <>{t.feedLimits(vault.maxTradeUsdt ?? '?', vault.maxDailyUsdt ?? '?')} {vault.vault && <CopyAddress value={vault.vault} label={t.copyAddress} done={t.addressCopied} />}{vault.localFork && <span className="fork-badge">{t.localFork}</span>}</>
-          : t.trust3none}
-      </div>
+      <div className="feed-foot"><VaultLine vault={vault} /></div>
 
       {confirm && (
         <Modal title={t.confirmTitle} onClose={() => setConfirm(null)} actions={<>
@@ -606,38 +602,54 @@ function OrderCard({ h, orderId, sending, vault, onApprove, onDecline }: {
   const outcome = h.log.find((e) => (e.k === 'filled' || e.k === 'declined' || e.k === 'failed' || e.k === 'expired') && e.orderId === orderId);
   const open = h.pending?.id === orderId && !outcome;
   const name = hiredName(t, h);
+  const usd = o.usd ?? 0;
+  const on = !!vault?.configured;
   return (
     <div className={`order-card${open ? ' open' : ''}`}>
-      <p className="order-q">{o.side === 'buy' ? t.orderBuy(name, money(o.usd ?? 0), h.asset) : t.orderSell(name, qtyText(o.qty ?? 0), h.asset)}</p>
-      <p className="order-why">{whyText(t, o.why)}</p>
-      {open && !vault?.configured && <p className="order-demo">{t.obDemo}</p>}
+      <header className="oc-head">
+        {h.source.type === 'market' ? <Face rule={h.source.rule} size="sm" /> : <span className="face sm r-daily" aria-hidden><SIcon name="bot" size={14} /></span>}
+        <b>{name}</b>
+        {open && <span className="oc-tag"><i />{t.ocAsk}</span>}
+      </header>
+      <p className="order-q">{o.side === 'buy' ? t.ocBuy(money(usd), h.asset) : t.ocSell(qtyText(o.qty ?? 0), h.asset)}</p>
+      <p className="order-why"><span>{t.ocWhy}</span>{whyText(t, o.why)}</p>
+      {open && (on ? (
+        // What the contract will check, shown before the user says yes.
+        <ul className="oc-checks">
+          {o.side === 'buy' && <li><SIcon name="check" size={14} />{t.ocCap(money(usd), vault!.maxTradeUsdt ?? '?')}</li>}
+          <li><SIcon name="check" size={14} />{t.ocLeft(vault!.remainingTodayUsdt ?? '?')}</li>
+        </ul>
+      ) : <p className="order-demo">{t.obDemo}</p>)}
       {open && (
         <div className="order-cta">
-          <button className="btn-primary" onClick={onApprove} disabled={sending}>{sending ? t.obSending : o.side === 'buy' ? t.obBuy(money(o.usd ?? 0)) : t.obSell}</button>
+          <button className="btn-primary" onClick={onApprove} disabled={sending}>{sending ? t.obSending : o.side === 'buy' ? t.obBuy(money(usd)) : t.obSell}</button>
           <button className="btn-ghost" onClick={onDecline} disabled={sending}>{t.obSkip}</button>
         </div>
       )}
       {outcome?.k === 'filled' && (
         <div className="receipt-mini ok">
+          <span className="rc-ic" aria-hidden><SIcon name="check" size={14} /></span>
           <b>{t.receiptOk}</b>
           <span>{outcome.fill.side === 'buy' ? t.filledBuy(money(outcome.fill.usd), qtyText(outcome.fill.qty), h.asset) : t.filledSell(qtyText(outcome.fill.qty), h.asset, money(outcome.fill.usd))}</span>
           {outcome.fill.explorerUrl && <a href={outcome.fill.explorerUrl} target="_blank" rel="noreferrer">{t.viewTx} ↗</a>}
         </div>
       )}
-      {outcome?.k === 'failed' && (outcome.demo ? <p className="order-demo">{t.obDemoDone}</p> : <div className="receipt-mini fail"><b>{t.receiptFail}</b><span>{t.obFailed(outcome.reason)}</span></div>)}
+      {outcome?.k === 'failed' && (outcome.demo ? <p className="order-demo">{t.obDemoDone}</p> : <div className="receipt-mini fail"><span className="rc-ic" aria-hidden><SIcon name="close" size={14} /></span><b>{t.receiptFail}</b><span>{t.obFailed(outcome.reason)}</span></div>)}
       {outcome?.k === 'declined' && <p className="muted small-text">{t.obDeclined}</p>}
       {outcome?.k === 'expired' && <p className="muted small-text">{t.obExpired}</p>}
     </div>
   );
 }
 
-/** A trade Moa sent to the vault: what happened, with the explorer link. */
+/** A trade run from the chat: what happened, and the transaction on the HSK explorer. */
 function Receipt({ x }: { x: Exec }) {
   const { t } = useT();
   return (
     <div className={`receipt-mini ${x.ok ? 'ok' : 'fail'}`}>
+      <span className="rc-ic" aria-hidden><SIcon name={x.ok ? 'check' : 'close'} size={14} /></span>
       <b>{x.ok ? t.receiptOk : t.receiptFail}</b>
       <span>{x.request.side === 'buy' ? t.buy : t.sell} {x.request.asset} · ${x.request.amount}{x.reason ? ` · ${x.reason}` : ''}</span>
+      {x.txHash && <code className="rc-tx">{x.txHash.slice(0, 8)}…{x.txHash.slice(-6)}</code>}
       {x.explorerUrl && <a href={x.explorerUrl} target="_blank" rel="noreferrer">{t.viewTx} ↗</a>}
     </div>
   );

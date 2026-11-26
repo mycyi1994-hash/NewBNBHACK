@@ -175,11 +175,12 @@ const en = {
   stale: 'Delayed', staleAt: (ago: string) => `Delayed · last update ${ago} ago`,
   ctxCex: (a: string, perp: boolean) => `${a}/USDT ${perp ? 'perp' : 'spot'} · HashKey`, ctxDex: (s: string) => `${s}/USDT · HSKSwap`,
   ctxNow: 'The user is looking at', planMini: 'Plan', makeBot: 'Hire this plan', planNeeds: (m: string) => `Still needed: ${m}`,
-  receiptOk: 'Done', receiptFail: 'Not executed', viewTx: 'View transaction',
+  receiptOk: 'Filled', receiptFail: 'Not executed', viewTx: 'View on HSK explorer',
   navAgents: 'Agent market', agTitle: 'Agent market', agSub: 'Agents built by Moa: each follows one fixed rule on one coin. “Can hire” agents trade on HSKSwap from your vault, so their backtests pay HSKSwap’s 0.3% fee. “Signal only” agents are a demo for coins HSKSwap does not list (0.1% fee). Nothing is promised.',
   agTopTitle: 'Top 5 by Sharpe', agTopSub: '· equity over the same period', agAsset: 'Coin', agAll: 'All', agStyleLabel: 'Style',
   agStyle: { all: 'All', trend: 'Trend', revert: 'Mean reversion', collect: 'Collect' } as Record<'all' | 'trend' | 'revert' | 'collect', string>,
   agSortLabel: 'Sort', agSort: { sharpe: 'Sharpe, high first', total: 'Period return, high first', dd: 'Smallest worst drop' } as Record<'sharpe' | 'total' | 'dd', string>,
+  agNick: { tsmom: 'Long View', break: 'Turtle', trend200: 'Guardian', golden: 'Golden', trend: 'Surfer', ema: 'Cruiser', rsi: 'Bounce', boll: 'Spring', daily: 'Steady', smart: 'Thrifty', trendDca: 'Careful', rsiDca: 'Dip Buyer' } as Record<RuleId, string>,
   agRule: { tsmom: 'Time-series momentum · 12m', trend200: 'Trend follow · MA200', golden: 'Golden cross · 50/200', trend: 'Trend follow · MA50', ema: 'EMA cross · 20/50', break: 'Breakout · 20/10', rsi: 'RSI bounce · 30/55', boll: 'Bollinger reversion', daily: 'Daily collect', smart: 'Smart DCA', trendDca: 'Trend-filter DCA', rsiDca: 'RSI-weighted DCA' } as Record<RuleId, string>,
   agLine: { tsmom: 'Long while the price is higher than a year ago.', trend200: 'Long while the price is above its 200-day average.', golden: 'Long while the 50-day average is above the 200-day average.', trend: 'Long while the price is above its 50-day average.', ema: 'Long while the 20-day EMA is above the 50-day EMA.', break: 'Long on a new 20-day high, out on a 10-day low.', rsi: 'Long when RSI(14) drops under 30, out above 55.', boll: 'Long under the lower Bollinger band, out at the middle.', daily: 'Buys the same amount every day.', smart: 'Buys more under the 20-day average, less above (×0.5 to ×2).', trendDca: 'Buys on days the price is above its 50-day average, skips the rest.', rsiDca: 'Buys ×2 when RSI is under 35, ×0.5 when above 65.' } as Record<RuleId, string>,
   agRules: {
@@ -346,10 +347,15 @@ const en = {
   ovLabel: { tsmom: '12-month return (hold above 0)', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20-day high · 10-day low', rsi: 'RSI 30 / 55', boll: 'Bollinger bands', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' } as Record<RuleId, string>,
   btStd: '3 years', btSeam: (d: string) => `Days before ${d} (the exchange listing) are Gate spot daily candles.`, btSeamTag: 'HashKey listing',
   btSay: (o: { collect: boolean; better: boolean; trades: number; hold: string; total: string; held: string }) => (o.collect
-    ? `Bought once and held: ${o.hold}. Bought in ${o.trades} parts by this rule: ${o.total}.`
-    : o.trades === 0 ? `It never bought in this period. Just holding would have made ${o.hold}.`
-      : o.better ? `Just holding: ${o.hold}. This agent: ${o.total}, holding the coin ${o.held} of the time.`
-        : `It did worse than just holding (${o.hold}): ${o.total}. It held the coin ${o.held} of the time.`),
+    ? `The result of ${o.trades} buys by this rule, against buying once at the start and holding.`
+    : o.trades === 0 ? 'It never bought in this period: its signal stayed off.'
+      : o.better ? `It held the coin ${o.held} of the time and sat in cash the rest.`
+        : `It did worse than just holding, with the coin held ${o.held} of the time.`),
+  vcLive: 'Connected', vcDemo: 'Demo mode', vcDemoShort: 'orders are not sent', vcDemoLine: 'Orders are not sent. With a vault connected, agents trade only inside its limits.',
+  vcUsed: (u: string, m: string) => `$${u} of $${m} used today`, vcSide: (l: string) => `$${l} left today`, vcExplorer: 'HSK explorer',
+  vcSafe: ['Asks you before every trade', 'Limits are enforced by the vault contract', 'Only the vault owner can withdraw'],
+  ocAsk: 'Approval needed', ocBuy: (u: string, a: string) => `Buy $${u} of ${a}`, ocSell: (q: string, a: string) => `Sell ${q} ${a}`, ocWhy: 'Why', ocCap: (u: string, m: string) => `Per trade $${u} of $${m}`, ocLeft: (l: string) => `$${l} left today`,
+  btHeldStat: 'Time in the coin', btNow: 'Now', btThis: 'This agent', btVs: 'vs',
   aiBadge: 'AI agent', btYear: '1 year', btAll: 'All history', btRank: (k: number, n: number) => `#${k} of ${n} here`, btPrev: 'Previous agent', btNext: 'Next agent', btHeld: 'holding', btStart: 'Start',
   sortPick: 'Moa’s order', sortEdge: 'vs holding', sortSharpe: 'Sharpe', rankWhy: (classic: boolean, dd: string) => `${classic ? 'Published classic with' : 'Has'} the smallest worst drop here (${dd})`,
   topClassic: 'Published classics', fOrigin: 'Origin', thOrigin: 'Origin',
@@ -554,11 +560,12 @@ const ko: typeof en = {
   stale: '지연', staleAt: (ago) => `지연 · ${ago} 전 마지막 업데이트`,
   ctxCex: (a, perp) => `${a}/USDT ${perp ? '무기한' : '현물'} · HashKey`, ctxDex: (s) => `${s}/USDT · HSKSwap`,
   ctxNow: '사용자가 보고 있는 화면', planMini: '계획', makeBot: '이 계획 맡기기', planNeeds: (m) => `더 필요한 정보: ${m}`,
-  receiptOk: '체결됨', receiptFail: '실행 안 됨', viewTx: '거래 보기',
+  receiptOk: '체결됨', receiptFail: '실행 안 됨', viewTx: 'HSK 익스플로러에서 보기',
   navAgents: '에이전트 마켓', agTitle: '에이전트 마켓', agSub: 'Moa가 만든 에이전트예요. 각자 코인 하나에서 정해진 규칙 하나를 지켜요. “맡길 수 있음” 에이전트는 내 볼트로 HSKSwap에서 거래해서, 백테스트에도 HSKSwap 수수료 0.3%를 뺐어요. “신호만” 에이전트는 HSKSwap에 없는 코인용 데모예요(수수료 0.1%). 수익을 약속하지 않아요.',
   agTopTitle: '샤프 상위 5', agTopSub: '· 같은 기간 수익 곡선', agAsset: '코인', agAll: '전체', agStyleLabel: '스타일',
   agStyle: { all: '전체', trend: '추세', revert: '역추세', collect: '모으기' },
   agSortLabel: '정렬', agSort: { sharpe: '샤프 높은 순', total: '기간 수익 높은 순', dd: '덜 빠진 순' },
+  agNick: { tsmom: '롱뷰', break: '터틀', trend200: '가디언', golden: '골든', trend: '서퍼', ema: '크루저', rsi: '바운스', boll: '스프링', daily: '꾸준이', smart: '알뜰이', trendDca: '신중이', rsiDca: '줍줍이' },
   agRule: { tsmom: '시계열 모멘텀 · 12개월', trend200: '추세 추종 · MA200', golden: '골든크로스 · 50/200', trend: '추세 추종 · MA50', ema: 'EMA 골든크로스 · 20/50', break: '돌파 · 20/10일', rsi: 'RSI 반등 · 30/55', boll: '볼린저 역추세', daily: '매일 모으기', smart: '똑똑한 분할매수', trendDca: '추세 필터 분할매수', rsiDca: 'RSI 가중 분할매수' },
   agLine: { tsmom: '가격이 1년 전보다 높은 동안 들고 있어요.', trend200: '가격이 200일 평균 위에 있는 동안만 들고 있어요.', golden: '50일 평균이 200일 평균 위에 있는 동안 들고 있어요.', trend: '가격이 50일 평균 위에 있는 동안만 들고 있어요.', ema: '20일 EMA가 50일 EMA 위에 있는 동안 들고 있어요.', break: '20일 신고가에 사고, 10일 신저가에 팔아요.', rsi: 'RSI(14)가 30 아래로 가면 사고, 55 위에서 팔아요.', boll: '많이 떨어졌을 때(볼린저 하단 아래) 사고, 평소 가격(중간선)으로 돌아오면 팔아요.', daily: '매일 같은 금액만큼 사요.', smart: '20일 평균보다 싸면 더, 비싸면 덜 사요(×0.5~×2).', trendDca: '가격이 50일 평균 위인 날만 사고, 나머지 날은 쉬어요.', rsiDca: 'RSI 35 아래면 2배, 65 위면 절반만 사요.' },
   agRules: {
@@ -725,10 +732,15 @@ const ko: typeof en = {
   ovLabel: { tsmom: '12개월 수익률 (0 위면 보유)', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20일 고가 · 10일 저가', rsi: 'RSI 30 / 55', boll: '볼린저 밴드', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' },
   btStd: '3년', btSeam: (d) => `${d}(거래소 상장) 이전은 Gate 현물 일봉을 이어 붙였어요.`, btSeamTag: 'HashKey 상장',
   btSay: (o) => (o.collect
-    ? `한 번에 사서 들고 있었다면 ${o.hold}, 이 규칙대로 ${o.trades}번 나눠 샀다면 ${o.total}였어요.`
-    : o.trades === 0 ? `이 기간에는 한 번도 사지 않았어요. 그냥 들고 있었다면 ${o.hold}였어요.`
-      : o.better ? `그냥 들고 있었다면 ${o.hold}, 이 에이전트는 ${o.total}. 기간의 ${o.held}만 코인을 들고 있었어요.`
-        : `그냥 들고 있는 것(${o.hold})보다 못했어요: ${o.total}. 기간의 ${o.held} 동안 코인을 들고 있었어요.`),
+    ? `이 규칙대로 ${o.trades}번 나눠 산 결과예요. 비교 대상은 처음에 한 번 사서 들고 있기예요.`
+    : o.trades === 0 ? '이 기간에는 한 번도 사지 않았어요. 신호가 켜진 적이 없어요.'
+      : o.better ? `기간의 ${o.held}만 코인을 들고 있었고, 나머지는 현금으로 쉬었어요.`
+        : `그냥 들고 있는 것보다 못했어요. 기간의 ${o.held} 동안 코인을 들고 있었어요.`),
+  vcLive: '연결됨', vcDemo: '데모 모드', vcDemoShort: '주문을 보내지 않아요', vcDemoLine: '주문을 보내지 않아요. 볼트를 연결하면 한도 안에서만 실제로 체결돼요.',
+  vcUsed: (u, m) => `오늘 $${u} / $${m} 사용`, vcSide: (l) => `오늘 $${l} 남음`, vcExplorer: 'HSK 익스플로러',
+  vcSafe: ['매매 전마다 먼저 물어봐요', '한도는 볼트 컨트랙트가 강제해요', '출금은 볼트 주인만 할 수 있어요'],
+  ocAsk: '승인 요청', ocBuy: (u, a) => `${a} $${u} 매수`, ocSell: (q, a) => `${a} ${q}개 매도`, ocWhy: '이유', ocCap: (u, m) => `1회 한도 $${u} / $${m}`, ocLeft: (l) => `오늘 $${l} 남음`,
+  btHeldStat: '보유 시간', btNow: '지금', btThis: '이 에이전트', btVs: 'vs',
   aiBadge: 'AI 에이전트', btYear: '1년', btAll: '전체', btRank: (k, n) => `이 시장 ${n}개 중 ${k}위`, btPrev: '이전 에이전트', btNext: '다음 에이전트', btHeld: '보유 구간', btStart: '시작',
   sortPick: '추천순', sortEdge: '보유 대비 순', sortSharpe: '샤프 순', rankWhy: (classic, dd) => `${classic ? '검증된 클래식 중 ' : ''}여기서 가장 덜 빠졌어요 (${dd})`,
   topClassic: '검증된 전략', fOrigin: '출처', thOrigin: '출처',

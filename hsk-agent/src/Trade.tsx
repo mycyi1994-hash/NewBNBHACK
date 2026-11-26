@@ -398,7 +398,7 @@ function BacktestChip({ a, onClose }: { a: Agent; onClose: () => void }) {
   const { t } = useT();
   return (
     <span className="bt-chip">
-      <b>{t.btOn(t.agRule[a.rule])}</b>
+      <b>{t.btOn(t.agNick[a.rule])}</b>
       {t.ovLabel[a.rule] && <span className="bt-key"><i className="k-line" />{t.ovLabel[a.rule]}</span>}
       <span className="bt-key"><i className="k-buy">▲</i>{t.buy}</span>
       {a.kind === 'position' && <span className="bt-key"><i className="k-sell">▼</i>{t.sell}</span>}

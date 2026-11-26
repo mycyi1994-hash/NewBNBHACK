@@ -2,6 +2,7 @@
 // and the controls that matter: ask Moa, change amount, pause, records, remove). Nothing here recommends
 // or explains; that is Moa's job.
 import { Fragment, useState } from 'react';
+import { VaultCard } from './VaultCard.tsx';
 import { useT } from './i18n.ts';
 import type { Quote } from './market.ts';
 import type { VaultInfo } from './parts.tsx';
@@ -108,18 +109,8 @@ export default function MyAgents({ hired, quotes, vault, execs, now, onEdit, onP
         </div>
       )}
 
-      <section className="info-card">
-        <div className="info-title">{t.mineVault}{!vault?.configured && <span className="badge sig-wait"><i />{t.mineDemo}</span>}</div>
-        {vault?.configured ? (
-          <dl className="kv">
-            <div><dt>{t.perTrade}</dt><dd>${vault.maxTradeUsdt}</dd></div>
-            <div><dt>{t.perDay}</dt><dd>${vault.maxDailyUsdt}</dd></div>
-            <div><dt>{t.leftToday}</dt><dd>${vault.remainingTodayUsdt}</dd></div>
-            <div><dt>{t.balance}</dt><dd>{Number(vault.usdtBalance).toFixed(2)}</dd></div>
-          </dl>
-        ) : <p className="muted">{t.noVault}</p>}
-        <p className="muted">{t.mineStopNote}</p>
-      </section>
+      <VaultCard vault={vault} />
+      <p className="muted small">{t.mineStopNote}</p>
 
       {execs.length > 0 && (
         <section>

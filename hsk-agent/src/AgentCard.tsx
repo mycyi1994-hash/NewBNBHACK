@@ -7,10 +7,12 @@ import { useT, type Strings } from './i18n.ts';
 import { CoinMark } from './CoinMark.tsx';
 import { Icon } from './Icons.tsx';
 
-export const pct = (v: number, d = 1) => `${v > 0 ? '+' : ''}${(v * 100).toFixed(d)}%`;
+/** Signed percent with a true minus sign, one decimal: the one number format used across the app. */
+export const pct = (v: number, d = 1) => { const x = Math.abs(v * 100).toFixed(d); return `${Number(x) === 0 ? '' : v > 0 ? '+' : '−'}${x}%`; };
 export const drop = (v: number) => `−${(v * 100).toFixed(1)}%`;
 export const multText = (m: number) => String(Math.round(m * 100) / 100);
-export const agentName = (t: Strings, a: { base: string; rule: RuleId }) => `${a.base} ${t.agRule[a.rule]}`;
+/** An agent goes by a short name ("BTC Turtle"); the rule it follows ("Breakout · 20/10") is its subtitle. */
+export const agentName = (t: Strings, a: { base: string; rule: RuleId }) => `${a.base} ${t.agNick[a.rule]}`;
 
 export function statePill(t: Strings, a: Agent): { text: string; cls: string } {
   if (a.kind === 'position') return a.live ? { text: t.acHolding, cls: 'sig-good' } : { text: t.acWaiting, cls: 'sig-neutral' };
@@ -42,6 +44,10 @@ const ICON: Record<RuleId, string> = {
   break: 'M3 13h5l2-6 2 9 2-5h3', rsi: 'M3 6h14M3 14h14M4 12l3-5 3 7 3-6 3 4', boll: 'M3 5c5 3 9 3 14 0M3 15c5-3 9-3 14 0M3 10h14',
   daily: 'M4 16h3v-3h3v-3h3V7h3', smart: 'M3 7c3 0 4 7 7 7s4-7 7-7M6 16h8', trendDca: 'M3 13l4-4 3 2 7-6M3 17h14', rsiDca: 'M4 16V9M8 16V5M12 16v-4M16 16V8',
 };
+/** An agent's face: its rule's icon on its own colour, the same wherever the agent appears. */
+export function Face({ rule, size = 'md' }: { rule: RuleId; size?: 'sm' | 'md' | 'lg' }) {
+  return <span className={`face r-${rule} ${size}`} aria-hidden><RuleIcon rule={rule} /></span>;
+}
 export function RuleIcon({ rule }: { rule: RuleId }) {
   return <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden><path d={ICON[rule]} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
@@ -61,9 +67,9 @@ export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions 
       <button className={`frow${picked ? ' on' : ''}`} onClick={onPick} aria-pressed={picked}>
         <span className={`frow-rank${rank && rank <= 3 ? ' top' : ''}`}>{rank}</span>
         <span className="frow-who">
-          <span className="frow-ic" aria-hidden><RuleIcon rule={a.rule} /></span>
+          <Face rule={a.rule} size="sm" />
           <span className="frow-main">
-            <span className="frow-title"><b>{t.agRule[a.rule]}</b>{a.tier === 1 && <span className="frow-star" data-tip={t.agOrigin[a.rule]}>★</span>}{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
+            <span className="frow-title"><b>{t.agNick[a.rule]}</b><span className="frow-rule">{t.agRule[a.rule]}</span>{a.tier === 1 && <span className="frow-star" data-tip={t.agOrigin[a.rule]}>★</span>}{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
             <span className="frow-desc">{t.agLine[a.rule]}</span>
           </span>
         </span>
@@ -80,10 +86,10 @@ export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions 
 
   const head = (
     <header className="ag-card-head">
-      <span className={`ag-avatar ag-r-${a.rule}`} aria-hidden><RuleIcon rule={a.rule} /></span>
+      <Face rule={a.rule} />
       <div className="ag-card-title">
         <b>{agentName(t, a)}</b>
-        <span className="ag-meta"><CoinMark base={a.base} />{sourceLine(t, a)}</span>
+        <span className="ag-meta"><CoinMark base={a.base} />{t.agRule[a.rule]}</span>
       </div>
       <span className={`sig ${pill.cls}`}>{pill.text}</span>
     </header>

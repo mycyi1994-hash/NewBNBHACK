@@ -8,20 +8,17 @@
 // no creators, followers or subscriber counts here.
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SlidePill } from './motion.tsx';
-import { useT, type Strings } from './i18n.ts';
-import { byMerit, idle, type Agent, type Style, type Tier } from './agents.ts';
-import { agentName, drop, pct, statePill, Equity, RuleIcon } from './AgentCard.tsx';
-import { CoinMark } from './CoinMark.tsx';
+import { useT } from './i18n.ts';
+import { byMerit, idle, type Agent, type Tier } from './agents.ts';
+import { agentName, drop, pct, statePill, Equity, Face } from './AgentCard.tsx';
 import { Icon, Spark } from './Icons.tsx';
 
 type Tab = 'top' | 'market';
 type Rank = 'classic' | 'steady' | 'bold';
 type Sort = 'pick' | 'dd' | 'total' | 'sharpe';
-type Use = 'run' | 'signal' | 'all';
 const LINE = ['#3b5bdb', '#12b886', '#15aabf', '#f08c00', '#e03131', '#9c36b5', '#868e96', '#f783ac', '#4dabf7', '#fab005'];
 const sign = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
 const day = (s: number) => { const d = new Date(s * 1000); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`; };
-const source = (t: Strings, a: Agent) => (a.kind === 'collect' ? t.acSrcCollect : a.runnable ? t.acSrcPos : t.acSrcSignal(a.market?.kind === 'perp'));
 
 function readStars(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem('moa.stars') ?? '[]') as string[]); } catch { return new Set(); }
@@ -85,9 +82,6 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
   const [rank, setRank] = useState<Rank>('classic');
   const [q, setQ] = useState('');
   const [asset, setAsset] = useState('all');
-  const [style, setStyle] = useState<'all' | Style>('all');
-  const [risk, setRisk] = useState<'all' | '1' | '2' | '3'>('all');
-  const [use, setUse] = useState<Use>('run');
   const [origin, setOrigin] = useState<'all' | '1' | '2' | '3'>('all');
   const [sort, setSort] = useState<Sort>('pick');
   const [stars, setStars] = useState<Set<string>>(readStars);
@@ -97,15 +91,14 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
   const ranked = useMemo(() => (rank === 'classic' ? runnable.filter((a) => a.tier === 1) : [...runnable])
     .sort((p, r) => Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank]);
   const top = ranked.slice(0, 10);
-  const assets = useMemo(() => (agents ?? []).map((a) => a.base).filter((b, i, xs) => xs.indexOf(b) === i), [agents]);
+  const assets = useMemo(() => runnable.map((a) => a.base).filter((b, i, xs) => xs.indexOf(b) === i), [runnable]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const xs = (agents ?? []).filter((a) => (use === 'all' || a.runnable === (use === 'run'))
-      && (asset === 'all' || a.base === asset) && (style === 'all' || a.style === style) && (risk === 'all' || String(a.risk) === risk)
-      && (origin === 'all' || String(a.tier) === origin)
+    // Only agents that can be hired; a coin without an HSKSwap pool shows its signal-only agents on its own chart.
+    const xs = runnable.filter((a) => (asset === 'all' || a.base === asset) && (origin === 'all' || String(a.tier) === origin)
       && (!needle || agentName(t, a).toLowerCase().includes(needle)));
     return xs.sort((p, r) => (sort === 'pick' ? byMerit(p, r) : sort === 'sharpe' ? r.sharpe - p.sharpe : sort === 'total' ? r.total - p.total : p.maxDd - r.maxDd));
-  }, [agents, q, asset, style, risk, use, sort, origin, t]);
+  }, [runnable, q, asset, sort, origin, t]);
 
   const star = (id: string) => setStars((cur) => {
     const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id);
@@ -170,7 +163,7 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
                 <span className="rank-n">{i < 3 ? <Icon name="medal" size={16} /> : i + 1}</span>
                 <span className="rank-name">
                   <b>{agentName(t, a)}</b>
-                  <small><span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span><CoinMark base={a.base} /><span className="rank-src">{source(t, a)}</span></small>
+                  <small><span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span><span className="rank-src">{t.agRule[a.rule]}</span></small>
                 </span>
                 <span className={sign(a.total - a.hold)}>{pct(a.total - a.hold)}</span>
                 <span className={sign(a.total)}>{pct(a.total)}</span>
@@ -189,20 +182,9 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
         <>
           <div className="mp-filters">
             <label className="mp-search"><Icon name="search" size={16} /><input id="mp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.mpSearch} aria-label={t.mpSearch} autoComplete="off" /></label>
-            <select value={use} onChange={(e) => setUse(e.target.value as Use)} aria-label={t.fUse}>
-              {(['run', 'signal', 'all'] as Use[]).map((k) => <option key={k} value={k}>{t.fUse}: {t.agRunF[k]}</option>)}
-            </select>
             <select value={asset} onChange={(e) => setAsset(e.target.value)} aria-label={t.fAsset}>
               <option value="all">{t.fAsset}</option>
               {assets.map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-            <select value={style} onChange={(e) => setStyle(e.target.value as 'all' | Style)} aria-label={t.fStyle}>
-              <option value="all">{t.fStyle}</option>
-              {(['trend', 'revert', 'collect'] as Style[]).map((k) => <option key={k} value={k}>{t.agStyle[k]}</option>)}
-            </select>
-            <select value={risk} onChange={(e) => setRisk(e.target.value as 'all' | '1' | '2' | '3')} aria-label={t.fRisk}>
-              <option value="all">{t.fRisk}</option>
-              {([1, 2, 3] as const).map((k) => <option key={k} value={String(k)}>{t.fRisk}: {t.riskN[k]}</option>)}
             </select>
             <select value={origin} onChange={(e) => setOrigin(e.target.value as 'all' | '1' | '2' | '3')} aria-label={t.fOrigin}>
               <option value="all">{t.fOrigin}</option>
@@ -213,7 +195,7 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
             </select>
           </div>
 
-          <div className="mp-grid stagger" key={`${use}-${asset}-${style}-${risk}-${sort}-${origin}`}>
+          <div className="mp-grid stagger" key={`${asset}-${sort}-${origin}`}>
             {!agents && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="mp-card mp-skel skel-block" />)}
             {shown.map((a) => {
               const pill = statePill(t, a);
@@ -221,38 +203,31 @@ export default function Agents({ agents, failed, onHire, onOpen, onRecommend }: 
               return (
                 <article key={a.id} className={`mp-card${a.runnable ? '' : ' signal-only'}`}>
                   <button className="mp-title" onClick={() => onOpen(a)}>
-                    <span className="mp-ic" aria-hidden><RuleIcon rule={a.rule} /></span>
-                    <b>{agentName(t, a)}</b>
+                    <Face rule={a.rule} />
+                    <span className="mp-name"><b>{agentName(t, a)}</b><small>{t.agRule[a.rule]}</small></span>
                   </button>
                   <div className="mp-meta">
-                    <span><CoinMark base={a.base} />{a.base}</span>
-                    <span>{t.agStyle[a.style]}</span>
-                    <span>{t.fRisk} {t.riskN[a.risk]}</span>
                     <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span>
                     <span className={`badge ${pill.cls}`}><i />{pill.text}</span>
                   </div>
                   <div className="mp-lead">
                     <div>
                       <small>{t.cardEdge(a.days)}</small>
-                      <b className={sign(edge)}>{pct(edge, 2)}</b>
+                      <b className={sign(edge)}>{pct(edge)}</b>
                     </div>
                     <Equity pts={a.equity} up={edge >= 0} />
                   </div>
                   <dl className="mp-stats">
-                    <div><dt>{t.thTotal}</dt><dd className={sign(a.total)}>{pct(a.total, 2)}</dd></div>
+                    <div><dt>{t.thTotal}</dt><dd className={sign(a.total)}>{pct(a.total)}</dd></div>
                     <div><dt>{t.thDd}</dt><dd>{drop(a.maxDd)}</dd></div>
                     <div><dt>{t.thSharpe}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
-                    <div><dt>{t.cardDays}</dt><dd>{a.days}d</dd></div>
-                    <div><dt>{t.acFee}</dt><dd>{(a.fee * 100).toFixed(1)}%</dd></div>
-                    <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{a.trades}</dd></div>
                   </dl>
                   <footer className="mp-foot">
                     <button className={`mp-star${stars.has(a.id) ? ' on' : ''}`} onClick={() => star(a.id)} aria-pressed={stars.has(a.id)} aria-label={t.agStar} data-tip={t.agStar}>
                       <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2L2.5 8l5.2-.7L10 2.5z" fill={stars.has(a.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
                     </button>
-                    {a.runnable
-                      ? <button className="mp-run" onClick={() => onHire(a)}>{t.acHire}</button>
-                      : <button className="mp-run off" onClick={() => onOpen(a)}>{t.acSignal}</button>}
+                    <button className="mp-run ghost" onClick={() => onOpen(a)}>{t.acBacktest}</button>
+                    <button className="mp-run" onClick={() => onHire(a)}>{t.acHire}</button>
                   </footer>
                 </article>
               );

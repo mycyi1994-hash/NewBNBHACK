@@ -12,7 +12,7 @@ import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
 import { byMerit, collectAgents, isRunnable, positionAgents, rescore, type Agent, type Mark } from './agents.ts';
 import { readLevel, recommend } from './recommend.ts';
-import { AgentCard, agentName, drop, pct, sourceLine, statePill, RuleIcon } from './AgentCard.tsx';
+import { AgentCard, agentName, drop, nowLine, pct, sourceLine, statePill, Face } from './AgentCard.tsx';
 import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 import { Icon, Spark } from './Icons.tsx';
@@ -63,12 +63,6 @@ export function trips(a: Agent): Trip[] {
   return out.reverse();
 }
 
-type Sort = 'pick' | 'edge' | 'sharpe';
-const ORDER: Record<Sort, (a: Agent, b: Agent) => number> = {
-  pick: byMerit,
-  edge: (a, b) => (b.total - b.hold) - (a.total - a.hold),
-  sharpe: (a, b) => b.sharpe - a.sharpe,
-};
 
 /** The agent's curve against just holding, with the market's other agents faint behind it (tap one to open it). */
 function Curves({ a, peers, onPick }: { a: Agent; peers: Agent[]; onPick: (p: Agent) => void }) {
@@ -117,10 +111,10 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
     <div className="bt" key={a.id}>
       <section className="bt-who">
         <div className="bt-title">
-          <span className="frow-ic" aria-hidden><RuleIcon rule={a.rule} /></span>
-          <div className="bt-name"><b>{agentName(t, a)}</b><small>{sourceLine(t, a)}</small></div>
-          <span className={`badge ${pill.cls}`}><i />{pill.text}</span>
+          <Face rule={a.rule} size="lg" />
+          <div className="bt-name"><b>{agentName(t, a)}</b><small>{t.agRule[a.rule]} · {sourceLine(t, a)}</small></div>
         </div>
+        <p className={`bt-now ${pill.cls}`}><i />{t.btNow} · {nowLine(t, year)}</p>
         <div className="bt-rank">
           {at >= 0 && ranked.length > 1 && (
             <>
@@ -143,14 +137,18 @@ function Backtest({ a, year, ranked, period, onSelect, onHire, onAsk }: {
       </section>
 
       <section className="bt-perf">
+        <div className="bt-hero">
+          <div className="bt-big"><small>{t.btThis}</small><b className={sign(a.total)}>{pct(a.total)}</b></div>
+          <span className="bt-vs">{t.btVs}</span>
+          <div className="bt-big dim"><small>{t.acHold}</small><b>{pct(a.hold)}</b></div>
+          <span className={`bt-edge ${sign(edge)}`}>{t.vsHold(pct(edge))}</span>
+        </div>
         <p className="bt-say">{t.btSay({ collect: a.kind === 'collect', better: edge >= 0, trades: a.trades, hold: pct(a.hold), total: pct(a.total), held: `${Math.round(a.inMarket * 100)}%` })}</p>
         <dl className="bt-stats">
-          <div className="lead"><dt>{t.thEdge}</dt><dd className={sign(edge)}>{pct(edge)}</dd></div>
-          <div><dt>{t.btAgent}</dt><dd className={sign(a.total)}>{pct(a.total)}</dd></div>
-          <div><dt>{t.acHold}</dt><dd className={sign(a.hold)}>{pct(a.hold)}</dd></div>
           <div><dt>{t.thDd}</dt><dd>{drop(a.maxDd)}</dd></div>
           <div><dt>{t.thSharpe}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
           <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.trades)}</dd></div>
+          <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>
         </dl>
         <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id) : []} onPick={onSelect} />
         <div className="bt-legend">
@@ -204,16 +202,16 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
 }) {
   const { t } = useT();
   const [tab, setTab] = useState<Tab>(sel ? 'bt' : 'list');
-  const [sort, setSort] = useState<Sort>('pick');
   // Picking an agent opens its backtest; closing it goes back to the list.
   useEffect(() => { setTab((cur) => (sel ? 'bt' : cur === 'bt' ? 'list' : cur)); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ranked = useMemo(() => (list ? [...list].sort(ORDER[sort]) : []), [list, sort]);
+  // One order, Moa's: published classics first, then the smaller worst drop. (Other orders live in the agent market.)
+  const ranked = useMemo(() => (list ? [...list].sort(byMerit) : []), [list]);
   const best = list ? recommend(list, { coin, level: readLevel() })?.pick.id : undefined;
   const top = ranked[0];
   const hint = venue === 'dex' ? t.mkHintDex : isRunnable(coin) ? t.mkHintCex(coin) : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
-  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? (sort === 'pick' && top ? `${t.agRule[top.rule]}: ${t.rankWhy(top.tier === 1, drop(top.maxDd))}` : hint) : '';
+  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? (top ? `${t.agNick[top.rule]}: ${t.rankWhy(top.tier === 1, drop(top.maxDd))}` : hint) : '';
 
   return (
     <section className="tdock" aria-label={t.mkTitle}>
@@ -223,17 +221,12 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
           <button role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'on' : ''} onClick={() => setTab('list')}>{t.mkTitle}</button>
           {sel && (
             <button role="tab" aria-selected={tab === 'bt'} className={tab === 'bt' ? 'on' : ''} onClick={() => setTab('bt')}>
-              {t.btTab}<span className="tdock-tab-sub">{t.agRule[sel.rule]}</span>
+              {t.btTab}<span className="tdock-tab-sub">{t.agNick[sel.rule]}</span>
             </button>
           )}
           {swaps && <button role="tab" aria-selected={tab === 'swaps'} className={tab === 'swaps' ? 'on' : ''} onClick={() => setTab('swaps')}>{t.recentSwaps}</button>}
         </div>
         <p className="tdock-note">{note}</p>
-        {tab === 'list' && (
-          <div className="seg" role="group" aria-label={t.fSort}>
-            {(['pick', 'edge', 'sharpe'] as Sort[]).map((k) => <button key={k} className={sort === k ? 'on' : ''} aria-pressed={sort === k} onClick={() => setSort(k)}>{k === 'pick' ? t.sortPick : k === 'edge' ? t.sortEdge : t.sortSharpe}</button>)}
-          </div>
-        )}
         {tab === 'bt' && sel && (
           <div className="seg" role="group" aria-label={t.thPeriod}>
             {(['year', 'std', 'all'] as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} aria-pressed={period === p} onClick={() => setPeriod(p)}>{p === 'year' ? t.btYear : p === 'std' ? t.btStd : t.btAll}</button>)}
@@ -244,7 +237,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
 
       <div className="tdock-body">
         {tab === 'list' && (
-          <div className="frows stagger" key={`${venue}-${coin}-${sort}`}>
+          <div className="frows stagger" key={`${venue}-${coin}`}>
             <div className="frow-head" aria-hidden>
               <span>{t.thRank}</span><span>{t.thName}</span><span>{t.thOrigin}</span><span>{t.thState}</span><span>{t.thCurve}</span><span>{t.thEdge}</span><span>{t.thTotal}</span><span>{t.thDd}</span><span />
             </div>

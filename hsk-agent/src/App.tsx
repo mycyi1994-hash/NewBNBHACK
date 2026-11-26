@@ -12,6 +12,7 @@ import { LangContext, STRINGS, initialLang, saveLang, useT, type Lang } from './
 import { RollNum } from './motion.tsx';
 import { Icon, type IconName } from './Icons.tsx';
 import Trade, { type ShowAgent } from './Trade.tsx';
+import { VaultMini } from './VaultCard.tsx';
 import Agents from './Agents.tsx';
 import MyAgents from './MyAgents.tsx';
 import MyAgentsBar from './MyAgentsBar.tsx';
@@ -55,7 +56,6 @@ function useNow(ms: number) {
   return now;
 }
 
-const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
 /* ---------- shell ---------- */
 
@@ -81,10 +81,7 @@ function Sidebar({ view, go, hired, vault, onOpenHired }: { view: View; go: (v: 
         </div>
       )}
       <div className="sidebar-foot">
-        <div className="nav-item static" data-tip={vault?.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone}>
-          <span className="nav-icon"><Icon name="shield" size={18} /></span>
-          <span className="nav-text">{vault?.configured ? t.vaultOn(short(vault.vault), Number(vault.usdtBalance).toFixed(2), vault.remainingTodayUsdt ?? '0') : t.vaultNone}</span>
-        </div>
+        <VaultMini vault={vault} />
         <button className="nav-item" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} data-tip={t.langLabel}>
           <span className="nav-icon"><Icon name="globe" size={18} /></span>
           <span className="nav-text">{t.langLabel}</span>
