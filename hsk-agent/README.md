@@ -31,6 +31,8 @@ vault contract enforces.
   Gate spot daily candles joined in front (`dailyHistory` in `src/agents.ts`); the join is marked on the chart and
   named under the backtest, and the joined days carry no volume. Hiring is a button on that backtest.
   Moa's agent card and the agent market open the same view ("See the backtest").
+- **The leaderboard is per coin.** One coin's best agents on one chart, against just holding that coin (the dashed
+  line); moving over the chart reads a day, best first, and the line under the pointer comes forward.
 - **Two pages in the market.** "Top agents" ranks the agents that can trade (steady = Sharpe ratio, bold = period
   return) with their equity curves on one chart; "Marketplace" is the searchable, filterable card grid with a "Hire"
   button on every card. Both read `src/agents.ts`; nothing on them is invented (no creators, no subscriber counts).
@@ -64,12 +66,15 @@ vault contract enforces.
   (`pxToRem` in `vite.config.ts`) turns them into rem and the root font size steps up on wider screens, so a 2560px
   monitor gets a slightly larger interface (15px base instead of 14px) instead of small type in a wide frame. Latin and digits are
   Google Sans Flex, Korean is Pretendard.
-- **Well-known strategies come first.** Every rule carries its origin (`TIER` in `src/agents.ts`): published
-  classics (12-month time-series momentum, the Turtle 20/10 breakout, the 200-day average timing rule, the 50/200
-  golden cross), then standard indicator rules (MA50, EMA cross, RSI, Bollinger, plain DCA), then Moa's own DCA
-  variations. That is the first key of every default order: the list under the chart, the marketplace, the
-  "Published classics" tab of the leaderboard, and Moa's pick. The origin and what differs from the source (long
-  only, daily checks, no position sizing) are shown on each agent; nothing claims a fund runs these agents.
+- **Twenty published strategies, and what stands behind each.** Nineteen position rules and plain dollar-cost
+  averaging come from named, public sources (`src/agents.ts`, text in `src/ruleText.ts`): 12-month time-series
+  momentum, the 1/3/12-month trend blend, dual momentum, the 10-month average rule, the golden cross, Turtle
+  systems 1 and 2, Donchian's four-week rule and 5/20 averages, Allen's 4-9-18, MACD, Ichimoku, Keltner, Parabolic
+  SAR, ADX, Aroon, short-horizon crypto momentum, Connors' RSI(2) and Double 7's. Each carries a proof level shown
+  on the agent (`PROOF`): tested in a paper, a real trading record, published by its author, a widely followed
+  signal, or no published test. What differs from the source (long only, daily checks, a parameter Moa had to
+  choose) is said in the text, and nothing claims a fund runs these agents. The four indicator rules and three DCA
+  variations without a public source wait behind "show more". Published strategies lead every default order.
 - **The recommendation is a rule, not a model** (`src/recommend.ts`): only agents that can trade on HSKSwap → the coin
   on screen or named → risk 1–2 for first-timers, 1–3 otherwise → published classics before the rest → the smallest
   worst drop in the backtest (an agent that never traded in the window does not outrank one that did).

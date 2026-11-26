@@ -26,10 +26,16 @@ function readStars(): Set<string> {
 }
 
 /** Equity of the ranked agents over their shared window, as % from the start of that window. */
-function TopChart({ agents }: { agents: Agent[] }) {
-  const { lang } = useT();
+/**
+ * One coin's best agents on one chart, against just holding that coin. Curves of different coins say nothing
+ * side by side, so the chart is per coin. Moving over it reads a day: every agent's result then, best first.
+ * A flat stretch is the agent sitting in cash; the grey dashed line shows what holding did meanwhile.
+ */
+function TopChart({ agents, coin, hot, setHot, onOpen }: { agents: Agent[]; coin: string; hot: string | null; setHot: (id: string | null) => void; onOpen: (a: Agent) => void }) {
+  const { t, lang } = useT();
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 760, rem: 14 });
+  const [at, setAt] = useState<number | null>(null);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -40,37 +46,67 @@ function TopChart({ agents }: { agents: Agent[] }) {
     return () => ro.disconnect();
   }, []);
   // Drawn in real pixels (not a scaled viewBox), so the axis labels keep the size of the rest of the text.
-  const u = size.rem / 14, W = size.w, H = Math.round(Math.min(360 * u, Math.max(190 * u, W * 0.36))), L = 42 * u, R = 8 * u, T = 10 * u, B = 26 * u;
+  const u = size.rem / 14, W = size.w, H = Math.round(Math.min(380 * u, Math.max(210 * u, W * 0.36))), L = 46 * u, R = 10 * u, T = 12 * u, B = 26 * u;
+  // Everything starts where the youngest curve starts, at zero.
   const from = Math.max(...agents.map((a) => a.equity[0]?.time ?? 0));
-  const series = agents.map((a) => {
-    const pts = a.equity.filter((p) => p.time >= from);
-    const base = pts[0]?.value ?? 1;
-    return pts.map((p) => ({ time: p.time, v: p.value / base - 1 }));
-  });
-  const all = series.flat();
+  const rebase = (pts: { time: number; value: number }[]) => { const xs = pts.filter((p) => p.time >= from); const base = xs[0]?.value || 1; return xs.map((p) => ({ time: p.time, v: p.value / base - 1 })); };
+  const series = agents.map((a) => rebase(a.equity));
+  const hold = agents[0] ? rebase(agents[0].bench) : [];
+  const all = [...series.flat(), ...hold];
   if (!all.length) return <div className="top-chart" ref={box} />;
-  const t0 = Math.min(...all.map((p) => p.time)), t1 = Math.max(...all.map((p) => p.time));
-  const step = (Math.max(...all.map((p) => Math.abs(p.v))) > 1 ? 0.5 : 0.25);
-  const lo = Math.floor(Math.min(0, ...all.map((p) => p.v)) / step) * step, hi = Math.ceil(Math.max(0, ...all.map((p) => p.v)) / step) * step || step;
-  const x = (t: number) => L + ((t - t0) / (t1 - t0 || 1)) * (W - L - R);
+  const times = series[0].map((p) => p.time);
+  const t0 = times[0], t1 = times[times.length - 1];
+  const top = Math.max(0, ...all.map((p) => p.v)), bottom = Math.min(0, ...all.map((p) => p.v));
+  const step = [0.1, 0.25, 0.5, 1, 2, 5].find((v) => (top - bottom) / v <= 6) ?? 10;
+  const lo = Math.floor(bottom / step) * step, hi = Math.ceil(top / step) * step || step;
+  const x = (time: number) => L + ((time - t0) / (t1 - t0 || 1)) * (W - L - R);
   const y = (v: number) => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
   const marks: number[] = []; for (let v = lo; v <= hi + 1e-9; v += step) marks.push(+v.toFixed(4));
-  const months = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => t0 + f * (t1 - t0));
-  const fmt = (t: number) => new Date(t * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { month: 'short' });
+  const path = (pts: { time: number; v: number }[]) => pts.map((p, n) => `${n ? 'L' : 'M'}${x(p.time).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
+  const ticks = [0.08, 0.3, 0.52, 0.74, 0.94].map((f) => t0 + f * (t1 - t0));
+  const month = (time: number) => new Date(time * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { year: '2-digit', month: 'short', timeZone: 'UTC' });
+  const dayText = (time: number) => new Date(time * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-GB', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+  const move = (e: React.MouseEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const time = t0 + ((px - L) / (W - L - R)) * (t1 - t0);
+    let i = 0; for (let k = 1; k < times.length; k++) if (Math.abs(times[k] - time) < Math.abs(times[i] - time)) i = k;
+    setAt(i);
+    // The line under the pointer is the one in focus.
+    let best: string | null = null, gap = 14 * u;
+    series.forEach((sr, k) => { const p = sr[Math.min(i, sr.length - 1)]; const d = Math.abs(y(p.v) - py); if (d < gap) { gap = d; best = agents[k].id; } });
+    setHot(best);
+  };
+  const rows = at === null ? [] : [
+    ...agents.map((a, k) => ({ id: a.id, name: agentName(t, a), color: LINE[k % LINE.length], v: series[k][Math.min(at, series[k].length - 1)].v, a })),
+    { id: 'hold', name: t.topHold(coin), color: '#9aa0a6', v: hold[Math.min(at, hold.length - 1)]?.v ?? 0, a: null as Agent | null },
+  ].sort((p, r) => r.v - p.v);
+  const cx = at === null ? 0 : x(times[at]);
   return (
     <div className="top-chart" ref={box}>
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="equity">
-      {marks.map((v) => <g key={v}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className={v === 0 ? 'axis-zero' : 'axis-line'} /><text x={L - 8 * u} y={y(v) + 4 * u} textAnchor="end" className="axis-text">{Math.round(v * 100)}%</text></g>)}
-      {[...series].reverse().map((s, k) => {
-        const i = series.length - 1 - k;
-        return (
-          <path key={agents[i].id} className="draw" pathLength={1} style={{ animationDelay: `${i * 0.05}s` }}
-            d={s.filter((_, n) => n % 2 === 0 || n === s.length - 1).map((p, n) => `${n ? 'L' : 'M'}${x(p.time).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}
-            fill="none" stroke={LINE[i % LINE.length]} strokeWidth={(i === 0 ? 2.2 : 1.5) * u} strokeLinejoin="round" />
-        );
-      })}
-      {months.map((t, i) => <text key={i} x={x(t)} y={H - 6 * u} textAnchor="middle" className="axis-text">{fmt(t)}</text>)}
-    </svg>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t.topChart(agents.length)} onMouseMove={move} onMouseLeave={() => { setAt(null); setHot(null); }}
+        onClick={() => { const a = agents.find((v) => v.id === hot); if (a) onOpen(a); }} style={{ cursor: hot ? 'pointer' : 'crosshair' }}>
+        {marks.map((v) => <g key={v}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className={v === 0 ? 'axis-zero' : 'axis-line'} /><text x={L - 8 * u} y={y(v) + 4 * u} textAnchor="end" className="axis-text">{v > 0 ? '+' : ''}{Math.round(v * 100)}%</text></g>)}
+        <path d={path(hold)} fill="none" className="top-hold" strokeWidth={1.5 * u} />
+        {[...series].reverse().map((sr, k) => {
+          const i = series.length - 1 - k, on = hot === agents[i].id;
+          return <path key={agents[i].id} d={path(sr)} fill="none" stroke={LINE[i % LINE.length]} strokeWidth={(on ? 3 : i === 0 ? 2.2 : 1.6) * u} strokeLinejoin="round" opacity={hot && !on ? 0.22 : 1} className="top-line" />;
+        })}
+        {ticks.map((time, i) => <text key={i} x={x(time)} y={H - 6 * u} textAnchor="middle" className="axis-text">{month(time)}</text>)}
+        {at !== null && (
+          <g pointerEvents="none">
+            <line x1={cx} x2={cx} y1={T} y2={H - B} className="top-guide" />
+            {series.map((sr, k) => <circle key={agents[k].id} cx={cx} cy={y(sr[Math.min(at, sr.length - 1)].v)} r={(hot === agents[k].id ? 5 : 3.5) * u} fill={LINE[k % LINE.length]} stroke="#fff" strokeWidth={1.5 * u} opacity={hot && hot !== agents[k].id ? 0.3 : 1} />)}
+          </g>
+        )}
+      </svg>
+      {at !== null && (
+        <div className={`top-tip${cx > W / 2 ? ' left' : ''}`} style={cx > W / 2 ? { left: L + 6 * u } : { right: R + 6 * u }}>
+          <b>{dayText(times[at])}</b>
+          {rows.map((r) => <span key={r.id} className={r.id === hot ? 'on' : r.id === 'hold' ? 'hold' : ''}><i style={{ background: r.color }} />{r.name}<em className={sign(r.v)}>{pct(r.v)}</em></span>)}
+        </div>
+      )}
     </div>
   );
 }
@@ -81,6 +117,8 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
   const { t } = useT();
   const [tab, setTab] = useState<Tab>('top');
   const [rank, setRank] = useState<Rank>('classic');
+  const [coin, setCoin] = useState('BTC');
+  const [hot, setHot] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [asset, setAsset] = useState('all');
   const [origin, setOrigin] = useState<'all' | '1' | '2' | '3'>('all');
@@ -89,9 +127,13 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
 
   const runnable = useMemo(() => (agents ?? []).filter((a) => a.runnable), [agents]);
   // "Published classics" is the first tab: only strategies with a public record, best risk-adjusted result first.
-  const ranked = useMemo(() => (rank === 'classic' ? runnable.filter((a) => a.tier === 1) : [...runnable])
-    .sort((p, r) => Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank]);
-  const top = ranked.slice(0, 10);
+  // One coin at a time: curves and ranks of different coins do not compare.
+  const coins = useMemo(() => ['BTC', 'ETH', 'HSK'].filter((c) => runnable.some((a) => a.base === c)), [runnable]);
+  const board = coins.includes(coin) ? coin : coins[0] ?? coin;
+  // "Published classics" is the first tab: only strategies with a public record, best risk-adjusted result first.
+  const ranked = useMemo(() => runnable.filter((a) => a.base === board && a.kind === 'position' && (rank !== 'classic' || a.tier === 1))
+    .sort((p, r) => Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank, board]);
+  const top = ranked.slice(0, 6);
   const assets = useMemo(() => runnable.map((a) => a.base).filter((b, i, xs) => xs.indexOf(b) === i), [runnable]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -126,24 +168,30 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
 
       {!failed && tab === 'top' && (
         <>
-          <div className="rank-tabs has-line" role="tablist">
-            <SlidePill dep={rank} />
-            {(['classic', 'steady', 'bold'] as Rank[]).map((k) => <button key={k} role="tab" aria-selected={rank === k} className={rank === k ? 'on' : ''} onClick={() => setRank(k)}>{k === 'classic' ? t.topClassic : k === 'steady' ? t.topSteady : t.topBold}</button>)}
+          <div className="rank-bar">
+            <div className="rank-tabs has-line" role="tablist">
+              <SlidePill dep={rank} />
+              {(['classic', 'steady', 'bold'] as Rank[]).map((k) => <button key={k} role="tab" aria-selected={rank === k} className={rank === k ? 'on' : ''} onClick={() => setRank(k)}>{k === 'classic' ? t.topClassic : k === 'steady' ? t.topSteady : t.topBold}</button>)}
+            </div>
+            <div className="seg" role="group" aria-label={t.topCoin}>
+              {coins.map((c) => <button key={c} className={board === c ? 'on' : ''} aria-pressed={board === c} onClick={() => setCoin(c)}>{c}</button>)}
+            </div>
           </div>
 
           <section className="top-panel">
             <div className="top-main">
               <div className="top-title">{t.topChart(top.length || 10)} <small>{t.topChartSub}</small></div>
-              {agents ? <TopChart key={rank} agents={top} /> : <div className="top-skel skel-block" />}
+              {agents ? <TopChart key={`${rank}-${board}`} agents={top} coin={board} hot={hot} setHot={setHot} onOpen={onOpen} /> : <div className="top-skel skel-block" />}
+              <p className="top-foot">{t.topFlat} {t.topPick}</p>
             </div>
             <div className="top-legend">
               <div className="top-legend-head"><span>{t.topLegendA}</span><span>{top[0] ? t.topLegendB(top[0].days) : ''}</span></div>
               <ol>
-                {(agents ? top : Array.from({ length: 10 }, (_, i) => i)).map((a, i) => typeof a === 'number'
+                {(agents ? top : Array.from({ length: 6 }, (_, i) => i)).map((a, i) => typeof a === 'number'
                   ? <li key={i}><span className="skel" style={{ width: '70%' }} /></li>
                   : (
-                    <li key={a.id}>
-                      <button onClick={() => onOpen(a)}>
+                    <li key={a.id} className={hot === a.id ? 'on' : hot ? 'dim' : ''}>
+                      <button onClick={() => onOpen(a)} onMouseEnter={() => setHot(a.id)} onMouseLeave={() => setHot(null)} onFocus={() => setHot(a.id)} onBlur={() => setHot(null)}>
                         <span className="lg-n">{i + 1}</span>
                         <i style={{ background: LINE[i % LINE.length] }} />
                         <span className="lg-name">{agentName(t, a)}</span>
@@ -151,6 +199,7 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
                       </button>
                     </li>
                   ))}
+                {agents && top[0] && <li className="lg-hold"><span><span className="lg-n" /><i /><span className="lg-name">{t.topHold(board)}</span><span className={`lg-v ${sign(top[0].hold)}`}>{pct(top[0].hold)}</span></span></li>}
               </ol>
             </div>
           </section>

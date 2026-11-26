@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreCollect, scorePosition, positions, FEE_HASHKEY, FEE_HSKSWAP, TIER, type Agent } from './agents.ts';
+import { scoreCollect, scorePosition, positions, overlays, FEE_HASHKEY, FEE_HSKSWAP, POSITION_RULES, PROOF, TIER, type Agent } from './agents.ts';
 import { recommend } from './recommend.ts';
 import { LEAD_DAYS, replayDays } from './replay.ts';
 import { MARKETS } from './cex.ts';
@@ -83,6 +83,22 @@ test('a replay covers the lead-in and every day of the backtest, one daily candl
   assert.equal(days[days.length - 1], a.to);
   assert.equal(days.length, a.days + LEAD_DAYS + 1);
   assert.ok(days.every((d, i) => i === 0 || d - days[i - 1] === DAY));
+});
+
+test('every rule decides on past days only and comes with its origin, proof level and chart lines', () => {
+  const wave = Array.from({ length: 900 }, (_, i) => 100 * (1 + 0.5 * Math.sin(i / 37)) * 1.001 ** i);
+  const b = bars(wave);
+  for (const r of POSITION_RULES) {
+    const all = positions(r.id, b), cut = positions(r.id, b.slice(0, 700));
+    assert.deepEqual(all.slice(0, 700), cut, `${r.id} must not change its past when later days arrive`);
+    assert.ok(all.some(Boolean) && !all.every(Boolean), `${r.id} should be in and out on a wave`);
+    assert.ok(TIER[r.id] >= 1 && PROOF[r.id], `${r.id} has a tier and a proof level`);
+    for (const o of overlays(r.id, b)) assert.equal(o.values.length, b.length);
+  }
+  assert.equal(POSITION_RULES.filter((r) => TIER[r.id] === 1).length + 1, 20, 'twenty published strategies: nineteen position rules and plain DCA');
+  // Dual momentum stays out while the other coin is stronger over the same year.
+  const strong = bars(wave.map((v, i) => v * 1.002 ** i));
+  assert.ok(positions('dualMom', b, strong).filter(Boolean).length < positions('dualMom', b).filter(Boolean).length);
 });
 
 const fake = (p: Partial<Agent>): Agent => ({

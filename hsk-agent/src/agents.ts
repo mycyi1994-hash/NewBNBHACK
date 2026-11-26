@@ -17,7 +17,10 @@ import { gateDailyRange } from './gate.ts';
 import * as I from './indicators.ts';
 import type { Asset } from './intent.ts';
 
-export type PositionRule = 'tsmom' | 'break' | 'trend200' | 'golden' | 'trend' | 'ema' | 'rsi' | 'boll';
+export type PositionRule =
+  | 'tsmom' | 'multiTrend' | 'dualMom' | 'trend200' | 'golden' | 'break' | 'turtle2' | 'donchian' | 'ma520' | 'triple'
+  | 'macd' | 'ichimoku' | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7'
+  | 'trend' | 'ema' | 'rsi' | 'boll';
 export type CollectRule = 'daily' | 'smart' | 'trendDca' | 'rsiDca';
 export type RuleId = PositionRule | CollectRule;
 export type Style = 'trend' | 'revert' | 'collect';
@@ -35,18 +38,48 @@ export type Risk = 1 | 2 | 3;
  */
 export type Tier = 1 | 2 | 3;
 export const TIER: Record<RuleId, Tier> = {
-  tsmom: 1, break: 1, trend200: 1, golden: 1,
-  trend: 2, ema: 2, rsi: 2, boll: 2, daily: 2,
+  tsmom: 1, multiTrend: 1, dualMom: 1, trend200: 1, golden: 1, break: 1, turtle2: 1, donchian: 1, ma520: 1, triple: 1,
+  macd: 1, ichimoku: 1, keltner: 1, psar: 1, adx: 1, aroon: 1, cryptoMom: 1, rsi2: 1, double7: 1, daily: 1,
+  trend: 2, ema: 2, rsi: 2, boll: 2,
   smart: 3, trendDca: 3, rsiDca: 3,
 };
+/**
+ * What stands behind a rule, said plainly on every agent:
+ *  paper: tested in a published paper; record: run with real money and published afterwards;
+ *  book: published by its author and widely used, with no formal test of this exact rule;
+ *  common: a widely followed signal with no single author; none: nothing published, only the backtest here.
+ */
+export type Proof = 'paper' | 'record' | 'book' | 'common' | 'none';
+export const PROOF: Record<RuleId, Proof> = {
+  tsmom: 'paper', multiTrend: 'paper', dualMom: 'paper', trend200: 'paper', cryptoMom: 'paper',
+  break: 'record', turtle2: 'record',
+  donchian: 'book', ma520: 'book', triple: 'book', macd: 'book', ichimoku: 'book', keltner: 'book', psar: 'book', adx: 'book', aroon: 'book', rsi2: 'book', double7: 'book', daily: 'book',
+  golden: 'common',
+  trend: 'none', ema: 'none', rsi: 'none', boll: 'none', smart: 'none', trendDca: 'none', rsiDca: 'none',
+};
 /** Days of history a rule needs before its first decision (the slow ones need their long averages). */
-const NEED: Partial<Record<RuleId, number>> = { tsmom: 365, trend200: 200, golden: 200 };
+const NEED: Partial<Record<RuleId, number>> = { tsmom: 365, multiTrend: 365, dualMom: 365, trend200: 200, golden: 200, rsi2: 200, double7: 200, ichimoku: 90 };
 
 export const POSITION_RULES: { id: PositionRule; style: Style; risk: Risk }[] = [
   { id: 'tsmom', style: 'trend', risk: 2 },
-  { id: 'break', style: 'trend', risk: 3 },
+  { id: 'multiTrend', style: 'trend', risk: 2 },
+  { id: 'dualMom', style: 'trend', risk: 2 },
   { id: 'trend200', style: 'trend', risk: 2 },
   { id: 'golden', style: 'trend', risk: 2 },
+  { id: 'break', style: 'trend', risk: 3 },
+  { id: 'turtle2', style: 'trend', risk: 2 },
+  { id: 'donchian', style: 'trend', risk: 3 },
+  { id: 'ma520', style: 'trend', risk: 3 },
+  { id: 'triple', style: 'trend', risk: 3 },
+  { id: 'macd', style: 'trend', risk: 3 },
+  { id: 'ichimoku', style: 'trend', risk: 2 },
+  { id: 'keltner', style: 'trend', risk: 3 },
+  { id: 'psar', style: 'trend', risk: 3 },
+  { id: 'adx', style: 'trend', risk: 3 },
+  { id: 'aroon', style: 'trend', risk: 3 },
+  { id: 'cryptoMom', style: 'trend', risk: 3 },
+  { id: 'rsi2', style: 'revert', risk: 2 },
+  { id: 'double7', style: 'revert', risk: 2 },
   { id: 'trend', style: 'trend', risk: 2 },
   { id: 'ema', style: 'trend', risk: 2 },
   { id: 'rsi', style: 'revert', risk: 3 },
@@ -163,36 +196,162 @@ const gateDaily = collectHistory;
 
 /* ---------- position agents ---------- */
 
-/** Position per day (decided at that day's close). */
-export function positions(rule: PositionRule, bars: Bar[]): boolean[] {
+/* ----- the series the rules read (also drawn on the chart, so a buy or sell can be read off it) ----- */
+
+const NANS = (n: number) => new Array<number>(n).fill(NaN);
+/** Highest high / lowest low of the n days before each day (today not included). */
+const prevHigh = (bars: Bar[], n: number) => bars.map((_, i) => { if (i < n) return NaN; let v = -Infinity; for (let j = i - n; j < i; j++) v = Math.max(v, bars[j].high); return v; });
+const prevLow = (bars: Bar[], n: number) => bars.map((_, i) => { if (i < n) return NaN; let v = Infinity; for (let j = i - n; j < i; j++) v = Math.min(v, bars[j].low); return v; });
+/** Midpoint of the n-day range ending today (Ichimoku's lines). */
+const mid = (bars: Bar[], n: number) => bars.map((_, i) => { if (i < n - 1) return NaN; let h = -Infinity, l = Infinity; for (let j = i - n + 1; j <= i; j++) { h = Math.max(h, bars[j].high); l = Math.min(l, bars[j].low); } return (h + l) / 2; });
+const shift = (xs: number[], by: number) => xs.map((_, i) => (i >= by ? xs[i - by] : NaN));
+/** EMA of a series that starts with empty values. */
+const emaFrom = (xs: number[], n: number) => { const at = xs.findIndex((v) => Number.isFinite(v)); if (at < 0) return NANS(xs.length); return [...NANS(at), ...I.ema(xs.slice(at), n)]; };
+/** Wilder's average true range, one value per day. */
+function atrSeries(bars: Bar[], n: number): number[] {
+  const out = NANS(bars.length);
+  let a = 0;
+  for (let i = 1; i < bars.length; i++) {
+    const tr = Math.max(bars[i].high - bars[i].low, Math.abs(bars[i].high - bars[i - 1].close), Math.abs(bars[i].low - bars[i - 1].close));
+    if (i <= n) { a += tr / n; if (i === n) out[i] = a; } else { a = (a * (n - 1) + tr) / n; out[i] = a; }
+  }
+  return out;
+}
+/** Wilder's parabolic stop-and-reverse (step 0.02, maximum 0.20): the stop, and whether the trend is up. */
+function psar(bars: Bar[]): { sar: number[]; up: boolean[] } {
+  const n = bars.length, sar = NANS(n), up = new Array<boolean>(n).fill(false);
+  if (n < 3) return { sar, up };
+  let long = bars[1].close >= bars[0].close, af = 0.02;
+  let ep = long ? Math.max(bars[0].high, bars[1].high) : Math.min(bars[0].low, bars[1].low);
+  let s = long ? Math.min(bars[0].low, bars[1].low) : Math.max(bars[0].high, bars[1].high);
+  sar[1] = s; up[1] = long;
+  for (let i = 2; i < n; i++) {
+    s += af * (ep - s);
+    if (long) {
+      s = Math.min(s, bars[i - 1].low, bars[i - 2].low);
+      if (bars[i].low < s) { long = false; s = ep; ep = bars[i].low; af = 0.02; } else if (bars[i].high > ep) { ep = bars[i].high; af = Math.min(0.2, af + 0.02); }
+    } else {
+      s = Math.max(s, bars[i - 1].high, bars[i - 2].high);
+      if (bars[i].high > s) { long = true; s = ep; ep = bars[i].high; af = 0.02; } else if (bars[i].low < ep) { ep = bars[i].low; af = Math.min(0.2, af + 0.02); }
+    }
+    sar[i] = s; up[i] = long;
+  }
+  return { sar, up };
+}
+/** Wilder's directional movement: +DI, −DI and ADX. */
+function dmi(bars: Bar[], n = 14) {
+  const len = bars.length, pdi = NANS(len), mdi = NANS(len), adx = NANS(len);
+  let sp = 0, sm = 0, st = 0, a = 0, seen = 0;
+  for (let i = 1; i < len; i++) {
+    const upMove = bars[i].high - bars[i - 1].high, dnMove = bars[i - 1].low - bars[i].low;
+    const p = upMove > dnMove && upMove > 0 ? upMove : 0, m = dnMove > upMove && dnMove > 0 ? dnMove : 0;
+    const tr = Math.max(bars[i].high - bars[i].low, Math.abs(bars[i].high - bars[i - 1].close), Math.abs(bars[i].low - bars[i - 1].close));
+    if (i <= n) { sp += p; sm += m; st += tr; if (i < n) continue; } else { sp += p - sp / n; sm += m - sm / n; st += tr - st / n; }
+    pdi[i] = st ? (100 * sp) / st : 0; mdi[i] = st ? (100 * sm) / st : 0;
+    const dx = pdi[i] + mdi[i] ? (100 * Math.abs(pdi[i] - mdi[i])) / (pdi[i] + mdi[i]) : 0;
+    seen++;
+    if (seen <= n) { a += dx / n; if (seen === n) adx[i] = a; } else { a = (a * (n - 1) + dx) / n; adx[i] = a; }
+  }
+  return { pdi, mdi, adx };
+}
+/** Aroon up and down: how recently the n-day high and low were made (100 = today). */
+function aroon(bars: Bar[], n = 25) {
+  const up = NANS(bars.length), down = NANS(bars.length);
+  for (let i = n; i < bars.length; i++) {
+    let hi = i - n, lo = i - n;
+    for (let j = i - n; j <= i; j++) { if (bars[j].high >= bars[hi].high) hi = j; if (bars[j].low <= bars[lo].low) lo = j; }
+    up[i] = (100 * (n - (i - hi))) / n; down[i] = (100 * (n - (i - lo))) / n;
+  }
+  return { up, down };
+}
+const cloud = (bars: Bar[]) => { const t = mid(bars, 9), k = mid(bars, 26); return { a: shift(t.map((v, i) => (v + k[i]) / 2), 26), b: shift(mid(bars, 52), 26) }; };
+const keltner = (bars: Bar[]) => { const e = I.ema(bars.map((b) => b.close), 20), a = atrSeries(bars, 10); return { mid: e, up: e.map((v, i) => v + 2 * a[i]) }; };
+/** In above `enter`, out below `exit`, holding in between. */
+const latch = (n: number, enter: (i: number) => boolean, exit: (i: number) => boolean) => { const pos: boolean[] = []; let on = false; for (let i = 0; i < n; i++) { if (!on && enter(i)) on = true; else if (on && exit(i)) on = false; pos.push(on); } return pos; };
+
+/**
+ * Position per day (decided at that day's close). `ref` is the other major coin's candles, used only by the
+ * dual-momentum rule (which holds this coin only while it is also the stronger of the two).
+ */
+export function positions(rule: PositionRule, bars: Bar[], ref?: Bar[]): boolean[] {
+  const c = bars.map((b) => b.close), n = c.length;
+  const ok = Number.isFinite;
+  const ret = (i: number, d: number) => (i >= d ? c[i] / c[i - d] - 1 : NaN);
+  switch (rule) {
+    case 'tsmom': return c.map((_, i) => ret(i, 365) > 0);
+    case 'cryptoMom': return c.map((_, i) => ret(i, 28) > 0);
+    case 'multiTrend': return c.map((_, i) => i >= 365 && [30, 91, 365].filter((d) => ret(i, d) > 0).length >= 2);
+    case 'dualMom': {
+      const other = new Map((ref ?? []).map((b) => [b.time, b.close]));
+      return c.map((_, i) => {
+        const mine = ret(i, 365);
+        if (!(mine > 0)) return false;
+        const a = other.get(bars[i].time), b = i >= 365 ? other.get(bars[i - 365].time) : undefined;
+        return a === undefined || b === undefined || mine >= a / b - 1;
+      });
+    }
+    case 'trend200': { const ma = I.sma(c, 200); return c.map((x, i) => ok(ma[i]) && x > ma[i]); }
+    case 'golden': { const f = I.sma(c, 50), s = I.sma(c, 200); return c.map((_, i) => ok(s[i]) && f[i] > s[i]); }
+    case 'trend': { const ma = I.sma(c, 50); return c.map((x, i) => ok(ma[i]) && x > ma[i]); }
+    case 'ema': { const f = I.ema(c, 20), s = I.ema(c, 50); return c.map((_, i) => ok(s[i]) && f[i] > s[i]); }
+    case 'ma520': { const f = I.sma(c, 5), s = I.sma(c, 20); return c.map((_, i) => ok(s[i]) && f[i] > s[i]); }
+    case 'triple': { const a = I.sma(c, 4), b = I.sma(c, 9), d = I.sma(c, 18); return c.map((_, i) => ok(d[i]) && a[i] > b[i] && b[i] > d[i]); }
+    case 'macd': { const fast = I.ema(c, 12), slow = I.ema(c, 26); const macd = fast.map((v, i) => v - slow[i]); const sig = emaFrom(macd, 9); return c.map((_, i) => ok(sig[i]) && macd[i] > sig[i]); }
+    case 'ichimoku': { const k = cloud(bars); return c.map((x, i) => ok(k.a[i]) && ok(k.b[i]) && x > Math.max(k.a[i], k.b[i])); }
+    case 'psar': return psar(bars).up;
+    case 'aroon': { const a = aroon(bars); return c.map((_, i) => ok(a.up[i]) && a.up[i] > a.down[i]); }
+    case 'adx': { const d = dmi(bars); return latch(n, (i) => d.adx[i] > 25 && d.pdi[i] > d.mdi[i], (i) => d.pdi[i] < d.mdi[i]); }
+    case 'keltner': { const k = keltner(bars); return latch(n, (i) => c[i] > k.up[i], (i) => c[i] < k.mid[i]); }
+    case 'break': { const hi = prevHigh(bars, 20), lo = prevLow(bars, 10); return latch(n, (i) => c[i] > hi[i], (i) => c[i] < lo[i]); }
+    case 'turtle2': { const hi = prevHigh(bars, 55), lo = prevLow(bars, 20); return latch(n, (i) => c[i] > hi[i], (i) => c[i] < lo[i]); }
+    case 'donchian': { const hi = prevHigh(bars, 20), lo = prevLow(bars, 20); return latch(n, (i) => c[i] > hi[i], (i) => c[i] < lo[i]); }
+    case 'rsi': { const r = I.rsi(c); return latch(n, (i) => r[i] < 30, (i) => r[i] > 55); }
+    case 'boll': { const b = I.boll(c); return latch(n, (i) => c[i] < b.lo[i], (i) => c[i] > b.mid[i]); }
+    case 'rsi2': { const r = I.rsi(c, 2), long = I.sma(c, 200), fast = I.sma(c, 5); return latch(n, (i) => c[i] > long[i] && r[i] < 5, (i) => c[i] > fast[i]); }
+    case 'double7': {
+      const long = I.sma(c, 200);
+      const edge = (i: number, low: boolean) => { if (i < 6) return false; for (let j = i - 6; j < i; j++) if (low ? c[j] < c[i] : c[j] > c[i]) return false; return true; };
+      return latch(n, (i) => c[i] > long[i] && edge(i, true), (i) => edge(i, false));
+    }
+  }
+}
+
+/** A line the rule looks at, for the chart. `dots` draws points instead of a line (the parabolic stop). */
+export interface Overlay { values: number[]; tone: 'main' | 'fast' | 'mid' | 'up' | 'down'; dots?: boolean }
+export function overlays(rule: RuleId, bars: Bar[]): Overlay[] {
   const c = bars.map((b) => b.close);
-  const pos: boolean[] = [];
-  let on = false;
-  if (rule === 'tsmom') return c.map((x, i) => i >= 365 && x > c[i - 365]);
-  if (rule === 'trend200') { const ma = I.sma(c, 200); return c.map((x, i) => Number.isFinite(ma[i]) && x > ma[i]); }
-  if (rule === 'golden') { const f = I.sma(c, 50), s = I.sma(c, 200); return c.map((_, i) => Number.isFinite(s[i]) && f[i] > s[i]); }
-  if (rule === 'trend') { const ma = I.sma(c, 50); return c.map((x, i) => Number.isFinite(ma[i]) && x > ma[i]); }
-  if (rule === 'ema') { const f = I.ema(c, 20), s = I.ema(c, 50); return c.map((_, i) => Number.isFinite(s[i]) && f[i] > s[i]); }
-  if (rule === 'rsi') {
-    const r = I.rsi(c);
-    for (let i = 0; i < c.length; i++) { if (!on && r[i] < 30) on = true; else if (on && r[i] > 55) on = false; pos.push(on); }
-    return pos;
+  const L = (values: number[], tone: Overlay['tone']): Overlay => ({ values, tone });
+  switch (rule) {
+    case 'trend': case 'trendDca': return [L(I.sma(c, 50), 'main')];
+    case 'trend200': case 'double7': return [L(I.sma(c, 200), 'main')];
+    case 'golden': return [L(I.sma(c, 50), 'fast'), L(I.sma(c, 200), 'main')];
+    case 'ema': return [L(I.ema(c, 20), 'fast'), L(I.ema(c, 50), 'main')];
+    case 'ma520': return [L(I.sma(c, 5), 'fast'), L(I.sma(c, 20), 'main')];
+    case 'triple': return [L(I.sma(c, 4), 'fast'), L(I.sma(c, 9), 'mid'), L(I.sma(c, 18), 'main')];
+    case 'macd': return [L(I.ema(c, 12), 'fast'), L(I.ema(c, 26), 'main')];
+    case 'smart': return [L(I.sma(c, 20), 'main')];
+    case 'rsi2': return [L(I.sma(c, 5), 'fast'), L(I.sma(c, 200), 'main')];
+    case 'boll': { const b = I.boll(c); return [L(b.up, 'main'), L(b.mid, 'mid'), L(b.lo, 'main')]; }
+    case 'break': return [L(prevHigh(bars, 20), 'up'), L(prevLow(bars, 10), 'down')];
+    case 'turtle2': return [L(prevHigh(bars, 55), 'up'), L(prevLow(bars, 20), 'down')];
+    case 'donchian': return [L(prevHigh(bars, 20), 'up'), L(prevLow(bars, 20), 'down')];
+    case 'ichimoku': { const k = cloud(bars); return [L(k.a, 'fast'), L(k.b, 'main')]; }
+    case 'keltner': { const k = keltner(bars); return [L(k.up, 'main'), L(k.mid, 'mid')]; }
+    case 'psar': return [{ values: psar(bars).sar, tone: 'main', dots: true }];
+    default: return [];
   }
-  if (rule === 'boll') {
-    const b = I.boll(c);
-    for (let i = 0; i < c.length; i++) { if (!on && c[i] < b.lo[i]) on = true; else if (on && c[i] > b.mid[i]) on = false; pos.push(on); }
-    return pos;
+}
+/** The pane a rule needs under the price chart: a return over some days (hold above zero) or RSI with its levels. */
+export type Pane = { kind: 'mom'; days: number } | { kind: 'rsi'; period: number; levels: number[] };
+export function paneOf(rule: RuleId): Pane | null {
+  switch (rule) {
+    case 'tsmom': case 'multiTrend': case 'dualMom': return { kind: 'mom', days: 365 };
+    case 'cryptoMom': return { kind: 'mom', days: 28 };
+    case 'rsi': return { kind: 'rsi', period: 14, levels: [30, 55] };
+    case 'rsiDca': return { kind: 'rsi', period: 14, levels: [35, 65] };
+    case 'rsi2': return { kind: 'rsi', period: 2, levels: [5] };
+    default: return null;
   }
-  // breakout: 20-day high in, 10-day low out
-  for (let i = 0; i < bars.length; i++) {
-    if (i < 21) { pos.push(false); continue; }
-    let hi = -Infinity, lo = Infinity;
-    for (let j = i - 20; j < i; j++) hi = Math.max(hi, bars[j].high);
-    for (let j = i - 10; j < i; j++) lo = Math.min(lo, bars[j].low);
-    if (!on && bars[i].close > hi) on = true; else if (on && bars[i].close < lo) on = false;
-    pos.push(on);
-  }
-  return pos;
 }
 
 function stats(rets: number[]) {
@@ -206,14 +365,14 @@ function stats(rets: number[]) {
  * all the history there is). Fees on every entry and exit. A younger coin is scored over what it has after the
  * rule's warm-up; with too little left the agent is not offered at all.
  */
-export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window = WINDOW): Agent | null {
+export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window = WINDOW, ref?: Bar[]): Agent | null {
   const need = NEED[rule] ?? WARMUP;
   const start = Math.max(need, bars.length - 1 - window);
   if (bars.length - 1 - start < Math.min(MIN_DAYS, window)) return null;
   const def = POSITION_RULES.find((r) => r.id === rule)!;
   const runnable = isRunnable(market.base);
   const fee = runnable ? FEE_HSKSWAP : FEE_HASHKEY;
-  const pos = positions(rule, bars);
+  const pos = positions(rule, bars, ref);
   let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0;
   const rets: number[] = [];
   const equity: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
@@ -298,7 +457,7 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
 /** The same agent over another window (days, or `Infinity` for everything after its warm-up), for a closer look at one agent. */
 export async function rescore(a: Agent, window: number): Promise<Agent | null> {
   if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), window) : null;
-  return a.market ? scorePosition(a.rule as PositionRule, a.market, await hashkeyDaily(a.market), window) : null;
+  return a.market ? scorePosition(a.rule as PositionRule, a.market, await hashkeyDaily(a.market), window, await refBars(a.market)) : null;
 }
 
 /** An agent that never traded in the window has no worst drop to judge, so it does not outrank one that did. */
@@ -311,8 +470,13 @@ export const byMerit = (a: Agent, b: Agent) => a.tier - b.tier || Number(idle(a)
 
 /** The position agents for any HashKey market (the chart's market may not be in the listing). */
 export async function positionAgents(m: cex.Market): Promise<Agent[]> {
-  const bars = await hashkeyDaily(m);
-  return POSITION_RULES.map((r) => scorePosition(r.id, m, bars)).filter((a): a is Agent => a !== null);
+  const [bars, ref] = await Promise.all([hashkeyDaily(m), refBars(m)]);
+  return POSITION_RULES.map((r) => scorePosition(r.id, m, bars, WINDOW, ref)).filter((a): a is Agent => a !== null);
+}
+/** The other major coin, for dual momentum: ETH when the market is BTC, BTC for everything else. Missing is not fatal. */
+function refBars(m: cex.Market): Promise<Bar[]> {
+  const other = cex.MARKETS.find((x) => x.symbol === (m.base === 'BTC' ? 'ETHUSDT-PERPETUAL' : 'BTCUSDT-PERPETUAL'));
+  return other ? hashkeyDaily(other).catch(() => []) : Promise.resolve([]);
 }
 
 /** The four collect agents for a coin with an HSKSwap pool. */

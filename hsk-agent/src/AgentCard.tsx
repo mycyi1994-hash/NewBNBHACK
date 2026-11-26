@@ -38,7 +38,7 @@ export function Equity({ pts, up, wide }: { pts: { value: number }[]; up: boolea
   );
 }
 
-const ICON: Record<RuleId, string> = {
+const ICON: Partial<Record<RuleId, string>> = {
   tsmom: 'M3 15l4-4 3 2 6-7M13 6h4v4M3 17h14', trend200: 'M3 14c5 0 9-2 14-7M3 17h14', golden: 'M3 15c5 0 7-9 14-9M3 8c5 0 8 7 14 7',
   trend: 'M3 15l5-5 3 3 6-7', ema: 'M3 14c4 0 5-7 9-7 2 0 3 1 5 1M3 10c4 0 6 4 9 4 2 0 3-2 5-3',
   break: 'M3 13h5l2-6 2 9 2-5h3', rsi: 'M3 6h14M3 14h14M4 12l3-5 3 7 3-6 3 4', boll: 'M3 5c5 3 9 3 14 0M3 15c5-3 9-3 14 0M3 10h14',
@@ -48,8 +48,13 @@ const ICON: Record<RuleId, string> = {
 export function Face({ rule, size = 'md' }: { rule: RuleId; size?: 'sm' | 'md' | 'lg' }) {
   return <span className={`face r-${rule} ${size}`} aria-hidden><RuleIcon rule={rule} /></span>;
 }
+/** Added rules share the drawing of their family: momentum, channel breakout, moving averages, dip buying. */
+const LIKE: Partial<Record<RuleId, RuleId>> = {
+  multiTrend: 'tsmom', dualMom: 'tsmom', cryptoMom: 'tsmom', turtle2: 'break', donchian: 'break', keltner: 'break', psar: 'break',
+  ma520: 'ema', triple: 'ema', macd: 'ema', ichimoku: 'golden', adx: 'trend200', aroon: 'trend200', rsi2: 'rsi', double7: 'rsi',
+};
 export function RuleIcon({ rule }: { rule: RuleId }) {
-  return <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden><path d={ICON[rule]} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden><path d={ICON[rule] ?? ICON[LIKE[rule] ?? 'trend']} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
 

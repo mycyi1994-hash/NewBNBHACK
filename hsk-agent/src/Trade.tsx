@@ -11,7 +11,7 @@ import { RollNum, SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import { LEAD_DAYS, SPEEDS, useReplay, type Replay } from './replay.ts';
 import Dock, { px, useBacktest, useMarketAgents } from './Dock.tsx';
-import { collectHistory, dailyHistory, type Agent, type RuleId } from './agents.ts';
+import { collectHistory, dailyHistory, overlays, paneOf, type Agent, type Pane, type RuleId } from './agents.ts';
 import { pct } from './AgentCard.tsx';
 import { Icon } from './Icons.tsx';
 import type { MoaContext } from './MoaFeed.tsx';
@@ -100,7 +100,9 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
   // axis, which then showed prices next to a line that is not a price.
   const subBox = useRef<HTMLDivElement>(null);
   const sub = useRef<{ chart: IChartApi; series: ISeriesApi<'Line'>; lines: ReturnType<ISeriesApi<'Line'>['createPriceLine']>[] } | null>(null);
-  const paneKind: 'mom' | 'rsi' | null = study?.rule === 'tsmom' ? 'mom' : inds.has('rsi') || study?.rule === 'rsi' || study?.rule === 'rsiDca' ? 'rsi' : null;
+  // What goes in it comes from the rule on screen; without one, the user's own RSI indicator.
+  const paneSpec: Pane | null = (study ? paneOf(study.rule) : null) ?? (inds.has('rsi') ? { kind: 'rsi', period: 14, levels: [30, 70] } : null);
+  const paneKind = paneSpec?.kind ?? null;
   const extra = useRef<ISeriesApi<'Line' | 'Histogram' | 'Area'>[]>([]);
   // Every series with all its points. A replay shows a prefix of each; without one, all of them.
   const layers = useRef<{ s: ISeriesApi<SeriesType>; data: { time: UTCTimestamp }[] }[]>([]);
@@ -176,7 +178,6 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     for (const x of extra.current) c.removeSeries(x);
     extra.current = [];
     const times = candles.map((d) => d.time), close = candles.map((d) => d.close);
-    const rule = study?.rule;
     const showVol = inds.has('vol');
     m.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: showVol ? 0.2 : 0.06 } });
     const addLine = (xs: number[], color: string, width: 1 | 2 = 1, scale?: string) => {
@@ -193,17 +194,12 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
         extra.current.push(a);
       }
       // The lines the rule itself looks at, so each buy and sell can be read off the chart.
-      const BLUE = '#1a73e8', AMBER = '#f59e0b';
-      if (rule === 'trend' || rule === 'trendDca') addLine(I.sma(close, 50), BLUE, 2);
-      if (rule === 'trend200') addLine(I.sma(close, 200), BLUE, 2);
-      if (rule === 'golden') { addLine(I.sma(close, 50), AMBER, 2); addLine(I.sma(close, 200), BLUE, 2); }
-      if (rule === 'ema') { addLine(I.ema(close, 20), AMBER, 2); addLine(I.ema(close, 50), BLUE, 2); }
-      if (rule === 'smart') addLine(I.sma(close, 20), BLUE, 2);
-      if (rule === 'boll') { const b = I.boll(close); addLine(b.up, BLUE, 2); addLine(b.mid, '#64748b'); addLine(b.lo, BLUE, 2); }
-      if (rule === 'break') {
-        const hi = candles.map((_, i) => (i < 20 ? NaN : Math.max(...candles.slice(i - 20, i).map((x) => x.high))));
-        const lo = candles.map((_, i) => (i < 10 ? NaN : Math.min(...candles.slice(i - 10, i).map((x) => x.low))));
-        addLine(hi, '#16a34a'); addLine(lo, '#dc2626');
+      const TONE = { main: '#1a73e8', fast: '#f59e0b', mid: '#64748b', up: '#16a34a', down: '#dc2626' } as const;
+      for (const o of overlays(study.rule, candles)) {
+        if (!o.dots) { addLine(o.values, TONE[o.tone], o.tone === 'main' || o.tone === 'fast' ? 2 : 1); continue; }
+        // The parabolic stop is a row of points, one per day.
+        const d = c.addLineSeries({ color: TONE[o.tone], lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        layers.current.push({ s: d, data: line(times, o.values) }); extra.current.push(d);
       }
     } else {
       if (inds.has('ma')) [7, 25, 99].forEach((n, i) => addLine(I.sma(close, n), MA_COLORS[i]));
@@ -219,12 +215,12 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     const pane = sub.current;
     if (pane && paneKind) {
       // Every bar gets a point (an empty one where there is no value yet) so both charts count bars alike.
-      const vals = paneKind === 'mom' ? close.map((x, i) => (i >= 365 ? (x / close[i - 365] - 1) * 100 : NaN)) : I.rsi(close);
+      const spec = paneSpec!;
+      const vals = spec.kind === 'mom' ? close.map((x, i) => (i >= spec.days ? (x / close[i - spec.days] - 1) * 100 : NaN)) : I.rsi(close, spec.period);
       layers.current.push({ s: pane.series, data: times.map((time, i) => (Number.isFinite(vals[i]) ? { time: time as UTCTimestamp, value: vals[i] } : { time: time as UTCTimestamp })) });
       for (const l of pane.lines) pane.series.removePriceLine(l);
-      // The levels are the ones the rule on screen acts on: zero for momentum, 30/55 or 35/65 for the RSI rules, else 30/70.
-      const levels: [number, string][] = paneKind === 'mom' ? [[0, '#5f6368']]
-        : (rule === 'rsi' ? [30, 55] : rule === 'rsiDca' ? [35, 65] : [30, 70]).map((v, i) => [v, i ? '#e8a0a0' : '#9fd3b0'] as [number, string]);
+      // The levels are the ones the rule on screen acts on: zero for a return, the rule's own RSI levels otherwise.
+      const levels: [number, string][] = spec.kind === 'mom' ? [[0, '#5f6368']] : spec.levels.map((v, i) => [v, i ? '#e8a0a0' : '#9fd3b0'] as [number, string]);
       pane.lines = levels.map(([price, color]) => pane.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' }));
     }
 
@@ -261,7 +257,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
     requestAnimationFrame(() => { const r = chart.current === c ? ts.getVisibleLogicalRange() : null; if (r && sub.current) sub.current.chart.timeScale().setVisibleLogicalRange(r); });
     if (!range) { rangeKey.current = null; held.current = null; }
     prevFirst.current = candles[0].time;
-  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey, range?.key, study, paneKind]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey, range?.key, study, paneKind, paneSpec?.kind === 'rsi' ? paneSpec.period : paneSpec?.days]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The replay moved a day: show that much of every series. (Not on mount: the data was just drawn.)
   useEffect(() => { if (!drawn.current) { drawn.current = true; return; } if (chart.current && layers.current.length) draw(); }, [until]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -315,7 +311,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
   return (
     <div className="chart-wrap">
       <div className="chart-main"><div ref={box} className="chart" /><div ref={layer} className="chart-badges" aria-hidden /></div>
-      {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneKind === 'mom' ? t.ovLabel.tsmom : t.subRsi}</span><div ref={subBox} className="chart" /></div>}
+      {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneSpec?.kind === 'mom' && study ? t.ovLabel[study.rule] : `RSI(${paneSpec?.kind === 'rsi' ? paneSpec.period : 14})`}</span><div ref={subBox} className="chart" /></div>}
     </div>
   );
 }

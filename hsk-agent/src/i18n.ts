@@ -1,6 +1,7 @@
 // UI strings in English and Korean. Moa's own replies follow the language the user writes in.
 import { createContext, useContext } from 'react';
 import type { RuleId } from './agents.ts';
+import { more } from './ruleText.ts';
 
 export type Lang = 'en' | 'ko';
 
@@ -180,10 +181,10 @@ const en = {
   agTopTitle: 'Top 5 by Sharpe', agTopSub: '· equity over the same period', agAsset: 'Coin', agAll: 'All', agStyleLabel: 'Style',
   agStyle: { all: 'All', trend: 'Trend', revert: 'Mean reversion', collect: 'Collect' } as Record<'all' | 'trend' | 'revert' | 'collect', string>,
   agSortLabel: 'Sort', agSort: { sharpe: 'Sharpe, high first', total: 'Period return, high first', dd: 'Smallest worst drop' } as Record<'sharpe' | 'total' | 'dd', string>,
-  agNick: { tsmom: 'Long View', break: 'Turtle', trend200: 'Guardian', golden: 'Golden', trend: 'Surfer', ema: 'Cruiser', rsi: 'Bounce', boll: 'Spring', daily: 'Steady', smart: 'Thrifty', trendDca: 'Careful', rsiDca: 'Dip Buyer' } as Record<RuleId, string>,
-  agRule: { tsmom: 'Time-series momentum · 12m', trend200: 'Trend follow · MA200', golden: 'Golden cross · 50/200', trend: 'Trend follow · MA50', ema: 'EMA cross · 20/50', break: 'Breakout · 20/10', rsi: 'RSI bounce · 30/55', boll: 'Bollinger reversion', daily: 'Daily collect', smart: 'Smart DCA', trendDca: 'Trend-filter DCA', rsiDca: 'RSI-weighted DCA' } as Record<RuleId, string>,
-  agLine: { tsmom: 'Long while the price is higher than a year ago.', trend200: 'Long while the price is above its 200-day average.', golden: 'Long while the 50-day average is above the 200-day average.', trend: 'Long while the price is above its 50-day average.', ema: 'Long while the 20-day EMA is above the 50-day EMA.', break: 'Long on a new 20-day high, out on a 10-day low.', rsi: 'Long when RSI(14) drops under 30, out above 55.', boll: 'Long under the lower Bollinger band, out at the middle.', daily: 'Buys the same amount every day.', smart: 'Buys more under the 20-day average, less above (×0.5 to ×2).', trendDca: 'Buys on days the price is above its 50-day average, skips the rest.', rsiDca: 'Buys ×2 when RSI is under 35, ×0.5 when above 65.' } as Record<RuleId, string>,
-  agRules: {
+  agNick: { ...more('en', 'nick'), tsmom: 'Long View', break: 'Turtle', trend200: 'Guardian', golden: 'Golden', trend: 'Surfer', ema: 'Cruiser', rsi: 'Bounce', boll: 'Spring', daily: 'Steady', smart: 'Thrifty', trendDca: 'Careful', rsiDca: 'Dip Buyer' } as Record<RuleId, string>,
+  agRule: { ...more('en', 'rule'), tsmom: 'Time-series momentum · 12m', trend200: 'Trend follow · MA200', golden: 'Golden cross · 50/200', trend: 'Trend follow · MA50', ema: 'EMA cross · 20/50', break: 'Breakout · 20/10', rsi: 'RSI bounce · 30/55', boll: 'Bollinger reversion', daily: 'Daily collect', smart: 'Smart DCA', trendDca: 'Trend-filter DCA', rsiDca: 'RSI-weighted DCA' } as Record<RuleId, string>,
+  agLine: { ...more('en', 'line'), tsmom: 'Long while the price is higher than a year ago.', trend200: 'Long while the price is above its 200-day average.', golden: 'Long while the 50-day average is above the 200-day average.', trend: 'Long while the price is above its 50-day average.', ema: 'Long while the 20-day EMA is above the 50-day EMA.', break: 'Long on a new 20-day high, out on a 10-day low.', rsi: 'Long when RSI(14) drops under 30, out above 55.', boll: 'Long under the lower Bollinger band, out at the middle.', daily: 'Buys the same amount every day.', smart: 'Buys more under the 20-day average, less above (×0.5 to ×2).', trendDca: 'Buys on days the price is above its 50-day average, skips the rest.', rsiDca: 'Buys ×2 when RSI is under 35, ×0.5 when above 65.' } as Record<RuleId, string>,
+  agRules: { ...more('en', 'rules'),
     tsmom: ['Close above the close 365 days ago: hold a long.', 'Below it: exit and wait.', 'Slow by design: it follows the year’s direction, not the week’s.'],
     trend200: ['Daily close above the 200-day average: hold a long.', 'Close below it: exit to cash.', 'Few trades; built to sit out the worst of long bear markets.'],
     golden: ['50-day average crosses above the 200-day: go long.', 'Crosses back below (the “death cross”): exit.', 'Very few trades; slow in and slow out.'],
@@ -197,7 +198,7 @@ const en = {
     trendDca: ['Price above its 50-day average: buy the base amount.', 'Below it: skip the day and keep the cash.', 'Never sells; it holds what it collects.'],
     rsiDca: ['RSI(14) under 35: ×2. Over 65: ×0.5. Otherwise ×1.', 'Leans into dips, eases off after rallies.', 'Never sells; it holds what it collects.'],
   } as Record<RuleId, string[]>,
-  agRisk: {
+  agRisk: { ...more('en', 'risk'),
     tsmom: 'It turns late: after a top it can hold through much of the fall before the 12-month return turns negative.',
     trend200: 'It gives back a lot from the top before it exits, and it is whipsawed when the price hovers around the average.',
     golden: 'It is the slowest signal here: it enters well after a bottom and exits well after a top.',
@@ -325,26 +326,12 @@ const en = {
   proWhy: (trend: boolean, rsiIn: boolean) => `Trend follow is ${trend ? 'long' : 'flat'}, RSI bounce is ${rsiIn ? 'entering' : 'waiting'}.`,
   thCurve: 'Curve',
   agTier: { 1: 'Published classic', 2: 'Standard rule', 3: 'Moa variation' } as Record<1 | 2 | 3, string>,
-  agOrigin: {
+  agOrigin: { ...more('en', 'origin'),
     tsmom: 'Managed-futures classic · 2012', break: 'Turtle traders · 1983', trend200: 'Faber timing rule · 2007', golden: 'Golden cross · 50/200',
     trend: 'Moving-average rule', ema: 'Average crossover', rsi: 'Wilder’s RSI · 1978', boll: 'Bollinger Bands', daily: 'Dollar-cost averaging',
     smart: 'Moa variation', trendDca: 'Moa variation', rsiDca: 'Moa variation',
   } as Record<RuleId, string>,
-  agOriginNote: {
-    tsmom: 'Time-series momentum (Moskowitz, Ooi and Pedersen, 2012), the rule at the core of managed-futures funds: hold what has risen over the past 12 months. The paper rebalances monthly; this checks every day and is long only.',
-    break: 'The entry and exit of the Turtle traders’ System 1 (Richard Dennis and William Eckhardt, 1983): in on a 20-day high, out on a 10-day low. Their position sizing and stops are not included; long only.',
-    trend200: 'Mebane Faber’s timing rule (2007): hold while the price is above its 10-month average, otherwise cash. The paper checks at month end; this checks the 200-day average every day.',
-    golden: 'The most widely followed long-term trend signal: the 50-day average above the 200-day. No single author; long only.',
-    trend: 'A standard moving-average trend rule, with a 50-day average instead of the classic 200-day.',
-    ema: 'A standard two-average crossover, with 20- and 50-day exponential averages.',
-    rsi: 'Built on J. Welles Wilder’s RSI (1978). The 30-in, 55-out levels are Moa’s choice.',
-    boll: 'Built on John Bollinger’s bands (20 days, 2σ): buy under the lower band, sell at the middle.',
-    daily: 'Plain dollar-cost averaging: the same amount every day.',
-    smart: 'Moa’s own variation of dollar-cost averaging. Not a published strategy.',
-    trendDca: 'Moa’s own variation of dollar-cost averaging. Not a published strategy.',
-    rsiDca: 'Moa’s own variation of dollar-cost averaging. Not a published strategy.',
-  } as Record<RuleId, string>,
-  ovLabel: { tsmom: '12-month return (hold above 0)', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20-day high · 10-day low', rsi: 'RSI 30 / 55', boll: 'Bollinger bands', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' } as Record<RuleId, string>,
+  ovLabel: { ...more('en', 'ov'), tsmom: '12-month return (hold above 0)', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20-day high · 10-day low', rsi: 'RSI 30 / 55', boll: 'Bollinger bands', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' } as Record<RuleId, string>,
   btStd: '3 years', btSeam: (d: string) => `Days before ${d} (the exchange listing) are Gate spot daily candles.`, btSeamTag: 'HashKey listing',
   btSay: (o: { collect: boolean; better: boolean; trades: number; hold: string; total: string; held: string }) => (o.collect
     ? `The result of ${o.trades} buys by this rule, against buying once at the start and holding.`
@@ -358,7 +345,7 @@ const en = {
   btHeldStat: 'Time in the coin', btNow: 'Now', btThis: 'This agent', btVs: 'vs',
   subRsi: 'RSI(14)', errChart: 'The chart did not load.', errChartText: 'The exchange did not answer. Nothing else changed.', errAgents: 'The agents did not load.',
   // Where each rule comes from, who has used it and how far it has been tested. Only what is on record.
-  agFrom: {
+  agFrom: { ...more('en', 'from'),
     tsmom: 'Moskowitz, Ooi and Pedersen, “Time Series Momentum”, Journal of Financial Economics, 2012.',
     break: 'The rule Richard Dennis and William Eckhardt taught their “Turtle” traders in 1983 (System 1: in on a 20-day high, out on a 10-day low).',
     trend200: 'Mebane Faber, “A Quantitative Approach to Tactical Asset Allocation”, 2007.',
@@ -367,10 +354,10 @@ const en = {
     ema: 'A variation of the standard two-average crossover, with 20- and 50-day exponential averages.',
     rsi: 'Built on the RSI indicator of J. Welles Wilder (“New Concepts in Technical Trading Systems”, 1978).',
     boll: 'Built on John Bollinger’s bands (1980s).',
-    daily: 'Dollar-cost averaging: an old investing habit with no single author.',
+    daily: 'Dollar-cost averaging, described by Benjamin Graham in “The Intelligent Investor” (1949).',
     smart: 'Moa’s variation of dollar-cost averaging.', trendDca: 'Moa’s variation of dollar-cost averaging.', rsiDca: 'Moa’s variation of dollar-cost averaging.',
   } as Record<RuleId, string>,
-  agUsers: {
+  agUsers: { ...more('en', 'users'),
     tsmom: 'Trend-following futures funds (CTAs, managed futures). Hurst, Ooi and Pedersen (2013) showed this rule explains most of those funds’ returns.',
     break: 'The Turtle traders ran it with real money; the rules were published later (Curtis Faith, “Way of the Turtle”, 2007).',
     trend200: 'Widely cited as a timing rule for asset allocation by individual investors and advisers.',
@@ -382,7 +369,7 @@ const en = {
     daily: 'Common among individual investors who invest a fixed amount on a schedule.',
     smart: 'Only here, in Moa.', trendDca: 'Only here, in Moa.', rsiDca: 'Only here, in Moa.',
   } as Record<RuleId, string>,
-  agProof: {
+  agProof: { ...more('en', 'proof'),
     tsmom: 'A published paper tested on 58 futures markets over more than 25 years. Crypto is outside the paper; here it checks daily and only goes long.',
     break: 'A classic with a real trading record. The original position sizing, stops and filter are not included here; long only.',
     trend200: 'A published paper tested on five asset classes since 1973. The paper decides at month end; crypto is outside it.',
@@ -394,7 +381,7 @@ const en = {
     daily: 'Known as a way to spread the risk of when you buy, not as a way to earn more.',
     smart: 'No published test. The backtest on this screen is all there is.', trendDca: 'No published test. The backtest on this screen is all there is.', rsiDca: 'No published test. The backtest on this screen is all there is.',
   } as Record<RuleId, string>,
-  agFit: {
+  agFit: { ...more('en', 'fit'),
     tsmom: 'You want to follow the big direction and not watch it every day.',
     break: 'You accept many small losses while waiting for one big trend.',
     trend200: 'Avoiding a long bear market matters most to you.',
@@ -408,7 +395,7 @@ const en = {
     trendDca: 'You would rather stop collecting during a downtrend.',
     rsiDca: 'You want to buy more, boldly, when the price drops hard.',
   } as Record<RuleId, string>,
-  agGood: {
+  agGood: { ...more('en', 'good'),
     tsmom: 'Long moves in one direction (a long bull market).', break: 'A market that breaks out of a range and keeps going.',
     trend200: 'Long rises and long falls.', golden: 'Trends that last for months.',
     trend: 'A market with a clear direction.', ema: 'A steady, gentle trend.',
@@ -425,6 +412,11 @@ const en = {
   abFit: 'Suits you if', abGood: 'Works well in', abWeak: 'Weak in', abRules: 'Rule', abSource: 'Source', abUsers: 'Who has used it', abProof: 'How tested',
   btIf: (m: string, collect: boolean) => (collect ? `If you had bought ${m} in parts` : `If you had put in ${m}`), btIfHold: 'If you had just held', btAmount: 'Amount', btFx: '',
   rpPlay: 'Replay', rpPause: 'Pause', rpResume: 'Play', rpStop: 'Close the replay', rpSpeed: 'Speed', rpFrom: (d: number) => `Plays the backtest day by day, from ${d} days before it starts`, rpAt: (d: string) => `As of ${d}`,
+  agProofLv: { paper: 'Tested in a paper', record: 'Real trading record', book: 'Published by its author', common: 'Widely followed signal', none: 'No published test' } as Record<'paper' | 'record' | 'book' | 'common' | 'none', string>,
+  stHold: 'Holding until its exit signal.', stWait: 'Waiting for its buy signal. It asks you before it buys.', stCollect: 'Buys by its rule every day; it asks you each time.',
+  mRisk: 'Risk', mFreq: 'Trades', mHold: 'In the coin', perYear: (n: string) => `${n} a year`, mDd: 'worst drop',
+  abForYou: 'Is it for you?', abTrust: 'Can you trust it?', abSourceShow: 'Source', dkMore: (n: number) => `Show ${n} rules without a published source`, dkLess: 'Show published strategies only',
+  topCoin: 'Coin', topHold: (c: string) => `Just holding ${c}`, topFlat: 'A flat stretch means the agent was in cash.', topPick: 'Move over the chart to read a day.',
   aiShort: 'AI', aiBadge: 'AI agent', btYear: '1 year', btAll: 'All history', btRank: (k: number, n: number) => `#${k} of ${n} here`, btPrev: 'Previous agent', btNext: 'Next agent', btHeld: 'holding', btStart: 'Start',
   sortPick: 'Moa’s order', sortEdge: 'vs holding', sortSharpe: 'Sharpe', rankWhy: (classic: boolean, dd: string) => `${classic ? 'Published classic with' : 'Has'} the smallest worst drop here (${dd})`,
   topClassic: 'Published classics', fOrigin: 'Origin', thOrigin: 'Origin',
@@ -634,10 +626,10 @@ const ko: typeof en = {
   agTopTitle: '샤프 상위 5', agTopSub: '· 같은 기간 수익 곡선', agAsset: '코인', agAll: '전체', agStyleLabel: '스타일',
   agStyle: { all: '전체', trend: '추세', revert: '역추세', collect: '모으기' },
   agSortLabel: '정렬', agSort: { sharpe: '샤프 높은 순', total: '기간 수익 높은 순', dd: '덜 빠진 순' },
-  agNick: { tsmom: '롱뷰', break: '터틀', trend200: '가디언', golden: '골든', trend: '서퍼', ema: '크루저', rsi: '바운스', boll: '스프링', daily: '꾸준이', smart: '알뜰이', trendDca: '신중이', rsiDca: '줍줍이' },
-  agRule: { tsmom: '시계열 모멘텀 · 12개월', trend200: '추세 추종 · MA200', golden: '골든크로스 · 50/200', trend: '추세 추종 · MA50', ema: 'EMA 골든크로스 · 20/50', break: '돌파 · 20/10일', rsi: 'RSI 반등 · 30/55', boll: '볼린저 역추세', daily: '매일 모으기', smart: '똑똑한 분할매수', trendDca: '추세 필터 분할매수', rsiDca: 'RSI 가중 분할매수' },
-  agLine: { tsmom: '가격이 1년 전보다 높은 동안 들고 있어요.', trend200: '가격이 200일 평균 위에 있는 동안만 들고 있어요.', golden: '50일 평균이 200일 평균 위에 있는 동안 들고 있어요.', trend: '가격이 50일 평균 위에 있는 동안만 들고 있어요.', ema: '20일 EMA가 50일 EMA 위에 있는 동안 들고 있어요.', break: '20일 신고가에 사고, 10일 신저가에 팔아요.', rsi: 'RSI(14)가 30 아래로 가면 사고, 55 위에서 팔아요.', boll: '많이 떨어졌을 때(볼린저 하단 아래) 사고, 평소 가격(중간선)으로 돌아오면 팔아요.', daily: '매일 같은 금액만큼 사요.', smart: '20일 평균보다 싸면 더, 비싸면 덜 사요(×0.5~×2).', trendDca: '가격이 50일 평균 위인 날만 사고, 나머지 날은 쉬어요.', rsiDca: 'RSI 35 아래면 2배, 65 위면 절반만 사요.' },
-  agRules: {
+  agNick: { ...more('ko', 'nick'), tsmom: '롱뷰', break: '터틀', trend200: '가디언', golden: '골든', trend: '서퍼', ema: '크루저', rsi: '바운스', boll: '스프링', daily: '꾸준이', smart: '알뜰이', trendDca: '신중이', rsiDca: '줍줍이' },
+  agRule: { ...more('ko', 'rule'), tsmom: '시계열 모멘텀 · 12개월', trend200: '추세 추종 · MA200', golden: '골든크로스 · 50/200', trend: '추세 추종 · MA50', ema: 'EMA 골든크로스 · 20/50', break: '돌파 · 20/10일', rsi: 'RSI 반등 · 30/55', boll: '볼린저 역추세', daily: '매일 모으기', smart: '똑똑한 분할매수', trendDca: '추세 필터 분할매수', rsiDca: 'RSI 가중 분할매수' },
+  agLine: { ...more('ko', 'line'), tsmom: '가격이 1년 전보다 높은 동안 들고 있어요.', trend200: '가격이 200일 평균 위에 있는 동안만 들고 있어요.', golden: '50일 평균이 200일 평균 위에 있는 동안 들고 있어요.', trend: '가격이 50일 평균 위에 있는 동안만 들고 있어요.', ema: '20일 EMA가 50일 EMA 위에 있는 동안 들고 있어요.', break: '20일 신고가에 사고, 10일 신저가에 팔아요.', rsi: 'RSI(14)가 30 아래로 가면 사고, 55 위에서 팔아요.', boll: '많이 떨어졌을 때(볼린저 하단 아래) 사고, 평소 가격(중간선)으로 돌아오면 팔아요.', daily: '매일 같은 금액만큼 사요.', smart: '20일 평균보다 싸면 더, 비싸면 덜 사요(×0.5~×2).', trendDca: '가격이 50일 평균 위인 날만 사고, 나머지 날은 쉬어요.', rsiDca: 'RSI 35 아래면 2배, 65 위면 절반만 사요.' },
+  agRules: { ...more('ko', 'rules'),
     tsmom: ['종가가 365일 전 종가보다 높으면 롱 유지.', '낮으면 청산하고 대기.', '일부러 느려요. 한 주가 아니라 한 해의 방향을 따라가요.'],
     trend200: ['일봉 종가가 200일 평균 위면 롱 유지.', '아래로 마감하면 청산하고 현금으로.', '매매가 적고, 긴 하락장의 큰 손실을 피하려는 규칙이에요.'],
     golden: ['50일 평균이 200일 평균을 위로 뚫으면 롱.', '다시 아래로 내려가면(데드크로스) 청산.', '매매가 아주 적고, 들어갈 때도 나올 때도 느려요.'],
@@ -651,7 +643,7 @@ const ko: typeof en = {
     trendDca: ['가격이 50일 평균 위면 기본 금액만큼 사요.', '아래면 그날은 쉬고 현금을 남겨요.', '팔지 않고 모은 걸 들고 있어요.'],
     rsiDca: ['RSI(14) 35 미만 ×2, 65 초과 ×0.5, 나머지 ×1.', '눌림엔 더 사고, 급등 뒤엔 덜 사요.', '팔지 않고 모은 걸 들고 있어요.'],
   },
-  agRisk: {
+  agRisk: { ...more('ko', 'risk'),
     tsmom: '방향 전환이 늦어요. 고점을 지난 뒤에도 12개월 수익이 마이너스가 될 때까지 꽤 오래 들고 있을 수 있어요.',
     trend200: '고점에서 많이 내려온 뒤에야 팔고, 가격이 평균선 근처에서 오르내리면 사고팔기를 반복해요.',
     golden: '여기서 가장 느린 신호예요. 바닥을 한참 지난 뒤에 사고, 고점을 한참 지난 뒤에 팔아요.',
@@ -779,26 +771,12 @@ const ko: typeof en = {
   proWhy: (trend, rsiIn) => `추세 추종은 ${trend ? '롱' : '쉼'}, RSI 반등은 ${rsiIn ? '진입' : '대기'} 상태예요.`,
   thCurve: '수익 곡선',
   agTier: { 1: '검증된 클래식', 2: '표준 지표 규칙', 3: 'Moa 변형' },
-  agOrigin: {
+  agOrigin: { ...more('ko', 'origin'),
     tsmom: 'CTA 펀드의 기본 전략 · 2012', break: '터틀 트레이딩 · 1983', trend200: '파버 타이밍 규칙 · 2007', golden: '골든크로스 · 50/200',
     trend: '이동평균 규칙', ema: '이평 교차 규칙', rsi: '와일더 RSI · 1978', boll: '볼린저 밴드', daily: '정액 분할매수(DCA)',
     smart: 'Moa 변형', trendDca: 'Moa 변형', rsiDca: 'Moa 변형',
   },
-  agOriginNote: {
-    tsmom: '시계열 모멘텀(Moskowitz·Ooi·Pedersen, 2012). 선물 추세추종(CTA) 펀드의 핵심 규칙으로, 지난 12개월 동안 오른 자산을 들고 가요. 논문은 한 달에 한 번 판단하지만 여기서는 매일 확인하고, 롱만 해요.',
-    break: '터틀 트레이더 시스템 1(Richard Dennis·William Eckhardt, 1983)의 진입·청산 규칙이에요. 20일 신고가에 들어가고 10일 신저가에 나와요. 원래 있던 포지션 크기 조절과 손절 규칙은 빠져 있고, 롱만 해요.',
-    trend200: 'Mebane Faber의 타이밍 규칙(2007)이에요. 가격이 10개월 평균 위면 보유, 아니면 현금. 논문은 월말에만 판단하지만 여기서는 200일 평균을 매일 확인해요.',
-    golden: '가장 널리 보는 장기 추세 신호예요. 50일 평균이 200일 평균 위에 있는 동안 보유해요. 특정 저자는 없고, 롱만 해요.',
-    trend: '표준 이동평균 추세 규칙이에요. 고전적인 200일 대신 50일 평균을 써요.',
-    ema: '표준 이평 교차 규칙이에요. 20일·50일 지수이동평균을 써요.',
-    rsi: 'J. Welles Wilder의 RSI(1978)를 쓴 규칙이에요. 30에 사고 55에 파는 기준은 Moa가 정했어요.',
-    boll: 'John Bollinger의 밴드(20일, 2σ)를 쓴 규칙이에요. 하단 아래에서 사고 중간선에서 팔아요.',
-    daily: '가장 기본적인 정액 분할매수예요. 매일 같은 금액을 사요.',
-    smart: '분할매수를 Moa가 변형한 규칙이에요. 공개 검증된 전략은 아니에요.',
-    trendDca: '분할매수를 Moa가 변형한 규칙이에요. 공개 검증된 전략은 아니에요.',
-    rsiDca: '분할매수를 Moa가 변형한 규칙이에요. 공개 검증된 전략은 아니에요.',
-  },
-  ovLabel: { tsmom: '12개월 수익률 (0 위면 보유)', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20일 고가 · 10일 저가', rsi: 'RSI 30 / 55', boll: '볼린저 밴드', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' },
+  ovLabel: { ...more('ko', 'ov'), tsmom: '12개월 수익률 (0 위면 보유)', trend200: 'MA200', golden: 'MA50 · MA200', trend: 'MA50', ema: 'EMA20 · EMA50', break: '20일 고가 · 10일 저가', rsi: 'RSI 30 / 55', boll: '볼린저 밴드', daily: '', smart: 'MA20', trendDca: 'MA50', rsiDca: 'RSI 35 / 65' },
   btStd: '3년', btSeam: (d) => `${d}(거래소 상장) 이전은 Gate 현물 일봉을 이어 붙였어요.`, btSeamTag: 'HashKey 상장',
   btSay: (o) => (o.collect
     ? `이 규칙대로 ${o.trades}번 나눠 산 결과예요. 비교 대상은 처음에 한 번 사서 들고 있기예요.`
@@ -811,7 +789,7 @@ const ko: typeof en = {
   ocAsk: '승인 요청', ocBuy: (u, a) => `${a} $${u} 매수`, ocSell: (q, a) => `${a} ${q}개 매도`, ocWhy: '이유', ocCap: (u, m) => `1회 한도 $${u} / $${m}`, ocLeft: (l) => `오늘 $${l} 남음`,
   btHeldStat: '보유 시간', btNow: '지금', btThis: '이 에이전트', btVs: 'vs',
   subRsi: 'RSI(14)', errChart: '차트를 불러오지 못했어요.', errChartText: '거래소가 응답하지 않았어요. 다른 설정은 그대로예요.', errAgents: '에이전트를 불러오지 못했어요.',
-  agFrom: {
+  agFrom: { ...more('ko', 'from'),
     tsmom: 'Moskowitz·Ooi·Pedersen, 「Time Series Momentum」, Journal of Financial Economics, 2012.',
     break: 'Richard Dennis와 William Eckhardt가 1983년 “터틀” 트레이더들에게 가르친 규칙이에요(시스템 1: 20일 신고가 진입, 10일 신저가 청산).',
     trend200: 'Mebane Faber, 「A Quantitative Approach to Tactical Asset Allocation」, 2007.',
@@ -820,10 +798,10 @@ const ko: typeof en = {
     ema: '표준 이평 교차 규칙의 변형이에요. 20일·50일 지수이동평균을 써요.',
     rsi: 'J. Welles Wilder의 RSI 지표(『New Concepts in Technical Trading Systems』, 1978)를 쓴 규칙이에요.',
     boll: 'John Bollinger의 볼린저 밴드(1980년대)를 쓴 규칙이에요.',
-    daily: '정액 분할매수(DCA). 특정 저자 없이 오래된 투자 방법이에요.',
+    daily: '정액 분할매수(DCA). Benjamin Graham이 『현명한 투자자』(1949)에서 소개했어요.',
     smart: '정액 분할매수를 Moa가 변형한 규칙이에요.', trendDca: '정액 분할매수를 Moa가 변형한 규칙이에요.', rsiDca: '정액 분할매수를 Moa가 변형한 규칙이에요.',
   },
-  agUsers: {
+  agUsers: { ...more('ko', 'users'),
     tsmom: '추세추종 선물 펀드(CTA·매니지드 퓨처스). Hurst·Ooi·Pedersen(2013)은 이 규칙으로 그 펀드들 수익의 대부분이 설명된다는 걸 보였어요.',
     break: '터틀 트레이더들이 실제 자금으로 운용했고, 규칙은 나중에 공개됐어요(Curtis Faith, 『Way of the Turtle』, 2007).',
     trend200: '개인 투자자와 자문사의 자산배분 타이밍 규칙으로 널리 인용돼요.',
@@ -835,7 +813,7 @@ const ko: typeof en = {
     daily: '정해진 금액을 꾸준히 넣는 개인 투자자들이 널리 써요.',
     smart: 'Moa에서만 써요.', trendDca: 'Moa에서만 써요.', rsiDca: 'Moa에서만 써요.',
   },
-  agProof: {
+  agProof: { ...more('ko', 'proof'),
     tsmom: '58개 선물 시장, 25년 넘는 자료로 검증한 논문이 있어요. 암호화폐는 논문 범위 밖이고, 여기서는 매일 확인하며 롱만 해요.',
     break: '실전 운용 기록이 있는 고전 규칙이에요. 다만 원래 있던 포지션 크기 조절·손절·필터는 여기에 없고, 롱만 해요.',
     trend200: '5개 자산군, 1973년 이후 자료로 검증한 논문이 있어요. 논문은 월말에만 판단하고, 암호화폐는 범위 밖이에요.',
@@ -847,7 +825,7 @@ const ko: typeof en = {
     daily: '수익을 높이는 전략이 아니라, 사는 시점의 위험을 나누는 방법으로 알려져 있어요.',
     smart: '공개된 검증은 없어요. 이 화면의 백테스트가 전부예요.', trendDca: '공개된 검증은 없어요. 이 화면의 백테스트가 전부예요.', rsiDca: '공개된 검증은 없어요. 이 화면의 백테스트가 전부예요.',
   },
-  agFit: {
+  agFit: { ...more('ko', 'fit'),
     tsmom: '큰 방향만 따라가고, 매일 들여다보고 싶지 않은 분.',
     break: '큰 추세 한 번을 위해 작은 손실 여러 번을 감수할 수 있는 분.',
     trend200: '긴 하락장을 피하는 게 가장 중요한 분.',
@@ -861,7 +839,7 @@ const ko: typeof en = {
     trendDca: '하락 추세에서는 모으기를 멈추고 싶은 분.',
     rsiDca: '크게 빠질 때 과감하게 더 사고 싶은 분.',
   },
-  agGood: {
+  agGood: { ...more('ko', 'good'),
     tsmom: '한 방향으로 오래 가는 장(긴 상승장).', break: '박스권을 뚫고 크게 움직이는 장.',
     trend200: '상승과 하락이 길게 이어지는 장.', golden: '몇 달씩 이어지는 긴 추세.',
     trend: '방향이 뚜렷한 장.', ema: '완만하게 이어지는 추세.',
@@ -878,6 +856,11 @@ const ko: typeof en = {
   abFit: '이런 분께', abGood: '잘 통하는 장', abWeak: '약한 장', abRules: '규칙', abSource: '출처', abUsers: '누가 써 왔나', abProof: '검증 수준',
   btIf: (m, collect) => (collect ? `${m}을 나눠 샀다면` : `${m}을 맡겼다면`), btIfHold: '그냥 들고 있었다면', btAmount: '금액', btFx: '수익률은 USDT 기준이라 환율 변동은 빠져 있어요.',
   rpPlay: '리플레이', rpPause: '일시정지', rpResume: '재생', rpStop: '리플레이 끝내기', rpSpeed: '속도', rpFrom: (d) => `백테스트 시작 ${d}일 전부터 하루씩 재생해요`, rpAt: (d) => `${d} 기준`,
+  agProofLv: { paper: '논문 검증', record: '실전 운용 기록', book: '저자 공개', common: '통용 신호', none: '검증 없음' },
+  stHold: '청산 신호가 나올 때까지 들고 있어요.', stWait: '매수 신호를 기다려요. 사기 전에 먼저 물어봐요.', stCollect: '매일 규칙대로 사요. 매번 먼저 물어봐요.',
+  mRisk: '위험', mFreq: '거래 빈도', mHold: '보유 시간', perYear: (n) => `연 ${n}회`, mDd: '최대 낙폭',
+  abForYou: '나에게 맞을까', abTrust: '믿을 만할까', abSourceShow: '출처', dkMore: (n) => `공개 출처 없는 규칙 ${n}개 더 보기`, dkLess: '검증된 전략만 보기',
+  topCoin: '코인', topHold: (c) => `${c} 그냥 보유`, topFlat: '선이 평평한 구간은 현금으로 쉬던 때예요.', topPick: '차트에 마우스를 올리면 그날 값을 볼 수 있어요.',
   aiShort: 'AI', aiBadge: 'AI 에이전트', btYear: '1년', btAll: '전체', btRank: (k, n) => `이 시장 ${n}개 중 ${k}위`, btPrev: '이전 에이전트', btNext: '다음 에이전트', btHeld: '보유 구간', btStart: '시작',
   sortPick: '추천순', sortEdge: '보유 대비 순', sortSharpe: '샤프 순', rankWhy: (classic, dd) => `${classic ? '검증된 클래식 중 ' : ''}여기서 가장 덜 빠졌어요 (${dd})`,
   topClassic: '검증된 전략', fOrigin: '출처', thOrigin: '출처',

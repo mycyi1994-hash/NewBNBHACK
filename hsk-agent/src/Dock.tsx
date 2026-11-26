@@ -10,9 +10,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
-import { byMerit, collectAgents, isRunnable, positionAgents, rescore, type Agent, type Mark } from './agents.ts';
+import { byMerit, collectAgents, isRunnable, positionAgents, rescore, PROOF, type Agent, type Mark } from './agents.ts';
 import { readLevel, recommend } from './recommend.ts';
-import { AgentCard, agentName, drop, nowLine, pct, sourceLine, statePill, Face } from './AgentCard.tsx';
+import { AgentCard, agentName, drop, pct, sourceLine, statePill, Face } from './AgentCard.tsx';
 import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 import { Icon, Spark } from './Icons.tsx';
@@ -101,6 +101,7 @@ export function standing(a: Agent, cursor: number | null) {
 export function profile(a: Agent) {
   const perYear = a.trades / Math.max(1, a.days / 365);
   return {
+    perYear,
     risk: (a.maxDd >= 0.45 ? 'hi' : a.maxDd >= 0.25 ? 'mid' : 'lo') as 'hi' | 'mid' | 'lo',
     freq: (a.kind === 'collect' && perYear >= 200 ? 'daily' : perYear >= 12 ? 'often' : perYear >= 3 ? 'some' : 'rare') as 'daily' | 'often' | 'some' | 'rare',
     hold: (a.inMarket >= 0.7 ? 'most' : a.inMarket >= 0.3 ? 'half' : 'cash') as 'most' | 'half' | 'cash',
@@ -111,6 +112,11 @@ export function profile(a: Agent) {
  * The agent's curve against just holding, in money, with the market's other agents faint behind it (tap one to
  * open it). During a replay only the days up to the cursor are drawn, on the full backtest's scale.
  */
+/** A thin bar: how far along a scale something is. */
+function Meter({ frac, tone }: { frac: number; tone?: 'hi' | 'mid' | 'lo' }) {
+  return <span className={`meter${tone ? ` risk-${tone}` : ''}`} aria-hidden><i style={{ width: `${Math.round(Math.max(0.04, Math.min(1, frac)) * 100)}%` }} /></span>;
+}
+
 function Curves({ a, peers, upto, label, onPick }: { a: Agent; peers: Agent[]; upto: number | null; label: (mult: number) => string; onPick: (p: Agent) => void }) {
   const W = 400, H = 100;
   if (a.equity.length < 2) return null;
@@ -151,7 +157,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
   onSelect: (a: Agent) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void;
 }) {
   const { t, lang } = useT();
-  const pill = statePill(t, a);
+  const pill = statePill(t, year);
   const day = (s: number) => new Date(s * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-GB', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'UTC' }).replace(/\.$/, '');
   const sign = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
   const live = cursor !== null;
@@ -176,24 +182,26 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
         <div className="bt-title">
           <Face rule={a.rule} size="lg" />
           <div className="bt-name"><b>{agentName(t, a)}</b><small>{t.agRule[a.rule]} · {sourceLine(t, a)}</small></div>
-        </div>
-        <p className={`bt-now ${pill.cls}`}><i />{t.btNow} · {nowLine(t, year)}</p>
-        <div className="bt-tags" data-tip={t.tagNote}>
-          <span className={`tag-p risk-${p.risk}`}>{t.tagRisk[p.risk]}</span>
-          <span className="tag-p">{t.tagStyle[a.style]}</span>
-          <span className="tag-p">{t.tagFreq[p.freq]}</span>
-          {a.kind === 'position' && <span className="tag-p">{t.tagHold[p.hold]}</span>}
-        </div>
-        <div className="bt-rank">
           {at >= 0 && ranked.length > 1 && (
-            <>
+            <span className="bt-step">
               <button className="icon-btn sm" onClick={() => step(-1)} aria-label={t.btPrev} data-tip={t.btPrev}><Icon name="chevron" size={14} /></button>
-              <b>{t.btRank(at + 1, ranked.length)}</b>
               <button className="icon-btn sm" onClick={() => step(1)} aria-label={t.btNext} data-tip={t.btNext}><Icon name="chevron" size={14} /></button>
-            </>
+            </span>
           )}
+        </div>
+        <div className="bt-badges">
+          {at >= 0 && <span className="rank-chip">{t.btRank(at + 1, ranked.length)}</span>}
           <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span>
         </div>
+        {/* What it is doing right now, in one coloured line. */}
+        <p className={`bt-state ${pill.cls}`}><i /><b>{pill.text}</b><span>{a.kind === 'collect' ? t.stCollect : year.live ? t.stHold : t.stWait}</span></p>
+        {/* Its character, each with the number it comes from. */}
+        <dl className="bt-meters" data-tip={t.tagNote}>
+          <div><dt>{t.mRisk}</dt><dd><Meter frac={a.maxDd / 0.8} tone={p.risk} /></dd><dd className="m-val"><b className={`risk-${p.risk}`}>{t.tagRisk[p.risk]}</b><span>{t.mDd} {drop(a.maxDd)}</span></dd></div>
+          <div><dt>{t.mFreq}</dt><dd><Meter frac={Math.sqrt(Math.min(1, p.perYear / 60))} /></dd><dd className="m-val"><b>{t.tagFreq[p.freq]}</b><span>{t.perYear(p.perYear >= 10 ? p.perYear.toFixed(0) : p.perYear.toFixed(1))}</span></dd></div>
+          {a.kind === 'position' && <div><dt>{t.mHold}</dt><dd><Meter frac={a.inMarket} /></dd><dd className="m-val"><b>{t.tagHold[p.hold]}</b><span>{Math.round(a.inMarket * 100)}%</span></dd></div>}
+        </dl>
+        <ul className="bt-rules">{t.agRules[a.rule].slice(0, 2).map((r) => <li key={r}>{r}</li>)}</ul>
         <div className="bt-cta">
           {a.runnable && <button className="btn-primary hire" onClick={() => onHire(year)}>{t.acHire}</button>}
           <button className="btn" onClick={() => onAsk(year)}><Spark size={14} />{t.acAsk}</button>
@@ -225,7 +233,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
           <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.trades)}</dd></div>
           <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>
         </dl>
-        <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id) : []} upto={cursor} label={(v) => m(v, true)} onPick={onSelect} />
+        <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id).slice(0, 5) : []} upto={cursor} label={(v) => m(v, true)} onPick={onSelect} />
         <div className="bt-legend">
           <span><i className="lg-agent" />{t.btAgent}</span><span><i className="lg-hold" />{t.acHold}</span>
           <span className="bt-span">{day(a.from)} – {day(a.to)}</span>
@@ -239,16 +247,23 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
           <button role="tab" aria-selected={side === 'log'} className={side === 'log' ? 'on' : ''} onClick={() => setSide('log')}>{t.tabLog}</button>
         </div>
         {side === 'about' ? (
-          <dl className="bt-about">
-            <div><dt>{t.abFit}</dt><dd>{t.agFit[a.rule]}</dd></div>
-            <div><dt>{t.abGood}</dt><dd>{t.agGood[a.rule]}</dd></div>
-            <div><dt>{t.abWeak}</dt><dd>{t.agRisk[a.rule]}</dd></div>
-            <div><dt>{t.abRules}</dt><dd>{t.agRules[a.rule].slice(0, 2).join(' ')}</dd></div>
-            <div><dt>{t.abSource}</dt><dd>{t.agFrom[a.rule]}</dd></div>
-            <div><dt>{t.abUsers}</dt><dd>{t.agUsers[a.rule]}</dd></div>
-            <div><dt>{t.abProof}</dt><dd>{t.agProof[a.rule]}</dd></div>
-            {!a.runnable && <div><dt /><dd className="bt-demo">{t.whyNot(a.base)}</dd></div>}
-          </dl>
+          <div className="bt-about">
+            <section className="ab-card">
+              <h4>{t.abForYou}</h4>
+              <p className="ab-fit">{t.agFit[a.rule]}</p>
+              <div className="ab-two">
+                <div className="ab-good"><b><Icon name="check" size={14} />{t.abGood}</b><p>{t.agGood[a.rule]}</p></div>
+                <div className="ab-weak"><b><Icon name="close" size={14} />{t.abWeak}</b><p>{t.agRisk[a.rule]}</p></div>
+              </div>
+            </section>
+            <section className="ab-card">
+              <h4>{t.abTrust}<span className={`proof lv-${PROOF[a.rule]}`}>{t.agProofLv[PROOF[a.rule]]}</span></h4>
+              <p>{t.agProof[a.rule]}</p>
+              <p className="ab-line"><b>{t.abUsers}</b>{t.agUsers[a.rule]}</p>
+              <p className="ab-line src"><b>{t.abSourceShow}</b>{t.agFrom[a.rule]}</p>
+              {!a.runnable && <p className="bt-demo">{t.whyNot(a.base)}</p>}
+            </section>
+          </div>
         ) : a.kind === 'position' ? (
           <>
             <div className="bt-log-head"><span>{t.btBuy}</span><span>{t.btSell}</span><span>{t.btRet}</span></div>
@@ -302,7 +317,12 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   useEffect(() => { setTab((cur) => (sel ? 'bt' : cur === 'bt' ? 'list' : cur)); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One order, Moa's: published classics first, then the smaller worst drop. (Other orders live in the agent market.)
-  const ranked = useMemo(() => (list ? [...list].sort(byMerit) : []), [list]);
+  const all = useMemo(() => (list ? [...list].sort(byMerit) : []), [list]);
+  // With enough published strategies for the market, the rules without a published source wait behind one row.
+  const [more, setMore] = useState(false);
+  const classics = all.filter((a) => a.tier === 1);
+  const fold = classics.length >= 4 && classics.length < all.length;
+  const ranked = fold && !more && !(sel && sel.tier !== 1) ? classics : all;
   const best = list ? recommend(list, { coin, level: readLevel() })?.pick.id : undefined;
   const top = ranked[0];
   const hint = venue === 'dex' ? t.mkHintDex : isRunnable(coin) ? t.mkHintCex(coin) : t.mkHintSignal(coin);
@@ -341,6 +361,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
             {!list && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="frow skel-block" aria-hidden />)}
             {ranked.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === best} onPick={() => onSelect(a)} />)}
+            {fold && <button className="frow-more" onClick={() => setMore((v) => !v)}>{more ? t.dkLess : t.dkMore(all.length - classics.length)}<Icon name="down" size={14} /></button>}
           </div>
         )}
         {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} cursor={cursor} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}
