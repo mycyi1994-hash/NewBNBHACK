@@ -11,15 +11,20 @@
 //   node scripts/vault.mjs stopout WHSK           carry out a stop that is due (anyone's key works; the USDT stays in the vault)
 //   node scripts/vault.mjs agent 0x…              replace my vault's agent wallet (e.g. if its key may have leaked)
 //
-// The factory address comes from MOA_FACTORY_ADDRESS, or from deployments/hsk-mainnet.json.
+// The factory address comes from --factory 0x…, else MOA_FACTORY_ADDRESS, else deployments/hsk-mainnet.json.
+// A vault made by an earlier factory still answers status, fund, withdraw, pause, limits and agent: add
+// `--factory <that factory's address>` to reach it, for example to withdraw what is left in it.
 // Everything except `status` needs the vault owner's key: MOA_OWNER_PRIVATE_KEY if set, otherwise asked for with the
 // typing hidden (never written to a file, never printed). Each command shows what it will do and asks you to type a word first.
 import { createWalletClient, http, isAddress, getAddress, parseUnits, formatUnits, formatEther, encodeFunctionData, zeroAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CHAIN, RPC, USDT, MARKETS, ERC20, FORK, WHERE, artifact, client, confirm, ownerKey, record, txUrl, usd, cap, limitOf, same, fail, EXPLORER } from './hsk.mjs';
+import { CHAIN, RPC, USDT, MARKETS, ERC20, FORK, WHERE, artifact, client, confirm, option, ownerKey, record, txUrl, usd, cap, limitOf, same, fail, EXPLORER } from './hsk.mjs';
 
-const [cmd = 'status', ...rest] = process.argv.slice(2);
-const factory = process.env.MOA_FACTORY_ADDRESS || record()?.factory;
+const words = process.argv.slice(2);
+const flag = words.indexOf('--factory');
+if (flag >= 0) words.splice(flag, 2);
+const [cmd = 'status', ...rest] = words;
+const factory = option('factory', 'MOA_FACTORY_ADDRESS') || record()?.factory;
 if (!factory || !isAddress(factory)) fail('no factory address: set MOA_FACTORY_ADDRESS or deploy first.');
 const pub = client();
 const { abi } = artifact('MoaVault');
@@ -37,15 +42,16 @@ const vaultOf = async (owner) => {
 async function status(vault) {
   const read = (functionName, args = []) => pub.readContract({ address: vault, abi, functionName, args });
   const [owner, agent, paused, maxTrade, maxDaily, slip, left] = await Promise.all(['owner', 'agent', 'paused', 'maxTradeUsdt', 'maxDailyUsdt', 'maxSlippageBps', 'remainingToday'].map((f) => read(f)));
-  const stop = Number(await read('stopLossBps'));
+  // a vault from the first factory has no stop-loss and does not report positions
+  const stop = await read('stopLossBps').then(Number, () => null);
   console.log(`\nVault ${vault}\n  ${EXPLORER}/address/${vault}`);
   console.log(`  owner   ${owner}`);
   console.log(`  agent   ${agent}   (${Number(formatEther(await pub.getBalance({ address: agent }))).toFixed(2)} HSK for gas)`);
-  console.log(`  limits  per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)}${cap(maxDaily) === 'no limit' ? '' : ` ($${usd(left)} left today)`} · ${Number(slip) / 100}% slippage ceiling · stop-loss: ${stop ? `${stop / 100}%` : 'off'}${paused ? '   PAUSED' : ''}`);
+  console.log(`  limits  per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)}${cap(maxDaily) === 'no limit' ? '' : ` ($${usd(left)} left today)`} · ${Number(slip) / 100}% slippage ceiling · stop-loss: ${stop === null ? 'not in this version of the vault' : stop ? `${stop / 100}%` : 'off'}${paused ? '   PAUSED' : ''}`);
   for (const [name, t] of Object.entries(TOKENS)) {
     const bal = await balanceOf(t.token, vault);
     const market = name === 'USDT' ? null : await read('markets', [t.token]);
-    const pos = market && bal > 0n ? await read('position', [t.token]) : null;
+    const pos = market && bal > 0n ? await read('position', [t.token]).catch(() => null) : null;
     console.log(`  ${name.padEnd(5)} ${formatUnits(bal, t.decimals)}${market ? (market[3] ? '   (listed)' : '   (not listed)') : ''}${pos ? `   cost $${usd(pos[1])} · worth $${usd(pos[2])}${pos[3] ? ` · stop under $${usd(pos[3])}` : ''}` : ''}`);
   }
   console.log('');
