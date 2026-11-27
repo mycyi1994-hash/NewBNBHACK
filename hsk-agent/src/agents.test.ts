@@ -160,3 +160,21 @@ test('recommend: runnable only, the coin asked for, the risk the level allows, s
   assert.equal(sol.pick.id, 'trend-BTC');
   assert.equal(recommend([fake({ runnable: false })]), null);
 });
+
+test('an agent working now (holding, or traded in the last 30 days) leads one that has sat in cash for months', () => {
+  const now = Date.now() / 1000;
+  const sleepy = fake({ id: 'trend200-HSK', rule: 'trend200', base: 'HSK', tier: 1, maxDd: 0.1, trades: 3, marks: [{ time: now - 460 * DAY, side: 'sell', price: 1 }] });
+  const busy = fake({ id: 'break-HSK', rule: 'break', base: 'HSK', tier: 1, maxDd: 0.4, trades: 9, marks: [{ time: now - 5 * DAY, side: 'buy', price: 1 }] });
+  const holding = fake({ id: 'golden-HSK', rule: 'golden', base: 'HSK', tier: 1, maxDd: 0.3, trades: 2, live: true, marks: [{ time: now - 200 * DAY, side: 'buy', price: 1 }] });
+  assert.equal(recommend([sleepy, busy], { coin: 'HSK', level: 'pro' })!.pick.id, 'break-HSK');
+  assert.equal(recommend([sleepy, busy, holding], { coin: 'HSK', level: 'pro' })!.pick.id, 'golden-HSK', 'holding counts as working');
+  assert.equal(recommend([sleepy], { coin: 'HSK', level: 'pro' })!.pick.id, 'trend200-HSK', 'with no working agent the best of the rest still shows');
+});
+
+test('recommend skips agents already hired when another fits', () => {
+  const now = Date.now() / 1000;
+  const a = fake({ id: 'break-BTC', rule: 'break', tier: 1, maxDd: 0.1, live: true });
+  const b = fake({ id: 'golden-BTC', rule: 'golden', tier: 1, maxDd: 0.2, marks: [{ time: now - 2 * DAY, side: 'buy', price: 1 }] });
+  assert.equal(recommend([a, b], { coin: 'BTC', exclude: ['break-BTC'] })!.pick.id, 'golden-BTC');
+  assert.equal(recommend([a], { coin: 'BTC', exclude: ['break-BTC'] })!.pick.id, 'break-BTC', 'nothing else fits, so the hired one is still shown');
+});

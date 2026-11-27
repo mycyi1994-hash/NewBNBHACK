@@ -496,11 +496,24 @@ export async function rescore(a: Agent, window: number): Promise<Agent | null> {
 
 /** An agent that never traded in the window has no worst drop to judge, so it does not outrank one that did. */
 export const idle = (a: Agent) => a.trades === 0;
+/** Days since the agent's last buy or sell in the backtest; undefined when it never traded. */
+export function lastTradeDays(a: Pick<Agent, 'marks' | 'to'>, now = Date.now() / 1000): number | undefined {
+  if (!a.marks.length) return undefined;
+  const last = Math.max(...a.marks.map((m) => m.time));
+  return Math.max(0, Math.floor((now - last) / 86400));
+}
+/** How recent a trade must be for an agent to count as working now. */
+export const ACTIVE_DAYS = 30;
 /**
- * The default order everywhere: published classics first, then the smaller worst drop, then the better return.
- * Within a group, agents that did not trade at all in the window come last.
+ * Working now: holding the coin, or it bought or sold within the last ACTIVE_DAYS. An agent that has sat in cash for
+ * months has a small worst drop because it did nothing; it should not lead a list of agents to hire today.
  */
-export const byMerit = (a: Agent, b: Agent) => a.tier - b.tier || Number(idle(a)) - Number(idle(b)) || a.maxDd - b.maxDd || b.total - a.total || a.id.localeCompare(b.id);
+export const active = (a: Agent, now = Date.now() / 1000) => a.live || (lastTradeDays(a, now) ?? Infinity) <= ACTIVE_DAYS;
+/**
+ * The default order everywhere: agents working now first, then published classics, then the smaller worst drop,
+ * then the better return. Agents that never traded in the window come last within a group.
+ */
+export const byMerit = (a: Agent, b: Agent) => Number(!active(a)) - Number(!active(b)) || a.tier - b.tier || Number(idle(a)) - Number(idle(b)) || a.maxDd - b.maxDd || b.total - a.total || a.id.localeCompare(b.id);
 
 /** The position agents for any HashKey market (the chart's market may not be in the listing). */
 export async function positionAgents(m: cex.Market): Promise<Agent[]> {

@@ -189,7 +189,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       say({ text: t.agentsLoading, follow: [] }, 300);
       return;
     }
-    const r = recommend(list, { coin, level: levelRef.current });
+    const hiredIds = hiredRef.current.flatMap((h) => (h.source.type === 'market' ? [h.source.agentId] : []));
+    const r = recommend(list, { coin, level: levelRef.current, exclude: hiredIds });
     if (!r) { say({ text: t.agentsFailed, follow: [] }); return; }
     const text = coin && r.scope === 'all' ? t.recNoCoin(coin) : r.scope === 'coin' ? t.recCoin(r.pick.base) : t.recAll;
     agentNote(r.pick, text, { pool: r.pool });

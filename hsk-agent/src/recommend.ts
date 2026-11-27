@@ -2,8 +2,10 @@
 //  1. Only agents that can trade on HSKSwap (runnable).
 //  2. The coin the user is looking at or named; if no runnable agent trades it, all runnable agents.
 //  3. Risk within the user's level: "new" keeps risk 1–2, everyone else 1–3.
-//  4. Published classics before indicator rules before Moa's variations (agents.ts TIER); within the same
-//     group the smallest worst drop in the backtest wins (ties: higher period return, then id).
+//  4. Agents working now (holding, or traded in the last 30 days) before ones that have sat in cash; then published
+//     classics before indicator rules before Moa's variations (agents.ts TIER); within the same group the smallest
+//     worst drop in the backtest wins (ties: higher period return, then id).
+//  5. Agents the user already hired are skipped when another fits.
 // It never ranks by past return first: the top of many backtests is usually the one that got lucky.
 import { byMerit, type Agent, type Risk } from './agents.ts';
 

@@ -10,7 +10,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from '
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import { useT } from './i18n.ts';
-import { byMerit, idle, type Agent, type Tier } from './agents.ts';
+import { active, byMerit, idle, type Agent, type Tier } from './agents.ts';
 import { agentName, drop, pct, ruleLines, statePill, Face } from './AgentCard.tsx';
 import { CoinMark } from './CoinMark.tsx';
 import { markColor } from './Mark.tsx';
@@ -160,7 +160,7 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
   const board = coins.includes(coin) ? coin : coins[0] ?? coin;
   // "Published classics" is the first tab: only strategies with a public record, best risk-adjusted result first.
   const ranked = useMemo(() => runnable.filter((a) => a.base === board && a.kind === 'position' && (rank !== 'classic' || a.tier === 1))
-    .sort((p, r) => Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank, board]);
+    .sort((p, r) => Number(!active(p)) - Number(!active(r)) || Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank, board]);
   const top = ranked.slice(0, 6);
   const assets = useMemo(() => runnable.map((a) => a.base).filter((b, i, xs) => xs.indexOf(b) === i), [runnable]);
   const shown = useMemo(() => {
