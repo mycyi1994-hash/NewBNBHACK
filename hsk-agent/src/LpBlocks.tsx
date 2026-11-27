@@ -11,7 +11,7 @@ import { priceText } from './lpAmount.ts';
 
 const ROWS = 10;
 export const SHAPES: Shape[] = ['spot', 'curve', 'spotCurve', 'bidask', 'custom'];
-const COUNTS = [5, 10, 15, 20];
+const COUNTS = [0, 5, 10, 20];
 const CUSTOM_PICTURE = [0.5, 0.9, 0.35, 0.7, 0.6, 0.3, 0.85, 0.5];
 
 /** A small picture of a shape: four bars under the price, four over it. */
@@ -105,9 +105,9 @@ export default function LpBlocks(pr: BlocksProps) {
   const template = `${nb ? `repeat(${nb}, minmax(0, 1fr)) ` : ''}14px${ns ? ` repeat(${ns}, minmax(0, 1fr))` : ''}`;
   const lo = nb ? at(bins[buyIdx[0]].lower) : price, hi = ns ? at(bins[sellIdx[ns - 1]].upper) : price;
   const stepPct = (x: number) => `${(Math.pow(1.0001, x) * 100 - 100).toFixed(1)}%`;
-  const seg = (label: string, value: number, set: (v: number) => void) => (
+  const seg = (label: string, value: number, other: number, set: (v: number) => void) => (
     <span className="lpb-ctl"><em>{label}</em><span className="seg" role="group" aria-label={label}>
-      {[...new Set([...COUNTS, value])].sort((x, y) => x - y).map((x) => <button key={x} className={value === x ? 'on' : ''} aria-pressed={value === x} onClick={() => set(x)}>{x}</button>)}
+      {[...new Set([...COUNTS, value])].sort((x, y) => x - y).map((x) => <button key={x} className={value === x ? 'on' : ''} aria-pressed={value === x} disabled={x === 0 && other === 0} onClick={() => set(x)}>{x}</button>)}
     </span></span>
   );
 
@@ -129,15 +129,14 @@ export default function LpBlocks(pr: BlocksProps) {
       <div className="lpb-shapes" role="radiogroup" aria-label={t.lpShape}>
         {SHAPES.map((x) => (
           <button key={x} role="radio" aria-checked={pr.shape === x} className={pr.shape === x ? 'on' : ''} onClick={() => pr.onShape(x)}>
-            <ShapePicture shape={x} />
-            <b>{t.lpShapes[x]}</b>
+            <span className="lpb-shape-top"><ShapePicture shape={x} /><b>{t.lpShapes[x]}</b></span>
             <small>{t.lpShapeSub[x]}</small>
           </button>
         ))}
       </div>
 
       <div className="lpb-scroll">
-        <div className="lpb-area" style={{ '--cols': nb + ns } as CSSProperties}>
+        <div className="lpb-area" style={{ '--cols': nb + ns, '--gap': nb + ns > 24 ? '4px' : '7px' } as CSSProperties}>
           <div ref={grid} className="lpb-grid" style={{ gridTemplateColumns: template }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
             {buyIdx.map(col)}
             <div className={`lpb-now${ns === 0 ? ' end' : nb === 0 ? ' start' : ''}`} aria-hidden><span>{t.lpsNowPrice(priceText(price))}</span></div>
@@ -145,20 +144,20 @@ export default function LpBlocks(pr: BlocksProps) {
           </div>
           <div className="lpb-axis" style={{ gridTemplateColumns: template }} aria-hidden>
             {nb > 0 && <span style={{ gridColumn: '1', justifySelf: 'start' }}>{priceText(lo)}</span>}
-            {nb > 7 && <span style={{ gridColumn: `${Math.ceil(nb / 2)}` }}>{priceText(at(bins[buyIdx[Math.floor(nb / 2)]].lower))}</span>}
+            {nb > 5 && <span style={{ gridColumn: `${Math.ceil(nb / 2)}` }}>{priceText(at(bins[buyIdx[Math.floor(nb / 2)]].lower))}</span>}
             <span style={{ gridColumn: `${nb + 1}`, justifySelf: ns === 0 ? 'end' : nb === 0 ? 'start' : 'center' }}>{priceText(price)}</span>
-            {ns > 7 && <span style={{ gridColumn: `${nb + 1 + Math.ceil(ns / 2)}` }}>{priceText(at(bins[sellIdx[Math.floor(ns / 2)]].upper))}</span>}
+            {ns > 5 && <span style={{ gridColumn: `${nb + 1 + Math.ceil(ns / 2)}` }}>{priceText(at(bins[sellIdx[Math.floor(ns / 2)]].upper))}</span>}
             {ns > 0 && <span style={{ gridColumn: `${nb + 1 + ns}`, justifySelf: 'end' }}>{priceText(hi)}</span>}
           </div>
         </div>
       </div>
 
       <div className="lpb-foot">
-        <span className="lpb-ctl"><em>{t.lpStep}</em><span className="seg" role="group" aria-label={t.lpStep}>
+        <span className="lpb-ctl"><em>{t.lpsGapShort}</em><span className="seg" role="group" aria-label={t.lpStep}>
           {[SPACING, SPACING * 2, SPACING * 4].map((x) => <button key={x} className={pr.step === x ? 'on' : ''} aria-pressed={pr.step === x} onClick={() => pr.onStep(x)}>{stepPct(x)}</button>)}
         </span></span>
-        {showBuy && seg(t.lpsCountDown, pr.down, (v) => pr.onCounts(v, pr.up))}
-        {showSell && seg(t.lpsCountUp, pr.up, (v) => pr.onCounts(pr.down, v))}
+        {seg(t.lpsDownShort, pr.down, pr.up, (v) => pr.onCounts(v, pr.up))}
+        {seg(t.lpsUpShort, pr.up, pr.down, (v) => pr.onCounts(pr.down, v))}
         <p className="lpb-hint">{t.lpsBlocksHint}</p>
       </div>
     </section>

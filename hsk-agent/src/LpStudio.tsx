@@ -33,7 +33,7 @@ const REACH = { min: 1, max: 40 };
 type Phase = { k: 'idle' } | { k: 'busy'; step: string } | { k: 'done'; tx: string } | { k: 'failed'; why: string };
 type StepId = 'goal' | 'range' | 'amount';
 /** What undo and redo bring back in the block editor. */
-type Snap = Pick<LpPlan, 'shape' | 'weights' | 'step' | 'perSide' | 'perSideUp' | 'reachPct'>;
+type Snap = Pick<LpPlan, 'shape' | 'weights' | 'step' | 'perSide' | 'perSideUp' | 'reachPct' | 'goal' | 'usdt' | 'coin'>;
 
 export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay, chart, interval, setInterval: setIv }: {
   plan: LpPlan; setPlan: (p: LpPlan) => void; vault: VaultInfo | null; onClose: () => void; onAsset: (a: Asset) => void;
@@ -159,19 +159,31 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
   const stratNow = strat ? LP_STRATEGIES.find((x) => x.id === strat && x.goal === plan.goal && x.shape === plan.shape && widthFor(x.reachPct).step === plan.step && widthFor(x.reachPct).perSide === plan.perSide && (plan.perSideUp ?? plan.perSide) === plan.perSide) ?? null : null;
   const pickStrat = (x: LpStrategy) => {
     const sp = strategyPlan(x);
-    const keep = price && total > 0 ? allocate(sp.goal!, total, price, wallet, p.decimals) : { usdt: 0, coin: 0 };
+    const keep = price && total > 0 ? allocate(sp.goal!, Math.round(total * 100) / 100, price, wallet, p.decimals) : { usdt: 0, coin: 0 };
     setPlan({ ...plan, ...sp, usdt: keep.usdt, coin: keep.coin, weights: undefined });
     setStrat(x.id); setOpen(null); setDraft(null);
     onSay?.(t.lpsStratSay(t.lpsStrat[x.id][0], t.lpsStrat[x.id][1]));
   };
 
-  /* ---------- goal ---------- */
-  const pickGoal = (g: Goal) => {
-    if (g === goal) { setOpen(null); return; }
-    // The amount is asked again for the new goal; the range carries over.
-    setPlan({ ...plan, goal: g, usdt: 0, coin: 0, shape: plan.shape === 'custom' ? 'spot' : plan.shape, weights: undefined });
-    setOpen(null); setDraft(null);
-    onSay?.(t.lpsSayGoal[g](name));
+  /* ---------- the manual path: the block editor is where the plan is made ---------- */
+  /** Which sides hold orders says what the plan does. */
+  const goalOf = (down: number, up: number): Goal => (down > 0 && up > 0 ? 'both' : down > 0 ? 'buy' : 'sell');
+  const enterOwn = () => {
+    setMode('own'); setBlocks(true); setOpen(null);
+    if (goal && reached) return;   // a plan already on screen (a strategy, or Moa's) is the starting point
+    const g: Goal = 'both', keep = price && total > 0 ? allocate(g, total, price, wallet, p.decimals) : { usdt: 0, coin: 0 };
+    setPlan({ ...plan, goal: g, ...widthFor(6), reachPct: 6, shape: 'spot', weights: undefined, usdt: keep.usdt, coin: keep.coin });
+  };
+  /** Orders below and above, from the editor; 0 on a side turns it off, and the amount follows the new sides. */
+  const setCounts = (down: number, up: number) => {
+    if (down + up <= 0) return;
+    begin();
+    const g = goalOf(down, up), cents = Math.round(total * 100) / 100;
+    const keep = price && cents > 0 ? allocate(g, cents, price, wallet, p.decimals) : { usdt: plan.usdt, coin: plan.coin };
+    const n = down || plan.perSide, m = up || (plan.perSideUp ?? plan.perSide);
+    // Only a side switched off or back on: the block heights stay as they were.
+    const same = n === plan.perSide && m === (plan.perSideUp ?? plan.perSide);
+    setPlan({ ...plan, goal: g, perSide: n, perSideUp: m, usdt: keep.usdt, coin: keep.coin, ...(same ? {} : { weights: undefined, shape: plan.shape === 'custom' ? 'spot' as Shape : plan.shape }) });
   };
 
   /** The result in Moa's words. */
@@ -195,7 +207,9 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
   const ready = !!goal && total > 0 && reached;
   const next: StepId | null = !goal ? 'goal' : !reached ? 'range' : !(total > 0) ? 'amount' : null;
   const cur = open ?? next;
-  const stage = !goal ? 0 : !reached ? 1 : !(total > 0) ? 2 : 3;
+  const manual = mode === 'own';
+  const stage = manual ? (!goal || !reached ? 0 : !(total > 0) ? 1 : 2) : !goal ? 0 : !reached ? 1 : !(total > 0) ? 2 : 3;
+  const progress = manual ? t.lpsProgressOwn : t.lpsProgress;
   const usdtBins = live.filter((b) => b.side === 'usdt'), coinBins = live.filter((b) => b.side === 'coin');
   const buyEdge = edgesOf(usdtBins), sellEdge = edgesOf(coinBins);
 
@@ -317,7 +331,7 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
 
   /* ---------- the block editor ---------- */
   const heights = heightsOf(plan, bins);
-  const snap = (): Snap => ({ shape: plan.shape, weights: plan.weights, step: plan.step, perSide: plan.perSide, perSideUp: plan.perSideUp, reachPct: plan.reachPct });
+  const snap = (): Snap => ({ shape: plan.shape, weights: plan.weights, step: plan.step, perSide: plan.perSide, perSideUp: plan.perSideUp, reachPct: plan.reachPct, goal: plan.goal, usdt: plan.usdt, coin: plan.coin });
   const begin = () => setHist((h) => ({ back: [...h.back.slice(-49), snap()], fwd: [] }));
   const undo = () => { const last = hist.back[hist.back.length - 1]; if (!last) return; setHist({ back: hist.back.slice(0, -1), fwd: [...hist.fwd, snap()] }); setPlan({ ...plan, ...last }); };
   const redo = () => { const last = hist.fwd[hist.fwd.length - 1]; if (!last) return; setHist({ back: [...hist.back, snap()], fwd: hist.fwd.slice(0, -1) }); setPlan({ ...plan, ...last }); };
@@ -326,8 +340,8 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
     <LpBlocks bins={bins} heights={heights} goal={goal} price={price} at={at} symbol={p.symbol}
       shape={plan.shape} onShape={setShape} onBegin={begin} onHeights={(h) => setPlan({ ...plan, shape: 'custom', weights: h })}
       step={B} onStep={(x) => { begin(); setPlan({ ...plan, step: x, weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape }); }}
-      down={plan.perSide} up={plan.perSideUp ?? plan.perSide}
-      onCounts={(dn, up) => { begin(); setPlan({ ...plan, perSide: dn, perSideUp: up, weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape }); }}
+      down={goal === 'sell' ? 0 : plan.perSide} up={goal === 'buy' ? 0 : plan.perSideUp ?? plan.perSide}
+      onCounts={setCounts}
       canUndo={hist.back.length > 0} canRedo={hist.fwd.length > 0} onUndo={undo} onRedo={redo} onClose={() => setBlocks(false)} />
   ) : null;
 
@@ -378,25 +392,6 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
       })}
     </div>
   );
-  const goalBody = () => (
-    <>
-      <div className="seg lps-mode" role="tablist">
-        <button role="tab" aria-selected={mode === 'strat'} className={mode === 'strat' ? 'on' : ''} onClick={() => setMode('strat')}>{t.lpsModeStrat}</button>
-        <button role="tab" aria-selected={mode === 'own'} className={mode === 'own' ? 'on' : ''} onClick={() => setMode('own')}>{t.lpsModeOwn}</button>
-      </div>
-      {mode === 'strat' ? stratList : goalCards}
-    </>
-  );
-  const goalCards = (
-    <div className="lps-goals" role="radiogroup" aria-label={t.lpsQ1}>
-      {(['buy', 'sell', 'both'] as Goal[]).map((g) => (
-        <button key={g} role="radio" aria-checked={goal === g} className={`lps-goal g-${g}${goal === g ? ' on' : ''}`} onClick={() => pickGoal(g)}>
-          <span className="lps-goal-ico"><Icon name={GOAL_ICON[g]} size={18} /></span>
-          <span className="lps-goal-txt"><b>{t.lpsGoal[g][0]}</b><small>{t.lpsGoal[g][1](name)}</small></span>
-        </button>
-      ))}
-    </div>
-  );
   const sign = goal === 'both' ? '±' : goal === 'sell' ? '+' : '−';
   const rangeBody = (
     <>
@@ -436,6 +431,10 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
     </>
   );
 
+  const ownLine = goal && price ? [
+    goal !== 'sell' && buyEdge ? t.lpsOwnBuy(usdtBins.length, priceText(buyEdge[0])) : null,
+    goal !== 'buy' && sellEdge ? t.lpsOwnSell(coinBins.length, priceText(sellEdge[1])) : null,
+  ].filter(Boolean).join(' · ') : '';
   const footLabel = !goal ? t.lpsNeed.goal : !reached ? t.lpsNeed.range : !(total > 0) ? t.lpsNeed.amount : t.lpsSupplyGo;
 
   return (
@@ -495,11 +494,31 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
         <aside className="lps-ticket">
           <div className="lps-flow">
             <ol className="lps-prog" aria-label={t.lpOpen}>
-              {t.lpsProgress.map((x, i) => <li key={x} className={i < stage ? 'done' : i === stage ? 'now' : ''} aria-current={i === stage ? 'step' : undefined}><i>{i < stage ? '✓' : i + 1}</i>{x}</li>)}
+              {progress.map((x, i) => <li key={x} className={i < stage ? 'done' : i === stage ? 'now' : ''} aria-current={i === stage ? 'step' : undefined}><i>{i < stage ? '✓' : i + 1}</i>{x}</li>)}
             </ol>
-            {step('goal', 1, mode === 'strat' ? t.lpsQStrat : t.lpsQ1, goalBody(), false)}
-            {step('range', 2, goal ? t.lpsQRange[goal] : t.lpsQRange.buy, rangeBody, !goal)}
-            {step('amount', 3, t.lpsQAmount, amountBody, !goal || !reached)}
+            <div className="seg lps-mode" role="tablist">
+              <button role="tab" aria-selected={!manual} className={!manual ? 'on' : ''} onClick={() => setMode('strat')}>{t.lpsModeStrat}</button>
+              <button role="tab" aria-selected={manual} className={manual ? 'on' : ''} onClick={enterOwn}>{t.lpsModeOwn}</button>
+            </div>
+            {manual ? (
+              <>
+                {goal && reached && (
+                  <button className={`lps-own-row${blocks ? ' on' : ''}`} onClick={() => setBlocks(true)}>
+                    <span className="lps-n"><Icon name="check" size={14} /></span>
+                    <span className="lps-own-txt"><b>{t.lpsOwnSet}</b><small>{ownLine}</small></span>
+                    <span className="lps-step-edit" aria-hidden><Icon name="edit" size={15} /></span>
+                  </button>
+                )}
+                {blocks && editor && <div className="lps-blocks-panel">{editor}</div>}
+                {step('amount', 2, t.lpsQAmount, amountBody, !goal || !reached)}
+              </>
+            ) : (
+              <>
+                {step('goal', 1, t.lpsQStrat, stratList, false)}
+                {step('range', 2, goal ? t.lpsQRange[goal] : t.lpsQRange.buy, rangeBody, !goal)}
+                {step('amount', 3, t.lpsQAmount, amountBody, !goal || !reached)}
+              </>
+            )}
 
             {ready && (
               <section className="lps-result" aria-live="polite">
@@ -542,12 +561,12 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
               </section>
             )}
 
-            {goal && reached && (
+            {!manual && goal && reached && (
               <button className={`lps-adv-btn${blocks ? ' on' : ''}`} onClick={() => setBlocks((v) => !v)} aria-expanded={blocks}>
                 <span>{t.lpsAdvanced}</span><small>{t.lpShapes[plan.shape]}</small><Icon name="down" size={14} />
               </button>
             )}
-            {blocks && editor && <div className="lps-blocks-panel">{editor}</div>}
+            {!manual && blocks && editor && <div className="lps-blocks-panel">{editor}</div>}
 
             {s && (
               <section className="lps-mine">
