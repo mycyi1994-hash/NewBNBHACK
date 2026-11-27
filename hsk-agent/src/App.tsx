@@ -192,6 +192,8 @@ function Shell() {
   const go = (v: View) => { if (v !== 'trade') setTradeCtx({ label: '' }); setView(v); window.scrollTo(0, 0); };
   const tell = (x: MoaAsk) => setInject({ ...x, n: ++injectN.current });
   const attention = () => { if (window.matchMedia(NARROW).matches) setMoaOpen(true); };
+  /** Opening the liquidity studio also starts Moa's walk-through; closing it ends the plan. */
+  const openLp = (p: LpPlan | null) => { setLp((had) => { if (p && !had) setTimeout(() => tell({ kind: 'lp' }), 0); return p; }); };
 
   // Agent scores for the market, Moa's picks and the runner. Refreshed every 10 minutes so live signals move.
   const [agentsTry, setAgentsTry] = useState(0);
@@ -377,7 +379,7 @@ function Shell() {
         {/* On the trade screen the agents have their own tab under the chart, with the numbers; elsewhere, the bar. */}
         {view !== 'trade' && <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />}
-        {view === 'trade' && <Trade quotes={quotes} show={show} lp={{ plan: lp, setPlan: setLp, vault }}
+        {view === 'trade' && <Trade quotes={quotes} show={show} lp={{ plan: lp, setPlan: openLp, vault }}
           mine={{ count: hired.length, asks, node: <MineDock hired={hired} quotes={quotes} vault={vault} now={now} sending={sending} onOpen={(id) => tell({ kind: 'status', hiredId: id })} onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }} onPause={pause} onResume={resume} /> }} onContext={setTradeCtx} onAsk={askMoaAbout} onBuild={(coin) => openBuilder({ coin })} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
         {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} />}
         {view === 'build' && <Builder draft={build} onOpen={openBacktest} />}
@@ -389,7 +391,7 @@ function Shell() {
         )}
       </main>
       <div className="moa-col">
-        <MoaFeed quotes={quotes} vault={vault} inject={inject} context={ctx} agents={agents} agentsFailed={agentsFailed}
+        <MoaFeed lp={lp} onLp={setLp} quotes={quotes} vault={vault} inject={inject} context={ctx} agents={agents} agentsFailed={agentsFailed}
           hired={hired} sending={sending} now={now}
           onHire={setSheet} onEdit={(id) => { const h = hiredRef.current.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
           onPause={pause} onResume={resume} onApprove={(id, o) => void approve(id, o)} onDecline={decline}
