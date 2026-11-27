@@ -97,7 +97,9 @@ export interface LadderStep { from: number; to: number; size: number; tone: 'buy
 /** A line on the chart the user drags up or down: it reports the price under the pointer while dragged. */
 export interface DragLine { price: number; tone: 'buy' | 'sell'; label: string; /** a first-time hint under the label */ hint?: string; onMove: (price: number) => void; onDone: () => void }
 
-export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until, zones, ladder, handles, fit, room }: {
+export function CandleChart({ candles, inds, onOlder, priceLine, markers, markerTips, resetKey, range, study, until, zones, ladder, handles, fit, room }: {
+  /** Words shown under the pointer on a bar that carries markers, by the bar's time (seconds). */
+  markerTips?: Map<number, string>;
   zones?: Zone[];
   ladder?: LadderStep[];
   handles?: DragLine[];
@@ -145,6 +147,8 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
   const rangeKey = useRef<string | null>(null);
   const prevFirst = useRef<number | null>(null);
   const older = useRef(onOlder); older.current = onOlder;
+  const tips = useRef(markerTips); tips.current = markerTips;
+  const tipEl = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!box.current) return;
@@ -154,6 +158,18 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
     box.current.querySelector('a')?.setAttribute('aria-label', 'TradingView Lightweight Charts');
     // Near the left edge: ask for older candles.
     c.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (r && r.from < 30) older.current?.(); });
+    // Over a bar with markers: what they stand for (e.g. how many swaps and how much), next to the pointer.
+    c.subscribeCrosshairMove((ev) => {
+      const el = tipEl.current;
+      if (!el) return;
+      const text = ev.point && ev.time !== undefined ? tips.current?.get(ev.time as number) : undefined;
+      if (!text || !ev.point) { el.hidden = true; return; }
+      el.textContent = text;
+      el.hidden = false;
+      const w = box.current?.clientWidth ?? 0;
+      el.style.left = `${Math.min(ev.point.x + 14, Math.max(0, w - el.offsetWidth - 8))}px`;
+      el.style.top = `${Math.max(4, ev.point.y - el.offsetHeight - 10)}px`;
+    });
     return () => {
       c.remove(); chart.current = null; main.current = null; extra.current = []; pl.current = null;
       // What was applied belonged to that chart. The next one (a remount, or React's second pass over effects
@@ -252,6 +268,8 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
       const last = candles[candles.length - 1].close, d = last >= 1000 ? 0 : last >= 1 ? 2 : 4;
       m.applyOptions({ priceFormat: { type: 'custom', minMove: 10 ** -d, formatter: (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}` } });
     }
+    // A coin under $1 (HSK at $0.08) needs more than the default two decimals, or every axis label reads "0.08".
+    else if (candles[candles.length - 1].close < 1) m.applyOptions({ priceFormat: { type: 'price', precision: 5, minMove: 0.00001 } });
     draw();
     m.setMarkers(markers ?? []);
     if (pl.current) { m.removePriceLine(pl.current); pl.current = null; }
@@ -474,7 +492,7 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
 
   return (
     <div className="chart-wrap">
-      <div className="chart-main"><div ref={box} className="chart" /><div ref={zoneLayer} className="chart-zones" aria-hidden /><div ref={stepLayer} className="chart-steps" aria-hidden /><div ref={dragLayer} className="chart-drags" /><div ref={layer} className="chart-badges" aria-hidden /></div>
+      <div className="chart-main"><div ref={box} className="chart" /><div ref={zoneLayer} className="chart-zones" aria-hidden /><div ref={stepLayer} className="chart-steps" aria-hidden /><div ref={dragLayer} className="chart-drags" /><div ref={layer} className="chart-badges" aria-hidden /><div ref={tipEl} className="chart-tip" hidden /></div>
       {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneSpec?.kind === 'mom' && study ? (study.made ? t.term('ret', paneSpec.days) : t.ovLabel[study.rule]) : `RSI(${paneSpec?.kind === 'rsi' ? paneSpec.period : 14})`}</span><div ref={subBox} className="chart" /></div>}
     </div>
   );
@@ -808,6 +826,9 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
 
 /* ---------- DEX: HSKSwap on HSK Chain ---------- */
 
+/** Swaps smaller than this (USDT) are not marked on the chart. */
+const MIN_SWAP_USD = 5;
+
 function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, setSel, onHire, onAsk, mine, lp }: PanelProps & { asset: Asset; setAsset: (a: Asset) => void; market: cex.Market; detail: PoolDetail | null; quotes: Quote[] }) {
   const { t: s } = useT();
   const [iv, setIv] = useState<GateInterval>(() => stored('moa.dexiv', DEX_IV, '1h'));
@@ -832,21 +853,47 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   const study = useMemo(() => (shown && iv === (shown.interval ?? '1d') ? studyOf(shown, candles, s) : undefined), [shown, candles, s, iv]);
   const replay = useReplay(study ? shown : null);
 
-  // Real HSKSwap swaps, pinned to the Gate candle they fall in.
-  const markers = useMemo(() => {
-    if (!detail || !candles.length) return [];
+  // Real HSKSwap swaps, pinned to the Gate candle they fall in: at most one buy and one sell marker per candle, a bigger
+  // and stronger arrow for more volume, and the count and volume under the pointer. Swaps under MIN_SWAP_USD are left
+  // out (dust and bots would otherwise mark every candle).
+  const swapMarks = useMemo(() => {
+    const tips = new Map<number, string>();
+    if (!detail || !candles.length) return { markers: [] as SeriesMarker<Time>[], tips };
     const sec = GATE_SECONDS[shownIv], first = candles[0].time, last = candles[candles.length - 1].time;
-    const out: SeriesMarker<Time>[] = [];
-    for (const x of [...detail.swaps].reverse()) {
+    const bins = new Map<number, { buy: { n: number; usd: number }; sell: { n: number; usd: number } }>();
+    for (const x of detail.swaps) {
+      if (x.usdt < MIN_SWAP_USD) continue;
       const t0 = Math.floor(x.time / 1000);
       if (t0 < first || t0 > last + sec) continue;
       let lo = 0, hi = candles.length - 1;
       while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (candles[mid].time <= t0) lo = mid; else hi = mid - 1; }
-      const buy = x.side === 'buy';
-      out.push({ time: candles[lo].time as UTCTimestamp, position: buy ? 'belowBar' : 'aboveBar', color: buy ? '#16a34a' : '#dc2626', shape: buy ? 'arrowUp' : 'arrowDown', size: 0.8 });
+      const t = candles[lo].time;
+      const bin = bins.get(t) ?? { buy: { n: 0, usd: 0 }, sell: { n: 0, usd: 0 } };
+      const side = bin[x.side === 'buy' ? 'buy' : 'sell'];
+      side.n++; side.usd += x.usdt;
+      bins.set(t, bin);
     }
-    return out.sort((a, b) => (a.time as number) - (b.time as number));
-  }, [detail, candles, shownIv]);
+    const top = Math.max(1, ...[...bins.values()].flatMap((b) => [b.buy.usd, b.sell.usd]));
+    const weight = (usd: number) => Math.min(1, Math.log10(1 + usd) / Math.log10(1 + top));
+    const out: SeriesMarker<Time>[] = [];
+    const money = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`;
+    for (const [t, b] of [...bins.entries()].sort((p, q) => p[0] - q[0])) {
+      const parts: string[] = [];
+      if (b.buy.n) {
+        const w = weight(b.buy.usd);
+        out.push({ time: t as UTCTimestamp, position: 'belowBar', color: `rgba(22, 163, 74, ${(0.45 + 0.55 * w).toFixed(2)})`, shape: 'arrowUp', size: +(0.5 + 1.1 * w).toFixed(2) });
+        parts.push(s.swapTipBuy(b.buy.n, money(b.buy.usd)));
+      }
+      if (b.sell.n) {
+        const w = weight(b.sell.usd);
+        out.push({ time: t as UTCTimestamp, position: 'aboveBar', color: `rgba(220, 38, 38, ${(0.45 + 0.55 * w).toFixed(2)})`, shape: 'arrowDown', size: +(0.5 + 1.1 * w).toFixed(2) });
+        parts.push(s.swapTipSell(b.sell.n, money(b.sell.usd)));
+      }
+      tips.set(t, `HSKSwap · ${parts.join(' · ')}`);
+    }
+    return { markers: out, tips };
+  }, [detail, candles, shownIv, s]);
+  const markers = swapMarks.markers;
   const priceLine = useMemo(() => (detail ? { price: detail.price, title: 'HSKSwap' } : undefined), [detail?.price]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -887,7 +934,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
             : <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>}
         </div>
         <PoolRange asset={asset} symbol={p.symbol} price={detail?.price} onLp={lp ? () => lp.setPlan(defaultPlan(asset)) : undefined} />
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} markerTips={study ? undefined : swapMarks.tips} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
       <Dock venue="dex" coin={asset} onLp={lp ? (x) => lp.setPlan({ ...defaultPlan(asset), ...strategyPlan(x) }) : undefined} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
         <div className="swaps">

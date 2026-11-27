@@ -2735,3 +2735,7 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .vcx-diff s { color: var(--ink-3); }
 .vcx-diff dd b { color: var(--ink-title); font-weight: 700; }
 .vcx-ok { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--pos); }
+
+/* the words for a bar's markers (HSKSwap swaps), under the pointer */
+.chart-tip { position: absolute; z-index: 6; pointer-events: none; padding: 5px 9px; border-radius: 8px; background: rgba(32, 33, 36, .92); color: #fff; font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chart-tip[hidden] { display: none; }
