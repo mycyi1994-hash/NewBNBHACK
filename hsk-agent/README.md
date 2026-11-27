@@ -123,15 +123,16 @@ stranger once the price has held, with the stranger getting nothing.
 - **Liquidity strategy: liquidity in blocks on HSKSwap, for a beginner.** The "Liquidity strategy" button next to the
   pool's liquidity opens a screen with the coin's chart filling the height on the left and an order panel on the right
   (`src/LpStudio.tsx`). The first step offers six ready-made strategies (`src/lpStrategies.ts`: slow buy, buy more the
-  deeper it falls, crash catcher, sell a little on every rise, fees near the price, set and leave), each with how it
-  would have done over the last 30 days: `replay()` walks Gate's last 720 hourly candles through the same Uniswap V3
-  block math, moving HSKSwap's price only when the gap pays for the 0.3% fee, and compares the result with keeping
-  USDT, buying everything at the start, or leaving the coins untouched. Or the user answers three questions
+  deeper it falls, crash catcher, sell a little on every rise, fees near the price, set and leave), each a name, one
+  plain line and how far it reaches; no past or expected returns are shown or quoted by Moa. Or the user answers three questions
   (what to do, how far, how much). Either way the orders are drawn on the chart at their prices, the range edges are
   lines to drag, and the panel answers in one plain sentence ("If bitcoin comes down to $54,114 it buys with $100.00
   in 18 orders"), with what happens at ±5%, a plain warning of what a further fall or rise means, and the exact
   approvals the wallet will ask for (`src/lpAmount.ts` splits and rounds the amounts; a coin side too small to matter
-  is said, not hidden). Moa explains each choice; the shape and order spacing sit under "Advanced". Typed sentences
+  is said, not hidden). Moa explains each choice. "Adjust blocks" opens a block editor under the chart (`src/LpBlocks.tsx`): one
+  column of cells per order, USDT left and the coin right of the price, shapes even / near / half and half / ends /
+  custom, every column set by click, paint, arrow keys, with undo and redo, plus the order spacing and the number of
+  orders below and above; the two sides are independent, so dragging one edge moves only that side. Typed sentences
   change the plan the same way, and the AI's `set_lp_plan` tool can pick a strategy by name or
   fills the same plan. Supplying is the user's own wallet: exact approvals, then every step as one Uniswap V3 position
   through HSKSwap's own position manager (`0xDF0A9b83…0cad5`, whose factory is the router's) in one transaction
