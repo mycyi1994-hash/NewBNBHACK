@@ -1,50 +1,70 @@
-// "Liquidity strategy" on the HSKSwap screen, for someone who has never supplied liquidity. Three questions, one at a
-// time: what to do (buy as the price comes down, sell as it goes up, or both for the fees), how much, and down (or up)
-// to which price, offered as prices the chart shows (the last week's low, the last month's). The chart above draws the
-// zones; the result is said in plain words; shapes and step sizes wait under "Advanced". Moa, on the right, explains
-// each choice. Supplying is the user's own wallet: exact approvals, then every step in one transaction.
+// "Liquidity strategy" on the HSKSwap screen, for someone who has never supplied liquidity. The chart fills the
+// left; on the right, like an exchange's order panel, three choices one after the other: what to do, how far, how
+// much. Every choice shows on the chart at once: the zones, the steps at their prices, and a line to drag. The panel
+// then says what the money does in plain words, with the supply button always at its foot. Supplying is the user's
+// own wallet: exact approvals, then every step in one transaction.
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useT } from './i18n.ts';
 import type { Asset } from './intent.ts';
 import { POOLS, poolState } from './dex.ts';
-import { gateCandles } from './gate.ts';
+import { gateCandles, type GateInterval } from './gate.ts';
 import type { Candle } from './cex.ts';
-import { poolDepth, type PoolState } from './depth.ts';
+import type { PoolState } from './depth.ts';
 import { chainCall, sendTx, useSession } from './account.ts';
 import type { VaultInfo } from './parts.tsx';
-import { Icon } from './Icons.tsx';
+import { Icon, type IconName } from './Icons.tsx';
 import { NANO_REFRESH_MS } from './nano.ts';
 import { widthFor } from './lpTalk.ts';
-import { allowanceOf, approveCall, balanceOf, binsOf, collectCall, fillPoints, mintCall, positionsOf, priceAt, removeCall, shapeWeight, withPlan, USDT, NPM, SPACING, type Goal, type LpPlan, type Position, type Shape } from './lp.ts';
+import { LP_STRATEGIES, replay, strategyPlan, type LpStrategy, type LpStrategyId, type Replay } from './lpStrategies.ts';
+import type { DragLine, LadderStep, Zone } from './Trade.tsx';
+import { allocate, coinQty, fullFill, holdingsAt, maxUsd, money, priceText, SMALL_SIDE_USD, type Wallet } from './lpAmount.ts';
+import { allowanceOf, approveCall, balanceOf, binsOf, collectCall, fillPoints, mintCall, positionsOf, priceAt, removeCall, shapeWeight, USDT, NPM, SPACING, type Bin, type Goal, type LpPlan, type Position, type Shape } from './lp.ts';
 
-export interface LpZone { from: number; to: number; tone: 'buy' | 'sell'; label: string }
-const ROWS = 8;
-const fmtPrice = (v: number) => (v >= 1000 ? Math.round(v).toLocaleString('en-US') : v >= 1 ? v.toFixed(2) : v.toPrecision(4));
-const usd = (v: number) => (v >= 1000 ? `$${Math.round(v).toLocaleString('en-US')}` : `$${v.toFixed(v >= 10 ? 0 : 2)}`);
-const qty = (v: number) => (v === 0 ? '0' : v >= 1 ? Number(v.toFixed(4)).toString() : Number(v.toPrecision(4)).toString());
+export type LpZone = Zone;
+/** What the studio draws on the chart. */
+export interface StudioChart { zones: Zone[]; ladder: LadderStep[]; handles: DragLine[]; fit: number[] }
+export const STUDIO_IV = ['1h', '4h', '1d'] as const;
+
 const toNum = (raw: bigint, d: number) => Number(raw) / 10 ** d;
-const round2 = (v: number) => Math.floor(v * 100) / 100;
-const usdtText = (v: number) => (v >= 10 ? Math.round(v).toLocaleString('en-US') : v.toFixed(2));
+/** Whole dollars for the past results ($812, not $812.09); cents only under a dollar. */
+const usd0 = (v: number) => (v >= 1 ? `$${Math.round(v).toLocaleString('en-US')}` : money(v));
+const GOAL_ICON: Record<Goal, IconName> = { buy: 'dip', sell: 'trend', both: 'collect' };
+const REACH = { min: 1, max: 40 };
 
 type Phase = { k: 'idle' } | { k: 'busy'; step: string } | { k: 'done'; tx: string } | { k: 'failed'; why: string };
+type StepId = 'goal' | 'range' | 'amount';
 
-export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay, chart }: {
+export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay, chart, interval, setInterval: setIv }: {
   plan: LpPlan; setPlan: (p: LpPlan) => void; vault: VaultInfo | null; onClose: () => void; onAsset: (a: Asset) => void;
   /** Moa explains a choice on the right. */
   onSay?: (text: string) => void;
-  /** The coin's candle chart with the plan's zones drawn on it. */
-  chart: (zones: LpZone[]) => ReactNode;
+  /** The coin's candle chart with the plan drawn on it. */
+  chart: (layer: StudioChart) => ReactNode;
+  interval: GateInterval; setInterval: (v: GateInterval) => void;
 }) {
   const { t } = useT();
   const s = useSession();
   const p = POOLS[plan.asset];
   const [pool, setPool] = useState<PoolState | null>(null);
   const [daily, setDaily] = useState<Candle[] | null>(null);
-  const [wallet, setWallet] = useState<{ usdt: number; coin: number } | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
   const [mine, setMine] = useState<Position[] | null>(null);
   const [phase, setPhase] = useState<Phase>({ k: 'idle' });
   const [sure, setSure] = useState(false);
   const [own, setOwn] = useState('');
+  const [draft, setDraft] = useState<string | null>(null);
+  const [open, setOpen] = useState<StepId | null>(null);
+  // On a tall screen there is room for the advanced settings to start open.
+  // The drag lines carry a small "drag to change" until the first drag.
+  const [dragged, setDragged] = useState(() => { try { return localStorage.getItem('moa.lpDragged') === '1'; } catch { return false; } });
+  const [roomy] = useState(() => typeof window !== 'undefined' && window.innerHeight >= 1200);
+  /** A range under the pointer, drawn on the chart before it is picked. */
+  const [preview, setPreview] = useState<LpPlan | null>(null);
+  // Step 1 starts on the ready-made strategies; setting it up by hand is one tap away.
+  const [mode, setMode] = useState<'strat' | 'own'>('strat');
+  const [strat, setStrat] = useState<LpStrategyId | null>(null);
+  // Each strategy replayed on the coin's last 720 hourly candles (Gate), once per coin.
+  const [past, setPast] = useState<{ asset: Asset; list: Candle[] | null } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -55,6 +75,21 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
     const iv = setInterval(() => { if (!document.hidden) void pull(); }, NANO_REFRESH_MS / 3);
     return () => { alive = false; clearInterval(iv); };
   }, [plan.asset]);
+
+  useEffect(() => {
+    if (past?.asset === plan.asset) return;
+    let alive = true;
+    setPast(null);
+    gateCandles(plan.asset, '1h', 720).then((c) => { if (alive) setPast({ asset: plan.asset, list: c.length > 24 ? c : null }); }).catch(() => { if (alive) setPast({ asset: plan.asset, list: null }); });
+    return () => { alive = false; };
+  }, [plan.asset]); // eslint-disable-line react-hooks/exhaustive-deps
+  const replays = useMemo(() => {
+    if (!past || past.asset !== plan.asset || !past.list) return null;
+    const out: Partial<Record<LpStrategyId, Replay>> = {};
+    for (const x of LP_STRATEGIES) { const r = replay(strategyPlan(x), past.list); if (r) out[x.id] = r; }
+    return out;
+  }, [past, plan.asset]);
+  const pastDays = past?.list ? Math.round((past.list[past.list.length - 1].time - past.list[0].time) / 86400) : 30;
 
   const price = pool ? pool.sqrtPrice ** 2 * 10 ** (p.decimals - 6) : undefined;
   const reload = useCallback(async () => {
@@ -67,95 +102,188 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
   }, [s?.address, pool?.tick, p.token]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void reload(); }, [reload]);
 
+  const goal = plan.goal;
+  /** The coin as people call it (비트코인, not WBTC); amounts still show the token's symbol. */
+  const name = plan.asset === 'BTC' ? t.coinBtc : plan.asset === 'ETH' ? t.coinEth : 'HSK';
+  const at = (tick: number) => priceAt(tick, p.decimals);
   const bins = useMemo(() => (pool ? binsOf(plan, pool.tick) : []), [plan, pool?.tick]); // eslint-disable-line react-hooks/exhaustive-deps
   const B = bins.length ? bins[0].upper - bins[0].lower : plan.step;
-  const at = (tick: number) => priceAt(tick, p.decimals);
-  const goal = plan.goal;
+  const sides = (g: Goal | undefined): Bin['side'][] => (g === 'buy' ? ['usdt'] : g === 'sell' ? ['coin'] : g === 'both' ? ['usdt', 'coin'] : []);
+  const live = bins.filter((b) => sides(goal).includes(b.side));
+  /** The far edges a plan reaches, as prices: [lowest, highest]. */
+  const edgesOf = (bs: Bin[]) => (bs.length ? [at(Math.min(...bs.map((b) => b.lower))), at(Math.max(...bs.map((b) => b.upper)))] as const : null);
 
-  /* ---------- step 1: what to do ---------- */
-  const pickGoal = (g: Goal) => {
-    // Amounts carry over where they still mean something: the USDT for buying, the coin for selling.
-    setPlan({ ...plan, goal: g, usdt: g === 'sell' ? 0 : plan.usdt, coin: g === 'buy' ? 0 : plan.coin, shape: plan.shape === 'custom' ? 'spot' : plan.shape, weights: undefined });
-    onSay?.(t.lpsSayGoal[g](p.symbol));
-  };
-
-  /* ---------- step 2: how much (in USDT; for both, half the value goes in the coin) ---------- */
-  const maxUsd = wallet && price ? (goal === 'buy' ? wallet.usdt : goal === 'sell' ? wallet.coin * price : 2 * Math.min(wallet.usdt, wallet.coin * price)) : null;
+  /* ---------- amounts ---------- */
   const total = goal === 'buy' ? plan.usdt : goal === 'sell' ? plan.coin * (price ?? 0) : plan.usdt + plan.coin * (price ?? 0);
+  const max = wallet && price && goal ? maxUsd(goal, wallet, price) : null;
+  const split = goal && price ? allocate(goal, total, price, wallet, p.decimals) : null;
   const setTotal = (v: number) => {
     if (!price || !goal) return;
-    const x = Math.max(0, v);
-    setPlan(goal === 'buy' ? { ...plan, usdt: round2(x), coin: 0 } : goal === 'sell' ? { ...plan, usdt: 0, coin: x / price } : { ...plan, usdt: round2(x / 2), coin: x / 2 / price });
+    const x = allocate(goal, v, price, wallet, p.decimals);
+    setPlan({ ...plan, usdt: x.usdt, coin: x.coin });
   };
 
-  /* ---------- step 3: to which price ---------- */
+  /* ---------- range ---------- */
+  const reached = plan.reachPct !== undefined;
   const lastDaily = daily?.length ? daily[daily.length - 1].close : undefined;
-  const fromChart = (days: number, side: 'low' | 'high') => {
-    if (!daily?.length || !lastDaily || !price) return null;
+  const swing = (days: number, side: 'low' | 'high') => {
+    if (!daily?.length || !lastDaily) return null;
     const xs = daily.slice(-days);
     const v = side === 'low' ? Math.min(...xs.map((c) => c.low)) : Math.max(...xs.map((c) => c.high));
     const pct = side === 'low' ? (1 - v / lastDaily) * 100 : (v / lastDaily - 1) * 100;
-    // The pool's own price can sit a little off the exchange's: the same distance, on the pool's price.
-    return pct >= 1.5 ? { pct, price: side === 'low' ? price * (1 - pct / 100) : price * (1 + pct / 100) } : null;
+    return pct >= 1.5 ? Math.min(REACH.max, pct) : null;
   };
-  const dir: 'low' | 'high' = goal === 'sell' ? 'high' : 'low';
   const presets = useMemo(() => {
+    if (!goal) return [];
     const out: { key: string; label: string; pct: number }[] = [{ key: 'near', label: t.lpsNear, pct: 3 }];
-    const w = fromChart(7, dir), m = fromChart(30, dir);
-    if (w) out.push({ key: 'week', label: dir === 'low' ? t.lpsWeekLow(`$${fmtPrice(w.price)}`) : t.lpsWeekHigh(`$${fmtPrice(w.price)}`), pct: w.pct });
-    if (m && (!w || m.pct > w.pct * 1.25)) out.push({ key: 'month', label: dir === 'low' ? t.lpsMonthLow(`$${fmtPrice(m.price)}`) : t.lpsMonthHigh(`$${fmtPrice(m.price)}`), pct: m.pct });
+    const pick = (days: number) => {
+      if (goal === 'buy') return swing(days, 'low');
+      if (goal === 'sell') return swing(days, 'high');
+      const a = swing(days, 'low'), b = swing(days, 'high');
+      return a === null && b === null ? null : Math.max(a ?? 0, b ?? 0);
+    };
+    const w = pick(7), m = pick(30);
+    const label = (k: 'week' | 'month') => (goal === 'buy' ? (k === 'week' ? t.lpsWeekLow : t.lpsMonthLow) : goal === 'sell' ? (k === 'week' ? t.lpsWeekHigh : t.lpsMonthHigh) : (k === 'week' ? t.lpsWeekRange : t.lpsMonthRange));
+    if (w !== null && w > 3.5) out.push({ key: 'week', label: label('week'), pct: w });
+    if (m !== null && m > (w ?? 3) * 1.25) out.push({ key: 'month', label: label('month'), pct: m });
     return out;
-  }, [daily, price, dir, t]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [daily, goal, t]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Where a reach would put the edges, so each choice shows the prices it really ends at. */
+  const edgesFor = (pct: number) => (pool && goal ? edgesOf(binsOf({ ...plan, ...widthFor(pct) }, pool.tick).filter((b) => sides(goal).includes(b.side))) : null);
+  const rangeText = (e: readonly [number, number] | null) => (!e ? '—' : goal === 'buy' ? priceText(e[0]) : goal === 'sell' ? priceText(e[1]) : `${priceText(e[0])} ~ ${priceText(e[1])}`);
+
+  const withReach = (pct: number): LpPlan => ({ ...plan, ...widthFor(pct), reachPct: pct, weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape });
   const pickReach = (pct: number) => {
-    const next = { ...plan, ...widthFor(pct), reachPct: pct, weights: undefined, shape: plan.shape === 'custom' ? 'spot' as Shape : plan.shape };
+    const next = withReach(pct);
     setPlan(next);
+    setOpen(null);
     if (pool) say(next, pool.tick);
   };
   const pickOwn = () => {
     const v = Number(own.replace(/[^0-9.]/g, ''));
     if (!price || !(v > 0)) return;
-    const pct = dir === 'low' ? (1 - v / price) * 100 : (v / price - 1) * 100;
-    if (pct > 0.8 && pct < 80) pickReach(pct);
+    const pct = goal === 'sell' ? (v / price - 1) * 100 : (1 - v / price) * 100;
+    if (pct >= REACH.min * 0.8 && pct <= REACH.max) pickReach(pct);
   };
 
-  /** The result in Moa's words, once the three are chosen. */
+  /* ---------- a ready-made strategy ---------- */
+  // It counts as the plan's strategy only while the plan still has its goal, shape and width.
+  const stratNow = strat ? LP_STRATEGIES.find((x) => x.id === strat && x.goal === plan.goal && x.shape === plan.shape && widthFor(x.reachPct).step === plan.step && widthFor(x.reachPct).perSide === plan.perSide) ?? null : null;
+  const pickStrat = (x: LpStrategy) => {
+    const sp = strategyPlan(x);
+    const keep = price && total > 0 ? allocate(sp.goal!, total, price, wallet, p.decimals) : { usdt: 0, coin: 0 };
+    setPlan({ ...plan, ...sp, usdt: keep.usdt, coin: keep.coin, weights: undefined });
+    setStrat(x.id); setOpen(null); setDraft(null);
+    const r = replays?.[x.id], re = reText(r, x);
+    onSay?.(`${t.lpsStratSay(t.lpsStrat[x.id][0], t.lpsStrat[x.id][1])}${re ? ` ${re.now} (${re.vs}).` : ''}`);
+  };
+
+  /* ---------- goal ---------- */
+  const pickGoal = (g: Goal) => {
+    if (g === goal) { setOpen(null); return; }
+    // The amount is asked again for the new goal; the range carries over.
+    setPlan({ ...plan, goal: g, usdt: 0, coin: 0, shape: plan.shape === 'custom' ? 'spot' : plan.shape, weights: undefined });
+    setOpen(null); setDraft(null);
+    onSay?.(t.lpsSayGoal[g](name));
+  };
+
+  /** The result in Moa's words. */
   const say = (pl: LpPlan, tick: number) => {
     const b = binsOf(pl, tick), buy = fillPoints(b, 'usdt'), sell = fillPoints(b, 'coin');
     const lines = [
-      buy && t.lpsResBuy(`$${fmtPrice(at(buy.halfTick))}`, usdtText(buy.halfAmount), `$${fmtPrice(at(buy.fullTick))}`, usdtText(buy.total), p.symbol),
-      sell && t.lpsResSell(`$${fmtPrice(at(sell.halfTick))}`, `$${fmtPrice(at(sell.fullTick))}`, qty(sell.total), p.symbol),
+      buy && t.lpsHowBuy(priceText(at(buy.halfTick)), money(buy.halfAmount), priceText(at(buy.fullTick))),
+      sell && t.lpsHowSell(priceText(at(sell.halfTick)), priceText(at(sell.fullTick))),
     ].filter(Boolean);
     if (lines.length) onSay?.(`${lines.join(' ')} ${t.lpsResAfter}`);
   };
-
-  /* ---------- the result ---------- */
-  const buy = fillPoints(bins, 'usdt'), sell = fillPoints(bins, 'coin');
-  const ready = !!goal && total > 0 && plan.reachPct !== undefined;
-  const zones: LpZone[] = [];
-  if (buy) zones.push({ from: at(buy.fullTick), to: at(bins.find((x) => x.side === 'usdt' && x.d === 1)!.upper), tone: 'buy', label: t.lpsZoneBuy });
-  if (sell) zones.push({ from: at(bins.find((x) => x.side === 'coin' && x.d === 1)!.lower), to: at(sell.fullTick), tone: 'sell', label: t.lpsZoneSell });
-  const depth = useMemo(() => {
-    if (!pool || !(buy || sell)) return null;
-    const a = poolDepth(pool), d = poolDepth(withPlan(pool, bins, p.decimals));
-    const get = (x: typeof a, pct: number) => x.bands.find((y) => y.pct === pct)!.usdt;
-    return { down: [get(a, -2), get(d, -2)], up: [get(a, 2), get(d, 2)] };
-  }, [pool, bins, p.decimals]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const heights = bins.map((b) => (b.side === 'usdt' ? b.amount : b.amount * (price ?? 0)));
-  const maxH = Math.max(1e-12, ...heights);
-  const nudge = (i: number, by: number) => {
-    let base: number[];
-    if (plan.shape === 'custom' && plan.weights?.length === bins.length) base = plan.weights;
-    else {
-      const shape = plan.shape === 'custom' ? 'spot' : plan.shape;
-      const raw = bins.map((b) => shapeWeight(shape, b.d, plan.perSide)), top = Math.max(...raw);
-      base = raw.map((x) => Math.round((x / top) * 10));
-    }
-    const w = [...base];
-    w[i] = Math.max(0, Math.min(10, (w[i] ?? 0) + by));
-    setPlan({ ...plan, shape: 'custom', weights: w });
+  const pickAmount = (v: number) => {
+    if (!price || !goal) return;
+    const x = allocate(goal, v, price, wallet, p.decimals), next = { ...plan, usdt: x.usdt, coin: x.coin };
+    setPlan(next); setDraft(null); setOpen(null);
+    if (pool && next.reachPct !== undefined) say(next, pool.tick);
   };
 
+  /* ---------- what it does ---------- */
+  const buy = fillPoints(bins, 'usdt'), sell = fillPoints(bins, 'coin');
+  const ready = !!goal && total > 0 && reached;
+  const next: StepId | null = !goal ? 'goal' : !reached ? 'range' : !(total > 0) ? 'amount' : null;
+  const cur = open ?? next;
+  const stage = !goal ? 0 : !reached ? 1 : !(total > 0) ? 2 : 3;
+  const usdtBins = live.filter((b) => b.side === 'usdt'), coinBins = live.filter((b) => b.side === 'coin');
+  const buyEdge = edgesOf(usdtBins), sellEdge = edgesOf(coinBins);
+
+  // The chart: zones, the steps at their prices (sized by dollars, or by shape before there is an amount), and the
+  // lines that set how far the plan reaches.
+  const layer = useMemo((): StudioChart => {
+    const look = preview ?? plan, g = look.goal;
+    const live = pool && g ? binsOf(look, pool.tick).filter((b) => sides(g).includes(b.side)) : [];
+    const buyEdge = edgesOf(live.filter((b) => b.side === 'usdt')), sellEdge = edgesOf(live.filter((b) => b.side === 'coin'));
+    if (!g || !(reached || preview) || !price || !live.length) return { zones: [], ladder: [], handles: [], fit: [] };
+    const dollars = live.map((b) => (b.side === 'usdt' ? b.amount : b.amount * price));
+    const ghost = !(Math.max(0, ...dollars) > 0);
+    const sizes = ghost ? live.map((b) => b.weight) : dollars;
+    const top = Math.max(1e-12, ...sizes);
+    const ladder: LadderStep[] = live.map((b, i) => ({ from: at(b.lower), to: at(b.upper), size: sizes[i] / top, tone: b.side === 'usdt' ? 'buy' : 'sell', ghost }));
+    const zones: Zone[] = [], handles: DragLine[] = [];
+    const move = (side: 'buy' | 'sell') => (v: number) => {
+      const pct = side === 'buy' ? (1 - v / price) * 100 : (v / price - 1) * 100;
+      const clamped = Math.max(REACH.min, Math.min(REACH.max, pct));
+      const w = widthFor(clamped);
+      if (w.step !== plan.step || w.perSide !== plan.perSide) setPlan(withReach(clamped));
+    };
+    const done = () => {
+      if (pool) say(plan, pool.tick);
+      if (!dragged) { setDragged(true); try { localStorage.setItem('moa.lpDragged', '1'); } catch { /* this visit only */ } }
+    };
+    const hint = dragged ? undefined : t.lpsDragTip;
+    if (buyEdge) {
+      zones.push({ from: buyEdge[0], to: buyEdge[1], tone: 'buy', label: t.lpsZoneBuy });
+      handles.push({ price: buyEdge[0], tone: 'buy', label: `↕  ${t.lpsHandleBuy(priceText(buyEdge[0]), `−${((1 - buyEdge[0] / price) * 100).toFixed(1)}%`)}`, hint, onMove: move('buy'), onDone: done });
+    }
+    if (sellEdge) {
+      zones.push({ from: sellEdge[0], to: sellEdge[1], tone: 'sell', label: t.lpsZoneSell });
+      handles.push({ price: sellEdge[1], tone: 'sell', label: `↕  ${t.lpsHandleSell(priceText(sellEdge[1]), `+${((sellEdge[1] / price - 1) * 100).toFixed(1)}%`)}`, hint, onMove: move('sell'), onDone: done });
+    }
+    const lo = Math.min(...ladder.map((x) => x.from)), hi = Math.max(...ladder.map((x) => x.to));
+    return { zones, ladder, handles, fit: [lo * 0.992, hi * 1.008, price] };
+  }, [plan, pool?.tick, goal, reached, price, preview, dragged, t]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // What the whole side turns into if the price goes all the way through it, and at what average price.
+  const asSteps = (bs: Bin[]) => bs.map((b) => ({ lo: at(b.lower), hi: at(b.upper), amount: b.amount }));
+  const endBuy = ready ? fullFill(asSteps(usdtBins), 'buy') : null, endSell = ready ? fullFill(asSteps(coinBins), 'sell') : null;
+  // What the wallet will be asked, the same amounts the supply sends (the recipient does not change them).
+  const ask = ready && pool ? mintCall(p.token, bins, p.decimals, s?.address ?? '0x0000000000000000000000000000000000000000', 0) : null;
+  const useBuyOnly = () => {
+    if (!price) return;
+    const x = allocate('buy', total, price, wallet, p.decimals), next = { ...plan, goal: 'buy' as Goal, usdt: x.usdt, coin: 0 };
+    setPlan(next);
+    onSay?.(t.lpsSayGoal.buy(name));
+  };
+
+  // One plain sentence first; the details, a few "what if" prices and the risk are computed from the same steps.
+  const lead = !ready || !price ? '' : goal === 'buy' && buyEdge ? t.lpsLeadBuy(name, priceText(buyEdge[0]), money(plan.usdt), usdtBins.length)
+    : goal === 'sell' && sellEdge ? t.lpsLeadSell(name, priceText(sellEdge[1]), money(plan.coin * price), coinBins.length)
+      : buyEdge && sellEdge ? t.lpsLeadBoth(name, priceText(buyEdge[0]), money(plan.usdt), priceText(sellEdge[1]), money(plan.coin * price)) : '';
+  const allSteps = live.map((b) => ({ lo: at(b.lower), hi: at(b.upper), amount: b.amount, side: b.side === 'usdt' ? 'buy' as const : 'sell' as const }));
+  const whatIf = !ready || !price ? [] : ([...(goal !== 'sell' ? [-5] : []), ...(goal !== 'buy' ? [5] : [])] as number[]).map((pct) => {
+    const at2 = price * (1 + pct / 100), h = holdingsAt(allSteps, at2);
+    return {
+      label: pct < 0 ? t.lpsIfDown('5%', priceText(at2)) : t.lpsIfUp('5%', priceText(at2)),
+      hold: t.lpsIfHold(money(h.usdt), coinQty(h.coin), p.symbol), worth: t.lpsIfWorth(money(h.worth)),
+    };
+  });
+  const risk = !ready || !price ? [] : [
+    goal === 'both' && buyEdge ? t.lpsRiskBuyShort(priceText(buyEdge[0]), money(plan.usdt), name)
+      : goal === 'buy' && buyEdge && endBuy ? t.lpsRiskBuy(priceText(buyEdge[0]), money(endBuy.spent), name, `${coinQty(endBuy.got)} ${p.symbol}`, money(endBuy.got * buyEdge[0] * 0.9)) : null,
+    goal !== 'buy' && sellEdge && endSell ? t.lpsRiskSell(priceText(sellEdge[1]), name, money(endSell.got)) : null,
+  ].filter((x): x is string => !!x);
+  /** The same login as the button at the top right (it also offers the wallet list, or how to get a wallet). */
+  const connect = () => {
+    const b = document.querySelector<HTMLButtonElement>('.acct-login');
+    if (b) { b.scrollIntoView({ block: 'nearest' }); b.click(); }
+  };
+
+  /* ---------- supplying ---------- */
   const short = wallet ? (plan.usdt > wallet.usdt + 1e-9 ? 'USDT' : plan.coin > wallet.coin + 1e-12 ? p.symbol : null) : null;
   const m = pool && s && ready ? mintCall(p.token, bins, p.decimals, s.address, Math.floor(Date.now() / 1000) + 1200) : null;
   const supply = async () => {
@@ -194,134 +322,316 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
   const mineFees = mine && price ? mine.reduce((v, x) => v + toNum(x.fee1, 6) + toNum(x.fee0, p.decimals) * price, 0) : 0;
   const explorer = vault?.net?.explorer ?? 'https://hsk.blockscout.com';
   const stepPct = (x: number) => `${(Math.pow(1.0001, x) * 100 - 100).toFixed(1)}%`;
-  const amountPresets = maxUsd && maxUsd > 0 ? [0.25, 0.5, 1].map((f) => ({ label: f === 1 ? t.lpsAll : `${f * 100}%`, v: maxUsd * f })) : [50, 100, 300].map((v) => ({ label: `$${v}`, v }));
+  const amountPresets = max !== null && max > 0
+    ? [0.25, 0.5, 1].map((f) => ({ label: f === 1 ? t.lpsAll : `${f * 100}%`, v: f === 1 ? max : Math.floor(max * f * 100) / 100 }))
+    : [50, 100, 300].map((v) => ({ label: `$${v}`, v }));
+
+  // Custom weights, step by step (Advanced).
+  const weightsNow = (): number[] => {
+    if (plan.shape === 'custom' && plan.weights?.length === bins.length) return plan.weights;
+    const shape = plan.shape === 'custom' ? 'spot' : plan.shape;
+    const raw = bins.map((b) => shapeWeight(shape, b.d, plan.perSide)), top = Math.max(...raw);
+    return raw.map((x) => Math.round((x / top) * 10));
+  };
+  const nudge = (i: number, by: number) => {
+    const w = [...weightsNow()];
+    w[i] = Math.max(0, Math.min(10, (w[i] ?? 0) + by));
+    setPlan({ ...plan, shape: 'custom', weights: w });
+  };
+
+  /** How far the plan really reaches (its far edge), which can sit a little off the price that was asked for. */
+  const reachText = () => {
+    const e = edgesOf(live);
+    if (!e || !price) return '';
+    const down = (1 - e[0] / price) * 100, up = (e[1] / price - 1) * 100;
+    return goal === 'buy' ? `−${down.toFixed(1)}%` : goal === 'sell' ? `+${up.toFixed(1)}%` : `−${down.toFixed(1)}% / +${up.toFixed(1)}%`;
+  };
+  const summary: Record<StepId, string | null> = {
+    goal: stratNow ? t.lpsStrat[stratNow.id][0] : goal ? t.lpsGoal[goal][0] : null,
+    range: reached && price ? (goal === 'both' ? rangeText(edgesOf(live)) : `${rangeText(edgesOf(live))} · ${reachText()}`) : null,
+    amount: total > 0 ? money(total) : null,
+  };
+  const step = (id: StepId, n: number, title: string, body: ReactNode, locked: boolean) => {
+    const isOpen = cur === id && !locked, done = summary[id] !== null;
+    return (
+      <section className={`lps-step${isOpen ? ' open' : ''}${done ? ' done' : ''}${locked ? ' locked' : ''}`}>
+        {isOpen ? (
+          <div className="lps-step-head"><span className="lps-n">{n}</span><b>{title}</b></div>
+        ) : (
+          <button className="lps-step-head" disabled={locked} onClick={() => setOpen(id)} aria-expanded={false} aria-label={done ? `${t.lpsShort[id]}: ${summary[id]} · ${t.lpsChange}` : title}>
+            <span className="lps-n">{done ? <Icon name="check" size={14} /> : n}</span>
+            <span className="lps-step-label">{done ? t.lpsShort[id] : title}</span>
+            {done && <b className="lps-step-val">{summary[id]}</b>}
+            {done && <span className="lps-step-edit" aria-hidden><Icon name="edit" size={15} /></span>}
+          </button>
+        )}
+        {isOpen && <div className="lps-step-body">{body}</div>}
+      </section>
+    );
+  };
+
+  const reText = (r: Replay | undefined, x: LpStrategy) => {
+    if (!r) return null;
+    const vs = x.goal === 'buy' ? t.lpsStratVsBuy(usd0(r.holdValue), usd0(r.allCoinValue)) : x.goal === 'sell' ? t.lpsStratVsSell(usd0(r.holdValue)) : t.lpsStratVsBoth(usd0(r.holdValue));
+    return { now: t.lpsStratRe(pastDays, usd0(r.startValue), usd0(r.endValue), usd0(r.feeValue)), vs };
+  };
+  const stratList = (
+    <>
+      <div className="lps-strats" role="radiogroup" aria-label={t.lpsModeStrat}>
+        {LP_STRATEGIES.map((x) => {
+          const on = stratNow?.id === x.id, re = reText(replays?.[x.id], x);
+          const reach = x.goal === 'buy' ? `−${x.reachPct}%` : x.goal === 'sell' ? `+${x.reachPct}%` : `±${x.reachPct}%`;
+          return (
+            <button key={x.id} role="radio" aria-checked={on} className={`lps-strat g-${x.goal}${on ? ' on' : ''}`} onClick={() => { setPreview(null); pickStrat(x); }}
+              onPointerEnter={(e) => { if (e.pointerType === 'mouse') setPreview({ ...plan, ...strategyPlan(x), usdt: 0, coin: 0, weights: undefined }); }} onPointerLeave={() => setPreview(null)}>
+              <span className="lps-goal-ico"><Icon name={GOAL_ICON[x.goal]} size={16} /></span>
+              <span className="lps-strat-txt">
+                <b>{t.lpsStrat[x.id][0]}<em>{reach}</em></b>
+                <small>{t.lpsStrat[x.id][1]}</small>
+                {re ? <span className="lps-strat-re"><b>{re.now}</b><span>{re.vs}</span></span>
+                  : past === null ? <span className="lps-skel" aria-hidden /> : <span className="lps-strat-fail">{t.lpsStratFail}</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {replays && <p className="lps-fine">{t.lpsStratNote(pastDays)}</p>}
+    </>
+  );
+  const goalBody = () => (
+    <>
+      <div className="seg lps-mode" role="tablist">
+        <button role="tab" aria-selected={mode === 'strat'} className={mode === 'strat' ? 'on' : ''} onClick={() => setMode('strat')}>{t.lpsModeStrat}</button>
+        <button role="tab" aria-selected={mode === 'own'} className={mode === 'own' ? 'on' : ''} onClick={() => setMode('own')}>{t.lpsModeOwn}</button>
+      </div>
+      {mode === 'strat' ? stratList : goalCards}
+    </>
+  );
+  const goalCards = (
+    <div className="lps-goals" role="radiogroup" aria-label={t.lpsQ1}>
+      {(['buy', 'sell', 'both'] as Goal[]).map((g) => (
+        <button key={g} role="radio" aria-checked={goal === g} className={`lps-goal g-${g}${goal === g ? ' on' : ''}`} onClick={() => pickGoal(g)}>
+          <span className="lps-goal-ico"><Icon name={GOAL_ICON[g]} size={18} /></span>
+          <span className="lps-goal-txt"><b>{t.lpsGoal[g][0]}</b><small>{t.lpsGoal[g][1](name)}</small></span>
+        </button>
+      ))}
+    </div>
+  );
+  const sign = goal === 'both' ? '±' : goal === 'sell' ? '+' : '−';
+  const rangeBody = (
+    <>
+      <div className="lps-opts" role="radiogroup">
+        {presets.map((x) => {
+          const on = plan.reachPct !== undefined && Math.abs(plan.reachPct - x.pct) < 0.01;
+          return (
+            <button key={x.key} role="radio" aria-checked={on} className={`lps-opt${on ? ' on' : ''}`} onClick={() => { setPreview(null); pickReach(x.pct); }}
+              onPointerEnter={(e) => { if (e.pointerType === 'mouse') setPreview(withReach(x.pct)); }} onPointerLeave={() => setPreview(null)}>
+              <span className="lps-opt-name">{x.label}<em>{sign}{x.pct.toFixed(1)}%</em></span>
+              <b className="lps-opt-val">{rangeText(edgesFor(x.pct))}</b>
+            </button>
+          );
+        })}
+      </div>
+      <div className="lps-own">
+        <span>$</span>
+        <input inputMode="decimal" placeholder={goal === 'both' ? t.lpsOwnLow : t.lpsOwnPrice} value={own} onChange={(e) => setOwn(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') pickOwn(); }} aria-label={goal === 'both' ? t.lpsOwnLow : t.lpsOwnPrice} />
+        <button className="btn sm" onClick={pickOwn}>{t.lpsSet}</button>
+      </div>
+      <p className="lps-tip">{t.lpsDragHint}</p>
+    </>
+  );
+  const amountBody = (
+    <>
+      <label className="lps-usd">
+        <span>$</span>
+        <input inputMode="decimal" value={draft ?? (total > 0 ? (Math.floor(total * 100) / 100).toFixed(2) : '')} placeholder="0.00" aria-label={t.lpsQAmount}
+          onFocus={() => setOpen('amount')}
+          onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, ''); setDraft(v); setTotal(Number(v) || 0); }}
+          onBlur={() => { setDraft(null); if (ready && pool) say(plan, pool.tick); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { setDraft(null); setOpen(null); } }} />
+        <em>USD</em>
+      </label>
+      <div className="lps-chips">{amountPresets.map((x) => <button key={x.label} className={Math.abs(total - x.v) < 0.005 ? 'on' : ''} onClick={() => pickAmount(x.v)}>{x.label}</button>)}</div>
+      {wallet && price ? <p className="lps-tip">{t.lpsWalletLine(wallet.usdt.toFixed(2), coinQty(wallet.coin), money(wallet.coin * price), p.symbol)}</p> : <p className="lps-tip">{t.lpNeedLogin}</p>}
+    </>
+  );
+
+  const footLabel = !goal ? t.lpsNeed.goal : !reached ? t.lpsNeed.range : !(total > 0) ? t.lpsNeed.amount : t.lpsSupplyGo;
 
   return (
     <section className="lps" aria-label={t.lpOpen}>
       <header className="lps-head">
-        <div className="lps-title">
-          <b>{t.lpOpen}</b>
-          <div className="coin-switch" role="tablist" aria-label={t.stratAsset}>
-            {(['HSK', 'ETH', 'BTC'] as Asset[]).map((a) => <button key={a} role="tab" aria-selected={a === plan.asset} className={a === plan.asset ? 'on' : ''} onClick={() => onAsset(a)}>{POOLS[a].symbol}/USDT</button>)}
-          </div>
-          <span className="lps-pool">HSKSwap · 0.3% · {price !== undefined ? t.prNow(`$${fmtPrice(price)}`) : '—'}</span>
+        <b className="lps-name">{t.lpOpen}</b>
+        <div className="coin-switch" role="tablist" aria-label={t.stratAsset}>
+          {(['HSK', 'ETH', 'BTC'] as Asset[]).map((a) => <button key={a} role="tab" aria-selected={a === plan.asset} className={a === plan.asset ? 'on' : ''} onClick={() => onAsset(a)}>{POOLS[a].symbol}</button>)}
         </div>
-        <button className="icon-btn" onClick={onClose} aria-label={t.lpClose} data-tip={t.lpClose}><Icon name="close" size={18} /></button>
+        <span className="lps-pool">HSKSwap · 0.3% · <b>{price !== undefined ? priceText(price) : '—'}</b></span>
+        <button className="icon-btn lps-x" onClick={onClose} aria-label={t.lpClose} data-tip={t.lpClose}><Icon name="close" size={18} /></button>
       </header>
 
-      <div className="lps-chartbox">{chart(zones)}</div>
-
-      <div className="lps-body">
-        <ol className="lps-steps">
-          <li className={`lps-step${goal ? ' done' : ' now'}`}>
-            <span className="lps-n">1</span>
-            <div className="lps-q">
-              <b>{t.lpsQ1}</b>
-              <div className="lps-goals" role="radiogroup" aria-label={t.lpsQ1}>
-                {(['buy', 'sell', 'both'] as Goal[]).map((g) => (
-                  <button key={g} role="radio" aria-checked={goal === g} className={`lps-goal g-${g}${goal === g ? ' on' : ''}`} onClick={() => pickGoal(g)}>
-                    <b>{t.lpsGoal[g][0]}</b><small>{t.lpsGoal[g][1](p.symbol)}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </li>
-          {goal && (
-            <li className={`lps-step${total > 0 ? ' done' : ' now'}`}>
-              <span className="lps-n">2</span>
-              <div className="lps-q">
-                <b>{t.lpsQ2}</b>
-                <div className="lps-amount">
-                  <div className="lps-chips">{amountPresets.map((x) => <button key={x.label} className={Math.abs(total - x.v) < 0.01 ? 'on' : ''} onClick={() => setTotal(x.v)}>{x.label}</button>)}</div>
-                  <label className="lps-usd"><span>$</span><input inputMode="decimal" value={total ? String(round2(total)) : ''} placeholder="0" onChange={(e) => setTotal(Number(e.target.value.replace(/[^0-9.]/g, '')) || 0)} /></label>
+      <div className="lps-stage">
+        <div className="lps-chart">
+          {goal && reached && price && (buyEdge || sellEdge) && (
+            <div className="lps-out" aria-live="polite">
+              {buyEdge && (
+                <div className="lps-tile buy">
+                  <span>{t.lpsOutBuy(`−${((1 - buyEdge[0] / price) * 100).toFixed(1)}%`)}</span><b>{t.lpsOutDown(priceText(buyEdge[0]))}</b>
+                  {goal === 'both' && endBuy ? <small title={t.lpsOutFeeNote}>{t.lpsOutAllBuy(`${coinQty(endBuy.got)} ${p.symbol}`, priceText(endBuy.avg))}</small>
+                    : <small>{ready ? t.lpsOutBuySub(money(plan.usdt), usdtBins.length) : t.lpsOutPieces(usdtBins.length)}</small>}
                 </div>
-                <small className="lps-hint">
-                  {wallet ? t.lpsWallet(qty(wallet.usdt), qty(wallet.coin), p.symbol) : t.lpNeedLogin}
-                  {goal === 'both' && total > 0 && price ? ` · ${t.lpsBothSplit(qty(plan.usdt), qty(plan.coin), p.symbol)}` : ''}
-                  {goal === 'sell' && total > 0 ? ` · ${qty(plan.coin)} ${p.symbol}` : ''}
-                </small>
-              </div>
-            </li>
-          )}
-          {goal && total > 0 && (
-            <li className={`lps-step${plan.reachPct !== undefined ? ' done' : ' now'}`}>
-              <span className="lps-n">3</span>
-              <div className="lps-q">
-                <b>{goal === 'sell' ? t.lpsQ3Up : t.lpsQ3Down}</b>
-                <div className="lps-chips wrap">
-                  {presets.map((x) => <button key={x.key} className={plan.reachPct !== undefined && Math.abs(plan.reachPct - x.pct) < 0.01 ? 'on' : ''} onClick={() => pickReach(x.pct)}>{x.label}<em>{goal === 'sell' ? '+' : '−'}{x.pct.toFixed(1)}%</em></button>)}
-                  <span className="lps-own"><span>$</span><input inputMode="decimal" placeholder={t.lpsOwnPrice} value={own} onChange={(e) => setOwn(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') pickOwn(); }} /><button onClick={pickOwn}>{t.lpsSet}</button></span>
+              )}
+              {sellEdge && (
+                <div className="lps-tile sell">
+                  <span>{t.lpsOutSell(`+${((sellEdge[1] / price - 1) * 100).toFixed(1)}%`)}</span><b>{t.lpsOutUp(priceText(sellEdge[1]))}</b>
+                  {goal === 'both' && endSell ? <small title={t.lpsOutFeeNote}>{t.lpsOutAllSell(money(endSell.got), priceText(endSell.avg))}</small>
+                    : <small>{ready ? t.lpsOutSellSub(money(plan.coin * price), coinBins.length) : t.lpsOutPieces(coinBins.length)}</small>}
                 </div>
-              </div>
-            </li>
-          )}
-        </ol>
-
-        <div className="lps-result">
-          {!ready ? <p className="lps-wait-say">{t.lpsWaiting}</p> : (
-            <>
-              <div className="lps-cols mini" style={{ '--side': plan.perSide } as React.CSSProperties}>
-                {bins.map((b, i) => {
-                  const filled = heights[i] > 0 ? Math.max(1, Math.round((heights[i] / maxH) * ROWS)) : 0;
-                  const tip = `$${fmtPrice(at(b.lower))} – $${fmtPrice(at(b.upper))}${b.amount > 0 ? ` · ${b.side === 'usdt' ? `${qty(b.amount)} USDT` : `${qty(b.amount)} ${p.symbol}`}` : ''}`;
-                  const col = <button key={i} className={`lps-col pr-${b.side}`} onClick={() => nudge(i, 1)} onContextMenu={(e) => { e.preventDefault(); nudge(i, -1); }} data-tip={tip} aria-label={tip}>{Array.from({ length: ROWS }, (_, r) => <i key={r} className={r >= ROWS - filled ? 'on' : ''} />)}</button>;
-                  return i === plan.perSide ? [<span key="mid" className="lps-mid" aria-hidden />, col] : col;
-                })}
-              </div>
-              <ul className="lps-say">
-                {buy && <li><i className="pr-usdt" aria-hidden />{t.lpsResBuy(`$${fmtPrice(at(buy.halfTick))}`, usdtText(buy.halfAmount), `$${fmtPrice(at(buy.fullTick))}`, usdtText(buy.total), p.symbol)}</li>}
-                {sell && <li><i className="pr-coin" aria-hidden />{t.lpsResSell(`$${fmtPrice(at(sell.halfTick))}`, `$${fmtPrice(at(sell.fullTick))}`, qty(sell.total), p.symbol)}</li>}
-                <li className="muted">{t.lpsResAfter}</li>
-                {depth && buy && <li className="muted">{t.lpDepth(t.lpDown, usd(depth.down[0]), usd(depth.down[1]))}</li>}
-              </ul>
-            </>
-          )}
-          <div className="lps-go">
-            {!s ? <p className="lps-note">{t.lpNeedLogin}</p> : short ? <p className="lps-note warn">{t.lpNoBal(short)}</p> : null}
-            <button className="btn-primary lps-supply" disabled={!s || !m?.count || !!short || phase.k === 'busy'} onClick={() => void supply()}>
-              {phase.k === 'busy' ? <><span className="spin" aria-hidden />{phase.step}</> : ready ? t.lpsSupplyGo : t.lpSupply}
-            </button>
-            {phase.k === 'done' && <p className="lps-note ok">{t.lpDone} <a href={`${explorer}/tx/${phase.tx}`} target="_blank" rel="noreferrer">{t.viewTx} ↗</a></p>}
-            {phase.k === 'failed' && <p className="lps-note warn">{t.lpFailed(phase.why)}</p>}
-          </div>
-
-          <details className="lps-adv">
-            <summary>{t.lpsAdvanced}</summary>
-            <div className="lps-row">
-              <span className="lps-label">{t.lpShape}</span>
-              <div className="seg lps-seg" role="group" aria-label={t.lpShape}>
-                {(['spot', 'curve', 'bidask', 'custom'] as Shape[]).map((x) => <button key={x} className={plan.shape === x ? 'on' : ''} aria-pressed={plan.shape === x} onClick={() => setPlan({ ...plan, shape: x, weights: x === 'custom' ? plan.weights ?? bins.map(() => 5) : plan.weights })}>{t.lpShapes[x]}</button>)}
-              </div>
-            </div>
-            <div className="lps-row">
-              <span className="lps-label">{t.lpStep}</span>
-              <div className="seg lps-seg" role="group" aria-label={t.lpStep}>
-                {[SPACING, SPACING * 2, SPACING * 4].map((x) => <button key={x} className={B === x ? 'on' : ''} aria-pressed={B === x} onClick={() => setPlan({ ...plan, step: x })}>{stepPct(x)}</button>)}
-              </div>
-              <span className="lps-label">{t.lpPerSide}</span>
-              <div className="seg lps-seg" role="group" aria-label={t.lpPerSide}>
-                {[5, 10, 15, 20].map((x) => <button key={x} className={plan.perSide === x ? 'on' : ''} aria-pressed={plan.perSide === x} onClick={() => setPlan({ ...plan, perSide: x, weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape })}>{x}</button>)}
-              </div>
-            </div>
-            <p className="lps-note">{t.lpGap(stepPct(B))} {t.lpHintClick}.</p>
-          </details>
-
-          {s && (
-            <div className="lps-mine">
-              <b>{t.lpMine}</b>
-              {mine === null ? <span className="muted">…</span> : !mine.length ? <span className="muted">{t.lpNone}</span> : (
-                <>
-                  <span>{t.lpMineSum(mine.length, usd(mineValue))} · {t.lpFeesNow(usd(mineFees))}</span>
-                  <span className="lps-range">${fmtPrice(at(mine[0].lower))} – ${fmtPrice(at(mine[mine.length - 1].upper))}</span>
-                  <div className="lps-mine-act">
-                    <button className="btn sm" disabled={phase.k === 'busy' || mineFees <= 0} onClick={() => void act('collect')}>{t.lpCollect}</button>
-                    <button className={`btn sm${sure ? ' danger' : ''}`} disabled={phase.k === 'busy'} onClick={() => void act('remove')}>{sure ? t.lpRemoveSure : t.lpRemove}</button>
-                  </div>
-                </>
+              )}
+              {goal === 'buy' && endBuy && buyEdge && (
+                <div className="lps-tile buy" title={t.lpsOutFeeNote}>
+                  <span>{t.lpsOutBuyEnd(priceText(buyEdge[0]))}</span><b>≈ {coinQty(endBuy.got)} {p.symbol}</b><small>{t.lpsOutAvgBuy(priceText(endBuy.avg))}</small>
+                </div>
+              )}
+              {goal === 'sell' && endSell && sellEdge && (
+                <div className="lps-tile sell" title={t.lpsOutFeeNote}>
+                  <span>{t.lpsOutSellEnd(priceText(sellEdge[1]))}</span><b>≈ {money(endSell.got)} USDT</b><small>{t.lpsOutAvgSell(priceText(endSell.avg))}</small>
+                </div>
               )}
             </div>
           )}
+          <div className="lps-chart-bar">
+            <div className="seg" role="group" aria-label="Interval">
+              {STUDIO_IV.map((v) => <button key={v} className={interval === v ? 'on' : ''} aria-pressed={interval === v} onClick={() => setIv(v)}>{t.ivLabel[v]}</button>)}
+            </div>
+            <span className="lps-legend">
+              {goal && goal !== 'sell' && <span><i className="lg-buy" />{t.lpsLegendBuy}</span>}
+              {goal && goal !== 'buy' && <span><i className="lg-sell" />{t.lpsLegendSell(name)}</span>}
+            </span>
+          </div>
+          <div className="lps-chartbox">{chart(layer)}</div>
         </div>
+
+        <aside className="lps-ticket">
+          <div className="lps-flow">
+            <ol className="lps-prog" aria-label={t.lpOpen}>
+              {t.lpsProgress.map((x, i) => <li key={x} className={i < stage ? 'done' : i === stage ? 'now' : ''} aria-current={i === stage ? 'step' : undefined}><i>{i < stage ? '✓' : i + 1}</i>{x}</li>)}
+            </ol>
+            {step('goal', 1, mode === 'strat' ? t.lpsQStrat : t.lpsQ1, goalBody(), false)}
+            {step('range', 2, goal ? t.lpsQRange[goal] : t.lpsQRange.buy, rangeBody, !goal)}
+            {step('amount', 3, t.lpsQAmount, amountBody, !goal || !reached)}
+
+            {ready && (
+              <section className="lps-result" aria-live="polite">
+                <h3>{t.lpsResTitle}</h3>
+                <p className="lps-lead">{lead}</p>
+                {split?.short === 'coin' && price && (
+                  <div className="lps-flag">{t.lpsCoinShort(name, money(split.coinUsd), money(split.moved))}<button className="btn sm" onClick={useBuyOnly}>{t.lpsUseBuy}</button></div>
+                )}
+                {split?.short === 'usdt' && <p className="lps-flag">{t.lpsUsdtShort(money(split.usdt), money(split.moved))}</p>}
+                {goal !== 'sell' && plan.usdt > 0 && plan.usdt < SMALL_SIDE_USD && <p className="lps-flag">{t.lpsTooSmall('USDT', money(plan.usdt))}</p>}
+                {goal !== 'buy' && price && plan.coin > 0 && plan.coin * price < SMALL_SIDE_USD && !split?.short && <p className="lps-flag">{t.lpsTooSmall(name, money(plan.coin * price))}</p>}
+                <details className="lps-more" open={roomy || undefined}>
+                  <summary>{t.lpsMore}</summary>
+                  <ul className="lps-say">
+                    {buy && <li className="buy">{t.lpsHowBuy(priceText(at(buy.halfTick)), money(buy.halfAmount), priceText(at(buy.fullTick)))}</li>}
+                    {sell && <li className="sell">{t.lpsHowSell(priceText(at(sell.halfTick)), priceText(at(sell.fullTick)))}</li>}
+                  </ul>
+                  {whatIf.length > 0 && (
+                    <div className="lps-if">
+                      <b>{t.lpsIfTitle}</b>
+                      {whatIf.map((w) => (
+                        <div key={w.label} className="lps-if-row"><span>{w.label}</span><span>{w.hold}</span><b>{w.worth}</b></div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="lps-fine">{t.lpsResAfter}</p>
+                </details>
+              </section>
+            )}
+
+            {ask && ask.count > 0 && (
+              <section className="lps-sign">
+                <b>{t.lpsSignTitle}</b>
+                <ol>
+                  {ask.usdtRaw > 0n && <li>{t.lpsSignAllow(`${(Number(ask.usdtRaw) / 1e6).toFixed(2)} USDT`)}</li>}
+                  {ask.coinRaw > 0n && <li>{t.lpsSignAllow(`${coinQty(Number(ask.coinRaw) / 10 ** p.decimals)} ${p.symbol}`)}</li>}
+                  <li>{t.lpsSignMint(ask.count)}</li>
+                </ol>
+                <small>{t.lpsSignSkip}</small>
+              </section>
+            )}
+
+            <details className="lps-adv" open={roomy || undefined}>
+              <summary>{t.lpsAdvanced}</summary>
+              <div className="lps-row">
+                <span className="lps-label">{t.lpShape}</span>
+                <div className="seg" role="group" aria-label={t.lpShape}>
+                  {(['spot', 'curve', 'bidask', 'custom'] as Shape[]).map((x) => <button key={x} className={plan.shape === x ? 'on' : ''} aria-pressed={plan.shape === x} onClick={() => setPlan({ ...plan, shape: x, weights: x === 'custom' ? plan.weights ?? bins.map(() => 5) : plan.weights })}>{t.lpShapes[x]}</button>)}
+                </div>
+              </div>
+              <div className="lps-row">
+                <span className="lps-label">{t.lpStep}</span>
+                <div className="seg" role="group" aria-label={t.lpStep}>
+                  {[SPACING, SPACING * 2, SPACING * 4].map((x) => <button key={x} className={B === x ? 'on' : ''} aria-pressed={B === x} onClick={() => setPlan({ ...plan, step: x })}>{stepPct(x)}</button>)}
+                </div>
+              </div>
+              <div className="lps-row">
+                <span className="lps-label">{t.lpPerSide}</span>
+                <div className="seg" role="group" aria-label={t.lpPerSide}>
+                  {[5, 10, 15, 20].map((x) => <button key={x} className={plan.perSide === x ? 'on' : ''} aria-pressed={plan.perSide === x} onClick={() => setPlan({ ...plan, perSide: x, weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape })}>{x}</button>)}
+                </div>
+              </div>
+              {bins.length > 0 && (
+                <div className="lps-bars" style={{ '--n': goal === 'both' || !goal ? bins.length : plan.perSide } as React.CSSProperties}>
+                  {bins.map((b, i) => {
+                    if (!sides(goal ?? 'both').includes(b.side)) return null;
+                    const w = weightsNow()[i] ?? 0, tip = `${priceText(at(b.lower))} – ${priceText(at(b.upper))}`;
+                    return (
+                      <button key={i} className={`lps-bar ${b.side === 'usdt' ? 'buy' : 'sell'}${i === plan.perSide && goal === 'both' ? ' mid' : ''}`} onClick={() => nudge(i, 1)} onContextMenu={(e) => { e.preventDefault(); nudge(i, -1); }} aria-label={tip} title={tip}>
+                        <i style={{ height: `${Math.max(4, w * 10)}%` }} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="lps-tip">{t.lpGap(stepPct(B))}. {t.lpHintClick}.</p>
+            </details>
+
+            {s && (
+              <section className="lps-mine">
+                <b>{t.lpMine}</b>
+                {mine === null ? <span className="lps-tip">…</span> : !mine.length ? <span className="lps-tip">{t.lpNone}</span> : (
+                  <>
+                    <span>{t.lpMineSum(mine.length, money(mineValue))} · {t.lpFeesNow(money(mineFees))}</span>
+                    <span className="lps-tip">{priceText(at(mine[0].lower))} – {priceText(at(mine[mine.length - 1].upper))}</span>
+                    <div className="lps-mine-act">
+                      <button className="btn sm" disabled={phase.k === 'busy' || mineFees <= 0} onClick={() => void act('collect')}>{t.lpCollect}</button>
+                      <button className={`btn sm${sure ? ' danger' : ''}`} disabled={phase.k === 'busy'} onClick={() => void act('remove')}>{sure ? t.lpRemoveSure : t.lpRemove}</button>
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+            <section className="lps-how">
+              <b>{t.lpsHowTitle}</b>
+              <ol>{t.lpsHow(name).map((x, i) => <li key={i}>{x}</li>)}</ol>
+            </section>
+          </div>
+
+          <footer className="lps-foot">
+            {ready && risk.length > 0 && <div className="lps-risk"><Icon name="shield" size={14} /><p><b>{t.lpsRisk}</b> {risk.join(' ')}</p></div>}
+            {ready && s && short && <p className="lps-note warn">{t.lpNoBal(short)}</p>}
+            {!s && ready ? (
+              <button className="btn-primary lps-supply" onClick={connect}>{t.lpsConnect}</button>
+            ) : (
+              <button className="btn-primary lps-supply" disabled={!ready || !s || !m?.count || !!short || phase.k === 'busy'} onClick={() => void supply()}>
+                {phase.k === 'busy' ? <><span className="spin" aria-hidden />{phase.step}</> : footLabel}
+              </button>
+            )}
+            {phase.k === 'done' && <p className="lps-note ok">{t.lpDone} <a href={`${explorer}/tx/${phase.tx}`} target="_blank" rel="noreferrer">{t.viewTx} ↗</a></p>}
+            {phase.k === 'failed' && <p className="lps-note warn">{t.lpFailed(phase.why)}</p>}
+          </footer>
+        </aside>
       </div>
     </section>
   );

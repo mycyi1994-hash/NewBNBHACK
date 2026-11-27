@@ -120,17 +120,19 @@ stranger once the price has held, with the stranger getting nothing.
   its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three pools held one full-range
   position (the HSK pool three small ranges more), so every column is the same height; liquidity added to one
   stretch would raise that column alone.
-- **Liquidity strategy: liquidity in blocks on HSKSwap, three questions for a beginner.** The "Liquidity strategy"
-  button next to the pool's liquidity opens a screen with the coin's chart on top and three questions under it
-  (`src/LpStudio.tsx`), each shown once the one before is answered: what to do (buy as it falls: USDT in steps under
-  the price; sell as it rises: the coin in steps over it; or both, earning the fee each way), how much (quick amounts
-  or a dollar figure), and down or up to which price (close by, last week's or last month's low or high from the
-  exchange's daily candles, or a price of your own). The zone it covers is drawn on the chart, and the answer reads in
-  plain words, e.g. "If the price comes down to $57,117, about 50 USDT has bought WBTC. At $54,114, all 100 USDT has",
-  with what happens if the price never gets there or turns back (`fillPoints` in `src/lp.ts`). Moa on the right says
-  what each choice means as it is made; the shape (even, near the price, at the ends) and the step width (from 0.6%,
-  the pool's tick spacing, 5 to 20 a side) sit under "Advanced". Typed sentences ("100 USDT down to 10%, near the
-  price") change the plan the same way, and other questions go to the AI, whose `set_lp_plan` tool
+- **Liquidity strategy: liquidity in blocks on HSKSwap, for a beginner.** The "Liquidity strategy" button next to the
+  pool's liquidity opens a screen with the coin's chart filling the height on the left and an order panel on the right
+  (`src/LpStudio.tsx`). The first step offers six ready-made strategies (`src/lpStrategies.ts`: slow buy, buy more the
+  deeper it falls, crash catcher, sell a little on every rise, fees near the price, set and leave), each with how it
+  would have done over the last 30 days: `replay()` walks Gate's last 720 hourly candles through the same Uniswap V3
+  block math, moving HSKSwap's price only when the gap pays for the 0.3% fee, and compares the result with keeping
+  USDT, buying everything at the start, or leaving the coins untouched. Or the user answers three questions
+  (what to do, how far, how much). Either way the orders are drawn on the chart at their prices, the range edges are
+  lines to drag, and the panel answers in one plain sentence ("If bitcoin comes down to $54,114 it buys with $100.00
+  in 18 orders"), with what happens at ±5%, a plain warning of what a further fall or rise means, and the exact
+  approvals the wallet will ask for (`src/lpAmount.ts` splits and rounds the amounts; a coin side too small to matter
+  is said, not hidden). Moa explains each choice; the shape and order spacing sit under "Advanced". Typed sentences
+  change the plan the same way, and the AI's `set_lp_plan` tool can pick a strategy by name or
   fills the same plan. Supplying is the user's own wallet: exact approvals, then every step as one Uniswap V3 position
   through HSKSwap's own position manager (`0xDF0A9b83…0cad5`, whose factory is the router's) in one transaction
   (`src/lp.ts`). Positions already in the pool are listed with their fees, to collect or take out. The step holding the

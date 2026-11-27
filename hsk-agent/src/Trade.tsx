@@ -35,6 +35,8 @@ const IND_ALL: Ind[] = ['ma', 'ema', 'boll', 'vol', 'rsi'];
 const MA_COLORS = ['#f59e0b', '#7c5cf0', '#0ea5e9'];
 const RIGHT_BARS = 20;      // empty space to the right of the last candle
 const FIRST_VIEW = 160;     // bars in view on first load; the rest is a scroll/zoom away
+/** How wide the liquidity ladder's largest step is drawn, for a plot this wide. */
+const ladderWidth = (plotW: number) => Math.max(40, Math.min(plotW * 0.24, 200));
 
 /** Korean axis labels (2026 · 11월 · 21일 · 14:00); English keeps the library's own labels. */
 function koTicks(time: Time, type: number): string | null {
@@ -89,9 +91,19 @@ export interface Study { rule: RuleId; made?: MadeSpec; badges: Badge[]; bands: 
 
 /** A band of prices drawn across the chart (the liquidity studio's buy and sell zones). */
 export interface Zone { from: number; to: number; tone: 'buy' | 'sell'; label: string }
+/** One step of a liquidity plan, drawn at its prices on the right of the chart: `size` 0–1 of the largest step. */
+export interface LadderStep { from: number; to: number; size: number; tone: 'buy' | 'sell'; ghost?: boolean }
+/** A line on the chart the user drags up or down: it reports the price under the pointer while dragged. */
+export interface DragLine { price: number; tone: 'buy' | 'sell'; label: string; /** a first-time hint under the label */ hint?: string; onMove: (price: number) => void; onDone: () => void }
 
-export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until, zones }: {
+export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until, zones, ladder, handles, fit, room }: {
   zones?: Zone[];
+  ladder?: LadderStep[];
+  handles?: DragLine[];
+  /** Prices the price axis must keep in view along with the candles. */
+  fit?: number[];
+  /** First view for the liquidity studio: bars at a readable width, and room on the right for the ladder. */
+  room?: boolean;
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
   /** Show everything from this time to now (a backtest's window). `key` says when to apply it again. */
   range?: { from: number; key: string };
@@ -190,7 +202,8 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
     const showVol = inds.has('vol');
     m.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: showVol ? 0.2 : 0.06 } });
     const addLine = (xs: number[], color: string, width: 1 | 2 = 1, scale?: string) => {
-      const s = c.addLineSeries({ color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...(scale ? { priceScaleId: scale } : {}) });
+      // In the studio the price axis is for the candles and the plan; a slow average far away does not stretch it.
+      const s = c.addLineSeries({ color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...(scale ? { priceScaleId: scale } : {}), ...(room ? { autoscaleInfoProvider: () => null } : {}) });
       layers.current.push({ s, data: line(times, xs) }); extra.current.push(s); return s;
     };
     if (study) {
@@ -233,6 +246,11 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
       pane.lines = levels.map(([price, color]) => pane.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' }));
     }
 
+    // The studio's axis in dollars as people write them ($61,700 rather than 61700.00).
+    if (room) {
+      const last = candles[candles.length - 1].close, d = last >= 1000 ? 0 : last >= 1 ? 2 : 4;
+      m.applyOptions({ priceFormat: { type: 'custom', minMove: 10 ** -d, formatter: (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}` } });
+    }
     draw();
     m.setMarkers(markers ?? []);
     if (pl.current) { m.removePriceLine(pl.current); pl.current = null; }
@@ -240,7 +258,11 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
 
     if (shownKey.current !== resetKey) {
       // New market or interval: show the latest FIRST_VIEW bars with room on the right.
-      ts.setVisibleLogicalRange({ from: candles.length - FIRST_VIEW, to: candles.length + RIGHT_BARS });
+      if (room && box.current) {
+        // About 60 bars (ten days of 4-hour candles) at 5–10px each, then the ladder's room.
+        const plotW = Math.max(200, box.current.clientWidth - 90), side = ladderWidth(plotW) + 28, gap = Math.max(5, Math.min(10, (plotW - side) / 60));
+        ts.setVisibleLogicalRange({ from: candles.length - (plotW - side) / gap, to: candles.length + side / gap });
+      } else ts.setVisibleLogicalRange({ from: candles.length - FIRST_VIEW, to: candles.length + RIGHT_BARS });
       shownKey.current = resetKey;
     } else if (added > 0 && before) {
       // Older candles were prepended: keep the same bars in view.
@@ -266,10 +288,25 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
     requestAnimationFrame(() => { const r = chart.current === c ? ts.getVisibleLogicalRange() : null; if (r && sub.current) sub.current.chart.timeScale().setVisibleLogicalRange(r); });
     if (!range) { rangeKey.current = null; held.current = null; }
     prevFirst.current = candles[0].time;
-  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey, range?.key, study, paneKind, paneSpec?.kind === 'rsi' ? paneSpec.period : paneSpec?.days]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, inds, priceLine?.price, priceLine?.title, markers, resetKey, range?.key, study, paneKind, room, paneSpec?.kind === 'rsi' ? paneSpec.period : paneSpec?.days]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The replay moved a day: show that much of every series. (Not on mount: the data was just drawn.)
   useEffect(() => { if (!drawn.current) { drawn.current = true; return; } if (chart.current && layers.current.length) draw(); }, [until]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The price axis keeps `fit` in view; while a line is dragged it holds still, or it would run from the pointer.
+  const fitNow = useRef(fit); fitNow.current = fit;
+  const fitHeld = useRef<number[] | undefined | null>(null);
+  const fitKey = JSON.stringify(fit ?? []);
+  const refit = () => {
+    const m = main.current;
+    if (!m) return;
+    m.applyOptions({ autoscaleInfoProvider: (orig: () => { priceRange: { minValue: number; maxValue: number } } | null) => {
+      const r = orig(), f = fitHeld.current !== null ? fitHeld.current : fitNow.current;
+      if (!r || !f?.length) return r;
+      return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...f), maxValue: Math.max(r.priceRange.maxValue, ...f) } };
+    } });
+  };
+  useEffect(() => { if (fitHeld.current === null) refit(); }, [fitKey, candles.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Price bands across the whole chart, kept on their prices as the chart moves or rescales.
   const zoneLayer = useRef<HTMLDivElement>(null);
@@ -291,16 +328,102 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
     let raf = 0;
     const tick = () => {
       raf = requestAnimationFrame(tick);
+      const bottom = el.clientHeight - (chart.current?.timeScale().height() ?? 0);
       zones.forEach((z, i) => {
         const a = m.priceToCoordinate(z.to), b = m.priceToCoordinate(z.from), n = nodes[i];
         if (a === null || b === null) { n.style.display = 'none'; return; }
-        const top = Math.max(0, Math.min(a, b)), h = Math.max(2, Math.abs(b - a));
+        const top = Math.max(0, Math.min(a, b)), end = Math.min(bottom, Math.max(a, b)), h = Math.max(2, end - top);
         n.style.display = ''; n.style.top = `${top}px`; n.style.height = `${h}px`;
+        n.style.right = `${m.priceScale().width()}px`;
       });
     };
     tick();
     return () => cancelAnimationFrame(raf);
   }, [zoneKey, candles.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The plan's steps at their prices on the right, and the lines that set how far it reaches. Their places are read
+  // every frame from the latest props; the elements are made again only when their number or kind changes, so a
+  // line being dragged keeps the pointer.
+  const stepLayer = useRef<HTMLDivElement>(null);
+  const dragLayer = useRef<HTMLDivElement>(null);
+  const plan = useRef({ ladder, handles }); plan.current = { ladder, handles };
+  const ladderKey = (ladder ?? []).map((b) => `${b.tone}${b.ghost ? 'g' : ''}`).join();
+  const handleKey = (handles ?? []).map((h) => h.tone).join();
+  const geo = () => {
+    const m = main.current!, c = chart.current!, el = stepLayer.current!;
+    const axis = m.priceScale().width(), plotW = el.clientWidth - axis;
+    return { m, axis, bottom: el.clientHeight - c.timeScale().height(), maxW: ladderWidth(plotW) };
+  };
+  useEffect(() => {
+    const el = stepLayer.current;
+    if (!el || !main.current || !chart.current) return;
+    el.replaceChildren();
+    const steps = (ladder ?? []).map((b) => {
+      const n = document.createElement('i');
+      n.className = `chart-step ${b.tone}${b.ghost ? ' ghost' : ''}`;
+      el.appendChild(n);
+      return n;
+    });
+    if (!steps.length) return;
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const { m, axis, bottom, maxW } = geo(), L = plan.current.ladder ?? [];
+      steps.forEach((n, i) => {
+        const b = L[i], a = b ? m.priceToCoordinate(b.to) : null, z = b ? m.priceToCoordinate(b.from) : null;
+        if (!b || a === null || z === null) { n.style.display = 'none'; return; }
+        const top = Math.min(a, z), h = Math.abs(z - a);
+        if (top + h < 0 || top > bottom) { n.style.display = 'none'; return; }
+        n.style.display = ''; n.style.top = `${top + (h > 4 ? 0.5 : 0)}px`; n.style.height = `${Math.max(1, h - (h > 4 ? 1 : 0))}px`;
+        n.style.right = `${axis + 2}px`; n.style.width = `${Math.max(3, b.size * maxW)}px`;
+      });
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [ladderKey, candles.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const el = dragLayer.current;
+    if (!el || !main.current || !chart.current) return;
+    el.replaceChildren();
+    const lines = (handles ?? []).map((h, i) => {
+      const n = document.createElement('div');
+      n.className = `chart-drag ${h.tone}`;
+      const pill = document.createElement('span');
+      const hint = document.createElement('em');
+      n.append(pill, hint);
+      el.appendChild(n);
+      let on = false;
+      const at = (e: PointerEvent) => main.current?.coordinateToPrice(e.clientY - el.getBoundingClientRect().top) ?? null;
+      n.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        n.setPointerCapture(e.pointerId); on = true; n.classList.add('on');
+        fitHeld.current = fitNow.current ?? undefined;
+      });
+      n.addEventListener('pointermove', (e) => { if (!on) return; const p = at(e); if (p !== null && p > 0) plan.current.handles?.[i]?.onMove(p); });
+      const end = () => { if (!on) return; on = false; n.classList.remove('on'); fitHeld.current = null; plan.current.handles?.[i]?.onDone(); requestAnimationFrame(refit); };
+      n.addEventListener('pointerup', end); n.addEventListener('pointercancel', end);
+      return { n, pill, hint };
+    });
+    if (!lines.length) return;
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const { m, axis, bottom, maxW } = geo(), H = plan.current.handles ?? [];
+      lines.forEach(({ n, pill, hint }, i) => {
+        const h = H[i], y = h ? m.priceToCoordinate(h.price) : null;
+        if (!h || y === null || y < 0 || y > bottom) { n.style.display = 'none'; return; }
+        n.style.display = ''; n.style.top = `${y}px`; n.style.right = `${axis}px`;
+        if (pill.textContent !== h.label) pill.textContent = h.label;
+        // Left of the ladder when there is room; on a narrow chart, kept inside its left edge.
+        const r = Math.max(0, Math.min(maxW + 12, n.clientWidth - pill.offsetWidth - 4));
+        pill.style.right = `${r}px`;
+        hint.style.right = `${r}px`; hint.style.display = h.hint ? '' : 'none';
+        if (h.hint && hint.textContent !== h.hint) hint.textContent = h.hint;
+      });
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [handleKey, candles.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Buys and sells as filled labels over the chart, kept on their candles as the chart moves.
   useEffect(() => {
@@ -350,7 +473,7 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetK
 
   return (
     <div className="chart-wrap">
-      <div className="chart-main"><div ref={box} className="chart" /><div ref={zoneLayer} className="chart-zones" aria-hidden /><div ref={layer} className="chart-badges" aria-hidden /></div>
+      <div className="chart-main"><div ref={box} className="chart" /><div ref={zoneLayer} className="chart-zones" aria-hidden /><div ref={stepLayer} className="chart-steps" aria-hidden /><div ref={dragLayer} className="chart-drags" /><div ref={layer} className="chart-badges" aria-hidden /></div>
       {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneSpec?.kind === 'mom' && study ? (study.made ? t.term('ret', paneSpec.days) : t.ovLabel[study.rule]) : `RSI(${paneSpec?.kind === 'rsi' ? paneSpec.period : 14})`}</span><div ref={subBox} className="chart" /></div>}
     </div>
   );
@@ -684,8 +807,14 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   const [iv, setIv] = useState<GateInterval>(() => stored('moa.dexiv', DEX_IV, '1h'));
   const pickIv = (v: GateInterval) => { setIv(v); save('moa.dexiv', v); };
   const [inds, toggleInd] = useStoredInds();
-  const key = `dex-${asset}-${iv}`;
-  const { candles, more, err, retry } = useCandles(key, (n) => (iv === '1d' && n > 100 ? collectHistory(asset) : gateCandles(asset, iv, n)), (first) => gateCandles(asset, iv, 1000, first.time - 1), 20000);
+  // The liquidity studio has its own interval (4-hour by default: about ten days in view, the last week's low with it), and
+  // only candles: the zones need the chart's whole height, and an average line far away would only crowd it.
+  const [lpIv, setLpIv] = useState<GateInterval>('4h');
+  const studio = !!lp?.plan;
+  const shownIv = studio ? lpIv : iv;
+  const studioInds = useMemo(() => new Set<Ind>(), []);
+  const key = `dex-${asset}-${shownIv}${studio ? '-lp' : ''}`;
+  const { candles, more, err, retry } = useCandles(key, (n) => (shownIv === '1d' && n > 100 ? collectHistory(asset) : gateCandles(asset, shownIv, n)), (first) => gateCandles(asset, shownIv, 1000, first.time - 1), 20000);
   const vol = detail ? detail.swaps.reduce((acc, x) => acc + x.usdt, 0) : 0;
   const p = POOLS[asset];
   const gate = quotes.find((q) => q.asset === asset);
@@ -700,7 +829,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   // Real HSKSwap swaps, pinned to the Gate candle they fall in.
   const markers = useMemo(() => {
     if (!detail || !candles.length) return [];
-    const sec = GATE_SECONDS[iv], first = candles[0].time, last = candles[candles.length - 1].time;
+    const sec = GATE_SECONDS[shownIv], first = candles[0].time, last = candles[candles.length - 1].time;
     const out: SeriesMarker<Time>[] = [];
     for (const x of [...detail.swaps].reverse()) {
       const t0 = Math.floor(x.time / 1000);
@@ -711,7 +840,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
       out.push({ time: candles[lo].time as UTCTimestamp, position: buy ? 'belowBar' : 'aboveBar', color: buy ? '#16a34a' : '#dc2626', shape: buy ? 'arrowUp' : 'arrowDown', size: 0.8 });
     }
     return out.sort((a, b) => (a.time as number) - (b.time as number));
-  }, [detail, candles, iv]);
+  }, [detail, candles, shownIv]);
   const priceLine = useMemo(() => (detail ? { price: detail.price, title: 'HSKSwap' } : undefined), [detail?.price]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -741,8 +870,8 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
           <span className="mh-pool">Uniswap V3 · 0.3% · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></span>
         </div>
       </div>
-      {lp?.plan ? <LpStudio plan={lp.plan} setPlan={lp.setPlan} vault={lp.vault} onSay={lp.say}
-        chart={(zones) => (candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} zones={zones} resetKey={key} /> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>)}
+      {lp?.plan ? <LpStudio plan={lp.plan} setPlan={lp.setPlan} vault={lp.vault} onSay={lp.say} interval={lpIv} setInterval={setLpIv}
+        chart={(x) => (candles.length ? <CandleChart candles={candles} inds={studioInds} onOlder={more} priceLine={priceLine} zones={x.zones} ladder={x.ladder} handles={x.handles} fit={x.fit} room resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>)}
         onClose={() => lp.setPlan(null)} onAsset={(a) => { setAsset(a); lp.setPlan({ ...lp.plan!, asset: a, coin: 0, weights: undefined, shape: lp.plan!.shape === 'custom' ? 'curve' : lp.plan!.shape }); }} /> : <>
       <section className="chart-card">
         <div className="chart-toolbar">
