@@ -14,13 +14,13 @@ import { NANO_REFRESH_MS } from './nano.ts';
 /* ---------- the exchange chart: nanotradingclub's fire chart ---------- */
 
 /** The frame shows nanotradingclub's development site (nntdev), where its embed mode is deployed; the public site is only
- * linked to. Moving to the public site is this line (and NANO_FIRE in server/nanoFrame.ts). */
+ * linked to. `hud=off` hides the development site's diagnostic line at the bottom of the chart. Moving to the public site is this line (and NANO_FIRE in server/nanoFrame.ts). */
 const NANO_FIRE = 'https://nntdev.pages.dev/fire', NANO_PUBLIC = 'https://nanotradingclub.xyz/fire';
 const NANO_CDN = 'https://cdn.nanotradingclub.xyz';
 /** nanotradingclub's intervals are 1m, 10m, 30m, 1h, 4h, 1d and 7d; Moa's 15m opens as its 10m. */
 const NANO_TF: Record<Interval, string> = { '1m': '1m', '15m': '10m', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '7d' };
 export const nanoChartUrl = (base: string, interval: Interval, embed = true) =>
-  `${embed ? `${NANO_FIRE}?embed=1&` : `${NANO_PUBLIC}?`}sym=${encodeURIComponent(base.toUpperCase())}USDT&tf=${NANO_TF[interval]}`;
+  `${embed ? `${NANO_FIRE}?embed=1&hud=off&` : `${NANO_PUBLIC}?`}sym=${encodeURIComponent(base.toUpperCase())}USDT&tf=${NANO_TF[interval]}`;
 
 export type NanoState = 'off' | 'checking' | 'on' | 'refused' | 'unreachable' | 'nocoin';
 let frameKept: { at: number; v: { allowed: boolean; why?: string } } | null = null;
