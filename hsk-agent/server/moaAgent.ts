@@ -13,6 +13,7 @@ import { executeTrade, vaultStatus, type ExecConfig, type TradeResult } from './
 import { loadAgents, type Agent } from '../src/agents.ts';
 import { recommend, type Level } from '../src/recommend.ts';
 import { STRINGS } from '../src/i18n.ts';
+import { LP_STRATEGIES, strategyPlan } from '../src/lpStrategies.ts';
 
 export const MODEL = 'claude-sonnet-5-5';
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -36,7 +37,7 @@ export interface MoaResult {
   /** Set when recommend_agent ran: the app shows this agent's card under the reply. */
   recommend?: { agentId: string; coin: string };
   /** Set when set_lp_plan ran: the app applies it to the liquidity studio on screen. */
-  lp?: { usdt?: number; coin?: number; shape?: 'spot' | 'curve' | 'bidask'; reachPct?: number };
+  lp?: { usdt?: number; coin?: number; shape?: 'spot' | 'curve' | 'bidask'; reachPct?: number; goal?: 'buy' | 'sell' | 'both'; step?: number; perSide?: number };
 }
 export interface MoaContext { level?: Level | null; asset?: string }
 
@@ -52,7 +53,7 @@ Rules:
 - Execution moves real funds through the user's MoaVault contract. If execute_trade returns an error, explain it plainly; do not retry with different numbers unless the user asks.
 - After an execution, state the result in one or two sentences. Do not paste transaction hashes or links; the app shows a receipt card with the link.
 - The app has an agent market: agents that each follow one fixed rule on one coin. When the user asks what to hire, which agent to use, or to have buying done for them, call recommend_agent with the coin they mean ("any" if none). The app picks by its own rule and shows the agent card with a Hire button under your reply. Describe the pick in one or two sentences using only the numbers the tool returns. You never hire agents, change amounts or pause agents yourself: hiring and amounts go through a sheet the user confirms, and every agent has a pause button in the bar at the top.
-- When the conversation says the liquidity studio is open, the user is planning HSKSwap liquidity in steps: USDT in steps under the price (it buys the coin as the price comes down into them) and optionally the coin in steps over it (sold as the price goes up). Help them choose the USDT amount, the shape (spot = even; curve = most near the price, most fees while the price moves around it; bidask = most at the far ends, buys most on a big fall) and how far under the price it reaches (reachPct, e.g. 3, 6, 12, 24). Call set_lp_plan with what they decided; it changes the plan on their screen. You never supply anything: they press Supply and sign in their wallet. Fees are 0.3% and only earned while the price trades inside a step; say so if they ask about returns, and do not promise any.
+- When the conversation says the liquidity studio is open, the user is planning HSKSwap liquidity in steps: USDT in steps under the price (it buys the coin as the price comes down into them) and optionally the coin in steps over it (sold as the price goes up). Help them choose the USDT amount, the shape (spot = even; curve = most near the price, most fees while the price moves around it; bidask = most at the far ends, buys most on a big fall) and how far under the price it reaches (reachPct, e.g. 3, 6, 12, 24). There are ready-made strategies (set_lp_plan's strategy): slowBuy (buy a little on every dip, 8% under the price), dipLadder (buy more the deeper it falls, 15%), crashCatcher (wide under the price for a big fall, 30%), takeProfit (sell a little on every rise, 15% over), rangeFees (both ways, packed near the price, 4%, most fees while the price moves sideways), wideGrid (both ways, even, 20%, set and leave). The studio shows how each did over the last 30 days; do not quote returns you were not given. Call set_lp_plan with what they decided; it changes the plan on their screen. You never supply anything: they press Supply and sign in their wallet. Fees are 0.3% and only earned while the price trades inside a step; say so if they ask about returns, and do not promise any.
 - Keep replies under 90 words. No markdown headers.`;
 
 const tools: Anthropic.Beta.BetaTool[] = [
@@ -112,6 +113,7 @@ const tools: Anthropic.Beta.BetaTool[] = [
         coin: { type: 'number', description: 'Amount of the coin spread over the steps above the price (0 for none)' },
         shape: { type: 'string', enum: ['spot', 'curve', 'bidask'] },
         reachPct: { type: 'number', description: 'How far under (and over) the price the steps reach, in percent' },
+        strategy: { type: 'string', enum: LP_STRATEGIES.map((x) => x.id), description: 'A ready-made strategy: sets the goal, shape and reach; amounts stay as they are' },
       },
       additionalProperties: false,
     },
@@ -245,9 +247,10 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
           }
         } else if (u.name === 'set_lp_plan') {
           onEvent({ type: 'step', step: 'plan' });
-          const x = u.input as { usdt?: number; coin?: number; shape?: 'spot' | 'curve' | 'bidask'; reachPct?: number };
+          const x = u.input as { usdt?: number; coin?: number; shape?: 'spot' | 'curve' | 'bidask'; reachPct?: number; strategy?: string };
+          const preset = LP_STRATEGIES.find((p) => p.id === x.strategy);
           const ok = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
-          result.lp = { ...(ok(x.usdt) ? { usdt: x.usdt } : {}), ...(ok(x.coin) ? { coin: x.coin } : {}), ...(x.shape ? { shape: x.shape } : {}), ...(ok(x.reachPct) && x.reachPct! > 0 ? { reachPct: Math.min(60, x.reachPct!) } : {}) };
+          result.lp = { ...(ok(x.usdt) ? { usdt: x.usdt } : {}), ...(ok(x.coin) ? { coin: x.coin } : {}), ...(x.shape ? { shape: x.shape } : {}), ...(ok(x.reachPct) && x.reachPct! > 0 ? { reachPct: Math.min(60, x.reachPct!) } : {}), ...(preset ? strategyPlan(preset) : {}) };
           content = 'The plan on the screen now shows this. The user supplies it themselves with the Supply button.';
         } else if (u.name === 'execute_trade') {
           const input = u.input as { asset: 'HSK' | 'ETH' | 'BTC'; side: 'buy' | 'sell'; amount: number; note: string };

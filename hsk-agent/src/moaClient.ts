@@ -6,7 +6,7 @@ import { authHeaders } from './account.ts';
 export type StepKey = 'thinking' | 'market' | 'plan' | 'agents' | 'execute' | 'writing';
 export interface Exec { ok: boolean; reason?: string; txHash?: string; explorerUrl?: string; amountIn?: string; amountOut?: string; tokenIn?: string; tokenOut?: string; request: { asset: string; side: string; amount: number } }
 export interface ServerStep { kind: Step['kind']; asset?: 'HSK' | 'ETH' | 'BTC'; perBuyUsd?: number; every?: 'hour' | 'day' | 'week'; durationDays?: number; targetQty?: number; deadline?: string; maxPrice?: number; budgetUsd?: number; dropPct?: number; risePct?: number; sellFraction?: number; what?: 'idle USDT' | 'accumulated coins' }
-export interface MoaResult { reply: string; plan?: { steps: ServerStep[]; missing: string[] }; executions: Exec[]; recommend?: { agentId: string; coin: string }; lp?: { usdt?: number; coin?: number; shape?: 'spot' | 'curve' | 'bidask'; reachPct?: number } }
+export interface MoaResult { reply: string; plan?: { steps: ServerStep[]; missing: string[] }; executions: Exec[]; recommend?: { agentId: string; coin: string }; lp?: { usdt?: number; coin?: number; shape?: 'spot' | 'curve' | 'bidask'; reachPct?: number; goal?: 'buy' | 'sell' | 'both'; step?: number; perSide?: number } }
 /** What the server needs to know about the user that is not in the words: their level and the coin on screen. */
 export interface MoaCtx { level?: 'new' | 'some' | 'pro' | null; asset?: string }
 
