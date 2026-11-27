@@ -11,6 +11,11 @@ const obj = (w: string) => `${w}${batchim(w) ? '을' : '를'}`;
 const subj = (w: string) => `${w}${batchim(w) ? '이' : '가'}`;
 const ro = (w: string) => { const c = w.charCodeAt(w.length - 1); return `${w}${batchim(w) && (c - 0xac00) % 28 !== 8 ? '으로' : '로'}`; };
 
+/** A number of candles in words: "20-day", "20-hour", "20×4-hour" / "20일", "20시간", "4시간봉 20개". */
+const enSpan = (n: number, iv: '1d' | '4h' | '1h') => (iv === '1d' ? `${n}-day` : iv === '1h' ? `${n}-hour` : `${n}×4-hour`);
+const enAgo = (n: number, iv: '1d' | '4h' | '1h') => (iv === '1d' ? `${n} days ago` : iv === '1h' ? `${n} hours ago` : `${n} 4-hour candles ago`);
+const koSpan = (n: number, iv: '1d' | '4h' | '1h') => (iv === '1d' ? `${n}일` : iv === '1h' ? `${n}시간` : `4시간봉 ${n}개`);
+
 const en = {
   navMarkets: 'MARKETS', navTrade: 'Trade', navAssistant: 'ASSISTANT', navAsk: 'Ask Moa', navAutomations: 'AUTOMATIONS', navBots: 'Bots',
   preview: 'Preview',
@@ -669,14 +674,18 @@ const en = {
   bqWordsPh: 'e.g. buy above the 200-day average, sell below it', bqRead: 'Read it',
   bqReadOk: (n: number) => `Got it: ${n} condition${n === 1 ? '' : 's'}.`, bqReadNo: 'I didn’t catch that. Try an example.',
   bqSellAuto: 'Sells when the buy rule stops holding.', bqAdvanced: 'Edit details', bqSimple: 'Done',
-  bqQuickBuy: ['Above 200-day average', 'After a big drop', 'New 20-day high', 'Up on the month'],
-  bqQuickSell: ['Below 50-day average', 'After a big rise', 'Breaks 10-day low'],
+  bqQuickBuy: (iv: '1d' | '4h' | '1h' = '1d') => [`Above ${enSpan(200, iv)} average`, 'After a big drop', `New ${enSpan(20, iv)} high`, iv === '1d' ? 'Up on the month' : `Up on ${enAgo(28, iv)}`],
+  bqQuickSell: (iv: '1d' | '4h' | '1h' = '1d') => [`Below ${enSpan(50, iv)} average`, 'After a big rise', `Breaks ${enSpan(10, iv)} low`],
+  bqEvery: 'How often should it look?', bqEveryOpt: { '1d': 'Daily', '4h': 'Every 4 hours', '1h': 'Every hour' } as Record<'1d' | '4h' | '1h', string>,
+  bqUnit: { '1d': 'days', '4h': '× 4h', '1h': 'hours' } as Record<'1d' | '4h' | '1h', string>,
+  bqLast: (days: number) => (days >= 700 ? `Last ${Math.round(days / 365)} years` : days >= 330 ? 'Last year' : `Last ${days} days`),
+  bqRet: (w: string) => `${w}: return`,
   bqSay: (a: string, above: boolean, b: string) => `${a} is ${above ? 'above' : 'below'} ${b}`, bqAbove: 'is above', bqBelow: 'is below',
-  bqTerm: (k: string, n?: number, pct = false) => ({ price: 'price', sma: `${n}-day average`, ema: `${n}-day fast average`, high: `${n}-day high`, low: `${n}-day low`, rsi: `RSI ${n}`, ret: `${n}-day return`, bollUp: `top of usual range (${n}d)`, bollLo: `bottom of usual range (${n}d)`, num: `${n}${pct ? '%' : ''}` } as Record<string, string>)[k] ?? k,
+  bqTerm: (k: string, n?: number, pct = false, iv: '1d' | '4h' | '1h' = '1d') => { const sp = enSpan(n ?? 0, iv); return ({ price: 'price', sma: `${sp} average`, ema: `${sp} fast average`, high: `${sp} high`, low: `${sp} low`, rsi: iv === '1d' ? `RSI ${n}` : `${sp} RSI`, ret: `${sp} return`, bollUp: `top of usual range (${sp})`, bollLo: `bottom of usual range (${sp})`, num: `${n}${pct ? '%' : ''}` } as Record<string, string>)[k] ?? k; },
   bqKind: { price: 'Price', sma: 'Average', ema: 'Fast average', high: 'Recent high', low: 'Recent low', rsi: 'RSI', ret: 'Return', bollUp: 'Top of usual range', bollLo: 'Bottom of usual range', num: 'Number' } as Record<string, string>,
   bqRsiTip: 'RSI runs from 0 to 100. Under 30: it fell a lot. Over 70: it rose a lot.',
   bqAhead: (p: string) => `${p} more than just holding`, bqBehind: 'Just holding did better', bqBeatLine: 'Your agent has to beat this',
-  bqHoldLegend: (p: string) => `Just holding ${p}`, bqDetail: (dd: string, n: number, fee: string) => `Worst drop ${dd} · ${n} trades · ${fee} fee per trade · daily prices, last 3 years`,
+  bqHoldLegend: (p: string) => `Just holding ${p}`, bqDetail: (dd: string, n: number, fee: string, iv: '1d' | '4h' | '1h' = '1d', days = 1095) => `Worst drop ${dd} · ${n} trades · ${fee} fee per trade · ${({ '1d': 'daily', '4h': '4-hour', '1h': 'hourly' })[iv]} prices, ${(days >= 700 ? `last ${Math.round(days / 365)} years` : days >= 330 ? 'last year' : `last ${days} days`)}`,
   bqWorking: 'Working it out…', bqNoData: 'Not enough price history', bqLoadFail: 'Couldn’t load prices',
   bqSave: 'Save', bqSaveOnly: 'Just save', bqFew: (n: number) => `Only ${n} trades, so it could be luck.`,
   bqPast: 'Past results only. No promise for the future: the more you tune numbers to fit, the less it tells you.',
@@ -1381,15 +1390,19 @@ const ko: typeof en = {
   bqWordsPh: '예: 200일 평균선 위면 사고, 아래면 팔아', bqRead: '읽어 보기',
   bqReadOk: (n) => `조건 ${n}개를 알아들었어요.`, bqReadNo: '잘 못 알아들었어요. 예시를 눌러 보세요.',
   bqSellAuto: '사는 조건이 깨지면 팔아요.', bqAdvanced: '자세히 고치기', bqSimple: '다 고쳤어요',
-  bqQuickBuy: ['200일 평균선 위', '많이 떨어졌을 때', '20일 최고가 돌파', '한 달 전보다 오름'],
-  bqQuickSell: ['50일 평균선 아래', '많이 올랐을 때', '10일 최저가 깨짐'],
+  bqQuickBuy: (iv = '1d') => [`${koSpan(200, iv)} 평균선 위`, '많이 떨어졌을 때', `${koSpan(20, iv)} 최고가 돌파`, iv === '1d' ? '한 달 전보다 오름' : `${koSpan(28, iv)} 전보다 오름`],
+  bqQuickSell: (iv = '1d') => [`${koSpan(50, iv)} 평균선 아래`, '많이 올랐을 때', `${koSpan(10, iv)} 최저가 깨짐`],
+  bqEvery: '얼마나 자주 볼까요?', bqEveryOpt: { '1d': '하루마다', '4h': '4시간마다', '1h': '1시간마다' },
+  bqUnit: { '1d': '일', '4h': '× 4시간', '1h': '시간' },
+  bqLast: (days) => (days >= 700 ? `지난 ${Math.round(days / 365)}년` : days >= 330 ? '지난 1년' : `지난 ${days}일`),
+  bqRet: (w) => `${w} 수익`,
   bqSay: (a, above, b) => { const core = a.replace(/\([^)]*\)$/, ''); const ch = core.charCodeAt(core.length - 1); const has = ch >= 0xac00 && ch <= 0xd7a3 ? (ch - 0xac00) % 28 !== 0 : /[013678]$/.test(core); return `${a}${has ? '이' : '가'} ${b}보다 ${above ? '높을 때' : '낮을 때'}`; },
   bqAbove: '보다 높을 때', bqBelow: '보다 낮을 때',
-  bqTerm: (k, n, pct = false) => ({ price: '가격', sma: `${n}일 평균선`, ema: `${n}일 빠른 평균선`, high: `최근 ${n}일 최고가`, low: `최근 ${n}일 최저가`, rsi: `RSI(${n}일)`, ret: `${n}일 수익률`, bollUp: `평소 범위 위쪽(${n}일)`, bollLo: `평소 범위 아래쪽(${n}일)`, num: `${n}${pct ? '%' : ''}` } as Record<string, string>)[k] ?? k,
+  bqTerm: (k, n, pct = false, iv = '1d') => { const sp = koSpan(n ?? 0, iv); return ({ price: '가격', sma: `${sp} 평균선`, ema: `${sp} 빠른 평균선`, high: `최근 ${sp} 최고가`, low: `최근 ${sp} 최저가`, rsi: `RSI(${sp})`, ret: `${sp} 수익률`, bollUp: `평소 범위 위쪽(${sp})`, bollLo: `평소 범위 아래쪽(${sp})`, num: `${n}${pct ? '%' : ''}` } as Record<string, string>)[k] ?? k; },
   bqKind: { price: '가격', sma: '평균선', ema: '빠른 평균선', high: '최근 최고가', low: '최근 최저가', rsi: 'RSI', ret: '수익률', bollUp: '평소 범위 위쪽', bollLo: '평소 범위 아래쪽', num: '숫자' },
   bqRsiTip: 'RSI는 0~100 사이 숫자예요. 30 아래면 많이 떨어진 상태, 70 위면 많이 오른 상태예요.',
   bqAhead: (p) => `그냥 들고 있는 것보다 ${p} 더 벌었어요`, bqBehind: '그냥 들고 있는 게 더 나았어요', bqBeatLine: '만든 에이전트가 이것보다 잘해야 해요',
-  bqHoldLegend: (p) => `그냥 들고 있기 ${p}`, bqDetail: (dd, n, fee) => `가장 많이 떨어졌을 때 ${dd} · 매매 ${n}번 · 수수료 ${fee} · 지난 3년 하루 가격 기준`,
+  bqHoldLegend: (p) => `그냥 들고 있기 ${p}`, bqDetail: (dd, n, fee, iv = '1d', days = 1095) => `가장 많이 떨어졌을 때 ${dd} · 매매 ${n}번 · 수수료 ${fee} · ${days >= 700 ? `지난 ${Math.round(days / 365)}년` : days >= 330 ? '지난 1년' : `지난 ${days}일`} ${({ '1d': '하루', '4h': '4시간', '1h': '1시간' })[iv]} 가격 기준`,
   bqWorking: '계산하고 있어요…', bqNoData: '가격 기록이 부족해요', bqLoadFail: '가격을 못 불러왔어요',
   bqSave: '저장하기', bqSaveOnly: '저장만 하기', bqFew: (n) => `매매가 ${n}번뿐이라 운일 수도 있어요.`,
   bqPast: '지난 결과일 뿐 앞날을 약속하진 않아요. 숫자를 결과에 맞출수록 믿기 어려워져요.',

@@ -12,7 +12,7 @@ import type { Candle } from './cex.ts';
 import type { RuleId } from './agents.ts';
 
 export type TermKind = 'price' | 'sma' | 'ema' | 'high' | 'low' | 'rsi' | 'ret' | 'bollUp' | 'bollLo' | 'num';
-/** `n` is a number of days, or the value itself for a plain number. */
+/** `n` is a number of candles of the agent's interval (days for a daily agent), or the value itself for a plain number. */
 export interface Term { k: TermKind; n?: number }
 export interface Cond { a: Term; op: 'above' | 'below'; b: Term }
 export interface MadeSpec {
@@ -25,7 +25,26 @@ export interface MadeSpec {
   createdAt: number;
   /** The published strategy it started from, if any. */
   from?: RuleId;
+  /** The candles the rule reads and decides on, one decision per closed candle. Missing means daily (agents saved
+   *  before intervals existed stay exactly as they were). */
+  interval?: SpecInterval;
 }
+
+/* ---------- how often the rule looks: the candle interval ---------- */
+
+export type SpecInterval = '1d' | '4h' | '1h';
+export const SPEC_INTERVALS: SpecInterval[] = ['1d', '4h', '1h'];
+/** Candles per day. */
+export const PER_DAY: Record<SpecInterval, number> = { '1d': 1, '4h': 6, '1h': 24 };
+/** Seconds per candle. */
+export const INTERVAL_SECONDS: Record<SpecInterval, number> = { '1d': 86_400, '4h': 14_400, '1h': 3_600 };
+/**
+ * Days a made agent is scored over: three years of daily candles, one year of 4-hour candles, 90 days of hourly
+ * candles. Each is about a thousand to two thousand decisions, and fits in a few requests of exchange history.
+ */
+export const WINDOW_DAYS: Record<SpecInterval, number> = { '1d': 1095, '4h': 365, '1h': 90 };
+/** The interval a stored rule runs on. Anything unknown (an old or hand-edited record) is daily. */
+export const intervalOf = (spec: object): SpecInterval => { const v = (spec as { interval?: unknown }).interval; return SPEC_INTERVALS.includes(v as SpecInterval) ? (v as SpecInterval) : '1d'; };
 
 export const TERM_KINDS: TermKind[] = ['price', 'sma', 'ema', 'high', 'low', 'rsi', 'ret', 'bollUp', 'bollLo', 'num'];
 /** What each kind needs: a number of days (with its sensible range and default), a value, or nothing. */
@@ -145,7 +164,14 @@ export function specPane(spec: Pick<MadeSpec, 'buy' | 'sell'>): { kind: 'mom'; d
 
 /* ---------- in words ---------- */
 
-export interface Parsed { buy: Cond[]; sell: Cond[]; unknown: string[] }
+export interface Parsed { buy: Cond[]; sell: Cond[]; unknown: string[]; interval?: SpecInterval }
+/** "1시간봉으로", "4시간마다", "on hourly candles", "4h": the interval a sentence asks for, if it names one. */
+const INTERVAL_WORD = /(?:^|[^\d])([14])\s*(?:시간\s*(?:봉|마다)|h\b|-?\s*hour(?:ly)?\s*(?:candles?|bars?|chart))|(hourly)/i;
+export function intervalIn(text: string): SpecInterval | undefined {
+  const m = INTERVAL_WORD.exec(text);
+  if (!m) return undefined;
+  return m[1] === '4' ? '4h' : m[1] === '1' || m[2] ? '1h' : undefined;
+}
 const BUY_WORD = /(사고|사요|사줘|사자|사서|사라|사는|산다|사\b|매수|진입|들어가|buy|enter|go long)/i;
 const SELL_WORD = /(팔아|팔고|팔자|파는|파세|판다|팔\S?|매도|청산|나와|나가|sell|exit|close out)/i;
 const ABOVE = /(위|넘|돌파|상회|이상|초과|높|above|over|exceed|greater|cross(?:es)? up)/i;
@@ -203,6 +229,8 @@ function conds(clause: string, last: Term | null): { found: Cond[]; last: Term |
  */
 export function parse(text: string): Parsed {
   const out: Parsed = { buy: [], sell: [], unknown: [] };
+  const iv = intervalIn(text);
+  if (iv) out.interval = iv;
   // Cut the sentence where it says "buy" or "sell": each piece ends with its action (Korean) or starts with it (English).
   const marks: { at: number; end: number; side: 'buy' | 'sell' }[] = [];
   for (const [re, side] of [[BUY_WORD, 'buy'], [SELL_WORD, 'sell']] as const) {

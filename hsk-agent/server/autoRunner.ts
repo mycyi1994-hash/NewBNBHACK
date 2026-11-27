@@ -3,7 +3,8 @@
 // It also carries out any stop-loss that is due on a vault it knows about; the vault decides whether one applies.
 // A daily spending limit and a stop-loss on the vault are recommended in the hire sheet and are the owner's choice:
 // the agent's own budget is the only cap this runner applies by itself.
-import { agentById, dailyHistory, scoreMade, SIGNAL_MARKETS } from '../src/agents.ts';
+import { agentById, scoreMadeLive, SIGNAL_MARKETS } from '../src/agents.ts';
+import { intervalOf } from '../src/spec.ts';
 import { loadQuotes } from '../src/market.ts';
 import { book, chainNote, decide, newId, settle, type HiredAgent, type Order, type Signal } from '../src/runner.ts';
 import type { Asset } from '../src/intent.ts';
@@ -84,19 +85,24 @@ export async function tick(store: AutoStore, deps: Deps, now = Date.now()): Prom
 /* ---------- the real chain and market ---------- */
 
 const cache = new Map<string, { at: number; signal: Signal }>();
-/** What the agent's rule says right now, from the same scoring the app shows. Kept for ten minutes per agent. */
+/**
+ * How long a signal is reused. A made agent decides on its own candles (daily, 4-hour or hourly, see madeHistory),
+ * so an hourly one is re-read within a few minutes of each candle closing; daily agents keep the ten minutes.
+ */
+export const signalTtl = (h: Pick<HiredAgent, 'spec'>) => ({ '1d': 10 * 60_000, '4h': 4 * 60_000, '1h': 2 * 60_000 })[h.spec ? intervalOf(h.spec) : '1d'];
+/** What the agent's rule says right now, from the same scoring the app shows. */
 async function liveSignal(h: HiredAgent): Promise<Signal | undefined> {
   if (h.source.type === 'custom') {
     const q = (await loadQuotes()).find((x) => x.asset === h.asset);
     return { kind: 'custom', price: q?.pool };
   }
-  const id = h.spec ? `made:${JSON.stringify([h.spec.market, h.spec.buy, h.spec.sell])}` : h.source.agentId;
+  const id = h.spec ? `made:${JSON.stringify([h.spec.market, intervalOf(h.spec), h.spec.buy, h.spec.sell])}` : h.source.agentId;
   const hit = cache.get(id);
-  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.signal;
+  if (hit && Date.now() - hit.at < signalTtl(h)) return hit.signal;
   let a;
   if (h.spec) {
     const market = SIGNAL_MARKETS.find((m) => m.symbol === h.spec!.market);
-    a = market ? scoreMade(h.spec, market, await dailyHistory(market)) : null;
+    a = market ? await scoreMadeLive(h.spec, market) : null;
   } else if (h.source.agentId.startsWith('made:')) {
     return undefined;   // a made agent hired before its rule travelled with it: the app has to re-save it
   } else a = await agentById(h.source.agentId);

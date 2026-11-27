@@ -1313,6 +1313,13 @@ select { padding-right: 8px; }
 .wz-tag { flex: none; display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
 .wz-tag.buy { background: #e6f4ea; color: #137333; } .wz-tag.sell { background: #fce8e6; color: #b3261e; }
 .bd-side .wz-tag, .bd-reads .wz-tag { height: 30px; padding: 0 14px; font-size: 15px; }
+/* how often the rule looks: one question, three choices */
+.bd-every { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.bd-every > span { font-size: 16px; font-weight: 700; color: var(--ink-title); }
+.bd-every-seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--fill); }
+.bd-every-seg button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: none; font-size: 15px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.bd-every-seg button:hover { color: var(--ink-title); }
+.bd-every-seg button.on { background: var(--bg); color: var(--accent-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 0 0 1.5px var(--accent); }
 .bd-side { display: flex; flex-direction: column; gap: 12px; }
 .bd-side + .bd-side { padding-top: 24px; border-top: 1px solid var(--line); }
 .bd-side h3 { display: flex; align-items: center; gap: 4px; }
@@ -1432,6 +1439,9 @@ select { padding-right: 8px; }
 }
 /* a phone: one column, the card under the step, and a strip at the top with its answer */
 @container (max-width: 720px) {
+  .bd-every { flex-direction: column; align-items: stretch; }
+  .bd-every-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bd-every-seg button { padding: 0 6px; font-size: 14px; }
   .build-page { gap: 16px; }
   .bd-top { gap: 10px; padding-top: 4px; }
   .bd-grid { grid-template-columns: minmax(0, 1fr); }

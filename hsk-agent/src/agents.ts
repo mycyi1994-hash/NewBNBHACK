@@ -16,7 +16,7 @@ import * as cex from './cex.ts';
 import { gateDailyRange } from './gate.ts';
 import * as I from './indicators.ts';
 import type { Asset } from './intent.ts';
-import { specLines, specNeed, specPane, specPositions, type MadeSpec } from './spec.ts';
+import { INTERVAL_SECONDS, PER_DAY, WINDOW_DAYS, intervalOf, specLines, specNeed, specPane, specPositions, type MadeSpec, type SpecInterval } from './spec.ts';
 import { MADE_PREFIX, madeById, madeList } from './madeStore.ts';
 
 export type PositionRule =
@@ -171,6 +171,9 @@ export interface Agent {
   seam?: number;
   /** A made agent's own rule. */
   made?: MadeSpec;
+  /** The candles it decides on, when they are not daily (a made agent on 4-hour or hourly candles). `days` stays in
+   *  days either way; `trades`, `equity` and `marks` are per candle. */
+  interval?: SpecInterval;
 }
 
 /** One action of the backtest, at the close of the day `time` opens. */
@@ -189,9 +192,9 @@ export interface Mark {
 type Bar = cex.Candle;
 const TTL = 10 * 60_000;
 const cache = new Map<string, { at: number; p: Promise<Bar[]> }>();
-function cached(key: string, load: () => Promise<Bar[]>): Promise<Bar[]> {
+function cached(key: string, load: () => Promise<Bar[]>, ttl = TTL): Promise<Bar[]> {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < TTL) return hit.p;
+  if (hit && Date.now() - hit.at < ttl) return hit.p;
   const p = load();
   cache.set(key, { at: Date.now(), p });
   p.catch(() => { if (cache.get(key)?.p === p) cache.delete(key); });
@@ -214,6 +217,33 @@ export const dailyHistory = (m: cex.Market) => cached(`hk:${m.symbol}`, async ()
   return [...older, ...own];
 });
 const hashkeyDaily = dailyHistory;
+/** The longest look-back a condition can ask for (TERM_N's maximum), plus room for the indicators to settle. */
+const LOOKBACK_BARS = 460;
+/**
+ * Closed candles of a made agent's interval, oldest first, from HashKey Global: daily is `dailyHistory`; 4-hour and
+ * hourly are paged back (1,000 per request) far enough for the scoring window and the longest look-back. The candle
+ * still forming is left out, so a decision is only ever made on a closed candle and cannot flip within the hour.
+ * Refreshed every two minutes, so an hourly agent sees a new candle soon after it closes.
+ */
+export function madeHistory(m: cex.Market, interval: SpecInterval, now = Date.now()): Promise<Bar[]> {
+  if (interval === '1d') return dailyHistory(m);
+  return cached(`hk:${m.symbol}:${interval}`, async () => {
+    const want = WINDOW_DAYS[interval] * PER_DAY[interval] + LOOKBACK_BARS;
+    let out: Bar[] = [];
+    let end: number | undefined;
+    for (let page = 0; page < 4 && out.length < want; page++) {
+      const xs = await cex.klines(m, interval, 1000, end);
+      if (!xs.length) break;
+      out = [...xs.filter((b) => !out.length || b.time < out[0].time), ...out];
+      if (xs.length < 1000) break;
+      end = xs[0].time * 1000 - 1;
+    }
+    return closedOnly(out, interval, now);
+  }, 2 * 60_000);
+}
+/** Drop the last candle while it is still open (its interval has not ended yet). */
+export const closedOnly = (bars: Bar[], interval: SpecInterval, now = Date.now()) =>
+  bars.length && bars[bars.length - 1].time + INTERVAL_SECONDS[interval] > now / 1000 ? bars.slice(0, -1) : bars;
 /** Gate daily candles for a coin with an HSKSwap pool (the collect agents and the HSKSwap chart). */
 export const collectHistory = (a: Asset) => cached(`gate:${a}`, () => { const now = Math.floor(Date.now() / 1000); return gateDailyRange(a, now - DEPTH * DAY, now + DAY); });
 const gateDaily = collectHistory;
@@ -380,10 +410,10 @@ export function paneOf(rule: RuleId, made?: MadeSpec): Pane | null {
   }
 }
 
-function stats(rets: number[]) {
+function stats(rets: number[], perDay = 1) {
   const mean = rets.reduce((a, b) => a + b, 0) / (rets.length || 1);
   const sd = Math.sqrt(rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (rets.length || 1));
-  return sd > 0 ? (mean / sd) * Math.sqrt(365) : 0;
+  return sd > 0 ? (mean / sd) * Math.sqrt(365 * perDay) : 0;
 }
 
 /**
@@ -395,15 +425,27 @@ export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[
   const def = POSITION_RULES.find((r) => r.id === rule)!;
   return run({ id: `${rule}-${market.symbol}`, rule, style: def.style, risk: def.risk }, positions(rule, bars, ref), NEED[rule] ?? WARMUP, market, bars, window);
 }
-/** A made agent, scored exactly like the built-in ones: same fees, same window, same numbers. */
-export function scoreMade(spec: MadeSpec, market: cex.Market, bars: Bar[], window = WINDOW): Agent | null {
-  const a = run({ id: MADE_PREFIX + spec.id, rule: 'made', style: 'trend', risk: 3 }, specPositions(spec, bars), specNeed(spec), market, bars, window);
-  return a && { ...a, made: spec };
+/**
+ * A made agent, scored exactly like the built-in ones: same fees, same decision code, same numbers. `bars` are
+ * candles of the agent's interval (see madeHistory); `window` is in days, by default the interval's own window.
+ */
+export function scoreMade(spec: MadeSpec, market: cex.Market, bars: Bar[], window?: number): Agent | null {
+  const iv = intervalOf(spec);
+  const a = run({ id: MADE_PREFIX + spec.id, rule: 'made', style: 'trend', risk: 3 }, specPositions(spec, bars), specNeed(spec), market, bars, window ?? WINDOW_DAYS[iv], PER_DAY[iv]);
+  return a && { ...a, made: spec, ...(iv === '1d' ? {} : { interval: iv }) };
 }
-function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: boolean[], need: number, market: cex.Market, bars: Bar[], window: number): Agent | null {
+/** A made agent on its own candles: what the app's runner, the server's runner and its card all read. */
+export async function scoreMadeLive(spec: MadeSpec, market: cex.Market, window?: number): Promise<Agent | null> {
+  return scoreMade(spec, market, await madeHistory(market, intervalOf(spec)), window);
+}
+/** An intraday agent needs at least this many days of its candles after its look-back to be scored at all. */
+const MIN_INTRADAY_DAYS = 30;
+function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: boolean[], need: number, market: cex.Market, bars: Bar[], window: number, perDay = 1): Agent | null {
   const { rule } = who, def = who;
-  const start = Math.max(need, bars.length - 1 - window);
-  if (bars.length - 1 - start < Math.min(MIN_DAYS, window)) return null;
+  // The window is in days; on intraday candles it covers that many days' worth of candles.
+  const span = window === Infinity ? Infinity : Math.round(window * perDay);
+  const start = Math.max(need, bars.length - 1 - span);
+  if (bars.length - 1 - start < Math.min(perDay === 1 ? MIN_DAYS : MIN_INTRADAY_DAYS * perDay, span)) return null;
   const runnable = isRunnable(market.base);
   const fee = runnable ? FEE_HSKSWAP : FEE_HASHKEY;
   let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0;
@@ -425,14 +467,15 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: b
     equity.push({ time: bars[i + 1].time, value: eq });
     bench.push({ time: bars[i + 1].time, value: bars[i + 1].close / bars[start].close });
   }
-  const days = bars.length - 1 - start;
+  const steps = bars.length - 1 - start;
+  const days = perDay === 1 ? steps : Math.round(steps / perDay);
   const live = pos[bars.length - 1];
   return {
     id: who.id, kind: 'position', rule, style: def.style, risk: def.risk, tier: TIER[rule], base: market.base,
     runnable, source: 'hashkey', market, fee,
     days, from: bars[start].time, to: bars[bars.length - 1].time,
-    total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets),
-    trades, inMarket: inDays / days, equity, bench, marks, live, mult: live ? 1 : 0, price: bars[bars.length - 1].close,
+    total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets, perDay),
+    trades, inMarket: inDays / steps, equity, bench, marks, live, mult: live ? 1 : 0, price: bars[bars.length - 1].close,
     seam: (seams.get(market.symbol) ?? 0) > bars[start].time ? seams.get(market.symbol) : undefined,
   };
 }
@@ -489,7 +532,7 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
 
 /** The same agent over another window (days, or `Infinity` for everything after its warm-up), for a closer look at one agent. */
 export async function rescore(a: Agent, window: number): Promise<Agent | null> {
-  if (a.made) return a.market ? scoreMade(a.made, a.market, await hashkeyDaily(a.market), window) : null;
+  if (a.made) return a.market ? scoreMadeLive(a.made, a.market, window) : null;
   if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), window) : null;
   return a.market ? scorePosition(a.rule as PositionRule, a.market, await hashkeyDaily(a.market), window, await refBars(a.market)) : null;
 }
@@ -526,8 +569,7 @@ export async function positionAgents(m: cex.Market): Promise<Agent[]> {
 export async function madeAgents(m: cex.Market): Promise<Agent[]> {
   const mine = madeList().filter((s) => s.market === m.symbol);
   if (!mine.length) return [];
-  const bars = await hashkeyDaily(m);
-  return mine.map((s) => scoreMade(s, m, bars)).filter((a): a is Agent => a !== null);
+  return (await Promise.all(mine.map((s) => scoreMadeLive(s, m).catch(() => null)))).filter((a): a is Agent => a !== null);
 }
 /** The other major coin, for dual momentum: ETH when the market is BTC, BTC for everything else. Missing is not fatal. */
 function refBars(m: cex.Market): Promise<Bar[]> {
@@ -556,7 +598,7 @@ export async function loadAgents(): Promise<Agent[]> {
 export async function agentById(id: string): Promise<Agent | null> {
   if (id.startsWith(MADE_PREFIX)) {
     const spec = madeById(id), m = spec && cex.MARKETS.find((x) => x.symbol === spec.market);
-    return spec && m ? scoreMade(spec, m, await hashkeyDaily(m)) : null;
+    return spec && m ? scoreMadeLive(spec, m) : null;
   }
   const cut = id.indexOf('-');
   if (cut < 0) return null;

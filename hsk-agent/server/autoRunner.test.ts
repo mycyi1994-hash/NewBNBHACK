@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { autoBlock, tick, type Deps } from './autoRunner.ts';
+import { autoBlock, signalTtl, tick, TICK_MS, type Deps } from './autoRunner.ts';
 import { openStore } from './autoStore.ts';
 import { book, type HiredAgent, type Signal } from '../src/runner.ts';
 
@@ -166,4 +166,12 @@ test('the store survives a restart', () => {
   const b = openStore(file);
   assert.deepEqual(b.list(OWNER.toLowerCase()).map((x) => x.id), ['a2']);
   assert.deepEqual(b.owners(), [OWNER.toLowerCase()]);
+});
+
+test('a made agent on hourly candles is re-read within one pass of each candle closing; daily ones as before', () => {
+  const spec = { id: 's', name: 'S', market: 'ETHUSDT-PERPETUAL', createdAt: 0, buy: [], sell: [] };
+  assert.equal(signalTtl({}), 10 * 60_000, 'market agents: unchanged');
+  assert.equal(signalTtl({ spec }), 10 * 60_000, 'a made agent saved before intervals: daily');
+  assert.ok(signalTtl({ spec: { ...spec, interval: '1h' } }) <= TICK_MS, 'hourly: never older than one pass');
+  assert.ok(signalTtl({ spec: { ...spec, interval: '4h' } }) <= TICK_MS);
 });

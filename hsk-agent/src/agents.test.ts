@@ -185,3 +185,74 @@ test('among agents working now, one that beat just holding comes before a steadi
   const winner = fake({ id: 'break-BTC', rule: 'break', tier: 1, maxDd: 0.35, total: 0.9, hold: 0.6, marks: [{ time: now - 3 * DAY, side: 'buy', price: 1 }] });
   assert.equal(recommend([steadyLoser, winner], { coin: 'BTC', level: 'pro' })!.pick.id, 'break-BTC');
 });
+
+/* ---------- a made agent on its own candle interval ---------- */
+
+const HOUR = 3_600;
+/** Candles of any length from a close series. */
+const barsOf = (closes: number[], secs: number) => closes.map((c, i) => ({ time: 1_700_000_000 + i * secs, open: closes[i - 1] ?? c, high: c * 1.01, low: c * 0.99, close: c, volume: 1 }));
+/** A wave long enough for an RSI rule to buy and sell several times. */
+const wave = (n: number) => Array.from({ length: n }, (_, i) => 100 * (1 + 0.08 * Math.sin(i / 9)) * 1.0002 ** i);
+
+test('a made agent with no interval stays daily: same window, same numbers as before intervals existed', async () => {
+  const { intervalOf, WINDOW_DAYS } = await import('./spec.ts');
+  const spec = { id: 'd', name: 'D', market: 'BTCUSDT-PERPETUAL', createdAt: 0, ...fromTemplate('rsi')! };
+  assert.equal(intervalOf(spec), '1d');
+  assert.equal(intervalOf({ interval: '15m' }), '1d', 'an unknown interval is read as daily');
+  assert.equal(WINDOW_DAYS['1d'], 1095);
+  const b = bars(wave(2000));
+  const plain = scoreMade(spec, market('BTCUSDT-PERPETUAL'), b)!;
+  const daily = scoreMade({ ...spec, interval: '1d' }, market('BTCUSDT-PERPETUAL'), b)!;
+  assert.deepEqual(daily, { ...plain, made: { ...spec, interval: '1d' } });
+  assert.equal(plain.interval, undefined, 'a daily agent carries no interval');
+  assert.equal(plain.days, 1095);
+  assert.equal(plain.total, scorePosition('rsi', market('BTCUSDT-PERPETUAL'), b)!.total, 'still the built-in RSI rule to the cent');
+});
+
+test('hourly candles feed the same decision code; the window and its days are counted honestly', async () => {
+  const { specPositions: sp, WINDOW_DAYS, PER_DAY } = await import('./spec.ts');
+  const spec = { id: 'h', name: 'H', market: 'BTCUSDT-PERPETUAL', createdAt: 0, interval: '1h' as const, ...fromTemplate('rsi')! };
+  const b = barsOf(wave(3000), HOUR);
+  const a = scoreMade(spec, market('BTCUSDT-PERPETUAL'), b)!;
+  assert.equal(a.interval, '1h');
+  assert.equal(a.days, WINDOW_DAYS['1h'], 'ninety days of hourly candles');
+  assert.equal(a.equity.length, WINDOW_DAYS['1h'] * PER_DAY['1h'] + 1, 'one point per hour of the window');
+  assert.equal(a.live, sp(spec, b)[b.length - 1], 'live is the rule on the last candle given');
+  // The same closes as daily candles give the same positions: the rule counts candles, whatever their length.
+  assert.deepEqual(sp(spec, b), sp(spec, bars(wave(3000))));
+  // The interval changes only the clock: the same candles scored as daily cover a different span of days.
+  const asDaily = scoreMade({ ...spec, interval: undefined }, market('BTCUSDT-PERPETUAL'), bars(wave(3000)))!;
+  assert.equal(asDaily.days, 1095);
+  assert.ok(a.trades > 0 && a.marks.filter((m) => m.side === 'buy').length === a.trades);
+  // Too little hourly history (under 30 days after the look-back) is not scored.
+  assert.equal(scoreMade(spec, market('BTCUSDT-PERPETUAL'), barsOf(wave(500), HOUR)), null);
+});
+
+test('4-hour agents score a year; the fee is charged per trade as for daily ones', async () => {
+  const spec = { id: 'f', name: 'F', market: 'SOLUSDT', createdAt: 0, interval: '4h' as const, ...fromTemplate('rsi')! };
+  const b = barsOf(wave(3000), 4 * HOUR);
+  const sol = scoreMade(spec, market('SOLUSDT'), b)!;
+  const btc = scoreMade({ ...spec, market: 'BTCUSDT-PERPETUAL' }, market('BTCUSDT-PERPETUAL'), b)!;
+  assert.equal(sol.days, 365);
+  assert.equal(sol.fee, FEE_HASHKEY);
+  assert.equal(btc.fee, FEE_HSKSWAP);
+  assert.equal(sol.trades, btc.trades);
+  assert.ok(btc.total < sol.total, 'the higher per-trade fee costs return on the same candles');
+});
+
+test('the candle still forming is never decided on', async () => {
+  const { closedOnly } = await import('./agents.ts');
+  const b = barsOf([1, 2, 3], HOUR);
+  const last = b[2].time;
+  assert.equal(closedOnly(b, '1h', (last + HOUR - 1) * 1000).length, 2, 'the last hour is still open');
+  assert.equal(closedOnly(b, '1h', (last + HOUR) * 1000).length, 3, 'closed on the hour');
+});
+
+test('a sentence can name the interval', async () => {
+  const p = parse('1시간봉으로 RSI가 30 밑이면 사고 55 넘으면 팔아');
+  assert.equal(p.interval, '1h');
+  assert.equal(p.buy.length, 1);
+  assert.equal(parse('on 4h candles buy when RSI is under 30, sell when RSI is over 55').interval, '4h');
+  assert.equal(parse('RSI가 30 밑이면 사고 55 넘으면 팔아').interval, undefined, 'no interval named: the builder keeps its choice');
+  assert.equal(parse('14일 수익률이 0보다 높으면 사').interval, undefined, '"14일" is not an hour');
+});

@@ -7,10 +7,10 @@
 // gets (scoreMade), rerun on every change. Saving puts the agent in the maker's account (madeStore); from there it
 // shows up under its coin's chart with the full backtest and replay, and is hired through the same sheet as any other.
 // Nothing here decides with a model: the sentence reader is a fixed set of patterns, and the rule is plain data.
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import * as cex from './cex.ts';
-import { HORIZON, HORIZONS, SIGNAL_MARKETS, dailyHistory, isRunnable, scoreMade, type Agent, type RuleId } from './agents.ts';
-import { MAX_CONDS, TEMPLATE_IDS, TERM_KINDS, TERM_N, fromTemplate, parse, problems, scaleOf, type Cond, type MadeSpec, type Term, type TermKind } from './spec.ts';
+import { HORIZON, HORIZONS, SIGNAL_MARKETS, dailyHistory, isRunnable, madeHistory, scoreMade, scoreMadeLive, type Agent, type RuleId } from './agents.ts';
+import { MAX_CONDS, TEMPLATE_IDS, TERM_KINDS, TERM_N, fromTemplate, parse, problems, scaleOf, type Cond, type MadeSpec, type SpecInterval, type Term, type TermKind, SPEC_INTERVALS, WINDOW_DAYS, intervalOf } from './spec.ts';
 import { MADE_PREFIX, newMadeId, removeMade, saveMade, useMade } from './madeStore.ts';
 import { useSession } from './account.ts';
 import { useT, type Lang, type Strings } from './i18n.ts';
@@ -24,7 +24,9 @@ import { useToast } from './ui.tsx';
 /** What the builder is asked to open with: a sentence already read, a coin, or a saved agent to change. */
 export interface BuildDraft { n: number; text?: string; coin?: string; editId?: string }
 
-type Draft = Pick<MadeSpec, 'buy' | 'sell' | 'name' | 'market'> & { id?: string; from?: MadeSpec['from'] };
+type Draft = Pick<MadeSpec, 'buy' | 'sell' | 'name' | 'market' | 'interval'> & { id?: string; from?: MadeSpec['from'] };
+/** The candle interval the rule being built reads; its periods count candles of it. */
+const IvCtx = createContext<SpecInterval>('1d');
 type Mode = 'classic' | 'words' | 'blank';
 type Step = 0 | 1 | 2 | 3;
 type Pt = { time: number; value: number };
@@ -51,16 +53,17 @@ const QUICK_SELL: Cond[] = [
 const sameCond = (x: Cond, y: Cond) => JSON.stringify(x) === JSON.stringify(y);
 /** The line to beat on a coin: buying at the start of the three-year window and holding. Read off the same backtest
  *  every agent gets (its `bench` and `hold`), so the numbers match what the agent is later compared with. */
-const lineToBeat = (m: cex.Market, bars: cex.Candle[]): Agent | null => {
+const lineToBeat = (m: cex.Market, bars: cex.Candle[], interval: SpecInterval = '1d'): Agent | null => {
   const x = fromTemplate('trend200');
-  return x ? scoreMade({ id: 'hold', name: '', market: m.symbol, ...x, createdAt: 0 }, m, bars) : null;
+  return x ? scoreMade({ id: 'hold', name: '', market: m.symbol, ...x, createdAt: 0, interval }, m, bars) : null;
 };
 const thin = (pts: Pt[], n: number) => pts.filter((_, i) => i % Math.max(1, Math.floor(pts.length / n)) === 0 || i === pts.length - 1);
 
 /** A condition as a plain sentence ("200일 평균선이 가격보다…"), with its two things in bold. */
 function Say({ c }: { c: Cond }) {
   const { t } = useT();
-  const a = t.bqTerm(c.a.k, c.a.n), b = t.bqTerm(c.b.k, c.b.n, c.a.k === 'ret');
+  const iv = useContext(IvCtx);
+  const a = t.bqTerm(c.a.k, c.a.n, false, iv), b = t.bqTerm(c.b.k, c.b.n, c.a.k === 'ret', iv);
   const s = t.bqSay(a, c.op === 'above', b);
   const at = s.indexOf(b, a.length);
   if (!s.startsWith(a) || at < 0) return <span className="bd-say">{s}</span>;
@@ -121,6 +124,7 @@ function Spark({ pts }: { pts: Pt[] }) {
 /** One side of a condition, as one token: what kind of thing, and its number of days (or the number itself). */
 function TermEdit({ value, onChange, other }: { value: Term; onChange: (t: Term) => void; other?: Term }) {
   const { t } = useT();
+  const iv = useContext(IvCtx);
   const range = TERM_N[value.k];
   // Only things measured the same way as the other side are offered (a price against a price, RSI against a number…).
   const fits = (k: TermKind) => { if (!other) return k !== 'num'; const left = scaleOf(other.k); return left === 'price' ? scaleOf(k) === 'price' : k === 'num' || scaleOf(k) === left; };
@@ -139,7 +143,7 @@ function TermEdit({ value, onChange, other }: { value: Term; onChange: (t: Term)
           <input type="number" inputMode="decimal" value={Number.isFinite(value.n) ? value.n : ''} min={range.min} max={range.max} step={value.k === 'num' ? 'any' : 1}
             style={{ width: `${Math.max(2, String(Number.isFinite(value.n) ? value.n : '').length) + 1.6}ch` }}
             onChange={(e) => onChange({ ...value, n: e.target.value === '' ? NaN : Number(e.target.value) })} aria-label={t.bqKind[value.k]} />
-          {value.k !== 'num' && <span>{t.cuDays}</span>}
+          {value.k !== 'num' && <span>{t.bqUnit[iv]}</span>}
         </label>
       )}
     </span>
@@ -206,13 +210,16 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
   const [words, setWords] = useState('');
   const [read, setRead] = useState<{ ok: number; unknown: string[] } | null>(null);
   const market = cex.MARKETS.find((m) => m.symbol === d.market) ?? SIGNAL_MARKETS[0];
+  const iv = intervalOf(d);
+  /** Daily is stored as no interval, so a daily agent's record is the same as before intervals existed. */
+  const setIv = (v: SpecInterval) => setD((cur) => ({ ...cur, interval: v === '1d' ? undefined : v }));
 
   const readWords = (text: string, into: Draft) => {
     const p = parse(text);
     setRead({ ok: p.buy.length + p.sell.length, unknown: p.unknown });
     if (!p.buy.length) return into;
     setStarted(true);
-    return { ...into, buy: p.buy, sell: p.sell, from: undefined };
+    return { ...into, buy: p.buy, sell: p.sell, from: undefined, ...(p.interval ? { interval: p.interval } : {}) };
   };
   const reset = (symbol: string) => { setD(blank(symbol)); setWords(''); setRead(null); setStarted(false); setMode('classic'); setAdv(false); setStep(0); };
   // Opened from somewhere else: with a sentence Moa was given, on the coin on screen, or to change a saved agent.
@@ -232,27 +239,28 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
 
   // The backtest, rerun whenever the rule or the coin changes. A failed load is told apart from too little history.
   const [tries, setTries] = useState(0);
-  const [bars, setBars] = useState<{ symbol: string; list: cex.Candle[]; failed?: boolean } | null>(null);
-  useEffect(() => { let alive = true; dailyHistory(market).then((list) => alive && setBars({ symbol: market.symbol, list }), () => alive && setBars({ symbol: market.symbol, list: [], failed: true })); return () => { alive = false; }; }, [market.symbol, tries]); // eslint-disable-line react-hooks/exhaustive-deps
-  const ready = bars?.symbol === market.symbol ? bars.list : null;
-  const failed = bars?.symbol === market.symbol && !!bars.failed;
+  const [bars, setBars] = useState<{ key: string; list: cex.Candle[]; failed?: boolean } | null>(null);
+  const barsKey = `${market.symbol}:${iv}`;
+  useEffect(() => { let alive = true; madeHistory(market, iv).then((list) => alive && setBars({ key: barsKey, list }), () => alive && setBars({ key: barsKey, list: [], failed: true })); return () => { alive = false; }; }, [barsKey, tries]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ready = bars?.key === barsKey ? bars.list : null;
+  const failed = bars?.key === barsKey && !!bars.failed;
   const issues = useMemo(() => problems(d), [d]);
   const blocking = issues.filter((x) => x !== 'name');
   const result = useMemo(() => {
     if (!ready || blocking.length) return null;
-    return scoreMade({ id: d.id ?? 'draft', name: d.name, market: d.market, buy: d.buy, sell: d.sell, createdAt: 0 }, market, ready);
-  }, [ready, d.buy, d.sell, d.market, blocking.length]); // eslint-disable-line react-hooks/exhaustive-deps
-  const beat = useMemo(() => (ready ? lineToBeat(market, ready) : null), [ready, market.symbol]); // eslint-disable-line react-hooks/exhaustive-deps
+    return scoreMade({ id: d.id ?? 'draft', name: d.name, market: d.market, buy: d.buy, sell: d.sell, createdAt: 0, interval: iv }, market, ready);
+  }, [ready, d.buy, d.sell, d.market, iv, blocking.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const beat = useMemo(() => (ready ? lineToBeat(market, ready, iv) : null), [ready, market.symbol, iv]); // eslint-disable-line react-hooks/exhaustive-deps
   /** How each published strategy did on this coin, so the choice in step 2 is made with numbers in view. */
   const shelf = useMemo(() => {
     const out: Partial<Record<RuleId, Agent | null>> = {};
     if (!ready) return out;
     for (const id of TEMPLATE_IDS) {
       const x = fromTemplate(id);
-      out[id] = x ? scoreMade({ id: 'shelf', name: '', market: market.symbol, ...x, createdAt: 0 }, market, ready) : null;
+      out[id] = x ? scoreMade({ id: 'shelf', name: '', market: market.symbol, ...x, createdAt: 0, interval: iv }, market, ready) : null;
     }
     return out;
-  }, [ready, market.symbol]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, market.symbol, iv]); // eslint-disable-line react-hooks/exhaustive-deps
   // The coins on the first step each show their own line to beat.
   const [lines, setLines] = useState<Record<string, Agent | null | 'fail'>>({});
   useEffect(() => {
@@ -274,7 +282,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
 
   const save = (open: boolean) => {
     if (issues.length) return;
-    const spec: MadeSpec = { id: d.id ?? newMadeId(), name: d.name.trim(), market: d.market, buy: d.buy, sell: d.sell, createdAt: Date.now(), from: d.from };
+    const spec: MadeSpec = { id: d.id ?? newMadeId(), name: d.name.trim(), market: d.market, buy: d.buy, sell: d.sell, createdAt: Date.now(), from: d.from, ...(iv === '1d' ? {} : { interval: iv }) };
     saveMade(spec);
     setD({ ...spec });
     toast(t.buSaved(spec.name));
@@ -284,7 +292,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
   const edge = result ? result.total - result.hold : 0;
   const name = d.name.trim() || autoName;
   const retry = () => setTries((n) => n + 1);
-  const detail = result ? `${t.bqDetail(drop(result.maxDd), result.trades, `${(result.fee * 100).toFixed(1)}%`)}. ${t.bqPast}` : '';
+  const detail = result ? `${t.bqDetail(drop(result.maxDd), result.trades, `${(result.fee * 100).toFixed(1)}%`, iv, result.days)}. ${t.bqPast}` : '';
 
   const nav = (
     <footer className="bd-nav">
@@ -309,23 +317,23 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
   /* ---------- the agent so far: name, one big number, the chart, one line ---------- */
   const busy = <div className="bd-proof-wait" role="status"><span className="bd-skel" aria-hidden /><p><span className="spin" aria-hidden />{t.bqWorking}</p></div>;
   const failBox = <div className="bd-proof-fail" role="alert"><p>{t.bqLoadFail}</p><button type="button" className="btn" onClick={retry}>{t.retry}</button></div>;
-  const big = (v: number, tot: number) => (
+  const big = (v: number, tot: number, days: number) => (
     <div className="bd-big">
-      <small>{t.bqIf(moneyText(lang, amount))}</small>
+      <small>{t.bqLast(days)} · {t.bqIf(moneyText(lang, amount))}</small>
       <div><b><RollNum text={moneyText(lang, amount * (1 + v))} /></b><em className={tot >= 0 ? 'pos' : 'neg'}>{pct(tot)}</em></div>
     </div>
   );
   const proofBody = !started ? (
     failed ? failBox : !beat ? (ready ? <p className="bd-verdict warn">{t.bqNoData}</p> : busy) : (
       <>
-        {big(beat.hold, beat.hold)}
+        {big(beat.hold, beat.hold, beat.days)}
         <Duo bench={beat.bench} lang={lang} />
         <p className="bd-verdict beat">{t.bqBeatLine}</p>
       </>
     )
   ) : failed ? failBox : !ready ? busy : blocking.length ? <p className="bd-verdict warn">{t.buProblem[blocking[0]]}</p> : !result ? <p className="bd-verdict warn">{t.bqNoData}</p> : (
     <>
-      {big(result.total, result.total)}
+      {big(result.total, result.total, result.days)}
       <Duo eq={result.equity} bench={result.bench} lang={lang} />
       <div className="bd-legend"><span className="me"><i aria-hidden />{t.btAgent}</span><span className="hold"><i aria-hidden />{t.bqHoldLegend(pct(result.hold))}</span></div>
       <p className={`bd-verdict ${edge >= 0 ? 'ahead' : 'behind'}`}><span>{edge >= 0 ? t.bqAhead(pct(edge)) : t.bqBehind}</span><Info text={detail} /></p>
@@ -353,6 +361,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
   );
 
   return (
+    <IvCtx.Provider value={iv}>
     <div className="page build-page">
       <div className="bd-top">
         <ol className="bd-steps" aria-label={t.buTitle}>
@@ -416,7 +425,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
               <div className="bd-shelf">
                 {GROUPS.map((g, gi) => (
                   <div key={g.key} className="bd-group" role="radiogroup" aria-label={t.hz[g.key]}>
-                    <h3><span>{t.hz[g.key]}</span>{gi === 0 && <small>{t.bq3y}</small>}</h3>
+                    <h3><span>{t.hz[g.key]}</span>{gi === 0 && <small>{t.bqRet(t.bqLast(WINDOW_DAYS[iv]))}</small>}</h3>
                     <div className="bd-cards">
                       {g.ids.map((r) => {
                         const s = shelf[r];
@@ -462,8 +471,14 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
 
         {step === 2 && panel(t.bqRule, (
           <>
-            <RuleSide side="buy" list={d.buy} onChange={(buy) => setD({ ...d, buy })} adv={adv} quick={QUICK_BUY} quickNames={t.bqQuickBuy} t={t} lang={lang} />
-            <RuleSide side="sell" list={d.sell} onChange={(sell) => setD({ ...d, sell })} adv={adv} quick={QUICK_SELL} quickNames={t.bqQuickSell} t={t} lang={lang} />
+            <div className="bd-every" role="radiogroup" aria-label={t.bqEvery}>
+              <span>{t.bqEvery}</span>
+              <div className="bd-every-seg">
+                {SPEC_INTERVALS.map((v) => <button type="button" key={v} role="radio" aria-checked={iv === v} className={iv === v ? 'on' : ''} onClick={() => setIv(v)}>{t.bqEveryOpt[v]}</button>)}
+              </div>
+            </div>
+            <RuleSide side="buy" list={d.buy} onChange={(buy) => setD({ ...d, buy })} adv={adv} quick={QUICK_BUY} quickNames={t.bqQuickBuy(iv)} t={t} lang={lang} />
+            <RuleSide side="sell" list={d.sell} onChange={(sell) => setD({ ...d, sell })} adv={adv} quick={QUICK_SELL} quickNames={t.bqQuickSell(iv)} t={t} lang={lang} />
             {blocking.map((x) => <p key={x} className="bd-alert warn" role="alert">{t.buProblem[x]}</p>)}
             <button type="button" className={`bd-adv${adv ? ' on' : ''}`} aria-expanded={adv} onClick={() => setAdv((v) => !v)}><Icon name={adv ? 'check' : 'edit'} size={16} />{adv ? t.bqSimple : t.bqAdvanced}</button>
           </>
@@ -476,7 +491,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
               <input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value.slice(0, 40) })} placeholder={autoName} maxLength={40} aria-label={t.buName} />
             </label>
             <p className="bd-review">
-              <CoinMark base={market.base} /><b>{market.base}</b><span>·</span><span>{t.wzCondCount(d.buy.length + d.sell.length)}</span>
+              <CoinMark base={market.base} /><b>{market.base}</b><span>·</span><span>{t.bqEveryOpt[iv]}</span><span>·</span><span>{t.wzCondCount(d.buy.length + d.sell.length)}</span>
               <button type="button" className="btn-text" onClick={() => go(2)}>{t.buEdit}</button>
             </p>
             {result && result.trades < 5 && <p className="bd-alert warn">{t.bqFew(result.trades)}</p>}
@@ -495,10 +510,10 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
               return (
                 <li key={s.id} className={d.id === s.id ? 'on' : ''}>
                   <Face rule={s.from ?? 'made'} size="sm" />
-                  <span className="bd-mine-name"><b>{s.name}</b><small>{m && <CoinMark base={m.base} />}{m?.base} · {s.buy.map((c) => condText(t, c)).join(` ${t.cuAnd} `)}</small></span>
+                  <span className="bd-mine-name"><b>{s.name}</b><small>{m && <CoinMark base={m.base} />}{m?.base}{intervalOf(s) !== '1d' && ` · ${t.bqEveryOpt[intervalOf(s)]}`} · {s.buy.map((c) => condText(t, c)).join(` ${t.cuAnd} `)}</small></span>
                   <span className="bd-mine-act">
                     <button type="button" className="btn" onClick={() => { setD({ ...s }); setWords(''); setRead(null); setStarted(true); setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t.buEdit}</button>
-                    <button type="button" className="btn" onClick={async () => { if (!m) return; const a = scoreMade(s, m, await dailyHistory(m)); if (a) onOpen(a); }}>{t.buOpen}</button>
+                    <button type="button" className="btn" onClick={async () => { if (!m) return; const a = await scoreMadeLive(s, m); if (a) onOpen(a); }}>{t.buOpen}</button>
                     <button type="button" className="icon-btn" onClick={() => { removeMade(s.id); if (d.id === s.id) setD({ ...d, id: undefined }); }} aria-label={t.buDelete} data-tip={t.buDelete}><Icon name="trash" size={18} /></button>
                   </span>
                 </li>
@@ -508,5 +523,6 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
         )}
       </section>
     </div>
+    </IvCtx.Provider>
   );
 }
