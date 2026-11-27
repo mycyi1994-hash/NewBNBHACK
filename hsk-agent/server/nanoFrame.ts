@@ -1,7 +1,8 @@
 // May this Moa show nanotradingclub's fire chart inside its own page? The answer is in nanotradingclub's response
 // headers, so the server reads them (a browser cannot read another site's headers, and a frame that is refused
 // just shows an error page the parent cannot see into). Checked at most once every ten minutes per Moa address.
-export const NANO_FIRE = 'https://nanotradingclub.xyz/fire';
+/** The address the chart frame shows: nanotradingclub's development site (see NANO_FIRE in src/ChartExtras.tsx). */
+export const NANO_FIRE = 'https://nntdev.pages.dev/fire';
 export interface FrameCheck { allowed: boolean; why?: 'refused' | 'unreachable'; checkedAt: string }
 
 /**

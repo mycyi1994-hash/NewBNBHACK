@@ -122,8 +122,9 @@ stranger once the price has held, with the stranger getting nothing.
 - **nanotradingclub's fire chart as the heatmap.** The "Heatmap" switch next to Indicators puts nanotradingclub's own
   fire chart where Moa's chart was, for the coin and interval on screen: its order-book heatmap of nine exchanges, its
   liquidation map and liquidations, drawn by its own code, with its own switches (heatmap, order book, liquidation
-  map, volume profile). It is a frame (`NanoChart` in `src/ChartExtras.tsx`, `?embed=1` on nanotradingclub's side, which
-  hides that site's menus and chat and nothing else). Nothing of it loads until the switch is on. nanotradingclub
+  map, volume profile). It is a frame (`NanoChart` in `src/ChartExtras.tsx`) on nanotradingclub's development site
+  (`nntdev.pages.dev/fire?embed=1`; embed mode hides that site's menus and chat and nothing else); its public site is
+  left as it is and only linked to. Nothing of it loads until the switch is on. nanotradingclub
   decides which sites may show its chart; Moa's server reads that from its response headers (`server/nanoFrame.ts`,
   `/api/nano-frame`) and, until this address is allowed, says so and links to the chart on nanotradingclub instead of
   showing a broken frame. Coins nanotradingclub does not collect (HSK) say that too.
