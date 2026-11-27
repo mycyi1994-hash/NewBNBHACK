@@ -105,9 +105,14 @@ stranger once the price has held, with the stranger getting nothing.
   and short term, each with what it returned on that coin; or your own words; or an empty rule), the buy and sell
   conditions, then a name.
 - **Long term, swing, short term.** Every strategy is placed by how much history its rule looks at (`HORIZON` in
-  `src/agents.ts`): months to a year, a few weeks, or days. The list under the chart is grouped that way, with Moa's
-  pick in each group, and the HSKSwap tab lists the same strategies as the exchange tab (signals come from the
-  exchange's daily candles, trades happen on HSKSwap) plus the agents that buy on a schedule.
+  `src/agents.ts`): months to a year, a few weeks, or days. Under the chart they stand as three columns side by side, each
+  a ranked list with Moa's pick on top; a row shows the strategy's one-year return and its worst drop, and the column's
+  header says what just holding returned. The HSKSwap tab lists the same strategies as the exchange tab (signals come
+  from the exchange's daily candles, trades happen on HSKSwap) plus the agents that buy on a schedule.
+- **Several agents, each with its own budget.** "My agents" is a tab under the same chart (`src/MineDock.tsx`): one row
+  per hired agent with how much of its budget it has spent, what it holds now and what it has made or lost, a total
+  across all of them, and a warning when the agents may still spend more USDT than the vault holds. It opens first
+  for anyone who has hired an agent.
 - **Agents have names and faces.** Each rule has a short name and its own coloured mark ("BTC Turtle", "ETH
   Guardian"); the rule it follows and where the rule comes from stay beside it as the subtitle and the origin tag.
 - **The vault is on screen, not in a footnote.** `src/VaultCard.tsx` shows the same vault three ways (sidebar,

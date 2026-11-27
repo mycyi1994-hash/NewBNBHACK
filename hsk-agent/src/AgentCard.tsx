@@ -71,12 +71,29 @@ export function RuleIcon({ rule }: { rule: RuleId }) {
 
 
 export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions }: {
-  agent: Agent; size: 'tile' | 'chat'; picked?: boolean; best?: boolean; rank?: number; onPick?: () => void; actions?: ReactNode;
+  agent: Agent; size: 'tile' | 'cell' | 'chat'; picked?: boolean; best?: boolean; rank?: number; onPick?: () => void; actions?: ReactNode;
 }) {
   const { t } = useT();
   const pill = statePill(t, a);
 
   const edge = a.total - a.hold;
+  if (size === 'cell') {
+    // One row of a horizon's column under the chart: who, the strategy in a few words, what it returned over the
+    // year and its worst drop on the way. What just holding returned is in the column's header, once.
+    const active = pill.cls === 'sig-good';
+    return (
+      <button className={`hzr${picked ? ' on' : ''}`} onClick={onPick} aria-pressed={picked}>
+        <span className="hzr-rank">{rank}</span>
+        <Face rule={a.rule} size="sm" />
+        <span className="hzr-main">
+          <span className="hzr-title"><b>{a.made?.name ?? t.agNick[a.rule]}</b>{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
+          <span className="hzr-rule">{active && <em>{pill.text} · </em>}{t.agRule[a.rule]}</span>
+        </span>
+        <span className="hzr-eq" aria-hidden><Equity pts={a.equity} up={a.total >= 0} /></span>
+        <span className="hzr-num"><b className={a.total >= 0 ? 'pos' : 'neg'}>{pct(a.total)}</b><small>{t.ddShort} {drop(a.maxDd)}</small></span>
+      </button>
+    );
+  }
   if (size === 'tile') {
     // A table row (the header lives in MarketAgents): who, state, the year's curve, then the three numbers in
     // their own columns so they line up down the table. The lead number is how it did against just holding.

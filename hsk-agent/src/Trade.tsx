@@ -570,9 +570,10 @@ function stored<T extends string>(key: string, list: readonly T[], dflt: T): T {
 }
 const save = (key: string, v: string) => { try { localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
 
-interface PanelProps { venueTabs: React.ReactNode; selId: string | null; setSel: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; onBuild: (coin: string) => void }
+export interface MineTab { node: React.ReactNode; count: number; asks: number }
+interface PanelProps { venueTabs: React.ReactNode; selId: string | null; setSel: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; onBuild: (coin: string) => void; mine?: MineTab }
 
-function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel, onHire, onAsk, onBuild }: PanelProps & { market: cex.Market; setMarket: (m: cex.Market) => void; asset: Asset; dexPrice?: number }) {
+function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel, onHire, onAsk, onBuild, mine }: PanelProps & { market: cex.Market; setMarket: (m: cex.Market) => void; asset: Asset; dexPrice?: number }) {
   const { t: s } = useT();
   const [interval, setIv] = useState<cex.Interval>(() => stored('moa.iv', CEX_IV, '4h'));
   const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
@@ -620,14 +621,14 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
 
-      <Dock venue="cex" coin={market.base} onBuild={() => onBuild(market.base)} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
+      <Dock venue="cex" coin={market.base} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} onBuild={() => onBuild(market.base)} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
     </>
   );
 }
 
 /* ---------- DEX: HSKSwap on HSK Chain ---------- */
 
-function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, setSel, onHire, onAsk }: PanelProps & { asset: Asset; setAsset: (a: Asset) => void; market: cex.Market; detail: PoolDetail | null; quotes: Quote[] }) {
+function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, setSel, onHire, onAsk, mine }: PanelProps & { asset: Asset; setAsset: (a: Asset) => void; market: cex.Market; detail: PoolDetail | null; quotes: Quote[] }) {
   const { t: s } = useT();
   const [iv, setIv] = useState<GateInterval>(() => stored('moa.dexiv', DEX_IV, '1h'));
   const pickIv = (v: GateInterval) => { setIv(v); save('moa.dexiv', v); };
@@ -695,7 +696,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
         </div>
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
-      <Dock venue="dex" coin={asset} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
+      <Dock venue="dex" coin={asset} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
         <div className="swaps">
           <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
           {detail?.swaps.slice(0, 20).map((x) => (
@@ -719,7 +720,8 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
 export interface ShowAgent { agent: Agent; n: number }
 let shown = 0;   // the last request applied, so coming back to this screen does not replay an old one
 
-export default function Trade({ quotes, show, onContext, onAsk, onHire, onBuild }: {
+export default function Trade({ quotes, show, onContext, onAsk, onHire, onBuild, mine }: {
+  mine?: MineTab;
   quotes: Quote[]; show?: ShowAgent | null; onContext: (c: MoaContext) => void; onAsk: (a: Agent) => void; onHire: (a: Agent) => void; onBuild: (coin: string) => void;
 }) {
   const { t } = useT();
@@ -762,7 +764,7 @@ export default function Trade({ quotes, show, onContext, onAsk, onHire, onBuild 
       <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
     </div>
   );
-  const panel = { venueTabs, selId, setSel: (a: Agent | null) => setSelId(a?.id ?? null), onHire, onAsk, onBuild };
+  const panel = { venueTabs, selId, setSel: (a: Agent | null) => setSelId(a?.id ?? null), onHire, onAsk, onBuild, mine };
 
   return (
     <div className="trade-page">

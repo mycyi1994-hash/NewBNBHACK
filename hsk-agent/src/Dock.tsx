@@ -7,7 +7,7 @@
 //    so agents compare like for like; "All history" reruns it over everything the exchange has.
 //  - "Recent swaps" (HSKSwap view only).
 // Hiring happens from the backtest, after the evidence, through the same hire sheet as everywhere else.
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
 import { byMerit, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
@@ -308,18 +308,27 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
   );
 }
 
-type Tab = 'list' | 'bt' | 'swaps';
+type Tab = 'mine' | 'list' | 'bt' | 'swaps';
 
-export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, cursor = null, onRetry, onBuild, onSelect, onHire, onAsk, swaps }: {
+export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, cursor = null, onRetry, onBuild, onSelect, onHire, onAsk, swaps, mine, mineCount = 0, mineAsks = 0 }: {
   venue: 'cex' | 'dex'; coin: string; list: Agent[] | null; failed: boolean;
   /** The agent picked (its one-year numbers, as in the list) and the backtest on screen (one year or all history). */
   sel: Agent | null; shown: Agent | null; period: Period; setPeriod: (p: Period) => void; busy?: boolean; onRetry?: () => void; onBuild?: () => void;
   /** The replay's day, when one is open: the backtest then shows only what had happened by then. */
   cursor?: number | null;
   onSelect: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; swaps?: ReactNode;
+  /** The user's hired agents as a table, how many there are, and how many wait for an answer. */
+  mine?: ReactNode; mineCount?: number; mineAsks?: number;
 }) {
   const { t } = useT();
-  const [tab, setTab] = useState<Tab>(sel ? 'bt' : 'list');
+  // Someone with agents sees how they are doing first; everyone else sees what the market offers.
+  const [tab, setTab] = useState<Tab>(sel ? 'bt' : mineCount ? 'mine' : 'list');
+  // The first agent hired (or the list arriving after login) brings its row up; the last one removed leaves the tab.
+  const had = useRef(mineCount);
+  useEffect(() => {
+    if (mineCount > had.current) setTab((cur) => (cur === 'list' || cur === 'bt' && !sel ? 'mine' : cur));
+    had.current = mineCount;
+  }, [mineCount]); // eslint-disable-line react-hooks/exhaustive-deps
   // Picking an agent opens its backtest; closing it goes back to the list.
   useEffect(() => { setTab((cur) => (sel ? 'bt' : cur === 'bt' ? 'list' : cur)); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -330,13 +339,11 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const classics = all.filter((a) => a.tier === 1 || a.made);
   const fold = classics.length >= 4 && classics.length < all.length;
   const open = fold && !more && !(sel && sel.tier !== 1) ? classics : all;
-  // Grouped by how long the strategy is built to hold: long, swing, short. One of them, or all three in that order.
-  const [hz, setHz] = useState<'all' | Horizon>('all');
-  const groups = HORIZONS.map((h) => ({ h, rows: open.filter((a) => horizonOf(a) === h) })).filter((g) => g.rows.length && (hz === 'all' || hz === g.h));
+  // Three columns side by side, by how long the strategy is built to hold: long, swing, short.
+  const groups = HORIZONS.map((h) => ({ h, rows: open.filter((a) => horizonOf(a) === h) })).filter((g) => g.rows.length);
   const ranked = groups.flatMap((g) => g.rows);
   /** Moa's pick in each group: the first in its order that actually traded in the backtest. */
   const pickOf = (h: Horizon) => all.find((a) => horizonOf(a) === h && !idle(a))?.id;
-  const count = (h: Horizon) => open.filter((a) => horizonOf(a) === h).length;
   const hint = isRunnable(coin) ? t.mkSignalTrade : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
   const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? hint : '';
@@ -345,7 +352,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
     <section className="tdock" aria-label={t.mkTitle}>
       <header className="tdock-head">
         <div className="tdock-tabs has-line" role="tablist">
-          <SlidePill dep={`${tab}-${sel?.id ?? ''}`} />
+          <SlidePill dep={`${tab}-${sel?.id ?? ''}-${mineCount}`} />
+          {mine && <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>{t.navMine}{mineCount > 0 && <span className={`tdock-count${mineAsks ? ' ask' : ''}`}>{mineCount}</span>}</button>}
           <button role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'on' : ''} onClick={() => setTab('list')}>{t.mkTitle}</button>
           {sel && (
             <button role="tab" aria-selected={tab === 'bt'} className={tab === 'bt' ? 'on' : ''} onClick={() => setTab('bt')}>
@@ -355,12 +363,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
           {swaps && <button role="tab" aria-selected={tab === 'swaps'} className={tab === 'swaps' ? 'on' : ''} onClick={() => setTab('swaps')}>{t.recentSwaps}</button>}
         </div>
         <p className="tdock-note">{note}</p>
-        {tab === 'list' && (
-          <div className="seg" role="group" aria-label={t.hzLabel}>
-            <button className={hz === 'all' ? 'on' : ''} aria-pressed={hz === 'all'} onClick={() => setHz('all')}>{t.hzAll}</button>
-            {HORIZONS.filter((h) => count(h) > 0).map((h) => <button key={h} className={hz === h ? 'on' : ''} aria-pressed={hz === h} onClick={() => setHz(h)} data-tip={t.hzSub[h]}>{t.hz[h]}<small>{count(h)}</small></button>)}
-          </div>
-        )}
+        {tab === 'mine' && <button className="btn sm tdock-build" onClick={() => setTab('list')}><Icon name="plus" size={14} />{t.mdAdd}</button>}
         {tab === 'list' && onBuild && <button className="btn sm tdock-build" onClick={onBuild}><Icon name="plus" size={14} />{t.mkBuild}</button>}
         {tab === 'bt' && sel && (
           <div className={`seg${busy ? ' busy' : ''}`} role="group" aria-label={t.thPeriod} aria-busy={busy}>
@@ -372,20 +375,29 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
       </header>
 
       <div className="tdock-body">
+        {tab === 'mine' && (mineCount > 0 ? mine : (
+          <div className="md-empty">
+            <b>{t.mineEmpty}</b>
+            <p>{t.mdEmptySub}</p>
+            <button className="btn sm" onClick={() => setTab('list')}>{t.mdSee}</button>
+          </div>
+        ))}
         {tab === 'list' && (
-          <div className="frows stagger" key={`${venue}-${coin}`}>
-            <div className="frow-head" aria-hidden>
-              <span>{t.thRank}</span><span>{t.thName}</span><span>{t.thOrigin}</span><span>{t.thState}</span><span>{t.thCurve}</span><span>{t.thEdge}</span><span>{t.thTotal}</span><span>{t.thDd}</span><span />
-            </div>
-            {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
-            {!list && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="frow skel-block" aria-hidden />)}
-            {groups.map((g) => (
-              <Fragment key={g.h}>
-                {hz === 'all' && <div className={`frow-group hz-${g.h}`}><b>{t.hz[g.h]}</b><span>{t.hzSub[g.h]}</span></div>}
-                {g.rows.map((a, i) => <AgentCard key={a.id} agent={a} size="tile" rank={i + 1} picked={sel?.id === a.id} best={a.id === pickOf(g.h)} onPick={() => { onSelect(a); setTab('bt'); }} />)}
-              </Fragment>
+          <div className="hzb" key={`${venue}-${coin}`} style={{ '--cols': groups.length || 3 } as CSSProperties}>
+            {failed && <div className="hzb-wide"><StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} /></div>}
+            {!list && !failed && HORIZONS.map((h) => (
+              <section key={h} className={`hz-col hz-${h}`} aria-hidden>
+                <header className="hz-head"><b>{t.hz[h]}</b><p>{t.hzSub[h]}</p></header>
+                {[0, 1, 2].map((i) => <div key={i} className="hzr skel-block" />)}
+              </section>
             ))}
-            {fold && <button className="frow-more" onClick={() => setMore((v) => !v)}>{more ? t.dkLess : t.dkMore(all.length - classics.length)}<Icon name="down" size={14} /></button>}
+            {groups.map((g) => (
+              <section key={g.h} className={`hz-col hz-${g.h} stagger`} aria-label={t.hz[g.h]}>
+                <header className="hz-head" data-tip={t.hzOrder}><b>{t.hz[g.h]}<small>{g.rows.length}</small></b><em>{t.hzLegend}</em><p>{t.hzSub[g.h]}</p><em>{t.hzHold(pct(g.rows[0].hold))}</em></header>
+                {g.rows.map((a, i) => <AgentCard key={a.id} agent={a} size="cell" rank={i + 1} picked={sel?.id === a.id} best={a.id === pickOf(g.h)} onPick={() => { onSelect(a); setTab('bt'); }} />)}
+              </section>
+            ))}
+            {fold && <button className="frow-more hzb-wide" onClick={() => setMore((v) => !v)}>{more ? t.dkLess : t.dkMore(all.length - classics.length)}<Icon name="down" size={14} /></button>}
           </div>
         )}
         {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} cursor={cursor} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}
