@@ -8,6 +8,7 @@ import { checkFactory, createVault, execConfigFromEnv, executeTrade, forOwner, s
 import * as session from './session.ts';
 import { openStore, storeFile, type AutoStore } from './autoStore.ts';
 import { autoBlock, startRunner } from './autoRunner.ts';
+import { frameCheck } from './nanoFrame.ts';
 import type { HiredAgent } from '../src/runner.ts';
 
 type Env = Record<string, string | undefined>;
@@ -114,6 +115,11 @@ export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
 
       const cfg = await forOwner(base, who);
       // Diagnostics: is the Anthropic key loaded, from where, and does a real call work? Never returns the key.
+      // Whether this Moa may show nanotradingclub's chart inside the page (its headers decide; see server/nanoFrame.ts).
+      if (req.url === '/api/nano-frame' && req.method === 'GET') {
+        const proto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http');
+        return send(200, await frameCheck(`${proto}://${host}`));
+      }
       if (req.url?.startsWith('/api/health') && req.method === 'GET') {
         const dir = process.cwd();
         const files = ['.env', '.env.local', '.env.development', '.env.development.local'].filter((f) => existsSync(join(dir, f)));

@@ -1,103 +1,78 @@
 // What sits around the price chart besides candles and indicators:
-//  - on the exchange chart, a "Heatmap" button that lays nanotradingclub's order-book heatmap and a liquidation map
-//    over a dark chart. Nothing is fetched until a layer is switched on;
-//  - on the HSKSwap chart, the pool's depth read from the chain, as blocks above the chart.
-import { useEffect, useRef, useState } from 'react';
+//  - on the exchange chart, a "Heatmap" switch that shows nanotradingclub's own fire chart in place of Moa's chart:
+//    its order-book heatmap, liquidation map and liquidations, drawn by its own code. Nothing of it loads until the
+//    switch is on, and only where nanotradingclub lets this Moa show it (server/nanoFrame.ts reads its headers);
+//  - on the HSKSwap chart, the pool's liquidity read from the chain, as columns of blocks above the chart.
+import { useEffect, useState } from 'react';
 import { useT } from './i18n.ts';
 import type { Asset } from './intent.ts';
+import type { Interval } from './cex.ts';
 import { poolState } from './dex.ts';
 import { poolDepth, type PoolDepth } from './depth.ts';
-import { heatHistory, heatRefresh, openInterest, NoData, NANO_REFRESH_MS, type HeatColumn } from './nano.ts';
+import { NANO_REFRESH_MS } from './nano.ts';
 
-export type LayerState = 'off' | 'loading' | 'on' | 'none' | 'error';
-export interface Layer<T> { data: T | null; state: LayerState }
+/* ---------- the exchange chart: nanotradingclub's fire chart ---------- */
 
-/**
- * Something fetched only while it is switched on, then again every three minutes while the tab is in front.
- * Switching off, or changing what it is for, drops what was fetched.
- */
-function useLayer<T>(on: boolean, key: string, first: () => Promise<T>, next: (have: T) => Promise<T>): Layer<T> {
-  const [got, setGot] = useState<{ key: string; data: T | null; state: LayerState }>({ key, data: null, state: 'off' });
-  const fns = useRef({ first, next }); fns.current = { first, next };
+const NANO_FIRE = 'https://nanotradingclub.xyz/fire';
+const NANO_CDN = 'https://cdn.nanotradingclub.xyz';
+/** nanotradingclub's intervals are 1m, 10m, 30m, 1h, 4h, 1d and 7d; Moa's 15m opens as its 10m. */
+const NANO_TF: Record<Interval, string> = { '1m': '1m', '15m': '10m', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '7d' };
+export const nanoChartUrl = (base: string, interval: Interval, embed = true) =>
+  `${NANO_FIRE}?${embed ? 'embed=1&' : ''}sym=${encodeURIComponent(base.toUpperCase())}USDT&tf=${NANO_TF[interval]}`;
+
+export type NanoState = 'off' | 'checking' | 'on' | 'refused' | 'unreachable' | 'nocoin';
+let frameKept: { at: number; v: { allowed: boolean; why?: string } } | null = null;
+const coinKept = new Map<string, boolean>();
+
+/** Whether nanotradingclub's chart can be shown for this coin, asked only once the switch is on. */
+export function useNanoChart(on: boolean, base: string): NanoState {
+  const [st, setSt] = useState<{ key: string; v: NanoState }>({ key: '', v: 'off' });
+  const key = `${on}|${base}`;
   useEffect(() => {
-    if (!on) { setGot({ key, data: null, state: 'off' }); return; }
-    let alive = true, have: T | null = null, at = 0, busy = false;
-    setGot({ key, data: null, state: 'loading' });
-    const pull = async () => {
-      if (busy) return;
-      busy = true;
-      try {
-        have = have === null ? await fns.current.first() : await fns.current.next(have);
-        at = Date.now();
-        if (alive) setGot({ key, data: have, state: 'on' });
-      } catch (e) {
-        // A refresh that fails keeps what is on screen; only a first load that fails says so.
-        if (alive && have === null) setGot({ key, data: null, state: e instanceof NoData ? 'none' : 'error' });
-      } finally { busy = false; }
-    };
-    void pull();
-    const timer = setInterval(() => { if (!document.hidden) void pull(); }, NANO_REFRESH_MS);
-    const back = () => { if (!document.hidden && Date.now() - at >= NANO_REFRESH_MS) void pull(); };
-    document.addEventListener('visibilitychange', back);
-    return () => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', back); };
-  }, [on, key]);
-  return got.key === key ? got : { data: null, state: on ? 'loading' : 'off' };
+    if (!on) { setSt({ key, v: 'off' }); return; }
+    let alive = true;
+    setSt({ key, v: 'checking' });
+    const frame = frameKept && Date.now() - frameKept.at < 300_000 ? Promise.resolve(frameKept.v)
+      : fetch('/api/nano-frame').then((r) => r.json() as Promise<{ allowed: boolean; why?: string }>).then((v) => { frameKept = { at: Date.now(), v }; return v; });
+    // A coin nanotradingclub collects has its book on the CDN (HSK has none).
+    const sym = `${base.toUpperCase()}USDT`;
+    const coin = coinKept.has(sym) ? Promise.resolve(coinKept.get(sym)!)
+      : fetch(`${NANO_CDN}/fire_latest_${sym}.json`, { method: 'HEAD' }).then((r) => { coinKept.set(sym, r.ok); return r.ok; });
+    Promise.all([frame, coin]).then(([f, c]) => {
+      if (!alive) return;
+      setSt({ key, v: !c ? 'nocoin' : f.allowed ? 'on' : f.why === 'unreachable' ? 'unreachable' : 'refused' });
+    }).catch(() => { if (alive) setSt({ key, v: 'unreachable' }); });
+    return () => { alive = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return st.key === key ? st.v : on ? 'checking' : 'off';
 }
 
-export type HeatKind = 'book' | 'map';
-/** The two layers for one coin. `want` is what the user switched on. `map` holds the open interest the estimate is built from. */
-export function useHeat(base: string, want: Set<HeatKind>): { book: Layer<HeatColumn[]>; map: Layer<number> } {
-  const book = useLayer<HeatColumn[]>(want.has('book'), `book-${base}`, () => heatHistory(base), (have) => heatRefresh(base, have));
-  const map = useLayer<number>(want.has('map'), `map-${base}`, () => openInterest(base), () => openInterest(base));
-  return { book, map };
-}
-
-/** The "Heatmap" button next to Indicators. */
-export function HeatMenu({ want, toggle, book, map }: { want: Set<HeatKind>; toggle: (k: HeatKind) => void; book: LayerState; map: LayerState }) {
+/** The "Heatmap" switch next to Indicators. */
+export function HeatSwitch({ on, state, toggle }: { on: boolean; state: NanoState; toggle: () => void }) {
   const { t } = useT();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', close); document.addEventListener('keydown', esc);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
-  }, [open]);
-  const note = (st: LayerState, text: string) => (st === 'loading' ? t.heatLoading : st === 'none' ? t.heatNone : st === 'error' ? t.heatErr : text);
-  const item = (k: HeatKind, st: LayerState, words: readonly [string, string]) => (
-    <label key={k} className={`ind-item${st === 'none' || st === 'error' ? ' bad' : ''}`} role="menuitemcheckbox" aria-checked={want.has(k)}>
-      <input type="checkbox" checked={want.has(k)} onChange={() => toggle(k)} />
-      <span><b>{words[0]}</b><small>{note(st, words[1])}</small></span>
-    </label>
-  );
-  const all = [book, map], shown = all.filter((x) => x === 'on').length, busy = all.includes('loading');
   return (
-    <div className="ind-menu heat-menu" ref={ref}>
-      <button className={`ind-btn${open ? ' on' : ''}${want.size ? ' lit' : ''}`} aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><rect x="2" y="2" width="5" height="5" rx="1" fill="currentColor" opacity=".35" /><rect x="9" y="2" width="5" height="5" rx="1" fill="currentColor" opacity=".7" /><rect x="2" y="9" width="5" height="5" rx="1" fill="currentColor" /><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor" opacity=".5" /></svg>
-        {t.heatBtn}{busy ? <span className="spin" aria-hidden /> : shown > 0 && <span className="ind-count">{shown}</span>}
-      </button>
-      {open && (
-        <div className="ind-pop heat-pop" role="menu">
-          {item('book', book, t.heatBook)}
-          {item('map', map, t.heatMap)}
-          <p className="heat-src">{t.heatSrc}</p>
-        </div>
-      )}
+    <button className={`ind-btn heat-switch${on ? ' lit' : ''}`} aria-pressed={on} onClick={toggle} data-tip={t.nanoTip}>
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><rect x="2" y="2" width="5" height="5" rx="1" fill="currentColor" opacity=".35" /><rect x="9" y="2" width="5" height="5" rx="1" fill="currentColor" opacity=".7" /><rect x="2" y="9" width="5" height="5" rx="1" fill="currentColor" /><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor" opacity=".5" /></svg>
+      {t.heatBtn}{state === 'checking' && <span className="spin" aria-hidden />}
+    </button>
+  );
+}
+
+/** nanotradingclub's chart where Moa's was, or why it cannot be shown. */
+export function NanoChart({ base, interval, state }: { base: string; interval: Interval; state: NanoState }) {
+  const { t } = useT();
+  const open = <a href={nanoChartUrl(base, interval, false)} target="_blank" rel="noreferrer">{t.nanoOpen} ↗</a>;
+  if (state === 'on') return (
+    <div className="nano-wrap">
+      <iframe key={`${base}-${interval}`} className="nano-frame" src={nanoChartUrl(base, interval)} title={t.nanoTitle(base)} allow="clipboard-write" />
     </div>
   );
-}
-
-/** The key in the toolbar while a layer is on: what the colours mean. */
-export function HeatLegend({ book, map }: { book: boolean; map: boolean }) {
-  const { t } = useT();
-  if (!book && !map) return null;
   return (
-    <span className="heat-legend">
-      {book && <span><i className="hl-ramp" aria-hidden />{t.heatKeyBook}</span>}
-      {map && <span data-tip={t.heatMapTip}><i className="hl-sw long" aria-hidden />{t.heatKeyLong}<i className="hl-sw short" aria-hidden />{t.heatKeyShort}</span>}
-    </span>
+    <div className="chart-empty nano-note">
+      {state === 'checking' ? <><span className="spin" aria-hidden />{t.nanoChecking}</> : (
+        <div><b>{state === 'nocoin' ? t.nanoNoCoin(base) : state === 'refused' ? t.nanoRefused : t.nanoDown}</b><p>{state === 'nocoin' ? t.nanoNoCoinSub : t.nanoRefusedSub}</p>{state !== 'nocoin' && open}</div>
+      )}
+    </div>
   );
 }
 

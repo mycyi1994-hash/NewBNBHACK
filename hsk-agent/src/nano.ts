@@ -1,7 +1,8 @@
-// Order-book heatmap and liquidations from nanotradingclub's public files: the resting orders of nine exchanges
+// The order book and liquidations from nanotradingclub's public files, boiled down for Moa: the resting orders of nine exchanges
 // (Binance, Bybit, Hyperliquid, Gate, Bitfinex, Upbit, Bithumb; futures and spot) folded into price bins, and the
-// forced orders their futures markets reported. Exchange data, not HSK Chain data. Nothing here is fetched until
-// someone turns the layer on (or Moa is asked), and then at most once every three minutes.
+// forced orders their futures markets reported. Exchange data, not HSK Chain data. Fetched by the server only when
+// Moa is asked about the market, at most once every three minutes. (The chart's heatmap is nanotradingclub's own
+// page, shown in a frame: src/ChartExtras.tsx.)
 const CDN = 'https://cdn.nanotradingclub.xyz';
 export const NANO_REFRESH_MS = 180_000;
 export const NANO_SOURCE = 'nanotradingclub';
@@ -43,87 +44,9 @@ export async function heatNow(base: string): Promise<HeatColumn> {
   if (!c) throw new Error('unreadable heatmap column');
   return c;
 }
-/** The book over the months nanotradingclub has kept (coarser the older it is), oldest first, ending with the book right now. */
-export async function heatHistory(base: string): Promise<HeatColumn[]> {
-  const file = (name: string) => get<{ cols: RawColumn[] }>(`${name}_${symbolOf(base)}.json`).catch((e) => { if (e instanceof NoData) throw e; return { cols: [] as RawColumn[] }; });
-  // Three files, coarse to fine: months of history (about 12 MB on the wire, read once), the last hour, and now.
-  const [long, tail, now] = await Promise.all([file('fire_long'), file('fire_long_tail'), heatNow(base)]);
-  const tidy = (cols: RawColumn[], before: number) => cols.map(column).filter((c): c is HeatColumn => c !== null && c.t < before - 20).sort((a, b) => a.t - b.t);
-  const recent = tidy(tail.cols, now.t);
-  return [...tidy(long.cols, recent[0]?.t ?? now.t), ...recent, now];
-}
-/** Adds the book right now to what is already on screen. */
-export async function heatRefresh(base: string, have: HeatColumn[]): Promise<HeatColumn[]> {
-  const now = await heatNow(base);
-  const last = have[have.length - 1];
-  return last && now.t - last.t < 20 ? have : [...have, now];
-}
-
 export async function liquidations(base: string): Promise<Liq[]> {
   const j = await get<{ liq: { t: number; p: number; u: number; S: string }[] }>(`liq_long_${symbolOf(base)}.json`);
   return j.liq.filter((x) => x.u > 0 && x.p > 0).map((x) => ({ t: x.t, price: x.p, usd: x.u, long: x.S === 'SELL', sum: x.t % 900 === 0 }));
-}
-
-/**
- * What counts as a wall in one moment of the book: [the least a bin holds to show, the most before it is drawn at
- * full strength], taken from that moment's own bins within 30% of the price (the 60th and 99.5th percentiles). It does
- * not depend on the zoom, so the same walls show whatever part of the chart is on screen.
- */
-const scales = new WeakMap<HeatColumn, [number, number]>();
-export function wallScale(c: HeatColumn): [number, number] {
-  const had = scales.get(c);
-  if (had) return had;
-  const from = Math.max(0, Math.floor((c.mid * 0.7 - c.lo) / c.step)), to = Math.min(c.bins.length - 1, Math.ceil((c.mid * 1.3 - c.lo) / c.step));
-  const seen: number[] = [];
-  for (let i = from; i <= to; i++) if (c.bins[i] > 0) seen.push(c.bins[i]);
-  let out: [number, number] = [0, 1];
-  if (seen.length) {
-    seen.sort((a, b) => a - b);
-    const q = (p: number) => seen[Math.min(seen.length - 1, Math.floor(seen.length * p))];
-    out = [q(0.6), Math.max(q(0.995), q(0.6) * 2)];
-  }
-  scales.set(c, out);
-  return out;
-}
-
-/* ---------- the liquidation map: an estimate, not a record ---------- */
-
-/** Open interest of the coin's largest futures market, in coins (hourly; the newest value). */
-export async function openInterest(base: string): Promise<number> {
-  const j = await get<{ oi: [number, number][] }>(`oi_long_${symbolOf(base)}.json`);
-  const last = j.oi[j.oi.length - 1]?.[1];
-  if (!(last > 0)) throw new Error('no open interest');
-  return last;
-}
-
-/** Leverage and how common it is taken to be, from 2x (liquidated 50% away) to 125x (0.8% away). */
-const LEVERAGE: [number, number][] = [[2, .45], [3, .55], [4, .6], [5, .8], [6, .6], [8, .7], [10, 1], [12, .6], [15, .7], [20, .9], [25, .95], [35, .6], [50, .9], [75, .55], [100, .85], [125, .5]];
-const MAINTENANCE = 0.004;
-export interface LiqMap { n: number; low: number; step: number; /** USD per price bin: long positions liquidated there, short positions liquidated there. */ longs: Float64Array; shorts: Float64Array }
-
-/**
- * Where positions would be liquidated, estimated the way nanotradingclub's liquidation map does it: the open
- * interest is spread over entry prices in proportion to the volume traded at each candle, half long and half
- * short, across a fixed mix of leverage. Each slice lands at its liquidation price (entry less 1/leverage for a
- * long, plus for a short, with the maintenance margin taken off). An estimate from assumptions, not positions.
- */
-export function liqMap(bars: { high: number; low: number; close: number; volume: number }[], oiUsd: number, low: number, high: number, n: number, longShare = 0.5): LiqMap | null {
-  if (!(oiUsd > 0) || !(high > low) || n < 1 || !bars.length) return null;
-  const step = (high - low) / n, out: LiqMap = { n, low, step, longs: new Float64Array(n), shorts: new Float64Array(n) };
-  const weight = (b: { close: number; volume: number }) => b.volume * b.close;
-  const total = bars.reduce((s, b) => s + weight(b), 0), mix = LEVERAGE.reduce((s, l) => s + l[1], 0);
-  if (!(total > 0)) return null;
-  for (const b of bars) {
-    const entry = (b.high + b.low) / 2, w = weight(b) / total;
-    if (!(entry > 0) || !(w > 0)) continue;
-    for (const [lev, share] of LEVERAGE) {
-      const part = oiUsd * w * (share / mix);
-      const longAt = Math.floor((entry * (1 - 1 / lev + MAINTENANCE) - low) / step), shortAt = Math.floor((entry * (1 + 1 / lev - MAINTENANCE) - low) / step);
-      if (longAt >= 0 && longAt < n) out.longs[longAt] += part * longShare;
-      if (shortAt >= 0 && shortAt < n) out.shorts[shortAt] += part * (1 - longShare);
-    }
-  }
-  return out;
 }
 
 /* ---------- the few numbers Moa is given ---------- */

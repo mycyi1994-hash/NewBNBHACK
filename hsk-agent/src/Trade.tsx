@@ -6,9 +6,7 @@ import { gateCandles, GATE_SECONDS, type GateInterval } from './gate.ts';
 import { EXPLORER, POOLS, poolDetail, type PoolDetail } from './dex.ts';
 import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
-import { mountHeat, type HeatInput } from './heatLayer.ts';
-import type { HeatColumn } from './nano.ts';
-import { HeatLegend, HeatMenu, PoolRange, useHeat, type HeatKind } from './ChartExtras.tsx';
+import { HeatSwitch, NanoChart, PoolRange, useNanoChart } from './ChartExtras.tsx';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
@@ -80,19 +78,13 @@ function chartOptions() {
   };
 }
 
-/** The colours that change when the chart turns dark for the heatmap. */
-const LIGHT = { layout: { textColor: '#444746' }, grid: { vertLines: { color: '#f3f1ee' }, horzLines: { color: '#f3f1ee' } }, rightPriceScale: { borderColor: '#e8e6e3' }, timeScale: { borderColor: '#e8e6e3' } };
-const DARK = { layout: { textColor: '#c9c3c4' }, grid: { vertLines: { color: 'rgba(255,255,255,.05)' }, horzLines: { color: 'rgba(255,255,255,.05)' } }, rightPriceScale: { borderColor: '#2a2224' }, timeScale: { borderColor: '#2a2224' } };
-
 /** Candles with indicator overlays. Scroll left to load older candles (onOlder), 20 bars of room on the right. */
 /** A label drawn over the chart at one candle: a buy (under its low), a sell (over its high) or a grey note. */
 export interface Badge { time: number; side: 'buy' | 'sell' | 'note'; text: string }
 /** What a backtest adds to the chart: the rule's own lines, its buys and sells, and the days it was holding. */
 export interface Study { rule: RuleId; made?: MadeSpec; badges: Badge[]; bands: { from: number; to: number }[] }
 
-function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until, heat, oi, dark }: {
-  /** Layers from the Heatmap button: the order book under the candles and the open interest the liquidation map is estimated from. `dark` turns the chart dark while one is on. */
-  heat?: HeatColumn[] | null; oi?: number | null; dark?: boolean;
+function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until }: {
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
   /** Show everything from this time to now (a backtest's window). `key` says when to apply it again. */
   range?: { from: number; key: string };
@@ -136,9 +128,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
 
   useEffect(() => {
     if (!box.current) return;
-    // No background of its own: the heatmap is painted underneath, on the white of the box.
-    const base = chartOptions();
-    const c = createChart(box.current, { ...base, layout: { ...base.layout, background: { type: ColorType.Solid, color: 'transparent' } } });
+    const c = createChart(box.current, chartOptions());
     chart.current = c;
     main.current = c.addCandlestickSeries({ upColor: '#16a34a', downColor: '#dc2626', borderVisible: false, wickUpColor: '#16a34a', wickDownColor: '#dc2626' });
     box.current.querySelector('a')?.setAttribute('aria-label', 'TradingView Lightweight Charts');
@@ -274,18 +264,6 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
   // The replay moved a day: show that much of every series. (Not on mount: the data was just drawn.)
   useEffect(() => { if (!drawn.current) { drawn.current = true; return; } if (chart.current && layers.current.length) draw(); }, [until]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The heatmap and the liquidations: painted only while one of them is on.
-  const under = useRef<HTMLCanvasElement>(null), over = useRef<HTMLCanvasElement>(null);
-  const heatIn = useRef<HeatInput>({ heat: null, oi: null, bars: [], v: 0, words: { long: t.mapLong, short: t.mapShort } });
-  useEffect(() => { heatIn.current = { heat: heat ?? null, oi: oi ?? null, bars: candles, v: heatIn.current.v + 1, words: { long: t.mapLong, short: t.mapShort } }; }, [heat, oi, candles, t]);
-  const layered = !!heat || !!oi;
-  // The walls and the map are read on a dark ground; the axis and grid follow it.
-  useEffect(() => { chart.current?.applyOptions(dark ? DARK : LIGHT); }, [dark]);
-  useEffect(() => {
-    if (!layered || !chart.current || !main.current || !under.current || !over.current) return;
-    return mountHeat(under.current, over.current, chart.current, main.current, () => heatIn.current);
-  }, [layered]);
-
   // Buys and sells as filled labels over the chart, kept on their candles as the chart moves.
   useEffect(() => {
     const el = layer.current, c = chart.current, m = main.current;
@@ -334,7 +312,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
 
   return (
     <div className="chart-wrap">
-      <div className={`chart-main${dark ? ' dark' : ''}`}><canvas ref={under} className="chart-heat" aria-hidden /><div ref={box} className="chart" /><canvas ref={over} className="chart-liq" aria-hidden /><div ref={layer} className="chart-badges" aria-hidden /></div>
+      <div className="chart-main"><div ref={box} className="chart" /><div ref={layer} className="chart-badges" aria-hidden /></div>
       {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneSpec?.kind === 'mom' && study ? (study.made ? t.term('ret', paneSpec.days) : t.ovLabel[study.rule]) : `RSI(${paneSpec?.kind === 'rsi' ? paneSpec.period : 14})`}</span><div ref={subBox} className="chart" /></div>}
     </div>
   );
@@ -617,14 +595,9 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
   const up = chg >= 0;
   const perp = market.kind === 'perp';
   const gap = dexPrice !== undefined && t ? dexPrice / t.last - 1 : undefined;
-  // The heatmap layers start off every time: nothing is fetched until one is switched on.
-  const [want, setWant] = useState<Set<HeatKind>>(() => new Set());
-  const toggleHeat = (k: HeatKind) => {
-    const next = new Set(want);
-    if (next.has(k)) next.delete(k); else next.add(k);
-    setWant(next);
-  };
-  const layers = useHeat(market.base, want);
+  // The heatmap is nanotradingclub's own chart; it starts off every time and nothing of it loads until switched on.
+  const [heatOn, setHeatOn] = useState(false);
+  const nano = useNanoChart(heatOn, market.base);
 
   return (
     <>
@@ -653,11 +626,10 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
         <div className="chart-toolbar">
           <IntervalBar list={CEX_IV} value={interval} set={pickIv} label={(v) => s.ivLabel[v]} />
           <IndMenu on={inds} toggle={toggleInd} />
-          <HeatMenu want={want} toggle={toggleHeat} book={layers.book.state} map={layers.map.state} />
-          <HeatLegend book={layers.book.state === 'on'} map={layers.map.state === 'on'} />
+          <HeatSwitch on={heatOn} state={nano} toggle={() => setHeatOn((v) => !v)} />
           {sel ? <BacktestChip a={sel} replay={replay} onClose={() => setSel(null)} /> : <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} heat={layers.book.data} oi={layers.map.data} dark={want.size > 0} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
+        {heatOn ? <NanoChart base={market.base} interval={interval} state={nano} /> : candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
 
       <Dock venue="cex" coin={market.base} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} onBuild={() => onBuild(market.base)} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />

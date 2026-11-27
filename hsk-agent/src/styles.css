@@ -1030,7 +1030,8 @@ select { padding-right: 8px; }
   .trade-main { overflow: visible; }
   .chart-card { display: block; }
   .chart-wrap, .chart-empty { height: clamp(300px, 52vh, 460px); flex: none; }
-  .tdock { height: auto; }
+  .nano-wrap { height: clamp(380px, 68vh, 620px); flex: none; }
+  .tdock, .trade-page .trade-main:has(.nano-wrap) .tdock { height: auto; }
   .tdock-body { overflow: visible; }
   .tdock-note { display: none; }
   .tdock-tabs { overflow-x: auto; scrollbar-width: none; }
@@ -1653,25 +1654,17 @@ select { padding-right: 8px; }
 .mh-dex em { font-style: normal; font-weight: 600; }
 .mh-pool { margin-left: auto; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
 
-/* ---------- heatmap layers on the exchange chart ---------- */
-.chart-main { background: var(--bg); }
-.chart-main > .chart { z-index: 1; }
-.chart-heat, .chart-liq { position: absolute; left: 0; top: 0; pointer-events: none; }
-.chart-heat { z-index: 0; }
-.chart-liq { z-index: 2; }
+/* ---------- the exchange chart's heatmap: nanotradingclub's fire chart in place of Moa's ---------- */
+.nano-wrap { position: relative; flex: 1; min-height: 0; display: flex; border-radius: 8px; overflow: hidden; background: #0a0c10; }
+.nano-frame { flex: 1; width: 100%; height: 100%; min-height: 0; border: 0; display: block; }
+/* nanotradingclub's chart carries its own toolbars, so it gets more of the screen while it is on; the agent list gives way */
+.trade-main:has(.nano-wrap) .tdock { height: clamp(200px, 26vh, 280px); }
+.nano-note { flex-direction: column; text-align: center; gap: 6px; }
+.nano-note b { display: block; font-size: 14px; color: var(--ink-title); }
+.nano-note p { margin: 4px 0 10px; font-size: 13px; color: var(--ink-2); }
+.nano-note a { font-size: 13px; font-weight: 600; }
 .ind-btn.lit { border-color: #f3c99b; background: #fff7ed; color: #9a4a06; }
 .ind-btn .spin { width: 12px; height: 12px; }
-.heat-pop { width: 280px; }
-.ind-item.bad small { color: var(--warn); }
-.heat-src { margin: 6px 10px 4px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 16px; color: var(--ink-3); }
-.heat-legend { display: inline-flex; align-items: center; gap: 14px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
-.heat-legend > span { display: inline-flex; align-items: center; gap: 6px; }
-.hl-ramp { width: 44px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #5f1016, #b9262c, #fa5c48, #ffd6a8); }
-.hl-sw { width: 10px; height: 10px; border-radius: 3px; }
-.hl-sw.long { background: #ef4444; }
-.hl-sw.short { margin-left: 8px; background: #22c55e; }
-.chart-main.dark { background: #0d0809; }
-.chart-main.dark .chart-badges { color: #fff; }
 
 /* ---------- HSKSwap: the pool's depth above the chart ---------- */
 .lp-strip { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 6px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--rail); min-width: 0; }

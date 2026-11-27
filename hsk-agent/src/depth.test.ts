@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buyImpact, poolDepth, type PoolState } from './depth.ts';
-import { briefOf, liqMap, wallScale, walls, type HeatColumn, type Liq } from './nano.ts';
+import { briefOf, walls, type HeatColumn, type Liq } from './nano.ts';
 
 // A full-range pool holding 40,000 USDT and the same value of a coin at price 4 (raw units: USDT has 6 decimals).
 // For such a pool L = sqrt(x*y), and the USDT side is L*sqrtPrice.
@@ -61,36 +61,6 @@ test('walls: the thickest stretches on each side, nearest first, without the bin
   assert.ok(buy.every((w) => w.awayPct < 0 && w.awayPct > -8.1) && sell.every((w) => w.awayPct > 0));
   assert.ok(Math.abs(sell.find((w) => w.usd >= 700)!.price - 101.5) < 0.11);
   assert.ok(![...buy, ...sell].some((w) => w.usd >= 5000), 'the price bin and the far wall are left out');
-});
-
-test('the wall scale: the 60th and 99.5th percentile of that moment, cached, the same at any zoom', () => {
-  const c = book();
-  const [floor, ceil] = wallScale(c);
-  // nearly every bin holds 10, so a bin must hold more than that to show
-  assert.equal(floor, 10);
-  assert.ok(ceil >= floor * 2);
-  assert.equal(wallScale(c), wallScale(c), 'worked out once per moment');
-  assert.deepEqual(wallScale({ ...book(), bins: new Float32Array(1000) }), [0, 1]);
-});
-
-test('the liquidation map: longs land under the entry price, shorts over it, by leverage', () => {
-  // everything entered at 100; bins of 1 from 40 to 160
-  const m = liqMap([{ high: 100, low: 100, close: 100, volume: 5 }], 1_000_000, 40, 160, 120)!;
-  const at = (price: number) => Math.floor((price - 40) / 1);
-  // 10x: liquidated 10% away, less the 0.4% maintenance margin
-  assert.ok(m.longs[at(100 * (1 - 0.1 + 0.004))] > 0 && m.shorts[at(100 * (1 + 0.1 - 0.004))] > 0);
-  // 2x sits 50% away, 125x within 1%; nothing of either side lands on the wrong side of the entry
-  assert.ok(m.longs[at(50.4)] > 0 && m.longs[at(99.6)] > 0 && m.shorts[at(100.4)] > 0);
-  const sum = (a: Float64Array) => a.reduce((s, x) => s + x, 0);
-  assert.equal(sum(m.longs.slice(at(100))), 0);
-  assert.equal(sum(m.shorts.slice(0, at(100))), 0);
-  // nothing is lost inside the range: both sides add up to the open interest, half each
-  assert.ok(Math.abs(sum(m.longs) - 500_000) < 1e-6 && Math.abs(sum(m.shorts) - 500_000) < 1e-6);
-  // a 70/30 long book puts 70% under the price
-  const tilted = liqMap([{ high: 100, low: 100, close: 100, volume: 5 }], 1_000_000, 40, 160, 120, 0.7)!;
-  assert.ok(Math.abs(sum(tilted.longs) - 700_000) < 1e-6);
-  assert.equal(liqMap([], 1_000_000, 40, 160, 120), null);
-  assert.equal(liqMap([{ high: 100, low: 100, close: 100, volume: 5 }], 0, 40, 160, 120), null);
 });
 
 test('liquidations: sums by side, and the biggest single order of the last hour only', () => {

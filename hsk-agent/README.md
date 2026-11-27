@@ -119,17 +119,14 @@ stranger once the price has held, with the stranger getting nothing.
   its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three pools held one full-range
   position (the HSK pool three small ranges more), so every column is the same height; liquidity added to one
   stretch would raise that column alone.
-- **Order-book heatmap and liquidation map on the exchange chart.** The "Heatmap" button next to Indicators turns the
-  chart dark and lays up to two layers on it (`src/heatLayer.ts`). The heatmap shows walls: stretches of price where
-  more orders rest on nine exchanges than around them, drawn from deep red to pale peach as they get thicker; the
-  rest of the book is left out so the walls can be read. The liquidation map is a profile at the right edge, longs
-  under the price in red and shorts over it in green, with the three largest amounts on each side labelled; it is
-  estimated from open interest, the volume traded at each price over the last week and a fixed mix of leverage,
-  half long and half short (`liqMap` in `src/nano.ts`), the way nanotradingclub's own map is. The data is
-  nanotradingclub's public files: exchange data, not HSK Chain data, for coins it collects (BTC and ETH among them,
-  not HSK). Nothing is fetched until a layer is switched on, then every three minutes while the tab is in front. The
-  book comes with nanotradingclub's whole history (about 160 days, coarser the older it is; 12 MB once, in the
-  browser), so it lies under the candles on every interval from one minute to one day.
+- **nanotradingclub's fire chart as the heatmap.** The "Heatmap" switch next to Indicators puts nanotradingclub's own
+  fire chart where Moa's chart was, for the coin and interval on screen: its order-book heatmap of nine exchanges, its
+  liquidation map and liquidations, drawn by its own code, with its own switches (heatmap, order book, liquidation
+  map, volume profile). It is a frame (`NanoChart` in `src/ChartExtras.tsx`, `?embed=1` on nanotradingclub's side, which
+  hides that site's menus and chat and nothing else). Nothing of it loads until the switch is on. nanotradingclub
+  decides which sites may show its chart; Moa's server reads that from its response headers (`server/nanoFrame.ts`,
+  `/api/nano-frame`) and, until this address is allowed, says so and links to the chart on nanotradingclub instead of
+  showing a broken frame. Coins nanotradingclub does not collect (HSK) say that too.
 - **Moa is given the same numbers.** Its market tool now also returns each pool's depth, and for BTC and ETH the
   thickest stacks of resting orders within 8% of the price and the liquidations of the last hour and day
   (`marketSnapshot` in `server/moaAgent.ts`, about 2.6 KB, fetched at most once every three minutes).
