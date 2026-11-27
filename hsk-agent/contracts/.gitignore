@@ -1,3 +1,6 @@
 cache/
 artifacts/
 deployments/local-fork.json
+out-forge/
+cache-forge/
+lib/

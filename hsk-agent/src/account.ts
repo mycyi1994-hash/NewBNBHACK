@@ -40,7 +40,7 @@ const remembered = () => { try { return localStorage.getItem(WALLET_KEY); } catc
 export const walletProvider = (): Eip1193 | null => providerOf(remembered()) ?? (announced.length === 1 ? announced[0].provider : null) ?? legacy();
 
 export interface Session { address: string; token: string; expiresAt: number }
-export interface Net { chainId: number; explorer: string; usdt: string; tokens: { symbol: string; address: string; decimals: number }[] }
+export interface Net { chainId: number; explorer: string; usdt: string; tokens: { symbol: string; address: string; decimals: number }[]; agent?: string }
 
 const KEY = 'moa.session.v1';
 const listeners = new Set<() => void>();
@@ -205,6 +205,14 @@ export function setLimits(net: Net, vault: string, perTrade: string | null, perD
 /** Lock or unlock my vault for agents. Deposits and withdrawals are not affected. */
 export const setPaused = (net: Net, vault: string, paused: boolean) =>
   send(net, vault, encodeFunctionData({ abi: SET_PAUSED, functionName: 'setPaused', args: [paused] }));
+
+const SET_SESSION = [{ type: 'function', name: 'setSession', stateMutability: 'nonpayable', inputs: [{ name: 'agent', type: 'address' }, { name: 'until', type: 'uint64' }, { name: 'maxTradeUsdt', type: 'uint256' }, { name: 'tokens', type: 'address[]' }], outputs: [] }] as const;
+/**
+ * Version 3: let Moa's agent key trade on my vault until `until` (unix seconds), on these coins, buying at most
+ * `maxTradeUsd` at a time. One transaction from my wallet; the key can do nothing outside it.
+ */
+export const setSession = (net: Net, vault: string, agent: string, until: number, maxTradeUsd: number, tokens: string[]) =>
+  send(net, vault, encodeFunctionData({ abi: SET_SESSION, functionName: 'setSession', args: [agent as Hex, BigInt(Math.floor(until)), parseUnits(maxTradeUsd.toFixed(6), 6), tokens as Hex[]] }));
 
 const SET_STOP = [{ type: 'function', name: 'setStopLoss', stateMutability: 'nonpayable', inputs: [{ name: 'stopLossBps', type: 'uint16' }], outputs: [] }] as const;
 /** My stop-loss: once a holding is worth this much less than it cost, anyone may make the vault sell it. 0 = off. */

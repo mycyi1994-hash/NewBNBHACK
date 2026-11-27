@@ -18,6 +18,10 @@ export interface VaultInfo {
   version?: number;
   /** Version 3: each buy spends from the hired agent's own on-chain budget. */
   budgetsOn?: boolean;
+  /** Version 3: the factory's platform fee in basis points (0 unless its guardian set one; at most 20 = 0.2%). */
+  platformFeeBps?: number;
+  /** Version 3: the agent key's session on this vault, set by the owner (until: unix seconds; ours: Moa holds that key). */
+  session?: { agent: string; until: number; maxTradeUsdt?: string; assets: string[]; ours: boolean };
   /** Version 3: the factory guardian stopped agent trading on every vault (funds and the stop-loss are untouched). */
   halted?: boolean;
 }

@@ -19,7 +19,7 @@ import { whoText } from './Shared.tsx';
 import { Icon } from './Icons.tsx';
 import { book, type Amounts, type HireChoice, type HiredAgent, type Mode } from './runner.ts';
 import { hiredName, money } from './hiredText.ts';
-import { setLimits, setStopLoss, type SendResult } from './account.ts';
+import { setLimits, setSession, setStopLoss, type SendResult } from './account.ts';
 
 const AMOUNT = /^\d+(\.\d{1,6})?$/;
 
@@ -51,6 +51,12 @@ function Stepper({ id, value, options, onChange, label }: { id: string; value: n
     </span>
   );
 }
+
+/** Collect agents that may double a day's buy need room for twice the amount in the session's per-buy cap. */
+const doublesFor = (target: HireTarget) => {
+  const rule = target.kind === 'agent' ? target.agent.rule : target.kind === 'edit' && target.hired.source.type === 'market' ? target.hired.source.rule : undefined;
+  return rule === 'smart' || rule === 'rsiDca';
+};
 
 export default function HireSheet({ target, vault, onClose, onConfirm, onReloadVault }: {
   target: HireTarget; vault: VaultInfo | null; onClose: () => void; onConfirm: (v: HireChoice) => void; onReloadVault: () => void;
@@ -111,7 +117,17 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
   // Per-agent budgets on the vault (version 3, when the owner turned them on): this agent may spend what is left of its budget.
   const spent = target.kind === 'edit' ? book(target.hired).spent : 0;
   const saveBudget = real && (vault?.version ?? 0) >= 3 && !!vault?.budgetsOn && (target.kind !== 'edit' || budget !== start.budgetUsd);
-  const steps = Number(saveLimits) + Number(saveStop) + Number(saveFee) + Number(saveBudget);
+  // Version 3: Moa's agent key trades only inside the owner's session (until when, which coins, most per buy). When
+  // the session is missing, ending within a week, on another key, without this coin or below this buy, hiring renews
+  // it for 90 days: one more confirmation in the wallet.
+  const coin = target.kind === 'agent' ? target.agent.base : target.kind === 'edit' ? target.hired.asset : ((target.plan.steps.find((x) => 'asset' in x) as { asset?: string } | undefined)?.asset ?? 'HSK');
+  const ses = vault?.session;
+  const sesPer = doublesFor(target) ? per * 2 : per;
+  const sesMax = Math.max(sesPer, Number(ses?.maxTradeUsdt ?? 0), vault?.maxTradeUsdt !== undefined ? Number(vault.maxTradeUsdt) : 0);
+  const saveSession = real && (vault?.version ?? 0) >= 3 && !!vault?.net?.agent && (!ses || !ses.ours || ses.until * 1000 < Date.now() + 7 * 86_400_000 || !ses.assets.includes(coin) || (ses.maxTradeUsdt !== undefined && Number(ses.maxTradeUsdt) < sesPer));
+  const [sesUntil] = useState(() => Math.floor(Date.now() / 1000) + 90 * 86_400);
+  const pfee = vault?.platformFeeBps ?? 0;
+  const steps = Number(saveSession) + Number(saveLimits) + Number(saveStop) + Number(saveFee) + Number(saveBudget);
   const valid = per > 0 && budget >= per && (!auto || (real && dayOk && stopOk)) && !feeLoading;
 
   const name = target.kind === 'agent' ? agentName(t, target.agent) : target.kind === 'custom'
@@ -147,6 +163,11 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
     setError('');
     if (steps && vault?.net && vault.vault) {
       let n = 0;
+      if (saveSession && vault.net.agent) {
+        setBusy(++n);
+        const r = await setSession(vault.net, vault.vault, vault.net.agent, sesUntil, sesMax, vault.net.tokens.map((x) => x.address));
+        if (!r.ok) { setBusy(0); setError(words(r)); onReloadVault(); return; }
+      }
       if (saveLimits) {
         setBusy(++n);
         // A per-trade limit above the new daily one cannot stand; without one, a trade may use the whole day.
@@ -264,6 +285,10 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
           </div>
         )}
         {error && <p className="hire-sub warn">{error}</p>}
+        {real && (vault?.version ?? 0) >= 3 && (
+          <p className="hire-sub">{saveSession ? t.hsSessionNew(new Date(sesUntil * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US'), money(sesMax)) : ses ? t.hsSessionOk(new Date(ses.until * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US')) : ''}</p>
+        )}
+        {pfee > 0 && <p className="hire-sub">{t.hsPlatformFee(feeText(pfee), money(feeOn(per, pfee)))}</p>}
         <ul className="hire-checks">{t.hsChecks.map((c) => <li key={c}><Icon name="check" size={16} />{c}</li>)}</ul>
         <p className="hire-trust"><a href="?trust" target="_blank" rel="noreferrer">{t.navTrust} ↗</a></p>
         {(why === 'login' || why === 'off') && <p className="hire-note demo">{why === 'login' ? t.hsLogin : t.hsDemo}</p>}

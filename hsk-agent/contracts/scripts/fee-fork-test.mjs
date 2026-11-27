@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createPublicClient, createTestClient, createWalletClient, decodeEventLog, encodeFunctionData, formatUnits, http, toFunctionSelector } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { agentIdOf, createVault, executeTrade, feesReceived, forOwner, vaultStatus, vaultVersion, TOKENS, USDT } from '../../server/executor.ts';
+import { agentIdOf, createVault, executeTrade, feesReceived, forOwner, platformFee, vaultStatus, vaultVersion, TOKENS, USDT } from '../../server/executor.ts';
 
 const PORT = process.env.FORK_PORT || '8557';
 const RPC = `http://127.0.0.1:${PORT}`;
@@ -20,6 +20,8 @@ const KEYS = {
   creator: '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a',
   stranger: '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6',
   oldOwner: '0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a',
+  guardian: '0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e',
+  treasury: '0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356',
 };
 const art = (p) => JSON.parse(readFileSync(new URL(p, import.meta.url)));
 const v3 = { factory: art('../out/MoaVaultFactory.json'), vault: art('../out/MoaVault.json') };
@@ -56,7 +58,7 @@ try {
   const deploy = async (f, args) => (await mined(await W.owner.deployContract({ abi: f.abi, bytecode: f.bytecode, args }))).contractAddress;
   const oldFactory = await deploy(v2.factory, [acc.agent.address, USDT, ROUTER, NO_LIMIT, NO_LIMIT, 150, 0, ...markets]);
   // version 3 starts every vault with safe limits ($50 / $100 a day, 15% stop-loss); no guardian here
-  const factory = await deploy(v3.factory, [acc.agent.address, USDT, ROUTER, 50_000_000n, 100_000_000n, 150, 1500, ...markets, '0x0000000000000000000000000000000000000000']);
+  const factory = await deploy(v3.factory, [acc.agent.address, USDT, ROUTER, 50_000_000n, 100_000_000n, 150, 1500, ...markets, acc.guardian.address]);
   console.log('fork block', await pub.getBlockNumber(), 'factory v3', factory, 'factory v2', oldFactory);
   const base = { rpcUrl: RPC, chainId: 177, factory, legacyFactories: [oldFactory], agentKey: KEYS.agent, explorer: 'https://hsk.blockscout.com', minOutBufferBps: 100, maxVaultsPerDay: 5 };
 
@@ -188,6 +190,30 @@ try {
   const [, cost, value, stopAt] = await read('position', [TOKENS.ETH.address]);
   check('after a buy that paid 1%, the holding cost $29.70 (what went into the pool)', fresh.ok && cost === 29_700_000n, `cost ${formatUnits(cost, 6)}, worth ${formatUnits(value, 6)}, stop under ${formatUnits(stopAt, 6)}`);
   check('so a 1% stop-loss is not set off by the fee: a stranger\'s stopOut is refused', (await refusal(acc.stranger, 'stopOut', [TOKENS.ETH.address])) === 'StopNotReached' && value < 30_000_000n * 99n / 100n);
+
+  // the platform fee switch: 0 by default, set only by the factory's guardian, never above 0.2%, inside the limits
+  check('the platform fee starts at 0 and the server reports 0', (await platformFee(base)) === 0 && (await vaultStatus(cfg)).platformFeeBps === 0);
+  const fAbi = v3.factory.abi;
+  const feeRefusal = async (account, args) => { try { await pub.simulateContract({ address: factory, abi: fAbi, functionName: 'setPlatformFee', args, account }); return 'went through'; } catch (e) { return /(not guardian|fee too high|no treasury)/.exec(String(e.message))?.[1] ?? String(e.message).slice(0, 60); } };
+  check('a stranger, the agent key and a vault owner cannot set a platform fee', (await feeRefusal(acc.stranger, [20, acc.treasury.address])) === 'not guardian' && (await feeRefusal(acc.agent, [20, acc.treasury.address])) === 'not guardian' && (await feeRefusal(acc.owner, [20, acc.treasury.address])) === 'not guardian');
+  check('the guardian cannot set more than 0.2%, nor a fee with no treasury', (await feeRefusal(acc.guardian, [21, acc.treasury.address])) === 'fee too high' && (await feeRefusal(acc.guardian, [10, '0x0000000000000000000000000000000000000000'])) === 'no treasury');
+  await test.setBalance({ address: acc.guardian.address, value: 10n ** 20n });
+  await mined(await W.guardian.writeContract({ address: factory, abi: fAbi, functionName: 'setPlatformFee', args: [20, acc.treasury.address] }));
+  check('at 0.2% the server and the vault status report it', (await platformFee(base)) === 20 && (await vaultStatus(cfg)).platformFeeBps === 20);
+  await setFee(A, creator, 50);
+  const pT0 = await usdt(acc.treasury.address), pC0 = await usdt(creator), pV0 = await usdt(vault), pDay = await day(), pSpent = await read('spentOnDay', [pDay]), pCost = await read('costUsdt', [TOKENS.HSK.address]);
+  const pBuy = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 10, note: 'platform fee on', creator: { address: creator, feeBps: 50 }, agent: 'hire-a' });
+  check('a $10 buy pays the treasury exactly $0.02 and the creator $0.05; the vault spends exactly $10', pBuy.ok && (await usdt(acc.treasury.address)) - pT0 === 20_000n && (await usdt(creator)) - pC0 === 50_000n && pV0 - (await usdt(vault)) === 10_000_000n, pBuy.ok ? '' : pBuy.reason);
+  check('the platform fee counts toward the day\'s spending; the cost booked is what went into the pool ($9.93)', (await read('spentOnDay', [pDay])) - pSpent === 10_000_000n && (await read('costUsdt', [TOKENS.HSK.address])) - pCost === 9_930_000n);
+  const hskHeld = await pub.readContract({ address: TOKENS.HSK.address, abi: erc20, functionName: 'balanceOf', args: [vault] });
+  const pT1 = await usdt(acc.treasury.address), pC1 = await usdt(creator), pV1 = await usdt(vault);
+  const pSell = await executeTrade(cfg, { asset: 'HSK', side: 'sell', amount: Number(formatUnits((hskHeld * 999n) / 1000n, 18)), note: 'sell with fees', creator: { address: creator, feeBps: 50 }, agent: 'hire-a' });
+  const tGot = (await usdt(acc.treasury.address)) - pT1, cGot = (await usdt(creator)) - pC1, vGot = (await usdt(vault)) - pV1, gross = tGot + cGot + vGot;
+  check('a sell pays the treasury floor(0.2% of what came out) and the creator floor(0.5%)', pSell.ok && tGot === (gross * 20n) / 10_000n && cGot === (gross * 50n) / 10_000n, pSell.ok ? `gross ${gross}` : pSell.reason);
+  await mined(await W.guardian.writeContract({ address: factory, abi: fAbi, functionName: 'setPlatformFee', args: [0, '0x0000000000000000000000000000000000000000'] }));
+  const pT2 = await usdt(acc.treasury.address);
+  const pOff = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 5, note: 'platform fee off', agent: 'hire-b' });
+  check('back at 0, the treasury gets nothing', pOff.ok && (await usdt(acc.treasury.address)) === pT2);
 
   // the server never sends the new call to an old vault
   const oldCfg = await forOwner(base, acc.oldOwner.address);

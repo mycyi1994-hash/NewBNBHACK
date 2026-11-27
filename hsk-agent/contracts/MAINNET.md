@@ -138,35 +138,57 @@ What version 3 changes, against what the panel of judges found:
 | Price floor of `trade` | `minOut` within `maxSlippageBps` of the pool price **now** (`slot0`), so a key that moves the pool first could sandwich its own vault | within `maxSlippageBps` of the pool's **10-minute time-weighted average** (the same `observe()` average the stop-loss uses; Uniswap's `getSqrtRatioAtTick` in `_sqrtAtTick`). A pool price already worse than that floor is refused as `PriceMoving` before anything is swapped. Views: `quoteTwap`, `minOutFloor`. In a fast fall the agent's own sell now waits until the price has held, like the stop-loss; the owner can always withdraw |
 | Starting limits | the factory started vaults with **no limit** and the stop-loss off | the factory refuses to deploy with no limit or no stop-loss: per trade above 0, per day at most 10,000 USDT, a stop-loss of 1–50%, slippage up to 3%. The scripts default to **$50 per trade, $100 per day, a 15% stop-loss, 1.5% slippage**. Each owner changes or removes them in the account menu (`setLimits`, `setStopLoss(0)`) |
 | Per-agent budgets | only in the server (`autoRunner`) | `setBudget(agentId, usdt)` and `setBudgetsOn(bool)`, owner only. With budgets on, every buy names an agent (`tradeFor(…, agentId, feeBps)`; `trade` is agent 0) and is refused over what is left of that agent's budget (`OverBudget`). Sells need no budget. `agentId` = keccak256 of the hired agent's id in the app. Off by default, so nothing changes until the owner turns it on; the hire sheet then sets each new agent's budget in the same wallet confirmations |
-| Shared hot agent key | each owner can replace the agent (`setAgent`) or pause; no global switch | the same per vault (now also refusing the owner as agent), plus a **guardian** fixed in the factory at deployment: `setHalted(true)` stops agent trading on every vault at once (`Halted`). It cannot move funds, change limits or block withdrawals, deposits or the stop-loss. The deploy script makes the deploying wallet the guardian unless `--guardian 0x…` names another; keep that key off the server |
+| Shared hot agent key | each owner can replace the agent (`setAgent`) or pause; no global switch | **a session per vault**: the owner authorises the agent key until a date (at most a year), on chosen coins, at most so much per buy (`setSession(agent, until, maxTradeUsdt, tokens)`), and ends it at once with `revokeSession()`. A new vault starts with a 30-day session on its starting coins at its starting per-trade limit; after that the key can do nothing on it (`SessionOver`, `NotInSession`, `TradeTooLarge`) until the owner renews, which the hire sheet asks for when a session is missing, ends within a week, lacks the coin or is below the buy. The server reads the session before sending, uses the key the owner authorised (`MOA_AGENT_EXTRA_KEYS` holds earlier keys during a rotation) and sends nothing a session does not cover. Plus a **guardian** fixed in the factory: `setHalted(true)` stops agent trading on every vault at once (`Halted`); it cannot move funds, change limits or block withdrawals, deposits or the stop-loss |
+| Platform fee | (none) | a switch held by the guardian on the factory: `setPlatformFee(bps, treasury)`, **0 by default**, never above 20 bps (0.2%, checked again by every vault). Paid in USDT like the creator fee, from the USDT going in on a buy or coming out on a sell, inside the limits and budgets. The trust page and the hire sheet show it only when it is not 0. It stays 0; it exists so a business decision needs no new contract |
 | Creator fee | (none) | approved per hired agent, not per creator: `setCreatorFee(agentId, creator, bps)`, at most 1%. `tradeFor` cannot name a creator at all; the vault pays the creator the owner approved for that agent. The agent key can only choose which agent a trade is for, so with budgets on, a creator can be credited with no more than that agent's own budget |
 | Reentrancy | swaps and stop-outs updated the books after the swap | books before the swap, and `trade`, `tradeFor`, `stopOut` and `withdraw` refuse to be entered twice |
 
-Static analysis: Slither 0.11.6 (`audit/slither.txt`), 23 findings, none rated high. Slither rates some of them
-medium; each was reviewed and kept for the reason given: `divide-before-multiply` in `_quoteAt` (intended: it keeps the intermediate under 2^256; the loss is under one
-unit of the output token at the pools' prices) and in `_sqrtAtTick` (Uniswap's own code), `incorrect-equality` on
-`== 0` checks, `unused-return` of `slot0`/`observe` fields, `calls-loop` in the constructor's market list,
-`reentrancy-events` (events after the router call, which is a fixed, allow-listed contract), `missing-zero-check` on
-the guardian (zero means no guardian, by design), complexity and long literals in `_sqrtAtTick`.
+Static analysis: Slither 0.11.6 (`audit/slither.txt`), 31 findings: none rated high; 12 rated medium, from three
+detectors, each reviewed and kept: `divide-before-multiply` (3: `_quoteAt` keeps its intermediate under 2^256, losing
+under one unit of the output token at the pools' prices; `_sqrtAtTick` is Uniswap's own code), `incorrect-equality` (3:
+`== 0` checks on amounts and holdings) and `unused-return` (6: the unused fields of `slot0` and `observe`). The low and
+informational ones: `reentrancy-events` (events after the call to the fixed, allow-listed router), `timestamp` (the
+session and the day's limit are about time by design), `calls-loop` (the constructor's market list),
+`missing-zero-check` on the guardian (zero means no guardian), complexity and long literals in `_sqrtAtTick`.
+
+Solidity tests with Foundry (`forge` 1.5.1; `sh scripts/foundry-setup.sh` fetches forge-std, then `forge test`):
+`test/MoaVault.t.sol` has 14 unit tests (every refusal: agent, owner-only calls, limits, the average-price floor,
+session scope, end and revocation, creator and platform fees to the unit, fee caps, budgets, halt, stop-loss, pause,
+markets, books on withdrawal) and 5 invariants over 256 runs × 80 random calls by the owner, the agent key, the
+guardian and strangers against mock pool and router (`test/Mocks.sol`): every USDT in the vault accounted for; the
+agent key and strangers end with nothing and never pass an owner-only or guardian-only call; creator and platform fees
+exact and capped; no buy outside the limits, session or budget; budgets add up per agent. Two deliberate bugs (paying
+the approved creator rate instead of the asked one; a budget off by one unit) were each caught. Coverage
+(`forge coverage --ir-minimum`, `audit/coverage.txt`): MoaVault 99.1% of lines, 66.2% of branches; factory 94.7% of lines.
 
 Tests on a fork of mainnet (each starts its own Hardhat node):
 
-- `scripts/fork-test.mjs`, 55 checks: everything above for version 2, plus: a factory with unsafe starting values
+- `scripts/fork-test.mjs`, 69 checks: everything above for version 2, plus: a factory with unsafe starting values
   cannot be deployed; a new vault starts with the safe limits and a 15% stop-loss; the owner can turn it off; right
   after the price is pushed down, the agent's sell is refused (`PriceMoving`), and so is a key asking for a floor from
   the pushed price (`SlippageTooLoose`); ten minutes later the same sell goes through; only the guardian can halt;
   halted, no trade goes through, the status reports it and the owner still withdraws; after the halt is lifted trading
-  works; after the owner replaces the agent key the old key is refused and cannot put itself back.
-- `scripts/fee-fork-test.mjs`, 40 checks: creator fees per agent (who may approve, the 1% cap, exact amounts on buys
+  works; after the owner replaces the agent key the old key is refused and cannot put itself back. Sessions: a new
+  vault starts with 30 days on all three coins at $50 a buy; only the owner sets one (not the agent key, not a
+  stranger); over a year, already over or for the owner's own key is refused; a coin outside the session is refused by
+  the server and by the vault; a buy over the session's cap is refused though the vault has no limit; after the end and
+  after `revokeSession` nothing is sent; a session for another key the server holds is traded with that key, and a
+  server without it sends nothing; the stop-loss never depends on the session.
+- `scripts/fee-fork-test.mjs`, 48 checks: creator fees per agent (who may approve, the 1% cap, exact amounts on buys
   and sells, nothing to an unapproved creator, the server asking no fee when the approved creator is someone else,
   a withdrawn approval), budgets (a stranger cannot set them; a buy over an agent's budget is refused; the agent key
   cannot credit another agent's $20 to a creator past that agent's budget; a buy for no agent is refused with budgets
-  on; selling needs no budget), limits and stop-loss with fees, old vaults sent only `trade`, fees read back from events.
+  on; selling needs no budget), limits and stop-loss with fees, old vaults sent only `trade`, fees read back from events,
+  and the platform fee (0 at first; only the guardian sets it; never above 0.2% or without a treasury; at 0.2% a $10
+  buy pays exactly $0.02 to the treasury and $0.05 to the creator while the vault spends exactly $10 and the day counts
+  $10; a sell pays floor(0.2%) and floor(0.5%) of what came out; back at 0 nothing is paid).
 - `scripts/fuzz-fork-test.mjs`, randomized: 400 random steps (owner limits, budgets, creator approvals, agent buys and
   sells for random agents asking random fees, strangers calling owner functions, jumps in time), each checked against
   a model of what the vault must allow and an exact account of every unit of USDT; invariants I1–I8 are at the top of
-  the file. `FUZZ_SEED` and `FUZZ_RUNS` repeat or lengthen a run. On 27 Nov 2026: seed 1, 400 steps, 1,207 checks;
-  seed 7, 300 steps, 1,160 checks; none failed.
+  the file. `FUZZ_SEED` and `FUZZ_RUNS` repeat or lengthen a run. Buys are steered to where they can go through four
+  times in five, and the run fails unless at least 30% of all steps are buys the vault carried out. On 27 Nov 2026,
+  against version 3 with sessions and the platform fee: seed 1, 400 steps, 2,009 checks, 148 buys carried out (37%);
+  seed 7, 300 steps, 1,420 checks, 99 buys (33%); none failed.
 
 ### Owner steps, when you decide to deploy (from `hsk-agent/contracts`)
 
@@ -178,6 +200,8 @@ Tests on a fork of mainnet (each starts its own Hardhat node):
    node --experimental-strip-types scripts/fee-fork-test.mjs
    FUZZ_RUNS=400 node --experimental-strip-types scripts/fuzz-fork-test.mjs
    ```
+
+1b. Run the Solidity tests: `sh scripts/foundry-setup.sh && forge test` (Foundry from https://getfoundry.sh).
 
 2. Choose the guardian: a wallet you control that is **not** the agent wallet and not on the server (a hardware
    wallet is best). Copy `deployments/hsk-mainnet.json` to `deployments/hsk-mainnet-v2.json`, then dry-run:
@@ -210,7 +234,17 @@ Tests on a fork of mainnet (each starts its own Hardhat node):
    key, deploy a new factory with it, and lift the halt only if the old key is safe. One owner alone can do the same
    for their own vault: `node scripts/vault.mjs pause` or `node scripts/vault.mjs agent 0xNEW`.
 
-6. Owners who want on-chain per-agent budgets: `node scripts/vault.mjs budgets on` (the app's hire sheet then sets
+6. Sessions: a new vault's agent may trade for 30 days; renewing is one confirmation in the hire sheet, or
+   `node scripts/vault.mjs session 0xAGENT 90 50` (90 days, $50 a buy, all three coins), and `node scripts/vault.mjs
+   revoke` ends it. To rotate the agent key without stopping anyone: put the new key in `MOA_AGENT_PRIVATE_KEY` and
+   the old one in `MOA_AGENT_EXTRA_KEYS`; vaults move to the new key as their owners renew, and the old key is
+   dropped when no session names it. Not done (the remaining gap): a key per vault held apart from the server (each
+   would need its own gas), and owners granting sessions by EIP-712 signature instead of a transaction.
+
+7. The platform fee stays 0. To change it, the guardian calls `setPlatformFee(bps, treasury)` on the factory
+   (Blockscout's *Write contract* tab), at most 20 bps; the trust page and the hire sheet then show it.
+
+8. Owners who want on-chain per-agent budgets: `node scripts/vault.mjs budgets on` (the app's hire sheet then sets
    each agent's budget), or per agent `node scripts/vault.mjs budget <hired agent id> 100`. Creator fees without the
    app: `node scripts/vault.mjs creator <hired agent id> 0xCREATOR 0.5`.
 

@@ -14,6 +14,9 @@
 //   node scripts/vault.mjs budget <agent> 100      what one hired agent may still spend on buys, in USDT (version 3)
 //   node scripts/vault.mjs budgets on | off        when on, every buy must fit the budget of the agent it is for (version 3)
 //   (<agent> is the hired agent's id in the app; the vault keys it as keccak256 of that id)
+//   node scripts/vault.mjs session 0x… 90 50       version 3: let agent key 0x… trade for 90 days, at most $50 a buy, on all
+//                                                  three coins (add WHSK/WETH/WBTC names to narrow it)
+//   node scripts/vault.mjs revoke                  version 3: end the agent key's session now
 //
 // The factory address comes from --factory 0x…, else MOA_FACTORY_ADDRESS, else deployments/hsk-mainnet.json.
 // A vault made by an earlier factory still answers status, fund, withdraw, pause, limits and agent: add
@@ -68,7 +71,7 @@ if (cmd === 'status' && rest[0]) {
   await status(v);
   process.exit(0);
 }
-if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent', 'creator', 'budget', 'budgets'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
+if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent', 'creator', 'budget', 'budgets', 'session', 'revoke'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
 
 const key = await ownerKey('the vault owner\'s wallet');
 if (!key) fail(cmd === 'status' ? 'usage: status <owner address>' : 'the key is missing or is not a 64-hex private key.');
@@ -126,6 +129,19 @@ if (cmd === 'fund') {
   const bps = rest[0] === 'off' ? 0 : Math.round(Number(rest[0]) * 100);
   if (!(bps >= 0 && bps <= 9000)) fail('usage: stop <percent, up to 90> | stop off');
   await run(bps ? `Set the stop-loss: anyone may sell a holding once it is worth ${bps / 100}% less than it cost.` : 'Turn the stop-loss off.', 'stop', call('setStopLoss', [bps]));
+} else if (cmd === 'session' || cmd === 'revoke') {
+  const version = await pub.readContract({ address: vault, abi, functionName: 'VERSION' }).then(Number, () => 2);
+  if (version < 3) fail('this vault is an earlier version: its agent has no session (use "agent" or "pause").');
+  if (cmd === 'revoke') {
+    await run('End the agent key\'s session now: it can do nothing more on this vault until a new session.', 'revoke', call('revokeSession', []));
+  } else {
+    const [who, days, max, ...names] = rest;
+    const until = Math.floor(Date.now() / 1000) + Math.round(Number(days) * 86_400);
+    const perBuy = limitOf(max);
+    const coins = names.length ? names.map((n) => MARKETS[n.toUpperCase()]?.token) : Object.values(MARKETS).map((m) => m.token);
+    if (!isAddress(who ?? '') || !(Number(days) > 0 && Number(days) <= 365) || perBuy <= 0n || coins.some((c) => !c)) fail('usage: session <agent address> <days, up to 365> <most USDT per buy|none> [WHSK WETH WBTC]');
+    await run(`Let ${who} trade on this vault until ${new Date(until * 1000).toISOString().slice(0, 10)}, at most ${cap(perBuy)} a buy, on ${names.length ? names.join(', ') : 'WHSK, WETH and WBTC'}.`, 'session', call('setSession', [getAddress(who), BigInt(until), perBuy, coins]));
+  }
 } else if (cmd === 'creator' || cmd === 'budget' || cmd === 'budgets') {
   const version = await pub.readContract({ address: vault, abi, functionName: 'VERSION' }).then(Number, () => 2);
   if (version < 3) fail('this vault is an earlier version: it has no per-agent creator fees or budgets.');

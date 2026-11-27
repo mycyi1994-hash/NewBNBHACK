@@ -41,16 +41,21 @@ Log in with a wallet on HSK Chain. Without one, the whole app works as a demo th
 They have been run on a local fork of mainnet only (scripts in `hsk-agent/contracts/scripts/`). The contracts are
 **unaudited**.
 
-**Vault version 3 is not deployed.** It is compiled and tested on a fork only (27 Nov 2026): `fork-test.mjs` 55/55,
-`fee-fork-test.mjs` 40/40, and a randomized `fuzz-fork-test.mjs` (over 2,900 invariant checks across three seeds, 0
-failed); Slither reports 23 findings, none rated high; the ones it rates medium (divide-before-multiply, incorrect-equality,
-unused-return) were reviewed and kept with reasons in `contracts/MAINNET.md` (`contracts/audit/slither.txt`). Version 3 adds:
+**Vault version 3 is not deployed.** It is compiled and tested only, on 27 Nov 2026:
+- fork tests: `fork-test.mjs` 69/69 and `fee-fork-test.mjs` 48/48;
+- a randomized fork fuzz test: over 3,400 invariant checks, 0 failed;
+- Foundry: 19 tests, 5 of them invariants (256 runs × 80 calls); MoaVault line coverage 99% (`contracts/audit/coverage.txt`);
+- Slither: 0 high findings; 12 rated medium, each reviewed and kept with reasons in `contracts/MAINNET.md`
+  (`contracts/audit/slither.txt`).
+
+Version 3 adds:
 - a price floor from the pool's 10-minute average instead of the price now;
 - safe starting limits that the owner can change;
+- a per-vault agent session with an expiry, coins and a per-trade cap, which the owner can revoke;
 - optional on-chain budgets per agent;
 - a guardian that can halt agent trading on every vault (funds, withdrawals and stop-loss untouched);
-- owner-replaceable agent keys;
-- creator fees approved per hired agent.
+- creator fees approved per hired agent;
+- a platform-fee switch that is 0 and capped at 0.2% in the contract.
 
 Until the owner deploys it, new vaults are version 2; the server tells versions apart and sends version-2 vaults only
 the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) lists what will be run and recorded here.

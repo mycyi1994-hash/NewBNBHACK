@@ -78,6 +78,8 @@ try {
   const factory = (await mined(await W.owner.deployContract({ abi: F.abi, bytecode: F.bytecode, args: [acc.agent.address, USDT, ROUTER, 50_000_000n, 100_000_000n, 150, 1500, assets.map((a) => TOKENS[a].address), assets.map((a) => POOLS[a]), ZERO] }))).contractAddress;
   await mined(await W.owner.writeContract({ address: factory, abi: F.abi, functionName: 'createVault', args: [acc.owner.address] }));
   const vault = await pub.readContract({ address: factory, abi: F.abi, functionName: 'vaultOf', args: [acc.owner.address] });
+  // a long session with no per-buy cap of its own, so the model's limits are the vault's (sessions: fork-test.mjs)
+  await mined(await W.owner.writeContract({ address: vault, abi, functionName: 'setSession', args: [acc.agent.address, BigInt(Number((await pub.getBlock()).timestamp) + 360 * 86_400), NO_LIMIT, assets.map((a) => TOKENS[a].address)] }));
   await test.impersonateAccount({ address: POOLS.HSK });
   await test.setBalance({ address: POOLS.HSK, value: 10n ** 21n });
   const poolW = createWalletClient({ account: POOLS.HSK, chain, transport: http(RPC) });
@@ -99,7 +101,7 @@ try {
   for (let step = 0; step < RUNS; step++) {
     const before = await snapshot();
     const r = rnd();
-    if (r < 0.08) {
+    if (r < 0.06) {
       // owner: new limits (sometimes none at all)
       const none = rnd() < 0.15;
       const trade = none ? NO_LIMIT : usd(between(1, 60));
@@ -108,21 +110,21 @@ try {
       await ownerTx('setLimits', [trade, daily, slip]);
       Object.assign(m, { maxTrade: trade, maxDaily: daily, slip });
       tally('setLimits');
-    } else if (r < 0.15) {
+    } else if (r < 0.11) {
       const id = pick(ids), amount = usd(between(0, 80));
       await ownerTx('setBudget', [agentIdOf(id), amount]);
       m.budget[id] = amount;
       if (rnd() < 0.5) { m.budgetsOn = rnd() < 0.5; await ownerTx('setBudgetsOn', [m.budgetsOn]); }
       check('I4 the budget the owner set reads back', (await read('budgetLeft', [agentIdOf(id)])) === amount);
       tally('setBudget');
-    } else if (r < 0.22) {
+    } else if (r < 0.16) {
       const id = pick(ids.slice(1)), who = pick(creators), bps = between(0, 150);
       let got = 'ok';
       try { await pub.simulateContract({ address: vault, abi, functionName: 'setCreatorFee', args: [agentIdOf(id), who, bps], account: acc.owner }); await ownerTx('setCreatorFee', [agentIdOf(id), who, bps]); } catch (e) { got = reason(e); }
       if (bps > 100) check('I7 an approval over 1% is refused', got === 'FeeTooHigh', `${bps} bps: ${got}`);
       else { check('I7 an approval up to 1% goes through', got === 'ok', got); m.creatorOf[id] = bps ? { who, bps } : undefined; }
       tally('setCreatorFee');
-    } else if (r < 0.27) {
+    } else if (r < 0.20) {
       // a stranger or the agent key tries an owner-only call
       const who = pick([acc.stranger, acc.agent]);
       const [fn, args] = pick([['setLimits', [NO_LIMIT, NO_LIMIT, 1000]], ['setBudget', [agentIdOf('agent-a'), NO_LIMIT]], ['setBudgetsOn', [false]], ['setCreatorFee', [agentIdOf('agent-a'), who.address, 100]], ['withdraw', [USDT, 1n]], ['setAgent', [who.address]], ['setStopLoss', [0]], ['setPaused', [false]]]);
@@ -130,7 +132,7 @@ try {
       try { await pub.simulateContract({ address: vault, abi, functionName: fn, args, account: who }); } catch (e) { got = reason(e); }
       check(`I7 ${fn} from a non-owner is refused`, got === 'NotOwner', got);
       tally('strangerCall');
-    } else if (r < 0.33) {
+    } else if (r < 0.24) {
       // time passes: minutes to a day and a half
       await test.increaseTime({ seconds: pick([30, 300, 700, 3_600, 86_400, 130_000]) });
       await test.mine({ blocks: 1 });
@@ -138,7 +140,7 @@ try {
       const ts = (await pub.getBlock()).timestamp;
       if (ts % 86_400n > 86_280n) { await test.increaseTime({ seconds: 240 }); await test.mine({ blocks: 1 }); }
       tally('time');
-    } else if (r < 0.40) {
+    } else if (r < 0.28) {
       // I8: once the pool has been still for more than the averaging window, average and spot agree
       await test.increaseTime({ seconds: 700 });
       await test.mine({ blocks: 1 });
@@ -150,20 +152,36 @@ try {
       tally('twapMath');
     } else {
       // the agent trades: a buy or a sell, for a random agent, asking a random fee, sometimes with too low a minOut
-      const asset = pick(assets), token = TOKENS[asset].address, id = pick(ids), feeAsk = between(0, 150);
+      const asset = pick(assets), token = TOKENS[asset].address, feeAsk = between(0, 150);
       const held = await bal(token, vault);
-      const isBuy = held === 0n || rnd() < 0.6;
+      const isBuy = held === 0n || rnd() < 0.7;
+      // Most buys are steered to where they can go through (an agent with budget left, a day with room), so the
+      // paying path is exercised often; the rest go anywhere and probe the refusals.
+      const steer = isBuy && rnd() < 0.8;
+      const withRoom = ids.filter((x) => !m.budgetsOn || (m.budget[x] ?? 0n) >= 1_000_000n);
+      const id = steer && withRoom.length ? pick(withRoom) : pick(ids);
+      if (steer && m.maxDaily - (m.spent[await dayNow()] ?? 0n) < 1_000_000n) {
+        // the day's limit is used up: wait for the next UTC day (five minutes past midnight)
+        const ts = (await pub.getBlock()).timestamp;
+        await test.increaseTime({ seconds: Number(86_400n - (ts % 86_400n) + 300n) });
+        await test.mine({ blocks: 1 });
+        tally('time');
+      }
       const vaultUsdt = await bal(USDT, vault);
       const approved = m.creatorOf[id];
       const rate = approved && id ? Math.min(feeAsk, approved.bps) : 0;
       const cap = m.maxTrade === NO_LIMIT ? 70 : Math.min(70, Number(m.maxTrade / 1_000_000n) + 8);
-      const amountIn = isBuy ? usd(between(1, cap) + rnd()) : (held * BigInt(between(20, 100))) / 100n;
+      // Biased toward buys the vault can carry out (three in four aim inside every limit), so most steps exercise the
+      // paying path; the rest probe the edges.
+      const room = [m.maxTrade, m.maxDaily - (m.spent[await dayNow()] ?? 0n), m.budgetsOn ? (m.budget[id] ?? 0n) : NO_LIMIT, await bal(USDT, vault)].reduce((a, b) => (a < b ? a : b));
+      const inside = room >= 1_000_000n && rnd() < 0.75;
+      const amountIn = isBuy ? (inside ? 1_000_000n + BigInt(Math.floor(rnd() * Number((room > 70_000_000n ? 70_000_000n : room) - 1_000_000n))) : usd(between(1, cap) + rnd())) : (held * BigInt(between(20, 100))) / 100n;
       // dust: the pool rounds its 0.3% fee up to a whole unit, so a sale of a few units cannot meet any fair floor
       if (!isBuy && amountIn < 10n ** BigInt(Math.max(0, TOKENS[asset].decimals - 4))) continue;
       if (amountIn === 0n) continue;
       const fee = isBuy ? (amountIn * BigInt(rate)) / 10_000n : 0n;
       const floor = await read('minOutFloor', [token, isBuy, amountIn - fee]);
-      const low = rnd() < 0.1;
+      const low = !steer && rnd() < 0.15;
       // 10 bps over the floor, as the server asks: the average moves a little with every second until the next block
       const minOut = low ? (floor * 97n) / 100n : (floor * 10_010n) / 10_000n;
       const day = await dayNow();
@@ -219,6 +237,8 @@ try {
   }
   console.log('\nactions:', JSON.stringify(counts));
   const trades = Object.entries(counts).filter(([k]) => /^(buy|sell|refused)/.test(k)).reduce((n, [, v]) => n + v, 0);
+  const bought = (counts.buy ?? 0) + (counts['buy with fee'] ?? 0);
+  check('at least 30% of all steps are buys the vault carried out', bought * 10 >= RUNS * 3, `${bought} of ${RUNS}`);
   check('price refusals stay rare: under 10% of the trades tried', (counts['refused: price moving'] ?? 0) * 10 < trades, `${counts['refused: price moving'] ?? 0} of ${trades}`);
 } catch (e) {
   fail++;

@@ -5,6 +5,7 @@
   "scripts": {
     "compile": "node scripts/compile.cjs",
     "test": "node --experimental-strip-types scripts/fork-test.mjs",
+    "test:fees": "node --experimental-strip-types scripts/fee-fork-test.mjs",
     "deploy:check": "node scripts/deploy-mainnet.mjs",
     "vault": "node scripts/vault.mjs"
   },

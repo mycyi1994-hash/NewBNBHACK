@@ -154,6 +154,8 @@ try {
   try { await pub.simulateContract({ address: vault, abi, functionName: 'setLimits', args: [NO_LIMIT, NO_LIMIT, 150], account: agent }); } catch (e) { agentLimitsRefused = /NotOwner/.test(String(e.message)); }
   check('the agent key cannot change the limits', agentLimitsRefused);
   await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setLimits', args: [NO_LIMIT, NO_LIMIT, 150] }) });
+  // version 3: the agent's session has its own per-buy cap ($50 from the start); the owner lifts it with the limits
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setSession', args: [agent.address, BigInt(Number((await pub.getBlock()).timestamp) + 300 * 86_400), NO_LIMIT, assets.map((a) => TOKENS[a].address)] }) });
   const open = await vaultStatus(cfg);
   check('after the owner removes the limits, the server reports none', open.maxTradeUsdt === undefined && open.maxDailyUsdt === undefined && open.remainingTodayUsdt === undefined);
   const big = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 100, note: 'no limits set' });
@@ -256,11 +258,56 @@ try {
 
   await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setAgent', args: [carol.address] }) });
   const revoked = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 2, note: 'revoked key' });
-  check('after the owner replaces the agent key on the vault, the old key is refused', !revoked.ok && /NotAgent/.test(revoked.reason), revoked.ok ? 'traded!' : revoked.reason.slice(0, 80));
+  check('after the owner replaces the agent key on the vault, the server holds no key for it and sends nothing', !revoked.ok && /another agent key/.test(revoked.reason), revoked.ok ? 'traded!' : revoked.reason.slice(0, 80));
   let agentSetAgent = 'went through';
   try { await pub.simulateContract({ address: vault, abi, functionName: 'setAgent', args: [agent.address], account: agent }); } catch (e) { agentSetAgent = /NotOwner/.test(String(e.message)) ? 'refused' : 'other'; }
   check('the old key cannot put itself back', agentSetAgent === 'refused');
+  let oldKeyRaw = 'went through';
+  try { await pub.simulateContract({ address: vault, abi, functionName: 'trade', args: [hskToken, true, 1_000_000n, NO_LIMIT, 'old key'], account: agent }); } catch (e) { oldKeyRaw = /NotAgent/.test(String(e.message)) ? 'NotAgent' : String(e.message).slice(0, 60); }
+  check('and the vault itself refuses the old key', oldKeyRaw === 'NotAgent');
   await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setAgent', args: [agent.address] }) });
+
+  // 10) the agent key's session: until when, which coins, most per buy; revocable; another key the owner authorises
+  const now = async () => Number((await pub.getBlock()).timestamp);
+  // the second user's vault has not been touched since it was made
+  const ses0 = (await vaultStatus(await forOwner(base, carol.address))).session;
+  const made0 = Number((await pub.getBlock({ blockNumber: (await pub.getTransactionReceipt({ hash: carolMade.txHash })).blockNumber })).timestamp);
+  check('a new vault starts with a session for the agent: 30 days from its making, all three coins, at the starting per-trade limit', ses0?.agent === agent.address && ses0.ours && ses0.assets.length === 3 && ses0.until === made0 + 30 * 86_400 && ses0.maxTradeUsdt === '50', JSON.stringify(ses0));
+  const sessionRefusal = async (account, args) => { try { await pub.simulateContract({ address: vault, abi, functionName: 'setSession', args, account }); return 'went through'; } catch (e) { return /(NotOwner|BadSession|MarketDisabled)/.exec(String(e.message))?.[1] ?? String(e.message).slice(0, 60); } };
+  const t0 = await now();
+  check('only the owner can set a session; the agent key cannot extend its own', (await sessionRefusal(carol, [carol.address, BigInt(t0 + 3600), 1_000_000n, [TOKENS.HSK.address]])) === 'NotOwner' && (await sessionRefusal(agent, [agent.address, BigInt(t0 + 86_400 * 300), NO_LIMIT, [TOKENS.HSK.address]])) === 'NotOwner');
+  check('a session longer than a year, already over, or for the owner\'s own key is refused', (await sessionRefusal(owner, [agent.address, BigInt(t0 + 400 * 86_400), 1n, []])) === 'BadSession' && (await sessionRefusal(owner, [agent.address, BigInt(t0 - 1), 1n, []])) === 'BadSession' && (await sessionRefusal(owner, [owner.address, BigInt(t0 + 3600), 1n, []])) === 'BadSession');
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setSession', args: [agent.address, BigInt(t0 + 86_400), 5_000_000n, [TOKENS.BTC.address]] }) });
+  const notHsk = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 2, note: 'outside the session' });
+  check('a coin outside the session is refused by the server before sending', !notHsk.ok && /does not cover HSK/.test(notHsk.reason), notHsk.ok ? 'traded!' : notHsk.reason);
+  let rawHsk = 'went through';
+  try { await pub.simulateContract({ address: vault, abi, functionName: 'trade', args: [TOKENS.HSK.address, true, 1_000_000n, NO_LIMIT, 'x'], account: agent }); } catch (e) { rawHsk = /NotInSession/.test(String(e.message)) ? 'NotInSession' : String(e.message).slice(0, 60); }
+  check('and by the vault itself if sent anyway', rawHsk === 'NotInSession');
+  const bigBtc = await executeTrade(cfg, { asset: 'BTC', side: 'buy', amount: 6, note: 'over the session cap' });
+  check('a $6 buy is refused by the session\'s $5 cap, though the vault itself has no limit', !bigBtc.ok && /TradeTooLarge\(6000000, 5000000\)/.test(bigBtc.reason), bigBtc.ok ? 'traded!' : bigBtc.reason.slice(0, 80));
+  const okBtc = await executeTrade(cfg, { asset: 'BTC', side: 'buy', amount: 5, note: 'inside the session' });
+  check('a $5 BTC buy inside the session goes through', okBtc.ok, okBtc.ok ? '' : okBtc.reason);
+  await test.increaseTime({ seconds: 86_401 });
+  await test.mine({ blocks: 1 });
+  const late = await executeTrade(cfg, { asset: 'BTC', side: 'buy', amount: 1, note: 'after the session' });
+  check('once the session has ended, the server sends nothing and says so', !late.ok && /session on this vault ended/.test(late.reason), late.ok ? 'traded!' : late.reason);
+  let rawLate = 'went through';
+  try { await pub.simulateContract({ address: vault, abi, functionName: 'trade', args: [TOKENS.BTC.address, true, 1_000_000n, NO_LIMIT, 'x'], account: agent }); } catch (e) { rawLate = /SessionOver/.test(String(e.message)) ? 'SessionOver' : String(e.message).slice(0, 60); }
+  check('and the vault refuses the key after its session', rawLate === 'SessionOver');
+  // the owner authorises another key the server holds (key rotation): the server uses it, and the old key is out
+  const newKey = '0xdf57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e';
+  const rotated = { ...cfg, agentKeys: [newKey] };
+  const t1 = await now();
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setSession', args: [privateKeyToAccount(newKey).address, BigInt(t1 + 7 * 86_400), 20_000_000n, assets.map((a) => TOKENS[a].address)] }) });
+  await test.setBalance({ address: privateKeyToAccount(newKey).address, value: 10n ** 20n });
+  const viaNew = await executeTrade(rotated, { asset: 'HSK', side: 'buy', amount: 3, note: 'with the new key' });
+  check('with a session for another key the server holds, it trades with that key', viaNew.ok && (await pub.getTransaction({ hash: viaNew.txHash })).from.toLowerCase() === privateKeyToAccount(newKey).address.toLowerCase(), viaNew.ok ? '' : viaNew.reason);
+  const viaOld = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 3, note: 'old key only' });
+  check('a server without that key refuses to send, and the old key is no longer the vault\'s agent', !viaOld.ok && /another agent key/.test(viaOld.reason), viaOld.ok ? 'traded!' : viaOld.reason);
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'revokeSession' }) });
+  const revokedS = await executeTrade(rotated, { asset: 'HSK', side: 'buy', amount: 3, note: 'after revoking' });
+  check('after the owner revokes the session, nothing is sent', !revokedS.ok && /session on this vault ended/.test(revokedS.reason), revokedS.ok ? 'traded!' : revokedS.reason);
+  check('the stop-loss is never tied to the session: stopOut stays open to anyone', !/SessionOver|NotAgent/.test(await (async () => { try { await pub.simulateContract({ address: vault, abi, functionName: 'stopOut', args: [TOKENS.BTC.address], account: carol }); return 'ok'; } catch (e) { return String(e.message); } })()));
 
   // 8) no vault configured -> executor refuses before touching the chain
   const r8 = await executeTrade({ ...cfg, vault: undefined }, { asset: 'HSK', side: 'buy', amount: 5, note: 'x' });

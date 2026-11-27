@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {MoaVault} from "./MoaVault.sol";
+import {MoaVault, IMoaTerms} from "./MoaVault.sol";
 
 /// @title MoaVaultFactory
 /// @notice Makes one MoaVault per owner, the same way for everyone: the same USDT, router, agent, markets and
@@ -9,10 +9,13 @@ import {MoaVault} from "./MoaVault.sol";
 ///         vault's owner and the only one who can withdraw, change its limits and stop-loss, replace its agent or pause it.
 ///         Every vault starts with real limits and a stop-loss (the constructor refuses "no limit" or "no stop-loss" as a
 ///         default); each owner may change or remove them afterwards.
-///         One switch: the `guardian` may halt agent trading on every vault at once, for example if the shared agent
-///         key may have leaked. The halt never touches funds: withdrawals, deposits and the stop-loss keep working.
+///         The `guardian` (the factory's owner) holds two switches and nothing else:
+///          - halt agent trading on every vault at once, for example if the shared agent key may have leaked. The halt
+///            never touches funds: withdrawals, deposits and the stop-loss keep working;
+///          - a platform fee, 0 unless set, never above MAX_PLATFORM_FEE_BPS (0.2%), paid in USDT by each vault to the
+///            treasury on each agent trade and counted toward the vault's limits.
 ///         The guardian is fixed at deployment (zero for none); nothing else can change, and the factory never holds funds.
-contract MoaVaultFactory {
+contract MoaVaultFactory is IMoaTerms {
     address public immutable usdt;
     address public immutable router;
     address public immutable agent;
@@ -25,6 +28,10 @@ contract MoaVaultFactory {
     /// Starting limits above this would be no limit at all: 10,000 USDT a day.
     uint256 public constant MAX_START_DAILY_USDT = 10_000e6;
     bool public halted;
+    /// 20 basis points = 0.2% of a trade: the most the platform fee can ever be.
+    uint16 public constant MAX_PLATFORM_FEE_BPS = 20;
+    uint16 public platformFeeBps;
+    address public treasury;
 
     address[] private _tokens;
     address[] private _pools;
@@ -34,6 +41,7 @@ contract MoaVaultFactory {
 
     event VaultCreated(address indexed owner, address vault);
     event Halted(bool halted);
+    event PlatformFeeSet(uint16 bps, address indexed treasury);
 
     constructor(
         address agent_,
@@ -84,6 +92,21 @@ contract MoaVaultFactory {
         require(msg.sender == guardian && guardian != address(0), "not guardian");
         halted = halted_;
         emit Halted(halted_);
+    }
+
+    /// @notice Set the platform fee (0 turns it off) and where it goes. Guardian only; never above 0.2%.
+    function setPlatformFee(uint16 bps, address treasury_) external {
+        require(msg.sender == guardian && guardian != address(0), "not guardian");
+        require(bps <= MAX_PLATFORM_FEE_BPS, "fee too high");
+        require(bps == 0 || treasury_ != address(0), "no treasury");
+        platformFeeBps = bps;
+        treasury = treasury_;
+        emit PlatformFeeSet(bps, treasury_);
+    }
+
+    /// @notice What every vault reads on each agent trade: the halt, and the platform fee with its treasury.
+    function tradeTerms() external view returns (bool, uint16, address) {
+        return (halted, platformFeeBps, treasury);
     }
 
     /// @notice The markets every new vault starts with.

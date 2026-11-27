@@ -20,6 +20,11 @@ pragma solidity 0.8.26;
 ///            price pushed around inside one block cannot be traded against.
 ///          - a global halt: the factory's guardian may stop agent trading on every vault at once (never withdrawals,
 ///            never the stop-loss, never any funds).
+///          - a session for the agent key: the owner says until when it may trade, on which coins, and how much per
+///            buy (`setSession`), and can end it at once (`revokeSession`). A vault starts with a 30-day session on its
+///            starting coins at its starting per-trade limit; after that the key can do nothing until the owner renews.
+///          - a platform fee switch held by the factory's guardian: 0 unless changed, never above 0.2%, paid in USDT
+///            like the creator fee and counted toward the limits.
 
 interface IERC20 {
     function balanceOf(address) external view returns (uint256);
@@ -49,9 +54,10 @@ interface ISwapRouter02 {
     function exactInputSingle(ExactInputSingleParams calldata params) external payable returns (uint256 amountOut);
 }
 
-/// The one switch the factory holds over its vaults: the guardian's halt of agent trading.
-interface IMoaHalt {
-    function halted() external view returns (bool);
+/// What the factory holds over its vaults, read on every trade: the guardian's halt of agent trading, and the
+/// platform fee (basis points, at most MAX_PLATFORM_FEE_BPS) with the address it goes to.
+interface IMoaTerms {
+    function tradeTerms() external view returns (bool halted, uint16 platformFeeBps, address treasury);
 }
 
 contract MoaVault {
@@ -75,6 +81,12 @@ contract MoaVault {
     uint16 public constant VERSION = 3;
     /// The highest creator fee an owner can approve: 100 basis points = 1% of a trade.
     uint16 public constant MAX_CREATOR_FEE_BPS = 100;
+    /// The highest platform fee the factory can set, checked here again: 20 basis points = 0.2% of a trade.
+    uint16 public constant MAX_PLATFORM_FEE_BPS = 20;
+    /// How long the session a new vault starts with lasts.
+    uint64 public constant FIRST_SESSION = 30 days;
+    /// The longest session an owner can grant at once.
+    uint64 public constant MAX_SESSION = 365 days;
 
     address public immutable owner;
     address public immutable usdt;
@@ -83,6 +95,12 @@ contract MoaVault {
     address public immutable factory;
 
     address public agent;
+    /// The agent key's session: it may trade until this time (unix seconds), only the coins in the session's scope,
+    /// and buy at most sessionMaxTradeUsdt at a time. 0 = no session (revoked or ended).
+    uint64 public agentUntil;
+    uint32 public sessionEpoch;
+    uint256 public sessionMaxTradeUsdt;
+    mapping(uint32 epoch => mapping(address token => bool)) private _sessionToken;
     bool public paused;
     uint256 public maxTradeUsdt; // most USDT the agent may spend in one buy (6 decimals)
     uint256 public maxDailyUsdt; // most USDT the agent may spend on buys per UTC day
@@ -115,6 +133,8 @@ contract MoaVault {
     event BudgetSet(bytes32 indexed agentId, uint256 usdt);
     event BudgetsOn(bool on);
     event BudgetSpent(bytes32 indexed agentId, uint256 usdt, uint256 left);
+    event SessionSet(address indexed agent, uint64 until, uint256 maxTradeUsdt, address[] tokens);
+    event PlatformPaid(address indexed treasury, bool isBuy, uint256 feeUsdt, uint16 bps);
 
     error NotOwner();
     error NotAgent();
@@ -132,6 +152,9 @@ contract MoaVault {
     error PriceMoving(int24 tickNow, int24 tickAverage);
     error FeeTooHigh(uint16 bps, uint16 cap);
     error BadCreator();
+    error SessionOver(uint64 until);
+    error NotInSession(address token);
+    error BadSession();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -171,15 +194,30 @@ contract MoaVault {
         _setStopLoss(stopLossBps_);
         emit AgentSet(agent_);
         for (uint256 i = 0; i < tokens.length; i++) _setMarket(tokens[i], pools[i], true);
+        _setSession(agent_, uint64(block.timestamp) + FIRST_SESSION, maxTrade_, tokens);
     }
 
     // ----- owner -----
 
-    /// @notice Replace (or, with any address you control, revoke) the agent key of this vault alone.
+    /// @notice Replace the agent key of this vault alone; the session (end, coins, per-buy cap) stays as it is.
     function setAgent(address agent_) external onlyOwner {
         require(agent_ != owner, "bad agent");
         agent = agent_;
         emit AgentSet(agent_);
+    }
+
+    /// @notice Authorise an agent key for this vault: until `until` (at most a year away), on `tokens` only (each must
+    ///         be a listed market), buying at most `maxTradeUsdt_` at a time. Replaces the previous session.
+    function setSession(address agent_, uint64 until, uint256 maxTradeUsdt_, address[] calldata tokens) external onlyOwner {
+        if (agent_ == address(0) || agent_ == owner || until <= block.timestamp || until > block.timestamp + MAX_SESSION || maxTradeUsdt_ == 0) revert BadSession();
+        for (uint256 i = 0; i < tokens.length; i++) if (markets[tokens[i]].pool == address(0)) revert MarketDisabled();
+        _setSession(agent_, until, maxTradeUsdt_, tokens);
+    }
+
+    /// @notice End the agent key's session now. It can do nothing more on this vault until a new session.
+    function revokeSession() external onlyOwner {
+        agentUntil = 0;
+        emit SessionSet(agent, 0, 0, new address[](0));
     }
 
     function setLimits(uint256 maxTrade_, uint256 maxDaily_, uint16 slippageBps_) external onlyOwner {
@@ -310,6 +348,11 @@ contract MoaVault {
         return (quoteTwap(token, isBuy, amountIn) * (10_000 - maxSlippageBps)) / 10_000;
     }
 
+    /// @notice Whether the agent key's session covers this coin now (in scope and not ended).
+    function sessionAllows(address token) external view returns (bool) {
+        return block.timestamp <= agentUntil && _sessionToken[sessionEpoch][token];
+    }
+
     function remainingToday() external view returns (uint256) {
         uint256 spent = spentOnDay[block.timestamp / 1 days];
         return spent >= maxDailyUsdt ? 0 : maxDailyUsdt - spent;
@@ -344,6 +387,22 @@ contract MoaVault {
         emit CreatorPaid(creator, agentId, isBuy, fee, bps);
     }
 
+    function _payPlatform(address treasury, uint16 bps, bool isBuy, uint256 fee) internal {
+        if (fee == 0) return;
+        require(IERC20(usdt).transfer(treasury, fee), "fee transfer failed");
+        emit PlatformPaid(treasury, isBuy, fee, bps);
+    }
+
+    function _setSession(address agent_, uint64 until, uint256 maxTradeUsdt_, address[] memory tokens) internal {
+        uint32 epoch = sessionEpoch + 1;
+        for (uint256 i = 0; i < tokens.length; i++) _sessionToken[epoch][tokens[i]] = true;
+        sessionEpoch = epoch;
+        agent = agent_;
+        agentUntil = until;
+        sessionMaxTradeUsdt = maxTradeUsdt_;
+        emit SessionSet(agent_, until, maxTradeUsdt_, tokens);
+    }
+
     /// minOut must be within maxSlippageBps of the pool's 10-minute average; a pool price now that is already worse
     /// than that is refused as moving before anything is swapped.
     function _checkFloor(Market memory m, bool isBuy, uint256 swapIn, uint256 minOut) internal view {
@@ -359,21 +418,27 @@ contract MoaVault {
         returns (uint256 amountOut)
     {
         if (msg.sender != agent) revert NotAgent();
+        if (block.timestamp > agentUntil) revert SessionOver(agentUntil);
         if (paused) revert IsPaused();
-        if (IMoaHalt(factory).halted()) revert Halted();
+        (bool halted, uint16 pBps, address treasury) = IMoaTerms(factory).tradeTerms();
+        if (halted) revert Halted();
+        if (pBps > MAX_PLATFORM_FEE_BPS || treasury == address(0)) pBps = 0;
         Market memory m = markets[token];
         if (!m.enabled) revert MarketDisabled();
+        if (!_sessionToken[sessionEpoch][token]) revert NotInSession(token);
         (address creator, uint16 bps) = _creatorFee(agentId, feeBps);
 
         uint256 notional;
         if (isBuy) {
-            // The fee comes out of the USDT the agent spends, so the limits cover everything that leaves the vault.
+            // The fees come out of the USDT the agent spends, so the limits cover everything that leaves the vault.
             uint256 fee = (amountIn * bps) / 10_000;
-            uint256 swapIn = amountIn - fee;
+            uint256 pFee = (amountIn * pBps) / 10_000;
+            uint256 swapIn = amountIn - fee - pFee;
             _checkFloor(m, true, swapIn, minOut);
             notional = amountIn;
             // The limits are on what the agent may spend. Getting back out to USDT is never held up by them.
-            if (notional > maxTradeUsdt) revert TradeTooLarge(notional, maxTradeUsdt);
+            uint256 cap = maxTradeUsdt < sessionMaxTradeUsdt ? maxTradeUsdt : sessionMaxTradeUsdt;
+            if (notional > cap) revert TradeTooLarge(notional, cap);
             uint256 day = block.timestamp / 1 days;
             uint256 wouldSpend = spentOnDay[day] + notional;
             if (wouldSpend > maxDailyUsdt) revert DailyCapExceeded(wouldSpend, maxDailyUsdt);
@@ -388,6 +453,7 @@ contract MoaVault {
             costUsdt[token] += swapIn;
             amountOut = _swap(usdt, token, m.fee, swapIn, minOut);
             _payCreator(creator, agentId, bps, true, fee);
+            _payPlatform(treasury, pBps, true, pFee);
         } else {
             _checkFloor(m, false, amountIn, minOut);
             (uint160 sqrtP,,,,,,) = IUniswapV3Pool(m.pool).slot0();
@@ -396,8 +462,10 @@ contract MoaVault {
             costUsdt[token] = amountIn >= held ? 0 : (costUsdt[token] * (held - amountIn)) / held;
             uint256 gross = _swap(token, usdt, m.fee, amountIn, minOut);
             uint256 fee = (gross * bps) / 10_000;
-            amountOut = gross - fee;
+            uint256 pFee = (gross * pBps) / 10_000;
+            amountOut = gross - fee - pFee;
             _payCreator(creator, agentId, bps, false, fee);
+            _payPlatform(treasury, pBps, false, pFee);
         }
         emit Traded(token, isBuy, amountIn, amountOut, notional, note);
     }

@@ -30,6 +30,8 @@ export interface ExecConfig {
   /** how many vaults this server will pay to create per UTC day */
   maxVaultsPerDay: number;
   agentKey?: Hex;
+  /** Earlier or other agent keys this server still holds, for vaults whose owner authorised one of them (key rotation). */
+  agentKeys?: Hex[];
   explorer: string;
   /** server-side buffer under the quote for minOut; the vault's own floor is maxSlippageBps */
   minOutBufferBps: number;
@@ -45,6 +47,7 @@ export function execConfigFromEnv(env: Record<string, string | undefined>): Exec
     legacyFactories: (env.MOA_LEGACY_FACTORY_ADDRESSES ?? '').split(',').map((x) => x.trim()).filter((x) => /^0x[0-9a-fA-F]{40}$/.test(x)) as Address[],
     maxVaultsPerDay: Number(env.MOA_MAX_VAULTS_PER_DAY || 20),
     agentKey: (env.MOA_AGENT_PRIVATE_KEY as Hex | undefined) || undefined,
+    agentKeys: (env.MOA_AGENT_EXTRA_KEYS ?? '').split(',').map((x) => x.trim()).filter((x) => /^0x[0-9a-fA-F]{64}$/.test(x)) as Hex[],
     explorer: env.MOA_EXPLORER || 'https://hsk.blockscout.com',
     minOutBufferBps: Number(env.MOA_MIN_OUT_BUFFER_BPS || 100),
     feesFromBlock: /^\d+$/.test(env.MOA_FEES_FROM_BLOCK ?? '') ? BigInt(env.MOA_FEES_FROM_BLOCK!) : undefined,
@@ -170,6 +173,8 @@ export function createVault(cfg: ExecConfig, owner: Address): Promise<CreateResu
 export function network(cfg: ExecConfig) {
   return {
     chainId: cfg.chainId, explorer: cfg.explorer, usdt: USDT,
+    // the key the owner authorises in a version-3 vault's session (public: it is an address)
+    agent: cfg.agentKey ? privateKeyToAccount(cfg.agentKey).address : undefined,
     tokens: Object.values(TOKENS).map((t) => ({ symbol: t.symbol, address: t.address, decimals: t.decimals })),
   };
 }
@@ -189,7 +194,7 @@ export async function vaultStatus(cfg: ExecConfig) {
     vaultVersion(cfg, cfg.vault),
     // version 3: per-agent budgets on or off, and the factory guardian's halt of all agent trading
     v3 ? read('budgetsOn') : Promise.resolve(false),
-    v3 ? read('factory').then((f) => pub.readContract({ address: f as Address, abi: factoryAbi, functionName: 'halted' })).catch(() => false) : Promise.resolve(false), read('maxTradeUsdt'), read('maxDailyUsdt'), read('maxSlippageBps'), read('remainingToday'), read('paused'), read('stopLossBps'),
+    v3 ? termsOf(cfg, cfg.vault).catch(() => ({ halted: false, platformFeeBps: 0 })) : Promise.resolve({ halted: false, platformFeeBps: 0 }), read('maxTradeUsdt'), read('maxDailyUsdt'), read('maxSlippageBps'), read('remainingToday'), read('paused'), read('stopLossBps'),
     balance(USDT, cfg.vault), cfg.owner ? balance(USDT, cfg.owner) : Promise.resolve(0n),
     // held, what it cost, what it is worth at the pool price now, and the value under which the stop-loss applies
     ...Object.values(TOKENS).map((t) => read('position', [t.address]) as Promise<readonly [bigint, bigint, bigint, bigint]>),
@@ -204,7 +209,11 @@ export async function vaultStatus(cfg: ExecConfig) {
     stopLossBps: Number(stopLoss),
     version: version as number,
     budgetsOn: budgetsOn as boolean,
-    halted: halted as boolean,
+    halted: (halted as { halted: boolean }).halted,
+    /** 0 unless the factory's guardian set a platform fee (at most 0.2%); shown to the user only when it is not 0 */
+    platformFeeBps: (halted as { platformFeeBps: number }).platformFeeBps,
+    /** version 3: the agent key's session on this vault (who, until when, which coins, most per buy, whether Moa holds that key) */
+    session: v3 ? await sessionOf(cfg, cfg.vault).catch(() => undefined) : undefined,
     walletUsdt: formatUnits(walletUsdt as bigint, 6),
     vault: cfg.vault,
     explorerUrl: `${cfg.explorer}/address/${cfg.vault}`,
@@ -253,6 +262,36 @@ export function executeTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeR
   return inLine(() => sendTrade(cfg, req));
 }
 
+/** The key this server holds for the vault's current agent, if any (the main key or one of the extra keys). */
+export function keyForAgent(cfg: ExecConfig, agent: Address): Hex | undefined {
+  return [cfg.agentKey, ...(cfg.agentKeys ?? [])].find((k): k is Hex => !!k && privateKeyToAccount(k).address.toLowerCase() === agent.toLowerCase());
+}
+
+/** A version-3 vault's agent session, as the server reads it before sending anything. */
+export async function sessionOf(cfg: ExecConfig, vault: Address) {
+  const pub = clientOf(cfg);
+  const [agent, until, maxTrade] = await Promise.all(['agent', 'agentUntil', 'sessionMaxTradeUsdt'].map((f) => pub.readContract({ address: vault, abi, functionName: f }))) as [Address, bigint, bigint];
+  const tokens = await Promise.all(Object.values(TOKENS).map((t) => pub.readContract({ address: vault, abi, functionName: 'sessionAllows', args: [t.address] }) as Promise<boolean>));
+  return { agent, until: Number(until), maxTradeUsdt: limit(maxTrade), assets: (Object.keys(TOKENS) as Asset[]).filter((_, i) => tokens[i]), ours: !!keyForAgent(cfg, agent) };
+}
+
+/** The factory's terms every version-3 vault reads on a trade: the guardian's halt and the platform fee. */
+async function termsOf(cfg: ExecConfig, vault: Address): Promise<{ halted: boolean; platformFeeBps: number }> {
+  const pub = clientOf(cfg);
+  const f = (await pub.readContract({ address: vault, abi, functionName: 'factory' })) as Address;
+  const [halted, bps, treasury] = (await pub.readContract({ address: f, abi: factoryAbi, functionName: 'tradeTerms' })) as readonly [boolean, number, Address];
+  return { halted, platformFeeBps: treasury === zeroAddress || bps > 20 ? 0 : Number(bps) };
+}
+
+/** The current factory's platform fee in basis points; 0 for a factory without one, or when it cannot be read. */
+export async function platformFee(cfg: ExecConfig): Promise<number> {
+  if (!cfg.factory) return 0;
+  try {
+    const [, bps, treasury] = (await clientOf(cfg).readContract({ address: cfg.factory, abi: factoryAbi, functionName: 'tradeTerms' })) as readonly [boolean, number, Address];
+    return treasury === zeroAddress || bps > 20 ? 0 : Number(bps);
+  } catch { return 0; }
+}
+
 async function sendTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResult> {
   if (!cfg.agentKey) return { ok: false, reason: 'Execution is not configured: no agent key on this server.' };
   if (!cfg.vault) return { ok: false, reason: 'No vault: log in with your wallet first, and your vault is made for you.' };
@@ -261,12 +300,27 @@ async function sendTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResul
   const token = TOKENS[req.asset];
   const isBuy = req.side === 'buy';
   const amountIn = isBuy ? parseUnits(req.amount.toFixed(6), 6) : parseUnits(req.amount.toFixed(token.decimals), token.decimals);
-  const account = privateKeyToAccount(cfg.agentKey);
   const chain = chainOf(cfg);
   const pub = createPublicClient({ chain, transport: http(cfg.rpcUrl) });
-  const wallet = createWalletClient({ account, chain, transport: http(cfg.rpcUrl) });
+  let key: Hex = cfg.agentKey;
 
   try {
+    // Version 3: the owner's session decides which key may trade, until when and on which coins. The server sends
+    // nothing a session does not cover, and uses the key the owner authorised (never another one it holds).
+    const v3first = paysCreators(await vaultVersion(cfg, cfg.vault));
+    let platformFeeBps = 0;
+    if (v3first) {
+      const ses = await sessionOf(cfg, cfg.vault);
+      const k = keyForAgent(cfg, ses.agent);
+      if (!k) return { ok: false, reason: `This vault's owner authorised another agent key (${ses.agent}); Moa holds no key for it.` };
+      // the chain's clock decides, as the vault's check does
+      if (ses.until < Number((await pub.getBlock()).timestamp) + 15) return { ok: false, reason: `The agent's session on this vault ended${ses.until ? ` on ${new Date(ses.until * 1000).toISOString().slice(0, 10)}` : ''}. Renew it from the hire sheet or the account menu.` };
+      if (!ses.assets.includes(req.asset)) return { ok: false, reason: `The agent's session on this vault does not cover ${req.asset}.` };
+      key = k;
+      platformFeeBps = (await termsOf(cfg, cfg.vault)).platformFeeBps;
+    }
+    const account = privateKeyToAccount(key);
+    const wallet = createWalletClient({ account, chain, transport: http(cfg.rpcUrl) });
     const tokenIn = isBuy ? USDT : token.address;
     const held = await pub.readContract({ address: tokenIn, abi: balanceAbi, functionName: 'balanceOf', args: [cfg.vault] });
     if (held < amountIn) {
@@ -283,7 +337,8 @@ async function sendTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResul
     const approved = fees ? ((await pub.readContract({ address: cfg.vault, abi, functionName: 'creatorOf', args: [agentId] })) as readonly [Address, number]) : undefined;
     const sameCreator = !!approved && approved[0].toLowerCase() === req.creator!.address.toLowerCase();
     const feeBps = sameCreator ? Math.max(0, Math.min(MAX_FEE_BPS, Math.floor(req.creator!.feeBps), Number(approved![1]))) : 0;
-    const fee = isBuy ? (amountIn * BigInt(feeBps)) / 10_000n : 0n;
+    // the platform fee (0 unless the factory's guardian set one, at most 0.2%) comes out of the buy the same way
+    const fee = isBuy ? (amountIn * BigInt(feeBps)) / 10_000n + (amountIn * BigInt(platformFeeBps)) / 10_000n : 0n;
     // On a buy the fee comes out of the USDT going in, so the swap is for the rest and the price floor is for that.
     const quoted = (await pub.readContract({ address: cfg.vault, abi, functionName: 'quote', args: [token.address, isBuy, amountIn - fee] })) as bigint;
     // 0.3% pool fee + buffer for price impact, but never looser than the floor the vault checks: on version 3 the

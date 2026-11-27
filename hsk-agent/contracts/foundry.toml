@@ -1,0 +1,23 @@
+# Solidity-native tests of the vault with Foundry (test/*.t.sol): unit tests of every guard and invariant tests over
+# random sequences of owner, agent, guardian and stranger calls. The fork scripts in scripts/ test against the real
+# HSKSwap pools; these use small mock tokens, a mock pool and a mock router so thousands of calls run in seconds.
+#   sh scripts/foundry-setup.sh        # fetches forge-std v1.9.4 into lib/ (once)
+#   forge test                         # unit + invariant tests
+#   forge coverage --ir-minimum        # line and branch coverage of src/
+[profile.default]
+src = "src"
+test = "test"
+out = "out-forge"
+cache_path = "cache-forge"
+libs = ["lib"]
+remappings = ["forge-std/=lib/forge-std/src/"]
+solc_version = "0.8.26"
+evm_version = "cancun"
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+
+[invariant]
+runs = 256
+depth = 80
+fail_on_revert = false

@@ -27,6 +27,9 @@ export default function Trust({ quotes }: { quotes: Quote[] }) {
     return () => { alive = false; };
   }, []);
   const gaps = quotes.filter((q) => q.gap !== undefined);
+  // The factory's platform fee: shown only when it is not 0 (it is 0 unless the factory's guardian sets one).
+  const [platformBps, setPlatformBps] = useState(0);
+  useEffect(() => { fetch('/api/terms').then((r) => r.json()).then((j: { platformFeeBps?: number }) => setPlatformBps(Number(j.platformFeeBps) || 0), () => undefined); }, []);
   return (
     <div className="page trust-page">
       <header className="page-head"><h1>{t.trTitle}</h1></header>
@@ -35,6 +38,7 @@ export default function Trust({ quotes }: { quotes: Quote[] }) {
       <section className="tr-card">
         <h2><Icon name="coin" size={18} />{t.trMoneyH}</h2>
         <ul className="tr-list">{t.trMoney.map((x) => <li key={x}>{x}</li>)}</ul>
+        {platformBps > 0 && <p className="tr-fee">{t.trPlatformFee(`${Number((platformBps / 100).toFixed(2))}%`)}</p>}
       </section>
 
       <section className="tr-card">

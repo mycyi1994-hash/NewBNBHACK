@@ -2,7 +2,7 @@
 // The Anthropic key and the agent key live here and never reach the browser.
 // Every vault action is for the vault of the wallet that logged in: the session token on the request says whose.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { checkFactory, createVault, execConfigFromEnv, executeTrade, feesReceived, forOwner, serviceOn, vaultStatus, type CreatorRef, type ExecConfig, type FactoryCheck } from './executor.ts';
+import { checkFactory, platformFee, createVault, execConfigFromEnv, executeTrade, feesReceived, forOwner, serviceOn, vaultStatus, type CreatorRef, type ExecConfig, type FactoryCheck } from './executor.ts';
 import * as session from './session.ts';
 import { openStore, storeFile, type AutoStore } from './autoStore.ts';
 import { autoBlock, newRunnerState, runnerEvery, startRunner, type RunnerState } from './autoRunner.ts';
@@ -223,6 +223,10 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       if (req.url === '/api/nano-frame' && req.method === 'GET') {
         const proto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http');
         return send(200, await frameCheck(`${proto}://${host}`));
+      }
+      // The factory's platform fee (0 unless its guardian set one), for the trust page. Version-2 factories have none.
+      if (path === '/api/terms' && req.method === 'GET') {
+        return send(200, { platformFeeBps: await platformFee(base) });
       }
       // Public health: what works, in words, and nothing about keys, paths or files. It never calls the model.
       // The details are in the server's own log at start.
