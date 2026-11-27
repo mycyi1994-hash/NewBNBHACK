@@ -901,7 +901,18 @@ export const MIN_OOS_EXPOSURE = 0.25;
 export const oosEdge = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.pick.total - a.split.pick.hold : a.total - a.hold);
 export const pickEdge = oosEdge;
 /** What every list shows beside "beats holding": the ranking-year edge and its period, and the whole window's edge. */
-export const holdNumbers = (a: Agent) => ({ edge: oosEdge(a), days: pickDays(a), ago: holdoutDays(a), full: a.total - a.hold, fullDays: a.days });
+export const holdNumbers = (a: Agent) => {
+  const full = a.total - a.hold, edge = oosEdge(a);
+  return {
+    /** The headline: the whole window against holding. */
+    full, fullDays: a.days,
+    /** The ranking year (what "beats holding" is judged on) and the holdout after it, shown under the headline. */
+    edge, days: pickDays(a), ago: holdoutDays(a),
+    holdout: a.split ? a.split.holdout.total - a.split.holdout.hold : undefined,
+    /** Ahead over the ranking year but behind over the whole window: every card and sentence then says so. */
+    mixed: edge > 0 && full < 0,
+  };
+};
 /** Days of the ranking year and of the holdout, for the labels that name them. */
 export const pickDays = (a: Pick<Agent, 'split' | 'days'>) => (a.split ? Math.round((a.split.holdoutAt - a.split.at) / 86_400) : a.days);
 export const holdoutDays = (a: Pick<Agent, 'split' | 'to'>) => (a.split ? Math.round((a.to - a.split.holdoutAt) / 86_400) : 0);

@@ -14,7 +14,7 @@ import { SENSITIVITY_USD } from './fills.ts';
 import { beatsHold, holdNumbers, holdoutDays, pickDays, byMerit, DEMOTED, rescoreAt, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
 import { TEMPLATES } from './spec.ts';
 import { useMade } from './madeStore.ts';
-import { AgentCard, agentName, condText, drop, freshLine, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
+import { AgentCard, agentName, condText, drop, freshLine, pct, ruleLines, sourceLine, statePill, Face, HoldLines } from './AgentCard.tsx';
 import { markColor } from './Mark.tsx';
 import { LP_STRATEGIES, type LpStrategy } from './lpStrategies.ts';
 import type { IconName } from './Icons.tsx';
@@ -388,7 +388,7 @@ const LP_ICON: Record<LpStrategy['goal'], IconName> = { buy: 'dip', sell: 'trend
 /** One agent in "doing well now": who, what it does, the one number, and hire. The row opens its past results. */
 function TopPick({ a, n, onOpen, onHire }: { a: Agent; n: number; onOpen: () => void; onHire: () => void }) {
   const { t } = useT();
-  const h = holdNumbers(a), edge = h.edge;
+  const h = holdNumbers(a), edge = h.full;
   const fresh = freshLine(t, a);
   return (
     <li className="tk-row" style={{ '--fam': markColor(a.rule) } as CSSProperties}>
@@ -399,7 +399,7 @@ function TopPick({ a, n, onOpen, onHire }: { a: Agent; n: number; onOpen: () => 
           <b>{a.made?.name ?? t.agNick[a.rule]}<em className={`tk-fresh${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</em></b>
           <small>{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</small>
         </span>
-        <span className="tk-num"><small>{t.mpVsHold}</small><b className={edge > 0 ? 'pos' : edge < 0 ? 'neg' : ''}>{pct(edge)}</b><small className="tk-win">{t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago))}</small><small className="tk-win">{t.fullOver(t.oosSpan(h.fullDays), pct(h.full))}</small></span>
+        <span className="tk-num"><small>{t.mpVsHold}</small><b className={edge > 0 ? 'pos' : edge < 0 ? 'neg' : ''}>{pct(edge)}</b><small className="tk-win">{t.mpOver(h.fullDays)}</small><HoldLines a={a} cls="hold-lines tk" /></span>
       </button>
       {a.runnable ? <button className="btn-primary sm tk-hire" onClick={onHire}>{t.acHire}</button> : <span className="tk-only">{t.wzSignalOnly}</span>}
     </li>

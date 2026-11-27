@@ -13,7 +13,7 @@ import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import { useT } from './i18n.ts';
 import { ACTIVE_DAYS, active, beatsHold, byMerit, holdNumbers, idle, rankSharpe, type Agent, type Tier, DEMOTED, oosEdge } from './agents.ts';
-import { agentName, freshLine, pct, ruleLines, Face } from './AgentCard.tsx';
+import { agentName, freshLine, pct, ruleLines, Face, HoldLines } from './AgentCard.tsx';
 import { CoinMark } from './CoinMark.tsx';
 import { markColor } from './Mark.tsx';
 import { Icon, Spark } from './Icons.tsx';
@@ -144,7 +144,7 @@ function CardChart({ a, up, label }: { a: Agent; up: boolean; label: string }) {
 /** One agent in the ranking: rank, mark, name and plain line, freshness, and the one number. */
 function TopRow({ a, n, onOpen }: { a: Agent; n?: number; onOpen: (a: Agent) => void }) {
   const { t } = useT();
-  const h = holdNumbers(a), edge = h.edge;
+  const h = holdNumbers(a), edge = h.full;
   const fresh = freshLine(t, a);
   return (
     <li>
@@ -156,7 +156,7 @@ function TopRow({ a, n, onOpen }: { a: Agent; n?: number; onOpen: (a: Agent) => 
           <span className="tp-plain">{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</span>
           <span className={`tp-fresh${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</span>
         </span>
-        <span className="tp-num"><small>{t.mpVsHold}</small><b className={sign(edge)}>{pct(edge)}</b><span>{t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago))}</span><span>{t.fullOver(t.oosSpan(h.fullDays), pct(h.full))}</span></span>
+        <span className="tp-num"><small>{t.mpVsHold}</small><b className={sign(edge)}>{pct(edge)}</b><span>{t.mpOver(h.fullDays)}</span><HoldLines a={a} /></span>
         <span className="tp-go" aria-hidden><Icon name="chevron" size={18} /></span>
       </button>
     </li>
@@ -167,7 +167,7 @@ function TopRow({ a, n, onOpen }: { a: Agent; n?: number; onOpen: (a: Agent) => 
 function MarketCard({ a, big, starred, onStar, onOpen, onHire }: { a: Agent; big?: boolean; starred: boolean; onStar: () => void; onOpen: (a: Agent) => void; onHire: (a: Agent) => void }) {
   const { t } = useT();
   const fresh = freshLine(t, a);
-  const hn = holdNumbers(a), edge = hn.edge;
+  const hn = holdNumbers(a), edge = hn.full;
   // The source in a few words: the year for a published classic, otherwise what kind of rule it is.
   // The full source stays one hover away, and in the backtest.
   const year = a.tier === 1 ? /\b(1[89]|20)\d{2}\b/.exec(t.agOrigin[a.rule])?.[0] : undefined;
@@ -193,8 +193,8 @@ function MarketCard({ a, big, starred, onStar, onOpen, onHire }: { a: Agent; big
         <div className="mp-num">
           <small>{t.mpVsHold}</small>
           <b className={sign(edge)}>{pct(edge)}</b>
-          <span>{t.pickOver(t.oosSpan(hn.days), t.oosSpan(hn.ago))}</span>
-          <span>{t.fullOver(t.oosSpan(hn.fullDays), pct(hn.full))}</span>
+          <span>{t.mpOver(hn.fullDays)}</span>
+          <HoldLines a={a} />
         </div>
         <CardChart a={a} up={edge >= 0} label={t.mpHoldLine} />
       </div>
@@ -226,7 +226,7 @@ function Rail({ agents, coins, onOpen }: { agents: Agent[]; coins: string[]; onO
       <ol className="mp-rank">
         {!agents.length && [0, 1, 2, 3, 4].map((i) => <li key={i} className="mp-rank-skel skel-block" />)}
         {rows.map((a, i) => {
-          const edge = holdNumbers(a).edge;
+          const edge = holdNumbers(a).full;
           return (
             <li key={a.id}>
               <button onClick={() => onOpen(a)}>

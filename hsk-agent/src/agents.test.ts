@@ -418,7 +418,7 @@ test('every backtest is cut in three: early, the ranking year, and a holdout tha
     assert.equal(A.pickDays(a), 365, 'the ranking year ends where the holdout starts');
     assert.equal(A.beatsHold(a), s.pick.total > s.pick.hold && s.pick.exposure >= 0.25);
     assert.equal(A.oosEdge(a), s.pick.total - s.pick.hold);
-    assert.deepEqual(A.holdNumbers(a), { edge: s.pick.total - s.pick.hold, days: 365, ago: 91, full: a.total - a.hold, fullDays: a.days });
+    assert.deepEqual(A.holdNumbers(a), { full: a.total - a.hold, fullDays: a.days, edge: s.pick.total - s.pick.hold, days: 365, ago: 91, holdout: s.holdout.total - s.holdout.hold, mixed: s.pick.total - s.pick.hold > 0 && a.total - a.hold < 0 });
   }
 });
 
@@ -464,4 +464,19 @@ test('sitting in cash through a falling year does not count as beating holding',
   assert.equal(A.beatsHold(a), false, 'ahead only by holding nothing');
   assert.equal(A.beatsHold({ ...a, split: { ...a.split, pick: { ...a.split.pick, total: -0.1, exposure: 0.5 } } }), true, 'held half the year and lost less');
   assert.equal(A.beatsHold({ ...a, split: { ...a.split, pick: { total: -0.5, hold: -0.4, exposure: 1 }, holdout: { total: 9, hold: 0, exposure: 1 } } }), false, 'a great holdout does not count');
+});
+
+test('the headline is the whole period; a better ranking year over a worse whole period is flagged to be said in words', async () => {
+  const A = await import('./agents.ts');
+  const mk = (full: number, pick: number) => ({ total: full, hold: 0, days: 1095, to: 0, split: { at: -365 * 86_400 - 91 * 86_400, holdoutAt: -91 * 86_400, early: { total: 0, hold: 0 }, pick: { total: pick, hold: 0, exposure: 0.5 }, holdout: { total: 0.02, hold: 0, exposure: 0.5 }, rank: { maxDd: 0, sharpe: 0, trades: 1, total: 0 } } }) as unknown as Parameters<typeof A.holdNumbers>[0];
+  const h = A.holdNumbers(mk(-0.773, 0.138));
+  assert.equal(h.full, -0.773, 'the whole period leads');
+  assert.equal(h.edge, 0.138);
+  assert.equal(h.mixed, true, 'ahead over the ranking year, behind over all of it');
+  assert.equal(h.holdout, 0.02);
+  assert.equal(A.holdNumbers(mk(0.1, 0.2)).mixed, false);
+  assert.equal(A.holdNumbers(mk(-0.1, -0.2)).mixed, false, 'no claim to qualify');
+  const { STRINGS } = await import('./i18n.ts');
+  assert.equal(STRINGS.ko.mixedNote('최근 1년', '3년'), '최근 1년은 보유보다 나았지만 3년 전체로는 뒤졌어요.');
+  assert.match(STRINGS.ko.recCoin('BTC', true, '3달 전까지 1년', '+13.8%', '전체 3년 −77.3%', STRINGS.ko.mixedNote('3달 전까지 1년', '3년')), /전체 3년 −77\.3%.*\+13\.8%.*3년 전체로는 뒤졌어요/);
 });

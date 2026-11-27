@@ -46,6 +46,20 @@ export const nowLine = (t: Strings, a: Agent) => (a.kind === 'position' ? (a.liv
 export const sourceLine = (t: Strings, a: Agent) => (a.kind === 'collect' ? t.acSrcCollect : a.runnable ? t.acSrcPos : t.acSrcSignal(a.market?.kind === 'perp'));
 export const explainAgent = (t: Strings, a: Agent) => t.acExplain(agentName(t, a), pct(a.total), pct(a.hold), drop(a.maxDd), nowLine(t, a));
 
+/** Under a headline "vs holding" number (the whole window): the ranking year, the last months, and the plain note. */
+export function HoldLines({ a, cls = 'hold-lines' }: { a: Agent; cls?: string }) {
+  const { t } = useT();
+  const h = holdNumbers(a);
+  if (!a.split) return null;
+  return (
+    <span className={cls}>
+      <small>{t.pickLine(t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago)), pct(h.edge))}</small>
+      {h.holdout !== undefined && <small>{t.holdLine(t.oosSpan(h.ago), pct(h.holdout))}</small>}
+      {h.mixed && <small className="hold-mixed">{t.mixedNote(t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago)), t.oosSpan(h.fullDays))}</small>}
+    </span>
+  );
+}
+
 /** Small equity curve. */
 export function Equity({ pts, up, wide }: { pts: { value: number }[]; up: boolean; wide?: boolean }) {
   const W = wide ? 320 : 160, H = wide ? 72 : 56;
@@ -141,11 +155,11 @@ export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions 
         {head}
         <p className="ag-line">{t.agLine[a.rule]} <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span></p>
         <div className="ag-stats">
-          {(() => { const h = holdNumbers(a); return <span>{t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago))} · {t.acEdge}<b className={h.edge >= 0 ? 'pos' : 'neg'}>{pct(h.edge)}</b></span>; })()}
           <span>{t.fullOver(t.oosSpan(a.days), '')} · {t.acEdge}<b className={edge >= 0 ? 'pos' : 'neg'}>{pct(edge)}</b></span>
           <span>{t.acTotal}<b>{pct(a.total)}</b></span>
           <span>{t.acDd}<b>{drop(a.maxDd)}</b></span>
         </div>
+        <HoldLines a={a} cls="hold-lines chat" />
         <Equity pts={a.equity} up={a.total >= a.hold} wide />
         {!a.runnable && <p className="acard-demo">{t.whyNot(a.base)}</p>}
         <details className="acard-more">
