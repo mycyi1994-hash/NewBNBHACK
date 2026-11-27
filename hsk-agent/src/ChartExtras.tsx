@@ -118,7 +118,7 @@ export function usePoolDepth(asset: Asset): PoolDepth | 'error' | null {
   return got?.asset === asset ? got.d : null;
 }
 
-const ROWS = 6;
+const ROWS = 8;
 const priceText = (v: number) => (v >= 1000 ? `$${Math.round(v).toLocaleString('en-US')}` : v >= 1 ? `$${v.toFixed(2)}` : `$${v.toPrecision(4)}`);
 
 /**

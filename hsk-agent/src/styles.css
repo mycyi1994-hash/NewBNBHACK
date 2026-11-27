@@ -1710,7 +1710,7 @@ select { padding-right: 8px; }
 .pr-head .lp-impact { justify-self: end; min-width: 0; overflow: hidden; }
 .pr-cols { display: grid; grid-template-columns: repeat(var(--side, 10), minmax(0, 1fr)) 9px repeat(var(--side, 10), minmax(0, 1fr)); gap: 0 4px; }
 .pr-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pr-col i { display: block; height: 8px; border-radius: 3px; }
+.pr-col i { display: block; height: 10px; border-radius: 3px; }
 .pr-col.pr-usdt i { background: #fbf0e2; } .pr-col.pr-usdt i.on { background: #e09b3d; }
 .pr-col.pr-coin i { background: #ece9ff; } .pr-col.pr-coin i.on { background: #7c5cff; }
 .pr-col:hover i.on { filter: brightness(.92); }

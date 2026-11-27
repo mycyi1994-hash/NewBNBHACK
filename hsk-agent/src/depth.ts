@@ -57,7 +57,7 @@ export function poolDepth(p: PoolState): PoolDepth {
 }
 
 /** The pool's holdings in equal steps of price, `perSide` steps under the price and as many over it, out to `reachPct` percent. */
-export function rangeBins(p: PoolState, reachPct = 5, perSide = 10): RangeBin[] {
+export function rangeBins(p: PoolState, reachPct = 10, perSide = 10): RangeBin[] {
   const step = reachPct / 100 / perSide, out: RangeBin[] = [];
   for (let i = perSide; i >= 1; i--) out.push({ from: 1 - i * step, to: 1 - (i - 1) * step, usd: usdtToMove(p, 1 - i * step) - usdtToMove(p, 1 - (i - 1) * step), side: 'usdt' });
   for (let i = 1; i <= perSide; i++) out.push({ from: 1 + (i - 1) * step, to: 1 + i * step, usd: usdtToMove(p, 1 + i * step) - usdtToMove(p, 1 + (i - 1) * step), side: 'coin' });

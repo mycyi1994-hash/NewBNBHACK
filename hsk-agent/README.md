@@ -114,7 +114,7 @@ stranger once the price has held, with the stranger getting nothing.
   across all of them, and a warning when the agents may still spend more USDT than the vault holds. It opens first
   for anyone who has hired an agent.
 - **The pool's liquidity, read from the chain.** Above the HSKSwap chart: what the pool holds at each price, as
-  columns of blocks, twenty steps of 0.5% around the price now; USDT under the price, the coin over it, and how far
+  columns of blocks, twenty steps of 1% around the price now (10% either way); USDT under the price, the coin over it, and how far
   a $100 and a $1,000 buy would move the price (`src/depth.ts`, from the pool's price, its liquidity in range and
   its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three pools held one full-range
   position (the HSK pool three small ranges more), so every column is the same height; liquidity added to one
