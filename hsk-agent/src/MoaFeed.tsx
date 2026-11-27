@@ -26,6 +26,8 @@ import { loadWeather, skyOf, type Weather } from './weather.ts';
 import type { LpPlan } from './lp.ts';
 import { parseLp, reachOf, widthFor } from './lpTalk.ts';
 import { POOLS } from './dex.ts';
+import { liveSpread, spreadBrief, type Spread } from './spread.ts';
+import { ASSETS } from './intent.ts';
 import { beatsHold, isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
 import { AgentCard, agentName, drop, explainAgent, Face } from './AgentCard.tsx';
@@ -365,6 +367,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
   /** Agent requests Moa answers itself, without the AI. Returns true when handled. */
   const local = (q: string): boolean => {
     const list = hiredRef.current;
+
     if (STOP_WORDS.test(q) && !/(loss|손절)/i.test(q)) {
       const running = list.filter((h) => !h.paused && statusOf(h, Date.now()) !== 'done');
       if (!running.length) { say({ text: t.nothingToStop, follow: [] }, 400); return true; }
@@ -384,13 +387,22 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       if (STATUS_WORDS.test(q)) list.slice(0, 3).forEach((h, i) => setTimeout(() => statusNote(h.id), 400 + i * 250));
       return true;
     }
-    if (SPREAD_WORDS.test(q)) {
+    const gapOnly = () => {
       const rows = quotes.filter((x) => x.pool !== undefined && x.exchange !== undefined && x.gap !== undefined);
       if (rows.length) {
         const lines = rows.map((x) => `- ${t.spRow(x.asset, fmtPrice(x.exchange!), fmtPrice(x.pool!), `${x.gap! >= 0 ? '+' : '−'}${Math.abs(x.gap! * 100).toFixed(2)}%`)}`);
         say({ text: [t.spHead, ...lines, t.spCost, t.spVerdict].join('\n'), follow: [] }, 400);
-        return true;
-      }
+      } else say({ text: spreadBrief([], lang), follow: [] }, 200);
+    };
+    if (SPREAD_WORDS.test(q)) {
+      // The spread model (src/spread.ts): the gap against HashKey Global, and what is left after fees and the pool's
+      // price impact at $10/$100/$1,000. If the live read fails, the plain gap from the price strip below.
+      void Promise.all(ASSETS.map((a) => liveSpread(a).catch(() => null))).then((xs) => {
+        const got = xs.filter((x): x is Spread => !!x);
+        if (got.length) say({ text: spreadBrief(got, lang), follow: [] }, 200);
+        else gapOnly();
+      });
+      return true;
     }
     if (STATUS_WORDS.test(q) && list.length) {
       list.slice(0, 3).forEach((h, i) => setTimeout(() => statusNote(h.id), i * 250));

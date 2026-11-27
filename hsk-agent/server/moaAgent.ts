@@ -1,4 +1,4 @@
-// Moa's brain: Claude Sonnet 5.5 with four tools (market data, plan proposal, agent recommendation, trade execution).
+// Moa's brain: Claude Sonnet 5.5 with its tools (market data, spreads, plan proposal, agent recommendation, liquidity plan, trade execution).
 // The recommendation is the app's fixed rule (src/recommend.ts); the model only says which coin the user means.
 // Execution is gated twice: the latest user message must explicitly ask to execute, and the vault contract
 // enforces its own caps and slippage floor.
@@ -14,6 +14,7 @@ import { loadAgents, type Agent } from '../src/agents.ts';
 import { recommend, type Level } from '../src/recommend.ts';
 import { STRINGS } from '../src/i18n.ts';
 import { LP_STRATEGIES, strategyPlan } from '../src/lpStrategies.ts';
+import { liveSpread, gapHistory, gapStats, POOL_FEE, TAKER_FEE } from '../src/spread.ts';
 
 export const MODEL = 'claude-sonnet-5-5';
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -60,6 +61,12 @@ const tools: Anthropic.Beta.BetaTool[] = [
   {
     name: 'get_market',
     description: 'Live prices: HSKSwap pool prices on HSK Chain (HSK, ETH, BTC vs USDT) with the gap to Gate spot, the HashKey Global BTC/USDT perpetual, and the vault of the logged-in user when there is one: its USDT, each coin it holds with what that cost and what it is worth now (holdings[].costUsdt, valueUsdt), the limits the owner set (a missing limit means none), the stop-loss (stopLossBps) and whether trading is locked (paused). Use it for questions about positions and profit or loss. It also returns poolDepth for each HSKSwap pool, read from the chain: how many USDT move the pool price by 1, 2 and 5 percent either way (usdtToMove) and how far a buy of 10, 100 or 1000 USDT moves it (buyMovesPricePct); use it when asked how big an order the pool can take or how thin it is. And exchangeBook for BTC and ETH, from nanotradingclub (nine exchanges added together, not HSK Chain and not HashKey): the thickest stacks of resting orders within 8 percent under the price (buyWalls) and over it (sellWalls) with their size in USD and distance in percent, and forced liquidations in USD over the last hour and 24 hours, split into long and short positions closed. A field that is null or missing was not available: say so rather than guess.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    strict: true,
+  },
+  {
+    name: 'get_spread',
+    description: 'The HSKSwap pool price against HashKey Global (Gate if HashKey Global does not answer) for HSK, ETH and BTC, with costs: gapPct (pool vs exchange, negative = pool cheaper), grossPct, netPctBySize for $10/$100/$1000 after the HSKSwap fee 0.3%, an assumed exchange taker fee 0.1% and the pool price impact from its real depth, breakEvenUsd (largest size still worth it, 0 = none), and the last 24 hours of recorded gaps (how many records, how many beat the costs). Use it for any question about arbitrage, spreads or the price gap. Say that moving funds between HSK Chain and the exchange is not counted, and that the vault only trades on HSKSwap: the actionable form is the Spread Hunter agent (buys on HSKSwap at a discount, sells when it closes).',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     strict: true,
   },
@@ -172,6 +179,17 @@ export async function marketSnapshot(cfg: ExecConfig) {
   };
 }
 
+/** Every coin's spread now and its last day of recorded gaps, for the get_spread tool. */
+export async function spreadSnapshot() {
+  const pc = (v: number) => (Number.isFinite(v) ? +(v * 100).toFixed(3) : null);
+  const coins = await Promise.all(ASSETS.map(async (a) => {
+    const [s, hist] = await Promise.all([liveSpread(a).catch(() => null), gapHistory(a, 1).catch(() => [])]);
+    const st = gapStats(hist);
+    return s ? { asset: a, venue: s.venue, poolPriceUsd: s.pool, exchangePriceUsd: s.exchange, gapPct: pc(s.gap), grossPct: pc(s.gross), netPctBySize: Object.fromEntries(s.sizes.map((z) => [`$${z.usd}`, pc(z.net)])), breakEvenUsd: s.breakEven ?? null, last24h: { records: st.n, beatCosts: st.outside } } : { asset: a, unavailable: 'prices or pool depth not readable now', last24h: { records: st.n, beatCosts: st.outside } };
+  }));
+  return { coins, costs: { hskswapFeePct: POOL_FEE * 100, exchangeTakerFeePctAssumed: TAKER_FEE * 100, notCounted: 'moving funds between HSK Chain and the exchange (time and fees), the exchange order book, gas' } };
+}
+
 export type MoaStep = 'thinking' | 'market' | 'plan' | 'agents' | 'execute' | 'writing';
 export type MoaEvent = { type: 'step'; step: MoaStep; detail?: string };
 
@@ -231,6 +249,9 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
         if (u.name === 'get_market') {
           onEvent({ type: 'step', step: 'market' });
           content = JSON.stringify(await marketSnapshot(cfg));
+        } else if (u.name === 'get_spread') {
+          onEvent({ type: 'step', step: 'market' });
+          content = JSON.stringify(await spreadSnapshot());
         } else if (u.name === 'propose_plan') {
           onEvent({ type: 'step', step: 'plan' });
           const input = u.input as { steps: PlanStep[]; missing: string[] };

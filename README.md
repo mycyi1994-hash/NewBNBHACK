@@ -49,6 +49,11 @@ no creator fee; the server tells versions apart and sends version-2 vaults only 
 - **Trade.** A coin's chart, from the exchange (HashKey Global) or from HSKSwap.
   - Under the chart: the agents doing well right now for that coin.
   - On HSKSwap: the pool's liquidity in blocks and six ready-made liquidity strategies.
+- **Spread.** A tab under the chart compares the HSKSwap pool price with HashKey Global and shows what is left after
+  the 0.3% pool fee, an assumed 0.1% exchange fee and the pool's price impact, for $10/$100/$1,000, with the
+  break-even size and a recorded gap history (every 5 minutes, 14 days). Moving money between venues is not
+  modelled and is said so. A "spread hunter" agent buys on HSKSwap when the pool is cheaper than the exchange by
+  more than a round trip costs and sells when the gap closes; it shows no past result until a day of records exists.
 - **Agent market.** One card per agent: a mark, a plain one-line rule, and one number (how it did against simply
   holding the coin), plus a ranking by coin. Agents come from published research (each card cites its paper),
   classic rules (folded below), short-term versions on 1h/4h candles, and agents other people made and shared.

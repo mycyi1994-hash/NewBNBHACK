@@ -23,6 +23,8 @@ import { useT } from './i18n.ts';
 import { Icon, Spark } from './Icons.tsx';
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
+import SpreadPanel from './SpreadPanel.tsx';
+import { ASSETS } from './intent.ts';
 import { feeText } from './share.ts';
 import { whoText } from './Shared.tsx';
 
@@ -375,7 +377,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
   );
 }
 
-type Tab = 'mine' | 'top' | 'list' | 'bt' | 'swaps';
+type Tab = 'mine' | 'top' | 'list' | 'spread' | 'bt' | 'swaps';
 
 const LP_ICON: Record<LpStrategy['goal'], IconName> = { buy: 'dip', sell: 'trend', both: 'collect' };
 
@@ -451,6 +453,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
           {mine && <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>{t.navMine}{mineCount > 0 && <span className={`tdock-count${mineAsks ? ' ask' : ''}`}>{mineCount}</span>}</button>}
           <button role="tab" aria-selected={tab === 'top'} className={tab === 'top' ? 'on' : ''} onClick={() => setTab('top')}>{t.dkTopTab}</button>
           <button role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'on' : ''} onClick={() => setTab('list')}>{t.dkAllTab}</button>
+          {/* HSKSwap against the exchange, for the three coins a vault trades */}
+          {(ASSETS as string[]).includes(coin) && <button role="tab" aria-selected={tab === 'spread'} className={tab === 'spread' ? 'on' : ''} onClick={() => setTab('spread')}>{t.sxTab}</button>}
           {sel && (
             <button role="tab" aria-selected={tab === 'bt'} className={tab === 'bt' ? 'on' : ''} onClick={() => setTab('bt')}>
               {t.btTab}<span className="tdock-tab-sub">{sel.made?.name ?? t.agNick[sel.rule]}</span>
@@ -523,6 +527,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
           </div>
         )}
         {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} cursor={cursor} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}
+        {tab === 'spread' && (ASSETS as string[]).includes(coin) && <SpreadPanel key={coin} asset={coin as Asset} onHire={onHire} />}
         {tab === 'swaps' && swaps}
       </div>
     </section>

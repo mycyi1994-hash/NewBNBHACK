@@ -11,6 +11,8 @@ import { autoBlock, startRunner } from './autoRunner.ts';
 import { frameCheck } from './nanoFrame.ts';
 import type { HiredAgent } from '../src/runner.ts';
 import { openShares, sharesFile, type ShareStore } from './shareStore.ts';
+import { openSpreads, spreadsFile, startRecorder, type SpreadStore } from './spreadStore.ts';
+import { setGapSource, RECORD_EVERY_MS } from '../src/spread.ts';
 import { isRunnable, SIGNAL_MARKETS } from '../src/agents.ts';
 import type { Address } from 'viem';
 import type { SharedRef } from '../src/share.ts';
@@ -47,11 +49,14 @@ function sharedOf(x: unknown, shares?: ShareStore): { shared?: SharedRef } {
 }
 const creatorOf = (s: SharedRef | undefined): CreatorRef | undefined => (s ? { address: s.creator as Address, feeBps: s.feeBps } : undefined);
 
-export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareStore } = {}) {
+export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareStore; spreads?: SpreadStore } = {}) {
   const asSet = execConfigFromEnv(env);
   const secret = session.sessionSecret(env);
   const store = opts.store ?? openStore(storeFile(env));
   const shares = opts.shares ?? openShares(sharesFile(env), SHARE_MARKETS);
+  // The recorded HSKSwap vs exchange gaps: read by the spread hunter here, and served to the page below.
+  const spreads = opts.spreads ?? openSpreads(spreadsFile(env));
+  setGapSource(async (asset, days) => spreads.read(asset, days));
   // A factory from an earlier version of the vault is not used: the server then runs as a demo and says why.
   let factory: FactoryCheck = asSet.factory ? 'unreachable' : 'none';
   let base: ExecConfig = { ...asSet, factory: undefined };
@@ -135,6 +140,14 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       // Shared agents: anyone can list and open them; publishing, stopping and counting a hire need a login, and the
       // creator is always the wallet of that login.
       const path = req.url.split('?')[0];
+      // The gap history, public and read-only: only what this server recorded.
+      if (path === '/api/spread' && req.method === 'GET') {
+        const q = new URL(req.url, 'http://x').searchParams;
+        const asset = String(q.get('asset') ?? '');
+        if (!ASSETS.includes(asset)) return send(400, { error: 'asset must be HSK, ETH or BTC' });
+        const days = Math.min(14, Math.max(1, Number(q.get('days')) || 1));
+        return send(200, { asset, every: Math.max(60_000, Number(env.MOA_SPREAD_MS) || RECORD_EVERY_MS), points: spreads.read(asset as 'HSK' | 'ETH' | 'BTC', days) });
+      }
       if (path === '/api/shared' && req.method === 'GET') return send(200, { agents: shares.list() });
       if (path === '/api/shared/mine' && req.method === 'GET') {
         if (!who) return send(401, { error: 'Log in first.' });
@@ -240,6 +253,12 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
   return {
     handler,
     /** Start the agents that work on their own. Only where the server can trade at all. */
-    startAuto: () => { let stop = () => {}; void settle.then(() => { if (serviceOn(base)) stop = startRunner(base, store); }); return () => stop(); },
+    startAuto: () => {
+      let stop = () => {};
+      void settle.then(() => { if (serviceOn(base)) stop = startRunner(base, store); });
+      // The gap recorder runs on every server, trading or not: MOA_SPREAD_MS shortens it for a local trial (one minute at least).
+      const stopRec = startRecorder(spreads, Number(env.MOA_SPREAD_MS) || RECORD_EVERY_MS);
+      return () => { stop(); stopRec(); };
+    },
   };
 }

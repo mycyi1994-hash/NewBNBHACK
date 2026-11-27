@@ -8,7 +8,7 @@
 import { useId, type ReactNode } from 'react';
 import type { RuleId } from './agents.ts';
 
-export type Family = 'mom' | 'avg' | 'cross' | 'brk' | 'dip' | 'col' | 'made';
+export type Family = 'mom' | 'avg' | 'cross' | 'brk' | 'dip' | 'col' | 'arb' | 'made';
 
 export const FAMILY: Record<RuleId, Family> = {
   tsmom: 'mom', multiTrend: 'mom', dualMom: 'mom', cryptoMom: 'mom',
@@ -22,6 +22,8 @@ export const FAMILY: Record<RuleId, Family> = {
   rsi2h: 'dip', rsi2q: 'dip', bollh: 'dip', rsih: 'dip', ema921h: 'cross', macd4h: 'cross',
   donch1h: 'brk', donch4h: 'brk',
   // The research set: holding a share (teal), voting breakouts and stops (green), momentum (blue), averages (violet).
+  // The spread hunter: its own family (between two venues).
+  spread: 'arb',
   volTarget: 'col', coreTrend: 'col', donchEns: 'brk', brkAtr: 'brk', breakC: 'brk', turtle2C: 'brk', donchianC: 'brk', tsmom3: 'mom', maEns: 'avg',
 };
 /** A Turtle/Donchian rule with the chandelier stop added wears its parent's symbol with a small shield in the corner. */
@@ -44,6 +46,7 @@ const TONE: Record<Family, [string, string, string]> = {
   brk: ['#5eeab0', '#16b884', '#087a5a'],
   dip: ['#ffa48f', '#ff5f7a', '#d42f68'],
   col: ['#6be6e0', '#1cb2c7', '#0b7a9a'],
+  arb: ['#7ee3ff', '#3f8cff', '#4b3fd9'],
   made: ['#5b6474', '#262c38', '#0d1118'],
 };
 /** The family's mid colour, for washes and accents around a mark. */
@@ -276,6 +279,13 @@ function glyph(rule: RuleId, ink: string, cut: string): ReactNode {
         <path d="M15 46l9-8 7 4 15-23" {...s} />
         <path d="M38 18.5h8.5V27" {...s} strokeWidth={4.5} />
         <path d="M14 51h8v-4h8v-4h8" {...s} strokeWidth={3.5} opacity=".6" />
+      </>;
+    case 'spread': // Spread Hunter: two prices, the lower one caught (a gap between two bars, an arrow across)
+      return <>
+        <rect x="14" y="18" width="11" height="28" rx="3.5" {...f} opacity=".6" />
+        <rect x="39" y="26" width="11" height="20" rx="3.5" {...f} />
+        <path d="M27 22h11M33.5 17.5L38 22l-4.5 4.5" {...s} strokeWidth={4} />
+        <path d="M14.5 50h35" {...s} strokeWidth={4} opacity=".55" />
       </>;
     default: // made: a sparkle, someone's own idea
       return <>

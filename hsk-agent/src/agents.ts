@@ -21,12 +21,13 @@ import { exchangeModel, haircutModel, impact, measureBasis, poolModel, sideCost,
 import type { Decision } from './journal.ts';
 import { poolDetail, poolState } from './dex.ts';
 import { MADE_PREFIX, madeById, madeList } from './madeStore.ts';
+import { spreadAgent } from './spread.ts';
 import type { SharedTag } from './share.ts';
 
 export type PositionRule =
   | 'tsmom' | 'multiTrend' | 'dualMom' | 'trend200' | 'golden' | 'break' | 'turtle2' | 'donchian' | 'ma520' | 'triple'
   | 'macd' | 'ichimoku' | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7'
-  | 'trend' | 'ema' | 'rsi' | 'boll' | ShortRule | QuantRule;
+  | 'trend' | 'ema' | 'rsi' | 'boll' | ShortRule | QuantRule | 'spread';
 /**
  * Short-term agents: standard rules run on hourly or 4-hour candles, so they trade in hours and days instead of
  * weeks. Where the source is a daily rule this is Moa's shorter version, with no published test (PROOF 'none').
@@ -79,6 +80,8 @@ export const TIER: Record<RuleId, Tier> = {
   rsi2h: 3, rsi2q: 3, donch1h: 3, donch4h: 3,
   // The research set: published strategies (tier 1), and Moa's combinations of published parts (tier 3).
   volTarget: 1, donchEns: 1, tsmom3: 1, maEns: 1, brkAtr: 1, coreTrend: 3, breakC: 3, turtle2C: 3, donchianC: 3,
+  // The spread hunter (src/spread.ts): Moa's own rule, read off recorded HSKSwap vs exchange gaps.
+  spread: 3,
 };
 /**
  * What stands behind a rule, said plainly on every agent:
@@ -100,6 +103,7 @@ export const HORIZON: Record<Exclude<RuleId, 'made'>, Horizon> = {
   ma520: 'short', triple: 'short', psar: 'short', rsi2: 'short', double7: 'short', rsi: 'short',
   rsi2h: 'short', rsi2q: 'short', ema921h: 'short', macd4h: 'short', bollh: 'short', rsih: 'short', donch1h: 'short', donch4h: 'short',
   volTarget: 'long', coreTrend: 'long', turtle2C: 'long', donchEns: 'swing', tsmom3: 'swing', maEns: 'swing', brkAtr: 'swing', breakC: 'swing', donchianC: 'swing',
+  spread: 'short',
 };
 /** A made rule is placed by the longest stretch of days any of its conditions looks at. */
 export function horizonOf(a: { rule: RuleId; made?: MadeSpec }): Horizon {
@@ -118,6 +122,7 @@ export const PROOF: Record<RuleId, Proof> = {
   // Peer-reviewed or working-paper tests (each text says which, and that the costs and assets differed); a practitioner
   // rule for the chandelier stop; nothing published for the 50/50 blend.
   volTarget: 'paper', donchEns: 'paper', tsmom3: 'paper', maEns: 'paper', brkAtr: 'paper', coreTrend: 'none', breakC: 'book', turtle2C: 'book', donchianC: 'book',
+  spread: 'none',
 };
 /** The candles a short-term rule decides on. Every other rule is daily. */
 export const SHORT_INTERVAL: Record<ShortRule, Exclude<SpecInterval, '1d'>> = {
@@ -932,6 +937,8 @@ export async function agentById(id: string): Promise<Agent | null> {
   const cut = id.indexOf('-');
   if (cut < 0) return null;
   const rule = id.slice(0, cut), rest = id.slice(cut + 1);
+  // The spread hunter reads recorded gaps, not candles (src/spread.ts).
+  if (rule === 'spread') return isRunnable(rest) ? spreadAgent(rest) : null;
   if (COLLECT_IDS.has(rule)) {
     if (!isRunnable(rest)) return null;
     return (await collectAgents(rest)).find((a) => a.id === id) ?? null;

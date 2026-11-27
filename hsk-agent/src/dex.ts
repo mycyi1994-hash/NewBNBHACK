@@ -16,7 +16,7 @@ export const POOLS: Record<Asset, { pool: string; token: string; decimals: numbe
 
 let id = 1;
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const r = await fetch(RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: id++, method, params }) });
+  const r = await fetch(RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: id++, method, params }), signal: AbortSignal.timeout(15_000) });
   const j = (await r.json()) as { result?: T; error?: { message: string } };
   if (j.error || j.result === undefined) throw new Error(j.error?.message ?? 'empty RPC result');
   return j.result;
