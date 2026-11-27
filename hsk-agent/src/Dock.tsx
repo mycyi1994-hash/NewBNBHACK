@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
 import { SENSITIVITY_USD } from './fills.ts';
-import { byMerit, DEMOTED, rescoreAt, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
+import { beatsHold, holdNumbers, holdoutDays, pickDays, byMerit, DEMOTED, rescoreAt, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
 import { TEMPLATES } from './spec.ts';
 import { useMade } from './madeStore.ts';
 import { AgentCard, agentName, condText, drop, freshLine, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
@@ -168,7 +168,7 @@ function Curves({ a, peers, upto, label, onPick }: { a: Agent; peers: Agent[]; u
  * The two things a backtest has to say out loud: how its trades were filled (fills.ts) and how it did on the part of
  * its history no setting was chosen on (the out-of-sample split in agents.ts).
  */
-function Honesty({ a }: { a: Agent }) {
+function Honesty({ a, pool }: { a: Agent; pool: number }) {
   const { t } = useT();
   const f = a.fill, s = a.split;
   // The same backtest with bigger trades: only price impact changes, so a thin pool's cost at size shows.
@@ -182,17 +182,20 @@ function Honesty({ a }: { a: Agent }) {
   }, [a.id, a.days]); // eslint-disable-line react-hooks/exhaustive-deps
   const p1 = (v: number) => `${(v * 100).toFixed(v < 0.01 ? 2 : 1)}%`;
   const day = 86_400;
-  const isDays = s ? Math.round((s.at - a.from) / day) : 0, oosDays = s ? Math.round((a.to - s.at) / day) : 0;
+  const earlyDays = s ? Math.round((s.at - a.from) / day) : 0, pDays = pickDays(a), hDays = holdoutDays(a);
+  const row = (label: string, x: { total: number; hold: number }, cls = '') => <div className={cls}><dt>{label}</dt><dd className={sign(x.total - x.hold)}>{pct(x.total - x.hold)}</dd></div>;
   const sign = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
   return (
     <div className="bt-honest">
       {s && (
         <div className="bh-oos">
-          <b>{t.oosHead}</b>
-          <dl>
-            <div><dt>{t.oosIs(t.oosSpan(isDays))}</dt><dd className={sign(s.is.total - s.is.hold)}>{t.vsHold(pct(s.is.total - s.is.hold))}</dd></div>
-            <div className="oos"><dt>{t.oosOut(t.oosSpan(oosDays))}</dt><dd className={sign(s.oos.total - s.oos.hold)}>{t.vsHold(pct(s.oos.total - s.oos.hold))}</dd></div>
+          <b>{t.hoHead}</b>
+          <dl className="three">
+            {row(t.hoEarly(t.oosSpan(earlyDays)), s.early)}
+            {row(t.hoPick(t.oosSpan(pDays), t.oosSpan(hDays)), s.pick, 'pick')}
+            {row(t.hoHold(t.oosSpan(hDays)), s.holdout, 'oos')}
           </dl>
+          <p>{t.hoBestOf(pool)}</p>
           <p>{a.made ? t.oosMade : t.oosPublished}</p>
         </div>
       )}
@@ -312,7 +315,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
           <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.target !== undefined ? a.moves ?? a.trades : a.trades)}</dd></div>
           {a.target !== undefined ? <div><dt>{t.btAvgShare}</dt><dd>{Math.round((a.exposure ?? 0) * 100)}%</dd></div> : <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>}
         </dl>
-        {!live && <Honesty a={a} />}
+        {!live && <Honesty a={a} pool={Math.max(1, ranked.length)} />}
         <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id).slice(0, 5) : []} upto={cursor} label={(v) => m(v, true)} onPick={onSelect} />
         <div className="bt-legend">
           <span><i className="lg-agent" />{t.btAgent}</span><span><i className="lg-hold" />{t.acHold}</span>
@@ -384,7 +387,7 @@ const LP_ICON: Record<LpStrategy['goal'], IconName> = { buy: 'dip', sell: 'trend
 /** One agent in "doing well now": who, what it does, the one number, and hire. The row opens its past results. */
 function TopPick({ a, n, onOpen, onHire }: { a: Agent; n: number; onOpen: () => void; onHire: () => void }) {
   const { t } = useT();
-  const edge = a.total - a.hold;
+  const h = holdNumbers(a), edge = h.edge;
   const fresh = freshLine(t, a);
   return (
     <li className="tk-row" style={{ '--fam': markColor(a.rule) } as CSSProperties}>
@@ -395,7 +398,7 @@ function TopPick({ a, n, onOpen, onHire }: { a: Agent; n: number; onOpen: () => 
           <b>{a.made?.name ?? t.agNick[a.rule]}<em className={`tk-fresh${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</em></b>
           <small>{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</small>
         </span>
-        <span className="tk-num"><small>{t.mpVsHold}</small><b className={edge > 0 ? 'pos' : edge < 0 ? 'neg' : ''}>{pct(edge)}</b>{a.interval && <small className="tk-win">{t.mpOver(a.days)}</small>}</span>
+        <span className="tk-num"><small>{t.mpVsHold}</small><b className={edge > 0 ? 'pos' : edge < 0 ? 'neg' : ''}>{pct(edge)}</b><small className="tk-win">{t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago))}</small><small className="tk-win">{t.fullOver(t.oosSpan(h.fullDays), pct(h.full))}</small></span>
       </button>
       {a.runnable ? <button className="btn-primary sm tk-hire" onClick={onHire}>{t.acHire}</button> : <span className="tk-only">{t.wzSignalOnly}</span>}
     </li>
@@ -443,7 +446,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
   // "Doing well now": the same order as everywhere (working first, then beating just holding), the first few.
   const ranked0 = all.filter((a) => !DEMOTED.has(a.rule));
-  const beat = ranked0.filter((a) => a.total - a.hold > 0);
+  const beat = ranked0.filter(beatsHold);
   const best = beat.slice(0, 6);
   const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days, shown.interval)}` : tab === 'list' ? hint : '';
 

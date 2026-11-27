@@ -97,10 +97,11 @@ the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) li
   recent swaps, or a stated 0.5% when there are too few), and price impact from the pool's real depth at the
   hire-default size of a $100 budget. The detail view shows the same backtest at $1,000 and $10,000 and warns where
   the pools are too thin. Past results do not promise future ones.
-- Each backtest is also split into its first two years and its last year. Rankings and Moa's pick use the last year
-  against just holding, and count an agent as ahead only if it held the coin for at least a quarter of that year,
-  so sitting in cash through a falling year does not win. The published strategies use their published parameters,
-  not ones tuned on this data.
+- Each backtest is split into three parts: the early part, a **ranking year** (the year ending three months ago) and
+  a **holdout** (the last three months). Rankings and Moa's pick read only up to the holdout, and count an agent as
+  beating holding only if it did so over the ranking year while holding the coin for at least a quarter of it. The
+  holdout is shown as "the result after the choice" and is never used to rank. The published strategies use their
+  published parameters, not ones tuned on this data.
 - With these fills, over the full 3 years only a few agents beat simply holding BTC (+60%): dual momentum and the
   multi-horizon trend blend. Over the last year, when BTC fell 34%, several more did. Every card states its number
   against holding, and the detail view also compares it with a fixed coin/USDT mix of the same average share.

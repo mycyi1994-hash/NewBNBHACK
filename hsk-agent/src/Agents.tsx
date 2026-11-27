@@ -12,7 +12,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from '
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import { useT } from './i18n.ts';
-import { ACTIVE_DAYS, active, byMerit, idle, type Agent, type Tier, DEMOTED, oosEdge } from './agents.ts';
+import { ACTIVE_DAYS, active, beatsHold, byMerit, holdNumbers, idle, rankSharpe, type Agent, type Tier, DEMOTED, oosEdge } from './agents.ts';
 import { agentName, freshLine, pct, ruleLines, Face } from './AgentCard.tsx';
 import { CoinMark } from './CoinMark.tsx';
 import { markColor } from './Mark.tsx';
@@ -144,7 +144,7 @@ function CardChart({ a, up, label }: { a: Agent; up: boolean; label: string }) {
 /** One agent in the ranking: rank, mark, name and plain line, freshness, and the one number. */
 function TopRow({ a, n, onOpen }: { a: Agent; n?: number; onOpen: (a: Agent) => void }) {
   const { t } = useT();
-  const edge = a.total - a.hold;
+  const h = holdNumbers(a), edge = h.edge;
   const fresh = freshLine(t, a);
   return (
     <li>
@@ -156,7 +156,7 @@ function TopRow({ a, n, onOpen }: { a: Agent; n?: number; onOpen: (a: Agent) => 
           <span className="tp-plain">{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</span>
           <span className={`tp-fresh${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</span>
         </span>
-        <span className="tp-num"><small>{t.mpVsHold}</small><b className={sign(edge)}>{pct(edge)}</b><span>{t.mpOver(a.days)}</span></span>
+        <span className="tp-num"><small>{t.mpVsHold}</small><b className={sign(edge)}>{pct(edge)}</b><span>{t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago))}</span><span>{t.fullOver(t.oosSpan(h.fullDays), pct(h.full))}</span></span>
         <span className="tp-go" aria-hidden><Icon name="chevron" size={18} /></span>
       </button>
     </li>
@@ -167,7 +167,7 @@ function TopRow({ a, n, onOpen }: { a: Agent; n?: number; onOpen: (a: Agent) => 
 function MarketCard({ a, big, starred, onStar, onOpen, onHire }: { a: Agent; big?: boolean; starred: boolean; onStar: () => void; onOpen: (a: Agent) => void; onHire: (a: Agent) => void }) {
   const { t } = useT();
   const fresh = freshLine(t, a);
-  const edge = a.total - a.hold;
+  const hn = holdNumbers(a), edge = hn.edge;
   // The source in a few words: the year for a published classic, otherwise what kind of rule it is.
   // The full source stays one hover away, and in the backtest.
   const year = a.tier === 1 ? /\b(1[89]|20)\d{2}\b/.exec(t.agOrigin[a.rule])?.[0] : undefined;
@@ -193,7 +193,8 @@ function MarketCard({ a, big, starred, onStar, onOpen, onHire }: { a: Agent; big
         <div className="mp-num">
           <small>{t.mpVsHold}</small>
           <b className={sign(edge)}>{pct(edge)}</b>
-          <span>{t.mpOver(a.days)}</span>
+          <span>{t.pickOver(t.oosSpan(hn.days), t.oosSpan(hn.ago))}</span>
+          <span>{t.fullOver(t.oosSpan(hn.fullDays), pct(hn.full))}</span>
         </div>
         <CardChart a={a} up={edge >= 0} label={t.mpHoldLine} />
       </div>
@@ -225,7 +226,7 @@ function Rail({ agents, coins, onOpen }: { agents: Agent[]; coins: string[]; onO
       <ol className="mp-rank">
         {!agents.length && [0, 1, 2, 3, 4].map((i) => <li key={i} className="mp-rank-skel skel-block" />)}
         {rows.map((a, i) => {
-          const edge = a.total - a.hold;
+          const edge = holdNumbers(a).edge;
           return (
             <li key={a.id}>
               <button onClick={() => onOpen(a)}>
@@ -265,7 +266,7 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
   const board = coins.includes(coin) ? coin : coins[0] ?? coin;
   // "Published classics" is the first tab: only strategies with a public record, best risk-adjusted result first.
   const ranked = useMemo(() => runnable.filter((a) => a.base === board && a.kind === 'position' && (rank === 'classic' ? a.tier === 1 : !DEMOTED.has(a.rule)))
-    .sort((p, r) => Number(!active(p)) - Number(!active(r)) || Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? oosEdge(r) - oosEdge(p) : r.sharpe - p.sharpe)), [runnable, rank, board]);
+    .sort((p, r) => Number(!active(p)) - Number(!active(r)) || Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? oosEdge(r) - oosEdge(p) : rankSharpe(r) - rankSharpe(p))), [runnable, rank, board]);
   // The chart draws curves over one shared stretch of time, so it holds agents scored over the same window as the
   // leader (three years of daily candles, or the short-term agents' hourly / 4-hour windows); the list keeps them all.
   const top = ranked.filter((a) => (a.interval ?? '1d') === (ranked[0]?.interval ?? '1d')).slice(0, 6);
@@ -284,7 +285,7 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
   const plain = !q.trim() && asset === 'all' && origin === 'all' && sort === 'pick';
   // The research's demoted classics sit in their own group at the end, out of the default order.
   const lead = shown.filter((a) => !DEMOTED.has(a.rule)), classic = shown.filter((a) => DEMOTED.has(a.rule));
-  const feat = plain ? lead.filter((a) => a.total - a.hold > 0).slice(0, 2) : [];
+  const feat = plain ? lead.filter(beatsHold).slice(0, 2) : [];
   const rest = plain ? lead.filter((a) => !feat.includes(a)) : lead;
   const star = (id: string) => setStars((cur) => {
     const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id);

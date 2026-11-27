@@ -28,9 +28,9 @@ import { parseLp, reachOf, widthFor } from './lpTalk.ts';
 import { POOLS } from './dex.ts';
 import { liveSpread, spreadBrief, type Spread } from './spread.ts';
 import { ASSETS } from './intent.ts';
-import { beatsHold, isRunnable, type Agent } from './agents.ts';
+import { beatsHold, holdNumbers, isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
-import { AgentCard, agentName, drop, explainAgent, Face } from './AgentCard.tsx';
+import { AgentCard, agentName, drop, explainAgent, Face, pct } from './AgentCard.tsx';
 import type { HireTarget } from './HireSheet.tsx';
 import { book, lastEvent, statusOf, type Amounts, type HiredAgent } from './runner.ts';
 import { hiredName, money, qtyText, signedMoney, skipText, whyText } from './hiredText.ts';
@@ -196,8 +196,10 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     const hiredIds = hiredRef.current.flatMap((h) => (h.source.type === 'market' ? [h.source.agentId] : []));
     const r = recommend(list, { coin, level: levelRef.current, exclude: hiredIds });
     if (!r) { say({ text: t.agentsFailed, follow: [] }); return; }
-    const beat = beatsHold(r.pick);
-    const text = coin && r.scope === 'all' ? t.recNoCoin(coin) : r.scope === 'coin' ? t.recCoin(r.pick.base, beat) : t.recAll(beat);
+    // One definition everywhere (beatsHold), and the sentence names its period and the numbers its card shows.
+    const beat = beatsHold(r.pick), h = holdNumbers(r.pick);
+    const per = t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago)), full = t.fullOver(t.oosSpan(h.fullDays), pct(h.full));
+    const text = coin && r.scope === 'all' ? t.recNoCoin(coin) : r.scope === 'coin' ? t.recCoin(r.pick.base, beat, per, pct(h.edge), full) : t.recAll(beat, per, pct(h.edge), full);
     agentNote(r.pick, text, { pool: r.pool });
   };
   const othersNote = (a: Agent) => {

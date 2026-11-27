@@ -240,11 +240,22 @@ export interface Agent {
    */
   fill?: { source: FillModel['source']; fee: number; slip: number; basis?: number; samples: number; impactPct: number; amountUsd: number; cost: number };
   /**
-   * The same backtest cut in two at a fixed point: the first two thirds of the window (two years of three) and the
-   * last third. No rule's numbers were tuned on this data (published or standard settings), so the last third is a
-   * test it had not seen. Ranking and recommendation use the last third (`beatsHold`).
+   * The same backtest cut in three at fixed points (see `run`):
+   *  - `early`: from the start to the ranking year;
+   *  - `pick`: the ranking year, the third of the window that ends where the holdout starts. Ranking, the pick and
+   *    every "beats holding" label read this (`beatsHold`), plus `rank`: the worst drop, steadiness and entries of
+   *    everything before the holdout, for the tie-breaks;
+   *  - `holdout`: the last twelfth of the window (three months of three years), which nothing that ranks or picks
+   *    ever reads. It is reported only, as the result after the choice was made.
+   * No rule's numbers were tuned on any of this data (published or standard settings).
    */
-  split?: { at: number; is: { total: number; hold: number }; oos: { total: number; hold: number; exposure: number } };
+  split?: {
+    at: number; holdoutAt: number;
+    early: { total: number; hold: number };
+    pick: { total: number; hold: number; exposure: number };
+    holdout: { total: number; hold: number; exposure: number };
+    rank: { maxDd: number; sharpe: number; trades: number; total: number };
+  };
   /** What the rule saw on its last candle: the inputs the runner journals with each order (journal.ts). */
   decision?: Decision;
   equity: { time: number; value: number }[];
@@ -732,9 +743,11 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: E
   const fee = model.fee;
   // One side of a trade: the fee, the pool's moving gap (or the haircut) and the price impact of the size traded.
   const cost = (frac: number, side: 'buy' | 'sell') => sideCost(model, model.amountUsd * eq * frac, side);
-  // The fixed in-sample / out-of-sample cut: two thirds of the window, then the last third.
-  const cut = start + Math.floor(((bars.length - 1 - start) * 2) / 3);
-  let eqCut = 1, benchCut = 1, heldOos = 0;
+  // Three fixed parts: early | the ranking year (a third of the window) | the holdout (the last twelfth), see `split`.
+  const n = bars.length - 1 - start, hoLen = Math.max(1, Math.round(n / 12)), pickLen = Math.max(1, Math.round(n / 3));
+  const holdAt = start + n - hoLen, pickAt = Math.max(start, holdAt - pickLen);
+  let eqPick = 1, benchPick = 1, eqHold = 1, benchHold = 1, heldPick = 0, heldHo = 0, rankPeak = 1, rankDd = 0, rankTrades = 0;
+  const rankRets: number[] = [];
   let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0, held = 0, moves = 0, entryCost = 0;
   const rets: number[] = [];
   const equity: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
@@ -752,7 +765,9 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: E
     if (now > 0 && was === 0 && now < 1) marks[marks.length - 1].mult = Math.round(now * 100) / 100;
     if (now !== was) { day *= 1 - c * Math.abs(now - was); moves++; }
     held += now;
-    if (i >= cut) heldOos += now;
+    if (i >= pickAt && i < holdAt) heldPick += now;
+    if (i >= holdAt) heldHo += now;
+    if (i < holdAt && now > 0 && was === 0) rankTrades++;
     if (now > 0) { const r = bars[i + 1].close / bars[i].close; day *= now === 1 ? r : 1 + now * (r - 1); inDays++; }
     eq *= day;
     rets.push(day - 1);
@@ -760,11 +775,19 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: E
     maxDd = Math.max(maxDd, 1 - eq / peak);
     equity.push({ time: bars[i + 1].time, value: eq });
     bench.push({ time: bars[i + 1].time, value: bars[i + 1].close / bars[start].close });
-    if (i + 1 === cut) { eqCut = eq; benchCut = bars[i + 1].close / bars[start].close; }
+    if (i < holdAt) { rankRets.push(day - 1); rankPeak = Math.max(rankPeak, eq); rankDd = Math.max(rankDd, 1 - eq / rankPeak); }
+    if (i + 1 === pickAt) { eqPick = eq; benchPick = bars[i + 1].close / bars[start].close; }
+    if (i + 1 === holdAt) { eqHold = eq; benchHold = bars[i + 1].close / bars[start].close; }
   }
   const steps = bars.length - 1 - start;
   const benchEnd = bars[bars.length - 1].close / bars[start].close;
-  const split = { at: bars[cut].time, is: { total: eqCut - 1, hold: benchCut - 1 }, oos: { total: eq / eqCut - 1, hold: benchEnd / benchCut - 1, exposure: heldOos / Math.max(1, bars.length - 1 - cut) } };
+  const split = {
+    at: bars[pickAt].time, holdoutAt: bars[holdAt].time,
+    early: { total: eqPick - 1, hold: benchPick - 1 },
+    pick: { total: eqHold / eqPick - 1, hold: benchHold / benchPick - 1, exposure: heldPick / Math.max(1, holdAt - pickAt) },
+    holdout: { total: eq / eqHold - 1, hold: benchEnd / benchHold - 1, exposure: heldHo / hoLen },
+    rank: { maxDd: rankDd, sharpe: stats(rankRets, perDay), trades: rankTrades, total: eqHold - 1 },
+  };
   const impactPct = model.source === 'exchange' ? 0 : impact(model.depth, model.amountUsd, 'buy');
   const fill = { source: model.source, fee: model.fee, slip: model.slip, basis: model.basis, samples: model.samples, impactPct, amountUsd: model.amountUsd, cost: model.fee + model.slip + impactPct };
   const days = perDay === 1 ? steps : Math.round(steps / perDay);
@@ -862,23 +885,35 @@ export const ACTIVE_DAYS = 30;
  */
 export const active = (a: Agent, now = Date.now() / 1000) => a.live || (lastTradeDays(a, now) ?? Infinity) <= ACTIVE_DAYS;
 /**
- * It made more than buying the coin and holding it, over the last third of its window (the part no setting was chosen
- * on, see `split`), or over the whole window when there is no split. This is what ranking and recommendation use.
+ * THE one definition of "beats holding", used by the pick, Moa's sentence, the rankings, the market cards and the
+ * list under the chart: it made more than buying the coin and holding it over the ranking year (`split.pick`: the
+ * year that ends three months ago), while holding the coin at least a quarter of that year. The last three months
+ * (`split.holdout`) are never read here. Without a split (a collect agent), the whole window.
  */
-export const beatsHold = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.oos.total > a.split.oos.hold && a.split.oos.exposure >= MIN_OOS_EXPOSURE : a.total > a.hold);
+export const beatsHold = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.pick.total > a.split.pick.hold && a.split.pick.exposure >= MIN_OOS_EXPOSURE : a.total > a.hold);
 /**
  * The guard on the last-year test: in a falling year, sitting in cash beats holding by doing nothing. To count as
  * beating holding an agent must also have held the coin, on average, at least a quarter of that year (its average
  * share of the money in the coin, so a weight agent holding 50% all year counts as 0.5).
  */
 export const MIN_OOS_EXPOSURE = 0.25;
-/** The number rankings sort by: return against holding over the out-of-sample third. */
-export const oosEdge = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.oos.total - a.split.oos.hold : a.total - a.hold);
+/** The number rankings sort by and every list shows beside "beats holding": return against holding over the ranking year. */
+export const oosEdge = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.pick.total - a.split.pick.hold : a.total - a.hold);
+export const pickEdge = oosEdge;
+/** What every list shows beside "beats holding": the ranking-year edge and its period, and the whole window's edge. */
+export const holdNumbers = (a: Agent) => ({ edge: oosEdge(a), days: pickDays(a), ago: holdoutDays(a), full: a.total - a.hold, fullDays: a.days });
+/** Days of the ranking year and of the holdout, for the labels that name them. */
+export const pickDays = (a: Pick<Agent, 'split' | 'days'>) => (a.split ? Math.round((a.split.holdoutAt - a.split.at) / 86_400) : a.days);
+export const holdoutDays = (a: Pick<Agent, 'split' | 'to'>) => (a.split ? Math.round((a.to - a.split.holdoutAt) / 86_400) : 0);
 /**
  * The default order everywhere: agents working now first; among them, the ones that beat just holding; then
  * published classics, then the smaller worst drop, then the better return. Agents that never traded come last.
  */
-export const byMerit = (a: Agent, b: Agent) => Number(!active(a)) - Number(!active(b)) || Number(!beatsHold(a)) - Number(!beatsHold(b)) || a.tier - b.tier || Number(idle(a)) - Number(idle(b)) || a.maxDd - b.maxDd || b.total - a.total || a.id.localeCompare(b.id);
+// The tie-breaks read the same part of history as beatsHold: everything before the holdout. Only whether an agent is
+// working now (`active`: holding, or a trade in the last 30 days) looks at the present, as a state, not a result.
+const rankOf = (a: Agent) => a.split?.rank ?? { maxDd: a.maxDd, sharpe: a.sharpe, trades: a.trades, total: a.total };
+export const rankSharpe = (a: Agent) => rankOf(a).sharpe;
+export const byMerit = (a: Agent, b: Agent) => Number(!active(a)) - Number(!active(b)) || Number(!beatsHold(a)) - Number(!beatsHold(b)) || a.tier - b.tier || Number(rankOf(a).trades === 0) - Number(rankOf(b).trades === 0) || rankOf(a).maxDd - rankOf(b).maxDd || rankOf(b).total - rankOf(a).total || a.id.localeCompare(b.id);
 
 /** The position agents for any HashKey market (the chart's market may not be in the listing). */
 export async function positionAgents(m: cex.Market, withRetired = false): Promise<Agent[]> {

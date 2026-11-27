@@ -2658,3 +2658,9 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .proposal-what { margin: 0; font-size: 17px; line-height: 24px; font-weight: 800; color: var(--ink-title); }
 .proposal-why { margin: 0; font-size: 13px; color: var(--ink-2); }
 .proposal-act { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* the three parts of an agent's history: early, the ranking year, the holdout */
+.bh-oos dl.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.bh-oos dl.three .pick dd { font-size: 13.5px; }
+.bh-oos dl.three .oos dd { font-size: 14px; }
+.tp-num span + span, .tk-win + .tk-win { opacity: .8; }

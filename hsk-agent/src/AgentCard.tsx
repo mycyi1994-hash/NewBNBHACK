@@ -2,7 +2,7 @@
 //  - tile: under the chart (tap → Moa explains it)
 //  - chat: inside Moa's conversation (numbers, equity, rules; actions come from the conversation)
 import type { ReactNode } from 'react';
-import { ACTIVE_DAYS, lastTradeDays, type Agent, type RuleId } from './agents.ts';
+import { ACTIVE_DAYS, holdNumbers, lastTradeDays, type Agent, type RuleId } from './agents.ts';
 import { useT, type Strings } from './i18n.ts';
 import { CoinMark } from './CoinMark.tsx';
 import { Icon } from './Icons.tsx';
@@ -141,7 +141,8 @@ export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions 
         {head}
         <p className="ag-line">{t.agLine[a.rule]} <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span></p>
         <div className="ag-stats">
-          <span>{t.acEdge}<b className={edge >= 0 ? 'pos' : 'neg'}>{pct(edge)}</b></span>
+          {(() => { const h = holdNumbers(a); return <span>{t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago))} · {t.acEdge}<b className={h.edge >= 0 ? 'pos' : 'neg'}>{pct(h.edge)}</b></span>; })()}
+          <span>{t.fullOver(t.oosSpan(a.days), '')} · {t.acEdge}<b className={edge >= 0 ? 'pos' : 'neg'}>{pct(edge)}</b></span>
           <span>{t.acTotal}<b>{pct(a.total)}</b></span>
           <span>{t.acDd}<b>{drop(a.maxDd)}</b></span>
         </div>

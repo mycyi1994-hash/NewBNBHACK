@@ -46,6 +46,23 @@ Without a factory address, or before a wallet logs in, the app is a **demo**: ag
 | Vault view and trust page | `src/VaultView.tsx`, `src/vaultRead.ts`, `src/Trust.tsx` | `?vault=0x…` shows any vault's holdings, limits, stop-loss and history (HSK Chain RPC + Blockscout, read in the browser) without login. `?trust` explains who earns what (no platform fee), custody, and the risks, with live pool depth. |
 | Account | `src/account.ts`, `server/session.ts` | Login is one wallet signature (no transaction). The server pays the gas to make the user's vault. |
 
+## How agents are scored (and what "beats holding" means)
+
+- **Fills** (`src/fills.ts`): each trade pays, per side, the 0.3% HSKSwap fee, the pool's moving gap to the exchange
+  (measured from the pool's own swaps, or a stated 0.5% when there are too few), and price impact from the pool's real
+  depth at a $100 budget. The detail view repeats the backtest at $1,000 and $10,000 and flags where impact passes 1%.
+- **Three parts of every backtest** (`run` in `src/agents.ts`): the early part; the **ranking year** (the third of the
+  window that ends three months ago); and a **holdout**, the last twelfth (about three months of three years).
+- **One definition of "beats holding"** (`beatsHold`): more than just holding over the ranking year, while holding
+  the coin at least 25% of that year on average. The pick, Moa's sentence, the rankings, the rail, the market cards
+  and the list under the chart all use it, and all show that number with its period, plus the whole window's number.
+- **The holdout is never read by ranking or picking**: `beatsHold`, the sort numbers and the tie-breaks (worst drop,
+  steadiness, entries) are all computed up to the holdout's start; a test checks that changing the last three months
+  changes none of them. The only present-day input is whether an agent is working now (holding, or a trade in 30 days).
+  The detail view shows the holdout as "the result after the choice", and says the ranked number is the best of N.
+- No rule's numbers were tuned on this data (published or standard settings); agents users build are flagged as
+  possibly tuned by hand.
+
 ## Contracts on a local fork of mainnet (no real funds)
 
 ```bash

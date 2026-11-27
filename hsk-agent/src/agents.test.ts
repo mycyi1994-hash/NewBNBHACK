@@ -406,19 +406,40 @@ test('retired and demoted per the research; a retired agent can still be found b
 
 /* ---------- out-of-sample split and the decision inputs ---------- */
 
-test('every backtest is cut at a fixed point: two thirds in sample, the last third out of sample, ranked on the latter', async () => {
+test('every backtest is cut in three: early, the ranking year, and a holdout that ranking never reads', async () => {
   const A = await import('./agents.ts');
   const b = bars(Array.from({ length: 1400 }, (_, i) => 100 * (1 + 0.3 * Math.sin(i / 40)) * 1.001 ** i));
   for (const r of ['trend', 'maEns', 'volTarget', 'breakC'] as const) {
     const a = A.scorePosition(r, market('BTCUSDT-PERPETUAL'), b)!;
     const s = a.split!;
-    assert.ok(Math.abs((1 + s.is.total) * (1 + s.oos.total) - (1 + a.total)) < 1e-9, `${r}: the two parts make the whole`);
-    assert.ok(Math.abs((1 + s.is.hold) * (1 + s.oos.hold) - (1 + a.hold)) < 1e-9);
-    assert.equal(Math.round((a.to - s.at) / DAY), 365, 'the last year of three is the test');
-    assert.equal(A.beatsHold(a), s.oos.total > s.oos.hold && s.oos.exposure >= 0.25, 'judged on the out-of-sample year, holding the coin at least a quarter of it');
-    assert.ok(s.oos.exposure >= 0 && s.oos.exposure <= 1);
-    assert.equal(A.oosEdge(a), s.oos.total - s.oos.hold);
+    assert.ok(Math.abs((1 + s.early.total) * (1 + s.pick.total) * (1 + s.holdout.total) - (1 + a.total)) < 1e-9, `${r}: the three parts make the whole`);
+    assert.ok(Math.abs((1 + s.early.hold) * (1 + s.pick.hold) * (1 + s.holdout.hold) - (1 + a.hold)) < 1e-9);
+    assert.equal(A.holdoutDays(a), 91, 'the last twelfth of three years: about three months');
+    assert.equal(A.pickDays(a), 365, 'the ranking year ends where the holdout starts');
+    assert.equal(A.beatsHold(a), s.pick.total > s.pick.hold && s.pick.exposure >= 0.25);
+    assert.equal(A.oosEdge(a), s.pick.total - s.pick.hold);
+    assert.deepEqual(A.holdNumbers(a), { edge: s.pick.total - s.pick.hold, days: 365, ago: 91, full: a.total - a.hold, fullDays: a.days });
   }
+});
+
+test('nothing that ranks or picks reads the holdout: changing the last three months changes no ranking input', async () => {
+  const A = await import('./agents.ts');
+  const { recommend } = await import('./recommend.ts');
+  const base = Array.from({ length: 1400 }, (_, i) => 100 * (1 + 0.3 * Math.sin(i / 40)) * 1.001 ** i);
+  const crash = base.map((v, i) => (i >= 1400 - 80 ? v * 0.4 : v));   // only the holdout differs
+  const score = (closes: number[]) => ['trend', 'maEns', 'volTarget', 'breakC', 'ema'].map((r) => A.scorePosition(r as 'trend', market('BTCUSDT-PERPETUAL'), bars(closes))!);
+  const x = score(base), y = score(crash);
+  x.forEach((a, k) => {
+    const c = y[k];
+    assert.deepEqual(c.split!.pick, a.split!.pick, `${a.rule}: the ranking year is the same`);
+    assert.deepEqual(c.split!.rank, a.split!.rank, `${a.rule}: the tie-breaks are the same`);
+    assert.equal(A.beatsHold(c), A.beatsHold(a));
+    assert.notEqual(c.hold, a.hold, 'the whole window does see the crash');
+  });
+  // Same "working now" state, so the order and the pick can only differ through the holdout, and they do not.
+  const live = (a: (typeof x)[number]) => ({ ...a, live: true, runnable: true });
+  assert.deepEqual([...x.map(live)].sort(A.byMerit).map((a) => a.rule), [...y.map(live)].sort(A.byMerit).map((a) => a.rule));
+  assert.equal(recommend(x.map(live), { coin: 'BTC' })!.pick.rule, recommend(y.map(live), { coin: 'BTC' })!.pick.rule);
 });
 
 test('each scored agent keeps the inputs its last decision compared, for the journal', async () => {
@@ -439,7 +460,8 @@ test('each scored agent keeps the inputs its last decision compared, for the jou
 
 test('sitting in cash through a falling year does not count as beating holding', async () => {
   const A = await import('./agents.ts');
-  const a = { total: 0, hold: -0.3, split: { at: 0, is: { total: 0, hold: 0 }, oos: { total: 0, hold: -0.4, exposure: 0.05 } } };
+  const a = { total: 0, hold: -0.3, split: { at: 0, holdoutAt: 0, early: { total: 0, hold: 0 }, pick: { total: 0, hold: -0.4, exposure: 0.05 }, holdout: { total: 0, hold: 0, exposure: 0 }, rank: { maxDd: 0, sharpe: 0, trades: 0, total: 0 } } };
   assert.equal(A.beatsHold(a), false, 'ahead only by holding nothing');
-  assert.equal(A.beatsHold({ ...a, split: { ...a.split, oos: { ...a.split.oos, total: -0.1, exposure: 0.5 } } }), true, 'held half the year and lost less');
+  assert.equal(A.beatsHold({ ...a, split: { ...a.split, pick: { ...a.split.pick, total: -0.1, exposure: 0.5 } } }), true, 'held half the year and lost less');
+  assert.equal(A.beatsHold({ ...a, split: { ...a.split, pick: { total: -0.5, hold: -0.4, exposure: 1 }, holdout: { total: 9, hold: 0, exposure: 1 } } }), false, 'a great holdout does not count');
 });
