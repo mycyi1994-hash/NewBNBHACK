@@ -2183,3 +2183,89 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
   .slot-face.orbit::before, .pf-face.orbit::before, .run-pill i::after, .pf-dot::after, .pf-live i::after, .pf-orbit { animation: none; }
   .pf-orbit-dot { display: none; }
 }
+
+/* ---------- Agents alive: the hire moment, the status card in Moa, the top bar ---------- */
+/* One language with "My agents": the agent's colour (--agent), a light travelling round its mark while it runs,
+   a live dot, and the state as one coloured word. Nothing moves once it is paused or done. */
+@keyframes hc-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+@keyframes hc-ripple { from { transform: scale(1); opacity: .45; } to { transform: scale(1.9); opacity: 0; } }
+@keyframes hc-money { from { opacity: 0; transform: translateY(6px); filter: blur(2px); } }
+.hc-mark.orbit::before, .sc2-mark.orbit::before, .chip-mark.orbit::before {
+  content: ''; position: absolute; inset: -4px; border-radius: inherit; padding: 2px; pointer-events: none; z-index: 1;
+  background: conic-gradient(from var(--ring), transparent 0 45%, color-mix(in srgb, var(--agent) 25%, transparent) 70%, var(--agent) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: ring 2.4s linear infinite;
+}
+.st-pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; flex: none; width: fit-content; }
+.st-pill i { position: relative; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.st-pill.on { background: #e6f4ea; color: #137333; }
+.st-pill.on i::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: inherit; animation: ping 2s var(--ease) infinite; }
+.st-pill.ask { background: var(--warn-bg); color: var(--warn); }
+.st-pill.ask i { animation: breathe 1.8s ease-in-out infinite; }
+.st-pill.off { background: var(--fill); color: var(--ink-3); }
+.st-pill.off i { background: transparent; border: 1.5px solid currentColor; }
+
+/* the hire moment */
+.hire-card { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 14px; padding: 18px 18px 16px; border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--agent) 38%, var(--line-card));
+  background: radial-gradient(140% 100% at 0% 0%, color-mix(in srgb, var(--agent) 13%, var(--bg)) 0%, var(--bg) 62%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 12px 32px color-mix(in srgb, var(--agent) 16%, transparent);
+  animation: hc-in .55s var(--ease-in) backwards; }
+.hc-top { display: flex; align-items: center; gap: 16px; }
+.hc-mark { position: relative; flex: none; width: 60px; height: 60px; border-radius: 18px; display: grid; }
+.hc-mark .face { position: relative; z-index: 1; width: 60px; height: 60px; border-radius: 18px; box-shadow: 0 6px 16px color-mix(in srgb, var(--agent) 22%, transparent); }
+.hc-mark .face svg { width: 28px; height: 28px; }
+.hc-ripple { position: absolute; inset: 0; border-radius: 18px; border: 2px solid var(--agent); opacity: 0; animation: hc-ripple 1.6s .25s var(--ease) 2 both; }
+.hc-ripple.two { animation-delay: .7s; }
+.hc-title { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.hc-title b { font-size: 18px; line-height: 24px; font-weight: 700; color: var(--ink-title); letter-spacing: -0.015em; }
+.hc-money { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; animation: hc-money .6s .2s var(--ease-in) backwards; }
+.hc-money b { font-size: 40px; line-height: 44px; font-weight: 800; letter-spacing: -0.035em; color: var(--ink-title); font-variant-numeric: tabular-nums; }
+.hc-money span { font-size: 17px; font-weight: 600; color: var(--ink-2); }
+.hc-money small { flex-basis: 100%; font-size: 13px; color: var(--ink-3); }
+.hc-rule { position: relative; padding: 10px 12px 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--agent) 7%, var(--bg)); font-size: 14px; line-height: 20px; color: var(--ink); }
+.hc-rule::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--agent); }
+.hc-actions { display: flex; align-items: center; gap: 8px; }
+.hc-actions .btn-primary { height: 40px; padding: 0 18px; border-radius: 12px; font-size: 14.5px; }
+.hc-actions .btn-text { color: var(--ink-3); }
+.hire-card:not(.run) { background: var(--rail); border-color: var(--line-card); box-shadow: none; }
+
+/* the status card in Moa */
+.status-card.sc2 { gap: 12px; padding: 14px; border-radius: 14px; border-color: color-mix(in srgb, var(--agent) 28%, var(--line-card)); }
+.status-card.sc2.run { background: linear-gradient(110deg, color-mix(in srgb, var(--agent) 6%, var(--bg)) 0%, var(--bg) 45%); }
+.sc2-top { display: flex; align-items: center; gap: 12px; }
+.sc2-mark { position: relative; flex: none; border-radius: 10px; display: grid; }
+.sc2-mark .face { width: 40px; height: 40px; border-radius: 10px; }
+.sc2.st-paused .sc2-mark, .sc2.st-done .sc2-mark { filter: grayscale(1); opacity: .6; }
+.sc2-name { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
+.sc2-name b { font-size: 15px; font-weight: 700; color: var(--ink-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc2-pnl { display: flex; flex-direction: column; align-items: flex-end; text-align: right; flex: none; }
+.sc2-pnl b { font-size: 22px; line-height: 26px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink-title); font-variant-numeric: tabular-nums; }
+.sc2-pnl small { font-size: 12.5px; font-weight: 600; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.sc2-pnl.pos b, .sc2-pnl.pos small { color: var(--pos); }
+.sc2-pnl.neg b, .sc2-pnl.neg small { color: var(--neg); }
+.sc2-money { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.sc2-money .gauge { grid-column: 1 / -1; height: 6px; }
+.sc2-money .gauge i { background: var(--agent); }
+.sc2-held { text-align: right; color: var(--ink-3); }
+
+/* the top bar */
+.agent-chip { height: 36px; border-radius: 12px; }
+.agent-chip.run { border-color: color-mix(in srgb, var(--agent) 45%, var(--line-btn)); background: linear-gradient(100deg, color-mix(in srgb, var(--agent) 8%, var(--bg)), var(--bg) 70%); }
+.agent-chip .chip-main { gap: 8px; padding: 0 12px 0 6px; }
+.chip-mark { position: relative; flex: none; display: grid; border-radius: 8px; }
+.chip-mark .face { width: 26px; height: 26px; border-radius: 8px; }
+.chip-mark .face svg { width: 15px; height: 15px; }
+.chip-mark.orbit::before { inset: -3px; padding: 1.5px; border-radius: 10px; }
+.agent-chip.st-paused .chip-mark, .agent-chip.st-done .chip-mark { filter: grayscale(1); opacity: .6; }
+.chip-main b { font-weight: 600; color: var(--ink-title); }
+.chip-auto { width: 12px; height: 12px; margin-left: -4px; color: var(--accent); opacity: .8; flex: none; }
+.chip-st { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.agent-chip.st-paused .chip-st, .agent-chip.st-done .chip-st { color: var(--ink-3); }
+.chip-pl { font-weight: 700; font-variant-numeric: tabular-nums; }
+.chip-pl.none { font-weight: 500; color: var(--ink-3); }
+.agent-chip .chip-ctl { color: var(--ink-3); }
+@media (prefers-reduced-motion: reduce) {
+  .hc-mark.orbit::before, .sc2-mark.orbit::before, .chip-mark.orbit::before, .st-pill i, .st-pill i::after, .hc-ripple, .hire-card, .hc-money { animation: none; }
+  .hc-ripple { display: none; }
+}

@@ -29,8 +29,10 @@ import { isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
 import { AgentCard, agentName, drop, explainAgent, Face } from './AgentCard.tsx';
 import type { HireTarget } from './HireSheet.tsx';
-import { book, lastEvent, statusOf, type Amounts, type HiredAgent } from './runner.ts';
-import { eventLine, hiredName, money, moneyLine, qtyText, skipText, statusText, whyText } from './hiredText.ts';
+import { lastEvent, statusOf, type Amounts, type HiredAgent } from './runner.ts';
+import { hiredName, money, qtyText, skipText, whyText } from './hiredText.ts';
+import { HireCard, StatusCard } from './AgentLive.tsx';
+import { agentColors, OTHER_COLOR } from './portfolio.ts';
 
 export interface MoaContext { venue?: 'cex' | 'dex'; label: string; asset?: string; perp?: boolean }
 /** A job another part of the screen hands to Moa. */
@@ -50,7 +52,7 @@ interface Choice { label: string; act: () => void; primary?: boolean }
 interface Note {
   id: number; at: number; role: 'moa' | 'you'; text: string; plan?: Plan; goal?: string; execs?: Exec[]; offline?: boolean;
   follow: string[]; choices?: Choice[]; chosen?: string; sky?: { level: Level; list: Weather[] };
-  agent?: { a: Agent; rec?: { pool: number } }; list?: { agents: Agent[]; coin?: string }; status?: string; order?: { hiredId: string; orderId: string };
+  agent?: { a: Agent; rec?: { pool: number } }; list?: { agents: Agent[]; coin?: string }; status?: string; hired?: string; order?: { hiredId: string; orderId: string };
 }
 type Line = Omit<Note, 'id' | 'at' | 'role'>;
 type Topic = 'why' | 'how' | 'when' | 'split' | 'alert' | 'other' | 'strats' | 'chart' | 'rule' | 'doit' | 'self';
@@ -496,7 +498,9 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       const h = hiredRef.current.find((x) => x.id === inject.hiredId);
       if (h) {
         const c = inject.changed;
-        statusNote(h.id, c ? t.changedSay(hiredName(t, h), `$${money(c.from.perBuyUsd)} · $${money(c.from.budgetUsd)}`, `$${money(c.to.perBuyUsd)} · $${money(c.to.budgetUsd)}`) : t.hiredSay(hiredName(t, h)));
+        // A new hire is an event: its own card, no sentence before it. A change of amounts stays a sentence and the status card.
+        if (c) statusNote(h.id, t.changedSay(hiredName(t, h), `$${money(c.from.perBuyUsd)} · $${money(c.from.budgetUsd)}`, `$${money(c.to.perBuyUsd)} · $${money(c.to.budgetUsd)}`));
+        else say({ text: '', hired: h.id, follow: [] }, 300);
       }
     }
     // the liquidity screen shows its own result, so on a phone Moa's notes about it wait behind the Moa tab instead of covering it
@@ -513,6 +517,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
   }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byId = (id: string) => hired.find((h) => h.id === id);
+  const colors = agentColors(hired);
+  const colorOf = (id: string) => colors.get(id) ?? OTHER_COLOR;
   const priceOf = (h: HiredAgent) => quotes.find((q) => q.asset === h.asset)?.pool;
 
   return (
@@ -561,8 +567,12 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
             )}
             {n.list && <p className="rowlist-foot">{t.recOthersFoot}</p>}
             {n.status && byId(n.status) && (
-              <StatusCard h={byId(n.status)!} price={priceOf(byId(n.status)!)} now={now} onEdit={() => onEdit(n.status!)}
+              <StatusCard h={byId(n.status)!} color={colorOf(n.status)} price={priceOf(byId(n.status)!)} now={now} onEdit={() => onEdit(n.status!)}
                 onPause={() => onPause(n.status!)} onResume={() => onResume(n.status!)} onLog={() => onGoto('mine')} />
+            )}
+            {n.hired && byId(n.hired) && (
+              <HireCard h={byId(n.hired)!} color={colorOf(n.hired)} now={now} onView={() => onGoto('mine')}
+                onPause={() => onPause(n.hired!)} onResume={() => onResume(n.hired!)} />
             )}
             {n.order && byId(n.order.hiredId) && (
               <OrderCard h={byId(n.order.hiredId)!} orderId={n.order.orderId} sending={sending.has(n.order.orderId)} vault={vault}
@@ -631,35 +641,6 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
         </Modal>
       )}
     </aside>
-  );
-}
-
-/** A hired agent right now, read from its record (never from Moa's memory). */
-function StatusCard({ h, price, now, onEdit, onPause, onResume, onLog }: {
-  h: HiredAgent; price?: number; now: number; onEdit: () => void; onPause: () => void; onResume: () => void; onLog: () => void;
-}) {
-  const { t } = useT();
-  const st = statusOf(h, now);
-  const b = book(h);
-  const m = moneyLine(t, h, price);
-  const last = h.log[h.log.length - 1];
-  const lastLine = last ? eventLine(t, h, last) : undefined;
-  return (
-    <div className={`status-card st-${st}`}>
-      <div className="status-head"><span className={`chip-dot ${st}`} aria-hidden /><b>{hiredName(t, h)}</b><span className="muted">{statusText(t, h, now)}</span></div>
-      <dl className="acard-nums">
-        <div><dt>{t.scPer}</dt><dd>${money(h.perBuyUsd)}</dd></div>
-        <div><dt>{t.scSpent}</dt><dd>${money(b.spent)} / ${money(h.budgetUsd)}</dd></div>
-        <div><dt>{t.scPnl}</dt><dd className={m.cls}>{h.fills.length ? m.text : t.scNone}</dd></div>
-      </dl>
-      {b.qty > 0 && <p className="status-line">{t.scHeld}: {qtyText(b.qty)} {h.asset}{price !== undefined ? ` · ${t.scValue} $${money(b.qty * price)}` : ''}</p>}
-      {lastLine && <p className="status-line muted">{t.scLast}: {lastLine.label}{lastLine.detail ? ` · ${lastLine.detail}` : ''}</p>}
-      <div className="status-actions">
-        <button className="btn-ghost sm" onClick={onEdit}>{t.scEdit}</button>
-        {h.paused ? <button className="btn-ghost sm" onClick={onResume}>{t.stResume}</button> : st !== 'done' && <button className="btn-ghost sm" onClick={onPause}>{t.stPause}</button>}
-        <button className="btn-ghost sm" onClick={onLog}>{t.scLog}</button>
-      </div>
-    </div>
   );
 }
 

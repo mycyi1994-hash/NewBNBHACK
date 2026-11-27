@@ -340,7 +340,7 @@ const en = {
   hsWithdraw: 'Withdrawals, limits and locking are yours alone, in the account menu at the top right.',
   customName: (a: string) => `My ${a} plan`,
   barLabel: 'My agents', barEmpty: 'No agents hired yet', barRecommend: 'Get a pick from Moa',
-  stPaused: 'Paused', stDone: 'Budget used up', stHolding: 'Holding', stWaitSignal: 'Waiting for signal', stBought: (u: string) => `Bought $${u} today`,
+  stPaused: 'Paused', stDone: 'Budget used up', stHolding: 'Holding', stWaitSignal: 'Watching for a chance', stBought: (u: string) => `Bought $${u} today`,
   stSkipped: 'Skipped today', stNext: 'Next buy coming', stAskBuy: (u: string) => `Buy $${u}?`, stAskSell: 'Sell?', stReview: 'Review', stSending: 'Sending…',
   stPause: 'Pause', stResume: 'Resume', stSpentOf: (s: string, b: string) => `$${s} / $${b}`,
   recCoin: (c: string) => `For ${c} I looked at the published classics first and picked the one with the smallest worst drop.`, recAll: 'Among the agents I can run, I looked at the published classics first and picked the one with the smallest worst drop.',
@@ -351,7 +351,7 @@ const en = {
   riskLine: (dd: string, weak: string) => `In its backtest the worst drop was ${dd}. ${weak}`,
   whyNot: (b: string) => `${b} has no pool on HSKSwap, so your vault can’t buy or sell it. Moa shows its signal and backtest as a demo.`,
   agentsLoading: 'Scoring the agents, one moment…', agentsFailed: 'I couldn’t load the candles to score agents. Try again in a moment.',
-  hiredSay: (n: string) => `Hired ${n}. You can follow it in the bar at the top.`, changedSay: (n: string, a: string, b: string) => `${n}: ${a} → ${b}.`,
+  hiredSay: (n: string) => `${n} is at work`, changedSay: (n: string, a: string, b: string) => `${n}: ${a} → ${b}.`,
   pausedSay: (n: string) => `Paused ${n}. It won’t send any more orders.`, resumedSay: (n: string) => `${n} is working again.`,
   vaCash: (u: string) => `Your vault holds $${u} in USDT.`, vaHold: (s: string, q: string, v: string, c: string, g: string) => `${s} ${q}: worth $${v} now, cost $${c}${g ? ` (${g})` : ''}`,
   vaNoCoins: 'No coins at the moment.', vaRules: (r: string) => `Your limits: ${r}.`, vaStopDue: 'Its stop-loss is due.',
@@ -359,6 +359,9 @@ const en = {
   spCost: 'Taking that gap would mean buying on one and selling on the other: about 0.8% in fees both ways (0.3% per swap on HSKSwap, 0.1% per trade on the exchange), plus moving funds between them, which takes time.',
   spVerdict: 'Your vault only trades on HSKSwap, so Moa does not chase it. What the gap does tell you: when HSKSwap is lower, buying there is cheaper than the exchange price your agent’s signal came from, and selling there gets less.',
   nothingToStop: 'No agent is running right now.', noHired: 'You haven’t hired an agent yet. Want me to pick one?',
+  hcOnAuto: (n: string) => `${n} is at work`, hcOnAsk: (n: string) => `${n} has started`, hcPaused: (n: string) => `${n} is paused`,
+  hcGiven: 'given', hcPer: (p: string) => `$${p} per buy`, hcAuto: 'trades on its own', hcAsk: 'asks you before each trade', hcView: 'See it in My agents',
+  scUsed: (s: string, b: string) => `$${s} of $${b} used`,
   scPer: 'Per buy', scSpent: 'Spent', scHeld: 'Holding', scValue: 'Value now', scPnl: 'Profit / loss', scLast: 'Last', scEdit: 'Change amount', scLog: 'See records', scNone: '—',
   orderBuy: (n: string, u: string, a: string) => `${n} wants to buy $${u} of ${a}. Go ahead?`, orderSell: (n: string, q: string, a: string) => `${n} wants to sell ${q} ${a}. Go ahead?`,
   whySignalOn: 'Its signal just turned on.', whySignalOff: 'Its signal turned off, so it closes the position.',
@@ -669,6 +672,8 @@ const en = {
 /** Korean copula after a word: 비 → 예요, 구름 → 이에요. */
 const iya = (w: string) => { const c = w.charCodeAt(w.length - 1) - 0xac00; return c >= 0 && c < 11172 && c % 28 === 0 ? '예요' : '이에요'; };
 
+/** The subject particle for a Korean name: 이 after a final consonant, 가 after a vowel, 이(가) when it cannot tell. */
+const iga = (n: string) => { const c = n.charCodeAt(n.length - 1); return c >= 0xac00 && c <= 0xd7a3 ? `${n}${(c - 0xac00) % 28 ? '이' : '가'}` : `${n}이(가)`; };
 const ko: typeof en = {
   navMarkets: '마켓', navTrade: '트레이드', navAssistant: '어시스턴트', navAsk: 'Moa에게 묻기', navAutomations: '자동화', navBots: '봇',
   preview: '미리보기',
@@ -998,7 +1003,7 @@ const ko: typeof en = {
   hsWithdraw: '출금, 한도, 잠금은 우측 상단 계정 메뉴에서 나만 할 수 있어요.',
   customName: (a) => `내 ${a} 계획`,
   barLabel: '내 에이전트', barEmpty: '아직 맡긴 에이전트가 없어요', barRecommend: 'Moa에게 추천받기',
-  stPaused: '멈춤', stDone: '예산을 다 썼어요', stHolding: '보유 중', stWaitSignal: '신호 기다리는 중', stBought: (u) => `오늘 $${u} 삼`,
+  stPaused: '멈춤', stDone: '예산을 다 썼어요', stHolding: '보유 중', stWaitSignal: '기회 보는 중', stBought: (u) => `오늘 $${u} 삼`,
   stSkipped: '오늘은 쉼', stNext: '곧 다음 매수', stAskBuy: (u) => `$${u} 살까요?`, stAskSell: '팔까요?', stReview: '확인', stSending: '보내는 중…',
   stPause: '멈추기', stResume: '다시 시작', stSpentOf: (s, b) => `$${s} / $${b}`,
   recCoin: (c) => `${c} 에이전트 중에서 검증된 클래식 전략을 먼저 보고, 그중 가장 덜 빠졌던 걸 골랐어요.`, recAll: '맡길 수 있는 에이전트 중에서 검증된 클래식 전략을 먼저 보고, 그중 가장 덜 빠졌던 걸 골랐어요.',
@@ -1009,7 +1014,7 @@ const ko: typeof en = {
   riskLine: (dd, weak) => `백테스트에서 가장 크게 빠졌을 때 ${dd}였어요. ${weak}`,
   whyNot: (b) => `${b}는 HSKSwap에 풀이 없어서 볼트로 사고팔 수 없어요. 신호와 백테스트만 보여 주는 데모예요.`,
   agentsLoading: '에이전트 점수를 계산하는 중이에요. 잠깐만요…', agentsFailed: '에이전트 점수를 낼 캔들을 불러오지 못했어요. 잠시 후 다시 해 주세요.',
-  hiredSay: (n) => `${n}에게 맡겼어요. 위쪽 바에서 볼 수 있어요.`, changedSay: (n, a, b) => `${n}: ${a} → ${b}로 바꿨어요.`,
+  hiredSay: (n) => `${n}에게 맡겼어요`, changedSay: (n, a, b) => `${n}: ${a} → ${b}로 바꿨어요.`,
   pausedSay: (n) => `${n} 멈췄어요. 주문을 더 보내지 않아요.`, resumedSay: (n) => `${n} 다시 일해요.`,
   vaCash: (u) => `볼트에 USDT가 $${u} 있어요.`, vaHold: (s, q, v, c, g) => `${s} ${q}개: 지금 $${v}, 산 값 $${c}${g ? ` (${g})` : ''}`,
   vaNoCoins: '지금 들고 있는 코인은 없어요.', vaRules: (r) => `내가 정한 한도: ${r}.`, vaStopDue: '손절 조건에 닿았어요.',
@@ -1017,6 +1022,9 @@ const ko: typeof en = {
   spCost: '이 차이를 먹으려면 한쪽에서 사고 다른 쪽에서 팔아야 해요. 왕복 수수료가 약 0.8%(HSKSwap 스왑당 0.3%, 거래소 거래당 0.1%)이고, 두 곳 사이로 돈을 옮기는 시간도 걸려요.',
   spVerdict: '내 볼트는 HSKSwap에서만 거래해서 Moa는 이 차익을 쫓지 않아요. 대신 이렇게 읽으면 돼요: HSKSwap이 더 낮을 때는 에이전트 신호가 나온 거래소 가격보다 싸게 사는 셈이고, 팔 때는 덜 받아요.',
   nothingToStop: '지금 일하는 에이전트가 없어요.', noHired: '아직 맡긴 에이전트가 없어요. 하나 골라 드릴까요?',
+  hcOnAuto: (n) => `${iga(n)} 일하는 중이에요`, hcOnAsk: (n) => `${iga(n)} 일을 시작했어요`, hcPaused: (n) => `${iga(n)} 쉬고 있어요`,
+  hcGiven: '맡김', hcPer: (p) => `한 번에 $${p}`, hcAuto: '알아서 사고팔아요', hcAsk: '사고팔기 전에 물어봐요', hcView: '내 에이전트에서 보기',
+  scUsed: (s, b) => `$${b} 중 $${s} 씀`,
   scPer: '한 번에', scSpent: '쓴 돈', scHeld: '보유', scValue: '지금 가치', scPnl: '손익', scLast: '마지막', scEdit: '금액 바꾸기', scLog: '기록 보기', scNone: '—',
   orderBuy: (n, u, a) => `${n}: ${a}를 $${u}어치 살까요?`, orderSell: (n, q, a) => `${n}: ${a} ${q}개를 팔까요?`,
   whySignalOn: '신호가 방금 켜졌어요.', whySignalOff: '신호가 꺼져서 포지션을 정리해요.',
