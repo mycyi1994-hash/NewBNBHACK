@@ -1,13 +1,13 @@
 // What sits around the price chart besides candles and indicators:
-//  - on the exchange chart, a "Heatmap" button that lays nanotradingclub's order-book heatmap and liquidations
-//    over the chart. Nothing is fetched until a layer is switched on;
+//  - on the exchange chart, a "Heatmap" button that lays nanotradingclub's order-book heatmap and a liquidation map
+//    over a dark chart. Nothing is fetched until a layer is switched on;
 //  - on the HSKSwap chart, the pool's depth read from the chain, as blocks above the chart.
 import { useEffect, useRef, useState } from 'react';
 import { useT } from './i18n.ts';
 import type { Asset } from './intent.ts';
 import { poolState } from './dex.ts';
 import { poolDepth, type PoolDepth } from './depth.ts';
-import { heatHistory, heatRefresh, liquidations, openInterest, NoData, NANO_REFRESH_MS, type HeatColumn, type Liq } from './nano.ts';
+import { heatHistory, heatRefresh, openInterest, NoData, NANO_REFRESH_MS, type HeatColumn } from './nano.ts';
 
 export type LayerState = 'off' | 'loading' | 'on' | 'none' | 'error';
 export interface Layer<T> { data: T | null; state: LayerState }
@@ -44,17 +44,16 @@ function useLayer<T>(on: boolean, key: string, first: () => Promise<T>, next: (h
   return got.key === key ? got : { data: null, state: on ? 'loading' : 'off' };
 }
 
-export type HeatKind = 'book' | 'map' | 'liq';
-/** The three layers for one coin. `want` is what the user switched on. `map` holds the open interest the estimate is built from. */
-export function useHeat(base: string, want: Set<HeatKind>): { book: Layer<HeatColumn[]>; liq: Layer<Liq[]>; map: Layer<number> } {
+export type HeatKind = 'book' | 'map';
+/** The two layers for one coin. `want` is what the user switched on. `map` holds the open interest the estimate is built from. */
+export function useHeat(base: string, want: Set<HeatKind>): { book: Layer<HeatColumn[]>; map: Layer<number> } {
   const book = useLayer<HeatColumn[]>(want.has('book'), `book-${base}`, () => heatHistory(base), (have) => heatRefresh(base, have));
-  const liq = useLayer<Liq[]>(want.has('liq'), `liq-${base}`, () => liquidations(base), () => liquidations(base));
   const map = useLayer<number>(want.has('map'), `map-${base}`, () => openInterest(base), () => openInterest(base));
-  return { book, liq, map };
+  return { book, map };
 }
 
 /** The "Heatmap" button next to Indicators. */
-export function HeatMenu({ want, toggle, book, liq, map }: { want: Set<HeatKind>; toggle: (k: HeatKind) => void; book: LayerState; liq: LayerState; map: LayerState }) {
+export function HeatMenu({ want, toggle, book, map }: { want: Set<HeatKind>; toggle: (k: HeatKind) => void; book: LayerState; map: LayerState }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -72,7 +71,7 @@ export function HeatMenu({ want, toggle, book, liq, map }: { want: Set<HeatKind>
       <span><b>{words[0]}</b><small>{note(st, words[1])}</small></span>
     </label>
   );
-  const all = [book, map, liq], shown = all.filter((x) => x === 'on').length, busy = all.includes('loading');
+  const all = [book, map], shown = all.filter((x) => x === 'on').length, busy = all.includes('loading');
   return (
     <div className="ind-menu heat-menu" ref={ref}>
       <button className={`ind-btn${open ? ' on' : ''}${want.size ? ' lit' : ''}`} aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
@@ -83,7 +82,6 @@ export function HeatMenu({ want, toggle, book, liq, map }: { want: Set<HeatKind>
         <div className="ind-pop heat-pop" role="menu">
           {item('book', book, t.heatBook)}
           {item('map', map, t.heatMap)}
-          {item('liq', liq, t.heatLiq)}
           <p className="heat-src">{t.heatSrc}</p>
         </div>
       )}
@@ -91,15 +89,14 @@ export function HeatMenu({ want, toggle, book, liq, map }: { want: Set<HeatKind>
   );
 }
 
-/** The key under the toolbar while a layer is on: what the colours and circles mean. */
-export function HeatLegend({ book, liq, map }: { book: boolean; liq: boolean; map: boolean }) {
+/** The key in the toolbar while a layer is on: what the colours mean. */
+export function HeatLegend({ book, map }: { book: boolean; map: boolean }) {
   const { t } = useT();
-  if (!book && !liq && !map) return null;
+  if (!book && !map) return null;
   return (
     <span className="heat-legend">
       {book && <span><i className="hl-ramp" aria-hidden />{t.heatKeyBook}</span>}
-      {map && <span data-tip={t.heatMapTip}><i className="hl-map" aria-hidden />{t.heatKeyMap}</span>}
-      {liq && <span><i className="hl-dot long" aria-hidden />{t.heatKeyLong}<i className="hl-dot short" aria-hidden />{t.heatKeyShort}</span>}
+      {map && <span data-tip={t.heatMapTip}><i className="hl-sw long" aria-hidden />{t.heatKeyLong}<i className="hl-sw short" aria-hidden />{t.heatKeyShort}</span>}
     </span>
   );
 }

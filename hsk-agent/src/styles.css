@@ -1666,11 +1666,12 @@ select { padding-right: 8px; }
 .heat-src { margin: 6px 10px 4px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 16px; color: var(--ink-3); }
 .heat-legend { display: inline-flex; align-items: center; gap: 14px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 .heat-legend > span { display: inline-flex; align-items: center; gap: 6px; }
-.hl-ramp { width: 44px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #fef0b4, #fdbe64, #d946c8, #581c87); }
-.hl-map { width: 30px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, #0f766e 0 34%, #14b8a6 34% 67%, #5eead4 67%); }
-.hl-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid; }
-.hl-dot.long { border-color: #dc2626; background: rgba(220, 38, 38, .22); }
-.hl-dot.short { margin-left: 8px; border-color: #16a34a; background: rgba(22, 163, 74, .22); }
+.hl-ramp { width: 44px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #5f1016, #b9262c, #fa5c48, #ffd6a8); }
+.hl-sw { width: 10px; height: 10px; border-radius: 3px; }
+.hl-sw.long { background: #ef4444; }
+.hl-sw.short { margin-left: 8px; background: #22c55e; }
+.chart-main.dark { background: #0d0809; }
+.chart-main.dark .chart-badges { color: #fff; }
 
 /* ---------- HSKSwap: the pool's depth above the chart ---------- */
 .lp-strip { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 6px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--rail); min-width: 0; }

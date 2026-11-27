@@ -119,15 +119,17 @@ stranger once the price has held, with the stranger getting nothing.
   its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three pools held one full-range
   position (the HSK pool three small ranges more), so every column is the same height; liquidity added to one
   stretch would raise that column alone.
-- **Heatmap and liquidations on the exchange chart.** The "Heatmap" button next to Indicators lays three layers over
-  the candles: the order book of nine exchanges by price (under the candles), forced liquidations as circles
-  (over them), and a liquidation map at the right edge: where positions would be liquidated, estimated from open
-  interest, the volume traded at each price and a fixed mix of leverage, the way nanotradingclub's own map does
-  it (`liqMap` in `src/nano.ts`; an estimate, half long and half short by assumption). The data is nanotradingclub's public files (`src/nano.ts`): exchange data, not HSK Chain data, and
-  for coins it collects (BTC and ETH among them, not HSK). Nothing is fetched until a layer is switched on, then
-  every three minutes while the tab is in front. The order book comes with nanotradingclub's whole history (about
-  160 days, coarser the older it is; 12 MB once, in the browser), so it lies under the candles on every interval
-  from one minute to one day. The liquidation map takes entry prices from the last week of candles.
+- **Order-book heatmap and liquidation map on the exchange chart.** The "Heatmap" button next to Indicators turns the
+  chart dark and lays up to two layers on it (`src/heatLayer.ts`). The heatmap shows walls: stretches of price where
+  more orders rest on nine exchanges than around them, drawn from deep red to pale peach as they get thicker; the
+  rest of the book is left out so the walls can be read. The liquidation map is a profile at the right edge, longs
+  under the price in red and shorts over it in green, with the three largest amounts on each side labelled; it is
+  estimated from open interest, the volume traded at each price over the last week and a fixed mix of leverage,
+  half long and half short (`liqMap` in `src/nano.ts`), the way nanotradingclub's own map is. The data is
+  nanotradingclub's public files: exchange data, not HSK Chain data, for coins it collects (BTC and ETH among them,
+  not HSK). Nothing is fetched until a layer is switched on, then every three minutes while the tab is in front. The
+  book comes with nanotradingclub's whole history (about 160 days, coarser the older it is; 12 MB once, in the
+  browser), so it lies under the candles on every interval from one minute to one day.
 - **Moa is given the same numbers.** Its market tool now also returns each pool's depth, and for BTC and ETH the
   thickest stacks of resting orders within 8% of the price and the liquidations of the last hour and day
   (`marketSnapshot` in `server/moaAgent.ts`, about 2.6 KB, fetched at most once every three minutes).
