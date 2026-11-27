@@ -14,6 +14,11 @@ import { eventLine, hiredName, money, moneyLine, qtyText, statusText } from './h
 import type { Agent } from './agents.ts';
 import { agentName, Face, ruleLines } from './AgentCard.tsx';
 import { readLevel, recommend } from './recommend.ts';
+import { agentRows } from './portfolio.ts';
+import { Portfolio, signedUsd } from './PortfolioRing.tsx';
+import { RollNum } from './motion.tsx';
+import { pct } from './AgentCard.tsx';
+import type { CSSProperties } from 'react';
 
 const loc = () => (document.documentElement.lang === 'en' ? 'en-US' : 'ko-KR');
 const when = (t: number) => new Date(t).toLocaleString(loc(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -36,6 +41,8 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
   // Someone with no agent yet gets one ready to start: Moa's pick for bitcoin at the level they chose.
   const ready = useMemo(() => (hired.length || !agents ? null : recommend(agents, { coin: 'BTC', level: readLevel() })?.pick ?? null), [hired.length, agents]);
   const adds = Math.max(1, SLOTS - Math.max(1, hired.length));
+  const priceOf = (a: string) => quotes.find((q) => q.asset === a)?.pool;
+  const rows = agentRows(hired, priceOf, now);
   return (
     <div className="page mine-page">
       {removing && (
@@ -53,34 +60,38 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
       <p className="page-sub">{t.mineSub}</p>
 
       <ol className="slots" aria-label={t.mineTitle}>
-        {hired.map((h) => {
+        {hired.map((h, i) => {
           const st = statusOf(h, now);
+          const r = rows[i];
           const b = book(h);
           const price = quotes.find((q) => q.asset === h.asset)?.pool;
           const m = moneyLine(t, h, price);
           const log = [...h.log].reverse();
           const frac = h.budgetUsd > 0 ? Math.min(1, b.spent / h.budgetUsd) : 0;
           return (
-            <li key={h.id} className={`slot mine st-${st}`}>
+            <li key={h.id} className={`slot mine st-${st}${r.running ? ' run' : ''}`} style={{ '--agent': r.color } as CSSProperties}>
               <div className="slot-row">
-                <span className="slot-face">{h.source.type === 'market' ? <Face rule={h.source.rule} /> : <Icon name="bot" size={22} />}</span>
+                <span className={`slot-face${r.running ? ' orbit' : ''}`}>{h.source.type === 'market' ? <Face rule={h.source.rule} /> : <Icon name="bot" size={22} />}</span>
                 <span className="slot-main">
                   <span className="slot-name"><button className="tbl-link" onClick={() => onOpen(h.id)}>{hiredName(t, h)}</button>{h.mode === 'auto' && <span className="auto-tag">{t.autoBadge}</span>}</span>
-                  <span className="state"><i className={`chip-dot ${st}`} aria-hidden />{statusText(t, h, now)}</span>
+                  <span className="state">
+                    {r.running && <span className="run-pill on"><i aria-hidden />{t.runOn}</span>}
+                    <span className="state-text">{(!r.running || st === 'confirm') && <i className={`pf-dot ${st}`} aria-hidden />}{statusText(t, h, now)}</span>
+                  </span>
                 </span>
-                <span className="slot-num">
+                <span className="slot-num slot-money">
                   <small>{t.slotMoney}</small>
                   <b>${money(b.spent)} <em>/ ${money(h.budgetUsd)}</em></b>
                   <span className="gauge" role="img" aria-label={`${Math.round(frac * 100)}%`}><i style={{ width: `${Math.round(frac * 100)}%` }} /></span>
                 </span>
-                <span className="slot-num">
+                <span className="slot-num slot-holds">
                   <small>{t.slotHolds}</small>
                   <b>{b.qty > 0 ? `${qtyText(b.qty)} ${h.asset}` : t.scNone}</b>
-                  <small>{b.qty > 0 && price !== undefined ? `${t.scValue} $${money(b.qty * price)}` : `${t.scPer} $${money(h.perBuyUsd)}`}</small>
+                  <small>{b.qty > 0 && price !== undefined ? <><span className="lbl">{t.scValue} </span>${money(b.qty * price)}</> : <><span className="lbl">{t.scPer} </span>${money(h.perBuyUsd)}</>}</small>
                 </span>
-                <span className="slot-num">
+                <span className={`slot-num slot-pnl ${r.pnl !== undefined ? m.cls : ''}`}>
                   <small>{t.thPnl}</small>
-                  <b className={h.fills.length ? m.cls : ''}>{h.fills.length ? m.text : t.scNone}</b>
+                  {r.pnl !== undefined ? <><b><RollNum text={signedUsd(r.pnl)} /></b>{r.pnlPct !== undefined && <em>{pct(r.pnlPct)}</em>}</> : <b className="none">{t.pfNoTrade}</b>}
                 </span>
                 <span className="tbl-actions">
                   <button className="icon-btn" onClick={() => onOpen(h.id)} aria-label={t.acAsk} data-tip={t.acAsk}><Icon name="chat" size={18} /></button>
@@ -136,11 +147,11 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
         )}
 
         {Array.from({ length: adds }, (_, i) => (
-          <li key={`add-${i}`} className="slot add">
+          <li key={`add-${i}`} className={`slot add${i > 0 ? ' more' : ''}`}>
             <div className="slot-row">
               <span className="slot-face plus" aria-hidden><Icon name="plus" size={20} /></span>
               <span className="slot-main">
-                <span className="slot-name"><b>{t.slotAdd}</b></span>
+                <span className="slot-name"><b>{t.slotAdd}</b>{i > 0 && <b className="slot-more">{t.slotMore}</b>}</span>
                 <small className="muted">{t.slotAddSub}</small>
               </span>
               <span className="slot-go">
@@ -151,6 +162,8 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
           </li>
         ))}
       </ol>
+
+      <Portfolio rows={rows} hired={hired} vault={vault} quotes={quotes} priceOf={priceOf} now={now} ready={ready} onStart={onStart} onOpen={onOpen} />
 
       <VaultCard vault={vault} />
       <p className="muted small">{t.mineStopNote}</p>
