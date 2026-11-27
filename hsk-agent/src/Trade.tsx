@@ -7,6 +7,9 @@ import { EXPLORER, POOLS, poolDetail, type PoolDetail } from './dex.ts';
 import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { HeatSwitch, NanoChart, PoolRange, useNanoChart } from './ChartExtras.tsx';
+import LpStudio from './LpStudio.tsx';
+import { defaultPlan, type LpPlan } from './lp.ts';
+import type { VaultInfo } from './parts.tsx';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
@@ -572,7 +575,9 @@ function stored<T extends string>(key: string, list: readonly T[], dflt: T): T {
 const save = (key: string, v: string) => { try { localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
 
 export interface MineTab { node: React.ReactNode; count: number; asks: number }
-interface PanelProps { venueTabs: React.ReactNode; selId: string | null; setSel: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; onBuild: (coin: string) => void; mine?: MineTab }
+interface PanelProps { venueTabs: React.ReactNode; selId: string | null; setSel: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; onBuild: (coin: string) => void; mine?: MineTab; lp?: LpLink }
+/** The liquidity studio's plan, held by the app so Moa can change it too. */
+export interface LpLink { plan: LpPlan | null; setPlan: (p: LpPlan | null) => void; vault: VaultInfo | null }
 
 function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel, onHire, onAsk, onBuild, mine }: PanelProps & { market: cex.Market; setMarket: (m: cex.Market) => void; asset: Asset; dexPrice?: number }) {
   const { t: s } = useT();
@@ -639,7 +644,7 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
 
 /* ---------- DEX: HSKSwap on HSK Chain ---------- */
 
-function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, setSel, onHire, onAsk, mine }: PanelProps & { asset: Asset; setAsset: (a: Asset) => void; market: cex.Market; detail: PoolDetail | null; quotes: Quote[] }) {
+function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, setSel, onHire, onAsk, mine, lp }: PanelProps & { asset: Asset; setAsset: (a: Asset) => void; market: cex.Market; detail: PoolDetail | null; quotes: Quote[] }) {
   const { t: s } = useT();
   const [iv, setIv] = useState<GateInterval>(() => stored('moa.dexiv', DEX_IV, '1h'));
   const pickIv = (v: GateInterval) => { setIv(v); save('moa.dexiv', v); };
@@ -701,6 +706,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
           <span className="mh-pool">Uniswap V3 · 0.3% · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></span>
         </div>
       </div>
+      {lp?.plan ? <LpStudio plan={lp.plan} setPlan={lp.setPlan} vault={lp.vault} onClose={() => lp.setPlan(null)} onAsset={(a) => { setAsset(a); lp.setPlan({ ...lp.plan!, asset: a, coin: 0, weights: undefined, shape: lp.plan!.shape === 'custom' ? 'curve' : lp.plan!.shape }); }} /> : <>
       <section className="chart-card">
         <div className="chart-toolbar">
           <IntervalBar list={DEX_IV} value={iv} set={pickIv} label={(v) => s.ivLabel[v === '7d' ? '1w' : v]} />
@@ -708,7 +714,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
           {sel ? <BacktestChip a={sel} replay={replay} onClose={() => setSel(null)} />
             : <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>}
         </div>
-        <PoolRange asset={asset} symbol={p.symbol} price={detail?.price} />
+        <PoolRange asset={asset} symbol={p.symbol} price={detail?.price} onLp={lp ? () => lp.setPlan(defaultPlan(asset)) : undefined} />
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
       <Dock venue="dex" coin={asset} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
@@ -725,6 +731,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
           {detail && detail.swaps.length === 0 && <div className="muted pad">{s.noSwaps}</div>}
         </div>
       )} />
+      </>}
     </>
   );
 }
@@ -735,8 +742,8 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
 export interface ShowAgent { agent: Agent; n: number }
 let shown = 0;   // the last request applied, so coming back to this screen does not replay an old one
 
-export default function Trade({ quotes, show, onContext, onAsk, onHire, onBuild, mine }: {
-  mine?: MineTab;
+export default function Trade({ quotes, show, onContext, onAsk, onHire, onBuild, mine, lp }: {
+  mine?: MineTab; lp?: LpLink;
   quotes: Quote[]; show?: ShowAgent | null; onContext: (c: MoaContext) => void; onAsk: (a: Agent) => void; onHire: (a: Agent) => void; onBuild: (coin: string) => void;
 }) {
   const { t } = useT();
@@ -779,7 +786,10 @@ export default function Trade({ quotes, show, onContext, onAsk, onHire, onBuild,
       <button role="tab" aria-selected={venue === 'dex'} className={venue === 'dex' ? 'on' : ''} onClick={() => setVenue('dex')}>{t.dex} <span>{t.dexSub}</span></button>
     </div>
   );
-  const panel = { venueTabs, selId, setSel: (a: Agent | null) => setSelId(a?.id ?? null), onHire, onAsk, onBuild, mine };
+  const panel = { venueTabs, selId, setSel: (a: Agent | null) => setSelId(a?.id ?? null), onHire, onAsk, onBuild, mine, lp };
+  // The studio lives on the HSKSwap side: opening it (from here or from Moa) brings that side and its coin up.
+  const lpAsset = lp?.plan?.asset;
+  useEffect(() => { if (lpAsset) { setVenue('dex'); setAsset(lpAsset); } }, [lpAsset]);
 
   return (
     <div className="trade-page">

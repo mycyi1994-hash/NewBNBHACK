@@ -162,6 +162,22 @@ async function send(net: Net, to: string, data: string): Promise<SendResult> {
   }
 }
 
+/** Any transaction from the logged-in wallet (the liquidity screen builds its own calls). */
+export const sendTx = (net: Net, to: string, data: string) => send(net, to, data);
+/**
+ * A read on the chain: through the wallet when there is one, so it answers from the chain the wallet is on (a local
+ * test chain included); otherwise from HSK Chain's public RPC.
+ */
+export async function chainCall(to: string, data: string, from?: string): Promise<`0x${string}`> {
+  const p = walletProvider();
+  const params = [{ to, data, ...(from ? { from } : {}) }, 'latest'];
+  if (p && current) return (await p.request({ method: 'eth_call', params })) as `0x${string}`;
+  const r = await fetch(HSK_MAINNET.rpcUrls[0], { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params }) });
+  const j = (await r.json()) as { result?: `0x${string}`; error?: { message: string } };
+  if (!j.result) throw new Error(j.error?.message ?? 'empty result');
+  return j.result;
+}
+
 const TRANSFER = [{ type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] }] as const;
 const WITHDRAW = [{ type: 'function', name: 'withdraw', stateMutability: 'nonpayable', inputs: [{ name: 'token', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [] }] as const;
 type Hex = `0x${string}`;

@@ -10,6 +10,7 @@ import type { Interval } from './cex.ts';
 import { poolState } from './dex.ts';
 import { poolDepth, type PoolDepth } from './depth.ts';
 import { NANO_REFRESH_MS } from './nano.ts';
+import { Icon } from './Icons.tsx';
 
 /* ---------- the exchange chart: nanotradingclub's fire chart ---------- */
 
@@ -102,7 +103,7 @@ const priceText = (v: number) => (v >= 1000 ? `$${Math.round(v).toLocaleString('
  * Above the HSKSwap chart: what the pool holds at each price, as columns of blocks. Under the price now it is USDT,
  * over it the coin. A column is as tall as its share of the thickest one.
  */
-export function PoolRange({ asset, symbol, price }: { asset: Asset; symbol: string; price?: number }) {
+export function PoolRange({ asset, symbol, price, onLp }: { asset: Asset; symbol: string; price?: number; onLp?: () => void }) {
   const { t } = useT();
   const d = usePoolDepth(asset);
   if (d === 'error') return <div className="pr bad">{t.lpErr}</div>;
@@ -120,7 +121,10 @@ export function PoolRange({ asset, symbol, price }: { asset: Asset; symbol: stri
       <div className="pr-head">
         <span className="pr-title"><b data-tip={t.prTip}>{t.lpTitle}</b><span className="pr-key"><span><i className="pr-usdt" aria-hidden />USDT</span><span><i className="pr-coin" aria-hidden />{symbol}</span></span></span>
         <span className="pr-now">{price !== undefined ? t.prNow(priceText(price)) : '—'}</span>
-        <span className="lp-impact">{hundred && <span>{t.lpImpact('100', movePct(hundred.pct))}</span>}{thousand && <span className="more"><i aria-hidden>·</i>{t.lpImpact('1,000', movePct(thousand.pct))}</span>}</span>
+        <span className="pr-right">
+          <span className="lp-impact">{hundred && <span>{t.lpImpact('100', movePct(hundred.pct))}</span>}{thousand && <span className="more"><i aria-hidden>·</i>{t.lpImpact('1,000', movePct(thousand.pct))}</span>}</span>
+          {onLp && <button className="btn sm pr-lp" onClick={onLp}><Icon name="plus" size={14} />{t.lpOpen}</button>}
+        </span>
       </div>
       <div className={`pr-cols${d ? '' : ' wait'}`} style={{ '--side': half || 10 } as React.CSSProperties}>
         {d ? <>{bins.slice(0, half).map(column)}<span className="pr-mid" aria-hidden />{bins.slice(half).map((b, i) => column(b, half + i))}</>

@@ -19,6 +19,7 @@ import Agents from './Agents.tsx';
 import MyAgents from './MyAgents.tsx';
 import MyAgentsBar from './MyAgentsBar.tsx';
 import MineDock from './MineDock.tsx';
+import type { LpPlan } from './lp.ts';
 import MoaFeed, { type MoaAsk, type MoaContext, type MoaInject } from './MoaFeed.tsx';
 import HireSheet, { type HireTarget } from './HireSheet.tsx';
 import { agentById, loadAgents, type Agent } from './agents.ts';
@@ -178,6 +179,8 @@ function Shell() {
   const openBuilder = (x: Omit<BuildDraft, 'n'> = {}) => { setBuild({ ...x, n: ++buildN.current }); go('build'); if (window.matchMedia(NARROW).matches) setMoaOpen(false); };
   const showN = useRef(0);
   const [sheet, setSheet] = useState<HireTarget | null>(null);
+  // The liquidity studio's plan: the HSKSwap screen edits it, Moa fills it from the conversation. Null when closed.
+  const [lp, setLp] = useState<LpPlan | null>(null);
   const [moaOpen, setMoaOpen] = useState(false);
   const [navMini, setNavMini] = useState(false);
   const [sending, setSending] = useState<Set<string>>(new Set());
@@ -374,7 +377,7 @@ function Shell() {
         {/* On the trade screen the agents have their own tab under the chart, with the numbers; elsewhere, the bar. */}
         {view !== 'trade' && <MyAgentsBar hired={hired} quotes={quotes} now={now} sending={sending}
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />}
-        {view === 'trade' && <Trade quotes={quotes} show={show}
+        {view === 'trade' && <Trade quotes={quotes} show={show} lp={{ plan: lp, setPlan: setLp, vault }}
           mine={{ count: hired.length, asks, node: <MineDock hired={hired} quotes={quotes} vault={vault} now={now} sending={sending} onOpen={(id) => tell({ kind: 'status', hiredId: id })} onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }} onPause={pause} onResume={resume} /> }} onContext={setTradeCtx} onAsk={askMoaAbout} onBuild={(coin) => openBuilder({ coin })} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
         {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} />}
         {view === 'build' && <Builder draft={build} onOpen={openBacktest} />}
