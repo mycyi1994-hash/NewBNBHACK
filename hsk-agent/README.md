@@ -119,6 +119,19 @@ stranger once the price has held, with the stranger getting nothing.
   its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three pools held one full-range
   position (the HSK pool three small ranges more), so every column is the same height; liquidity added to one
   stretch would raise that column alone.
+- **Liquidity strategy: liquidity in blocks on HSKSwap, planned with Moa.** The "Liquidity strategy" button next to
+  the pool's liquidity turns the HSKSwap screen into a block editor (`src/LpStudio.tsx`): USDT in steps under the price
+  (each buys the coin as the price comes down into it) and optionally the coin in steps over it (each sells it as the
+  price goes up), spread even, near the price, at the ends, or step by step by clicking; steps from 0.6% wide (the pool's
+  tick spacing), 5 to 15 a side. Moa on the right walks through it (amount, shape with its suggestion and why, how far it
+  reaches) and every tap or sentence changes the plan on screen; other questions go to the AI, whose `set_lp_plan` tool
+  fills the same plan. Supplying is the user's own wallet: exact approvals, then every step as one Uniswap V3 position
+  through HSKSwap's own position manager (`0xDF0A9b83…0cad5`, whose factory is the router's) in one transaction
+  (`src/lp.ts`). Positions already in the pool are listed with their fees, to collect or take out. The step holding the
+  price is left empty, so every position starts with one token. Checked on a mainnet fork: `contracts/scripts/lp-fork-test.mjs`
+  (17 checks: 20 steps in one transaction, a sale through the USDT steps turns them into WBTC and earns fees, collect and
+  remove pay the wallet, a stranger cannot take them out) and in the browser with a test wallet (log in, 100 USDT in 10
+  steps, supply, listed, taken out, wallet back to 500 USDT). Not yet done on mainnet.
 - **nanotradingclub's fire chart as the heatmap.** The "Heatmap" switch next to Indicators puts nanotradingclub's own
   fire chart where Moa's chart was, for the coin and interval on screen: its order-book heatmap of nine exchanges, its
   liquidation map and liquidations, drawn by its own code, with its own switches (heatmap, order book, liquidation

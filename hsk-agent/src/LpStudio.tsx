@@ -103,6 +103,8 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset }: {
       const r = await sendTx(net, NPM, fresh.data);
       if (!r.ok) { setPhase({ k: 'failed', why: r.why === 'rejected' ? t.lpRejected : r.detail ?? r.why }); return; }
       setPhase({ k: 'done', tx: r.txHash });
+      // What was planned is now in the pool (listed below): clear the amounts so the same plan is not sent twice.
+      setPlan({ ...plan, usdt: 0, coin: 0 });
       void reload();
     } catch (e) { setPhase({ k: 'failed', why: e instanceof Error ? e.message : String(e) }); }
   };
