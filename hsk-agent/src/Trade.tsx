@@ -86,9 +86,9 @@ export interface Badge { time: number; side: 'buy' | 'sell' | 'note'; text: stri
 /** What a backtest adds to the chart: the rule's own lines, its buys and sells, and the days it was holding. */
 export interface Study { rule: RuleId; made?: MadeSpec; badges: Badge[]; bands: { from: number; to: number }[] }
 
-function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until, heat, liqs }: {
-  /** Layers from the Heatmap button: the order book under the candles, liquidations over them. */
-  heat?: HeatColumn[] | null; liqs?: Liq[] | null;
+function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until, heat, liqs, oi }: {
+  /** Layers from the Heatmap button: the order book under the candles, liquidations over them, and the open interest the liquidation map is estimated from. */
+  heat?: HeatColumn[] | null; liqs?: Liq[] | null; oi?: number | null;
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
   /** Show everything from this time to now (a backtest's window). `key` says when to apply it again. */
   range?: { from: number; key: string };
@@ -272,9 +272,9 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
 
   // The heatmap and the liquidations: painted only while one of them is on.
   const under = useRef<HTMLCanvasElement>(null), over = useRef<HTMLCanvasElement>(null);
-  const heatIn = useRef<HeatInput>({ heat: null, liqs: null, times: [], v: 0 });
-  useEffect(() => { heatIn.current = { heat: heat ?? null, liqs: liqs ?? null, times: candles.map((x) => x.time), v: heatIn.current.v + 1 }; }, [heat, liqs, candles]);
-  const layered = !!heat || !!liqs;
+  const heatIn = useRef<HeatInput>({ heat: null, liqs: null, oi: null, bars: [], v: 0 });
+  useEffect(() => { heatIn.current = { heat: heat ?? null, liqs: liqs ?? null, oi: oi ?? null, bars: candles, v: heatIn.current.v + 1 }; }, [heat, liqs, oi, candles]);
+  const layered = !!heat || !!liqs || !!oi;
   useEffect(() => {
     if (!layered || !chart.current || !main.current || !under.current || !over.current) return;
     return mountHeat(under.current, over.current, chart.current, main.current, () => heatIn.current);
@@ -649,11 +649,11 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
         <div className="chart-toolbar">
           <IntervalBar list={CEX_IV} value={interval} set={pickIv} label={(v) => s.ivLabel[v]} />
           <IndMenu on={inds} toggle={toggleInd} />
-          <HeatMenu want={want} toggle={toggleHeat} book={layers.book.state} liq={layers.liq.state} />
-          <HeatLegend book={layers.book.state === 'on'} liq={layers.liq.state === 'on'} />
+          <HeatMenu want={want} toggle={toggleHeat} book={layers.book.state} liq={layers.liq.state} map={layers.map.state} />
+          <HeatLegend book={layers.book.state === 'on'} liq={layers.liq.state === 'on'} map={layers.map.state === 'on'} />
           {sel ? <BacktestChip a={sel} replay={replay} onClose={() => setSel(null)} /> : <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} heat={layers.book.data} liqs={layers.liq.data} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} heat={layers.book.data} liqs={layers.liq.data} oi={layers.map.data} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
 
       <Dock venue="cex" coin={market.base} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} onBuild={() => onBuild(market.base)} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />

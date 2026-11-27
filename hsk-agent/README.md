@@ -118,9 +118,11 @@ stranger once the price has held, with the stranger getting nothing.
   its liquidity in range and its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three
   pools held one full-range position (the HSK pool three small ranges more), so the blocks are even; liquidity
   added to one stretch would show in that block alone.
-- **Heatmap and liquidations on the exchange chart.** The "Heatmap" button next to Indicators lays two layers over
-  the candles: the order book of nine exchanges by price (under the candles) and forced liquidations as circles
-  (over them). The data is nanotradingclub's public files (`src/nano.ts`): exchange data, not HSK Chain data, and
+- **Heatmap and liquidations on the exchange chart.** The "Heatmap" button next to Indicators lays three layers over
+  the candles: the order book of nine exchanges by price (under the candles), forced liquidations as circles
+  (over them), and a liquidation map at the right edge: where positions would be liquidated, estimated from open
+  interest, the volume traded at each price and a fixed mix of leverage, the way nanotradingclub's own map does
+  it (`liqMap` in `src/nano.ts`; an estimate, half long and half short by assumption). The data is nanotradingclub's public files (`src/nano.ts`): exchange data, not HSK Chain data, and
   for coins it collects (BTC and ETH among them, not HSK). Nothing is fetched until a layer is switched on, then
   every three minutes while the tab is in front; the book's history is about an hour, so switching it on moves the
   chart to one-minute candles.

@@ -1667,6 +1667,7 @@ select { padding-right: 8px; }
 .heat-legend { display: inline-flex; align-items: center; gap: 14px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 .heat-legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .hl-ramp { width: 44px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #fef0b4, #fdbe64, #d946c8, #581c87); }
+.hl-map { width: 30px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, #0f766e 0 34%, #14b8a6 34% 67%, #5eead4 67%); }
 .hl-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid; }
 .hl-dot.long { border-color: #dc2626; background: rgba(220, 38, 38, .22); }
 .hl-dot.short { margin-left: 8px; border-color: #16a34a; background: rgba(22, 163, 74, .22); }

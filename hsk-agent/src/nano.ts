@@ -78,6 +78,46 @@ export function heatScale(c: HeatColumn, low: number, high: number): [number, nu
   return [typical, Math.max(thick, typical * 1.5, typical + 1)];
 }
 
+/* ---------- the liquidation map: an estimate, not a record ---------- */
+
+/** Open interest of the coin's largest futures market, in coins (hourly; the newest value). */
+export async function openInterest(base: string): Promise<number> {
+  const j = await get<{ oi: [number, number][] }>(`oi_long_${symbolOf(base)}.json`);
+  const last = j.oi[j.oi.length - 1]?.[1];
+  if (!(last > 0)) throw new Error('no open interest');
+  return last;
+}
+
+/** Leverage and how common it is taken to be, from 2x (liquidated 50% away) to 125x (0.8% away). */
+const LEVERAGE: [number, number][] = [[2, .45], [3, .55], [4, .6], [5, .8], [6, .6], [8, .7], [10, 1], [12, .6], [15, .7], [20, .9], [25, .95], [35, .6], [50, .9], [75, .55], [100, .85], [125, .5]];
+const MAINTENANCE = 0.004;
+export interface LiqMap { n: number; low: number; step: number; /** USD per price bin, by leverage group: up to 8x, up to 28x, above. */ lowLev: Float64Array; midLev: Float64Array; highLev: Float64Array }
+
+/**
+ * Where positions would be liquidated, estimated the way nanotradingclub's liquidation map does it: the open
+ * interest is spread over entry prices in proportion to the volume traded at each candle, half long and half
+ * short, across a fixed mix of leverage. Each slice lands at its liquidation price (entry less 1/leverage for a
+ * long, plus for a short, with the maintenance margin taken off). An estimate from assumptions, not positions.
+ */
+export function liqMap(bars: { high: number; low: number; close: number; volume: number }[], oiUsd: number, low: number, high: number, n: number, longShare = 0.5): LiqMap | null {
+  if (!(oiUsd > 0) || !(high > low) || n < 1 || !bars.length) return null;
+  const step = (high - low) / n, out: LiqMap = { n, low, step, lowLev: new Float64Array(n), midLev: new Float64Array(n), highLev: new Float64Array(n) };
+  const weight = (b: { close: number; volume: number }) => b.volume * b.close;
+  const total = bars.reduce((s, b) => s + weight(b), 0), mix = LEVERAGE.reduce((s, l) => s + l[1], 0);
+  if (!(total > 0)) return null;
+  for (const b of bars) {
+    const entry = (b.high + b.low) / 2, w = weight(b) / total;
+    if (!(entry > 0) || !(w > 0)) continue;
+    for (const [lev, share] of LEVERAGE) {
+      const into = lev <= 8 ? out.lowLev : lev <= 28 ? out.midLev : out.highLev, part = oiUsd * w * (share / mix);
+      const longAt = Math.floor((entry * (1 - 1 / lev + MAINTENANCE) - low) / step), shortAt = Math.floor((entry * (1 + 1 / lev - MAINTENANCE) - low) / step);
+      if (longAt >= 0 && longAt < n) into[longAt] += part * longShare;
+      if (shortAt >= 0 && shortAt < n) into[shortAt] += part * (1 - longShare);
+    }
+  }
+  return out;
+}
+
 /* ---------- the few numbers Moa is given ---------- */
 
 export interface Wall { price: number; usd: number; awayPct: number }

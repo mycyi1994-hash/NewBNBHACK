@@ -1,9 +1,11 @@
 // Draws the order-book heatmap under the candles and the liquidations over them, on two canvases laid on the
 // chart's plot area. Nothing animates: a frame only repaints when the view, the size or the data changed.
 import type { IChartApi, ISeriesApi, Logical } from 'lightweight-charts';
-import { heatScale, type HeatColumn, type Liq } from './nano.ts';
+import { heatScale, liqMap, type HeatColumn, type Liq } from './nano.ts';
 
-export interface HeatInput { heat: HeatColumn[] | null; liqs: Liq[] | null; times: number[]; v: number }
+export interface Bar { time: number; high: number; low: number; close: number; volume: number }
+/** `oi` is the open interest in coins, when the liquidation map is on. */
+export interface HeatInput { heat: HeatColumn[] | null; liqs: Liq[] | null; oi: number | null; bars: Bar[]; v: number }
 
 /** Colour by how thick a bin is against a typical thick one: pale yellow, orange, fuchsia, deep purple. */
 const STOPS: [number, number, number, number, number][] = [
@@ -45,15 +47,15 @@ export function mountHeat(under: HTMLCanvasElement, over: HTMLCanvasElement, cha
     }
     const yOf = (price: number) => ((price - top) / (bottom - top)) * H;
     // A moment in time sits inside its candle: the candle's own width runs from its open time to the next one's.
-    const n = d.times.length, sec = n > 1 ? d.times[n - 1] - d.times[n - 2] : 60;
+    const bars = d.bars, n = bars.length, sec = n > 1 ? bars[n - 1].time - bars[n - 2].time : 60;
     // The library places whole bars only (a fraction comes back as 0), so the part of a bar is added by hand.
     const bar0 = ts.logicalToCoordinate(0 as Logical), bar1 = ts.logicalToCoordinate(1 as Logical);
     if (bar0 === null || bar1 === null) return;
     const xOf = (t: number): number | null => {
-      if (!n || t < d.times[0]) return null;
+      if (!n || t < bars[0].time) return null;
       let lo = 0, hi = n - 1;
-      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (d.times[mid] <= t) lo = mid; else hi = mid - 1; }
-      return (bar0 + (lo - 0.5 + Math.min((t - d.times[lo]) / sec, lo === n - 1 ? 2 : 1)) * (bar1 - bar0)) * dpr;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bars[mid].time <= t) lo = mid; else hi = mid - 1; }
+      return (bar0 + (lo - 0.5 + Math.min((t - bars[lo].time) / sec, lo === n - 1 ? 2 : 1)) * (bar1 - bar0)) * dpr;
     };
 
     const u = under.getContext('2d')!;
@@ -85,6 +87,28 @@ export function mountHeat(under: HTMLCanvasElement, over: HTMLCanvasElement, cha
         }
         sx.putImageData(img, 0, 0);
         u.drawImage(strip, 0, 0, 1, H, Math.max(0, x0), 0, Math.min(W, x1) - Math.max(0, x0), H);
+      }
+    }
+
+    // The liquidation map: bars from the right edge, one per price step, longer where more would be liquidated.
+    // Entry prices come from the candles on screen (all of them when only a few are).
+    if (d.oi && n) {
+      const from = Math.max(0, Math.floor(range.from)), to = Math.min(n - 1, Math.ceil(range.to));
+      const seenBars = to - from >= 5 ? bars.slice(from, to + 1) : bars;
+      const m = liqMap(seenBars, d.oi * bars[n - 1].close, Math.min(top, bottom), Math.max(top, bottom), Math.max(20, Math.round(h / 4)));
+      if (m) {
+        let max = 0;
+        for (let i = 0; i < m.n; i++) max = Math.max(max, m.lowLev[i] + m.midLev[i] + m.highLev[i]);
+        const reach = W * 0.24, groups: [Float64Array, string][] = [[m.highLev, 'rgba(94,234,212,.8)'], [m.midLev, 'rgba(20,184,166,.8)'], [m.lowLev, 'rgba(15,118,110,.8)']];
+        for (let i = 0; max > 0 && i < m.n; i++) {
+          const a = yOf(m.low + (i + 1) * m.step), b = yOf(m.low + i * m.step), y = Math.min(a, b), tall = Math.max(1, Math.abs(b - a) - dpr);
+          let x = W;
+          for (const [arr, colour] of groups) {
+            const len = (arr[i] / max) * reach;
+            if (len < 0.5) continue;
+            u.fillStyle = colour; u.fillRect(x - len, y, len, tall); x -= len;
+          }
+        }
       }
     }
 
