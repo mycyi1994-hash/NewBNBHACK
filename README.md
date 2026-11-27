@@ -43,7 +43,8 @@ They have been run on a local fork of mainnet only (scripts in `hsk-agent/contra
 
 **Vault version 3 is not deployed.** It is compiled and tested on a fork only (27 Nov 2026): `fork-test.mjs` 55/55,
 `fee-fork-test.mjs` 40/40, and a randomized `fuzz-fork-test.mjs` (over 2,900 invariant checks across three seeds, 0
-failed); Slither reports no high or medium findings (`contracts/audit/slither.txt`). Version 3 adds:
+failed); Slither reports 23 findings, none rated high; the ones it rates medium (divide-before-multiply, incorrect-equality,
+unused-return) were reviewed and kept with reasons in `contracts/MAINNET.md` (`contracts/audit/slither.txt`). Version 3 adds:
 - a price floor from the pool's 10-minute average instead of the price now;
 - safe starting limits that the owner can change;
 - optional on-chain budgets per agent;

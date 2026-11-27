@@ -22,8 +22,9 @@ Record the deposit transaction.
 
 Record the trade transaction (the vault's `trade` call, sent by the agent wallet).
 
-If the agent's rule does not ask today, a direct order shows the same path: type "BTC 1달러 사줘 실행" in the
-chat.
+If the agent's rule does not ask today, a direct order shows the same path: type "BTC 1달러 사줘" in the chat;
+Moa proposes the order as a card, and it runs only when you press the card's Confirm button (a one-time ticket for
+your wallet and that order, valid for 5 minutes).
 
 ## 3. An agent on its own (auto)
 

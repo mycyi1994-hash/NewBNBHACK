@@ -142,8 +142,8 @@ What version 3 changes, against what the panel of judges found:
 | Creator fee | (none) | approved per hired agent, not per creator: `setCreatorFee(agentId, creator, bps)`, at most 1%. `tradeFor` cannot name a creator at all; the vault pays the creator the owner approved for that agent. The agent key can only choose which agent a trade is for, so with budgets on, a creator can be credited with no more than that agent's own budget |
 | Reentrancy | swaps and stop-outs updated the books after the swap | books before the swap, and `trade`, `tradeFor`, `stopOut` and `withdraw` refuse to be entered twice |
 
-Static analysis: Slither 0.11.6 (`audit/slither.txt`), 23 findings, none of them high or medium after the fixes
-above: `divide-before-multiply` in `_quoteAt` (intended: it keeps the intermediate under 2^256; the loss is under one
+Static analysis: Slither 0.11.6 (`audit/slither.txt`), 23 findings, none rated high. Slither rates some of them
+medium; each was reviewed and kept for the reason given: `divide-before-multiply` in `_quoteAt` (intended: it keeps the intermediate under 2^256; the loss is under one
 unit of the output token at the pools' prices) and in `_sqrtAtTick` (Uniswap's own code), `incorrect-equality` on
 `== 0` checks, `unused-return` of `slot0`/`observe` fields, `calls-loop` in the constructor's market list,
 `reentrancy-events` (events after the router call, which is a fixed, allow-listed contract), `missing-zero-check` on
