@@ -199,7 +199,17 @@ try {
   check('the guardian cannot set more than 0.2%, nor a fee with no treasury', (await feeRefusal(acc.guardian, [21, acc.treasury.address])) === 'fee too high' && (await feeRefusal(acc.guardian, [10, '0x0000000000000000000000000000000000000000'])) === 'no treasury');
   await test.setBalance({ address: acc.guardian.address, value: 10n ** 20n });
   await mined(await W.guardian.writeContract({ address: factory, abi: fAbi, functionName: 'setPlatformFee', args: [20, acc.treasury.address] }));
-  check('at 0.2% the server and the vault status report it', (await platformFee(base)) === 20 && (await vaultStatus(cfg)).platformFeeBps === 20);
+  const stOffered = await vaultStatus(cfg);
+  check('at 0.2% the server reports the factory\'s rate; this vault pays nothing until its owner accepts', (await platformFee(base)) === 20 && stOffered.platformFeeOfferedBps === 20 && stOffered.platformFeeBps === 0);
+  const nT0 = await usdt(acc.treasury.address);
+  const notAccepted = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 5, note: 'owner never accepted', agent: 'hire-b' });
+  check('the guardian cannot charge an owner who did not accept: a buy pays the treasury nothing', notAccepted.ok && (await usdt(acc.treasury.address)) === nT0, notAccepted.ok ? '' : notAccepted.reason);
+  check('only the owner can accept, and not above 0.2%', (await refusal(acc.stranger, 'acceptPlatformFee', [20])) === 'NotOwner' && (await refusal(acc.agent, 'acceptPlatformFee', [20])) === 'NotOwner' && (await refusal(acc.owner, 'acceptPlatformFee', [21])) === 'FeeTooHigh');
+  await mined(await W.owner.writeContract({ address: vault, abi, functionName: 'acceptPlatformFee', args: [10] }));
+  const hT0 = await usdt(acc.treasury.address);
+  const half = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 10, note: 'accepted 0.1%', agent: 'hire-b' });
+  check('an owner who accepted 0.1% pays 0.1% though the factory asks 0.2% ($0.01 on $10)', half.ok && (await usdt(acc.treasury.address)) - hT0 === 10_000n && (await vaultStatus(cfg)).platformFeeBps === 10, half.ok ? '' : half.reason);
+  await mined(await W.owner.writeContract({ address: vault, abi, functionName: 'acceptPlatformFee', args: [20] }));
   await setFee(A, creator, 50);
   const pT0 = await usdt(acc.treasury.address), pC0 = await usdt(creator), pV0 = await usdt(vault), pDay = await day(), pSpent = await read('spentOnDay', [pDay]), pCost = await read('costUsdt', [TOKENS.HSK.address]);
   const pBuy = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 10, note: 'platform fee on', creator: { address: creator, feeBps: 50 }, agent: 'hire-a' });

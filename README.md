@@ -42,9 +42,9 @@ They have been run on a local fork of mainnet only (scripts in `hsk-agent/contra
 **unaudited**.
 
 **Vault version 3 is not deployed.** It is compiled and tested only, on 27 Nov 2026:
-- fork tests: `fork-test.mjs` 69/69 and `fee-fork-test.mjs` 48/48;
+- fork tests: `fork-test.mjs` 69/69 and `fee-fork-test.mjs` 51/51;
 - a randomized fork fuzz test: over 3,400 invariant checks, 0 failed;
-- Foundry: 19 tests, 5 of them invariants (256 runs × 80 calls); MoaVault line coverage 99% (`contracts/audit/coverage.txt`);
+- Foundry: 20 tests, 5 of them invariants (256 runs × 80 calls); MoaVault line coverage 99% (`contracts/audit/coverage.txt`);
 - Slither: 0 high findings; 12 rated medium, each reviewed and kept with reasons in `contracts/MAINNET.md`
   (`contracts/audit/slither.txt`).
 
@@ -55,7 +55,8 @@ Version 3 adds:
 - optional on-chain budgets per agent;
 - a guardian that can halt agent trading on every vault (funds, withdrawals and stop-loss untouched);
 - creator fees approved per hired agent;
-- a platform-fee switch that is 0 and capped at 0.2% in the contract.
+- a platform-fee switch that is 0 and capped at 0.2% in the contract, and charged to a vault only up to the rate its owner
+  accepted (`acceptPlatformFee`).
 
 Until the owner deploys it, new vaults are version 2; the server tells versions apart and sends version-2 vaults only
 the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) lists what will be run and recorded here.

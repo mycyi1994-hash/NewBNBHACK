@@ -17,6 +17,7 @@
 //   node scripts/vault.mjs session 0x… 90 50       version 3: let agent key 0x… trade for 90 days, at most $50 a buy, on all
 //                                                  three coins (add WHSK/WETH/WBTC names to narrow it)
 //   node scripts/vault.mjs revoke                  version 3: end the agent key's session now
+//   node scripts/vault.mjs platform-fee 0.2        version 3: accept the factory's platform fee up to 0.2% (0 withdraws)
 //
 // The factory address comes from --factory 0x…, else MOA_FACTORY_ADDRESS, else deployments/hsk-mainnet.json.
 // A vault made by an earlier factory still answers status, fund, withdraw, pause, limits and agent: add
@@ -71,7 +72,7 @@ if (cmd === 'status' && rest[0]) {
   await status(v);
   process.exit(0);
 }
-if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent', 'creator', 'budget', 'budgets', 'session', 'revoke'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
+if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent', 'creator', 'budget', 'budgets', 'session', 'revoke', 'platform-fee'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
 
 const key = await ownerKey('the vault owner\'s wallet');
 if (!key) fail(cmd === 'status' ? 'usage: status <owner address>' : 'the key is missing or is not a 64-hex private key.');
@@ -129,6 +130,10 @@ if (cmd === 'fund') {
   const bps = rest[0] === 'off' ? 0 : Math.round(Number(rest[0]) * 100);
   if (!(bps >= 0 && bps <= 9000)) fail('usage: stop <percent, up to 90> | stop off');
   await run(bps ? `Set the stop-loss: anyone may sell a holding once it is worth ${bps / 100}% less than it cost.` : 'Turn the stop-loss off.', 'stop', call('setStopLoss', [bps]));
+} else if (cmd === 'platform-fee') {
+  const bps = Math.round(Number(rest[0]) * 100);
+  if (!(bps >= 0 && bps <= 20)) fail('usage: platform-fee <percent, 0 to 0.2>');
+  await run(bps ? `Accept the factory's platform fee on this vault, up to ${bps / 100}% of each agent trade.` : 'Withdraw your acceptance: this vault pays no platform fee.', 'accept', call('acceptPlatformFee', [bps]));
 } else if (cmd === 'session' || cmd === 'revoke') {
   const version = await pub.readContract({ address: vault, abi, functionName: 'VERSION' }).then(Number, () => 2);
   if (version < 3) fail('this vault is an earlier version: its agent has no session (use "agent" or "pause").');

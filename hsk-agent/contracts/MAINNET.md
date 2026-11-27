@@ -139,7 +139,7 @@ What version 3 changes, against what the panel of judges found:
 | Starting limits | the factory started vaults with **no limit** and the stop-loss off | the factory refuses to deploy with no limit or no stop-loss: per trade above 0, per day at most 10,000 USDT, a stop-loss of 1–50%, slippage up to 3%. The scripts default to **$50 per trade, $100 per day, a 15% stop-loss, 1.5% slippage**. Each owner changes or removes them in the account menu (`setLimits`, `setStopLoss(0)`) |
 | Per-agent budgets | only in the server (`autoRunner`) | `setBudget(agentId, usdt)` and `setBudgetsOn(bool)`, owner only. With budgets on, every buy names an agent (`tradeFor(…, agentId, feeBps)`; `trade` is agent 0) and is refused over what is left of that agent's budget (`OverBudget`). Sells need no budget. `agentId` = keccak256 of the hired agent's id in the app. Off by default, so nothing changes until the owner turns it on; the hire sheet then sets each new agent's budget in the same wallet confirmations |
 | Shared hot agent key | each owner can replace the agent (`setAgent`) or pause; no global switch | **a session per vault**: the owner authorises the agent key until a date (at most a year), on chosen coins, at most so much per buy (`setSession(agent, until, maxTradeUsdt, tokens)`), and ends it at once with `revokeSession()`. A new vault starts with a 30-day session on its starting coins at its starting per-trade limit; after that the key can do nothing on it (`SessionOver`, `NotInSession`, `TradeTooLarge`) until the owner renews, which the hire sheet asks for when a session is missing, ends within a week, lacks the coin or is below the buy. The server reads the session before sending, uses the key the owner authorised (`MOA_AGENT_EXTRA_KEYS` holds earlier keys during a rotation) and sends nothing a session does not cover. Plus a **guardian** fixed in the factory: `setHalted(true)` stops agent trading on every vault at once (`Halted`); it cannot move funds, change limits or block withdrawals, deposits or the stop-loss |
-| Platform fee | (none) | a switch held by the guardian on the factory: `setPlatformFee(bps, treasury)`, **0 by default**, never above 20 bps (0.2%, checked again by every vault). Paid in USDT like the creator fee, from the USDT going in on a buy or coming out on a sell, inside the limits and budgets. The trust page and the hire sheet show it only when it is not 0. It stays 0; it exists so a business decision needs no new contract |
+| Platform fee | (none) | a switch held by the guardian on the factory: `setPlatformFee(bps, treasury)`, **0 by default**, never above 20 bps (0.2%, checked again by every vault). **Each owner opts in**: a vault pays it only up to the rate its owner accepted with `acceptPlatformFee(bps)` (0 at the start, so the guardian can never charge an owner who did not accept); a later rise above that is not charged until the owner accepts again, a fall is charged at the lower rate, and accepting 0 withdraws. Paid in USDT like the creator fee, from the USDT going in on a buy or coming out on a sell, inside the limits and budgets. The trust page shows the factory's rate and the hire sheet the vault's own, each only when it is not 0. It stays 0; it exists so a business decision needs no new contract |
 | Creator fee | (none) | approved per hired agent, not per creator: `setCreatorFee(agentId, creator, bps)`, at most 1%. `tradeFor` cannot name a creator at all; the vault pays the creator the owner approved for that agent. The agent key can only choose which agent a trade is for, so with budgets on, a creator can be credited with no more than that agent's own budget |
 | Reentrancy | swaps and stop-outs updated the books after the swap | books before the swap, and `trade`, `tradeFor`, `stopOut` and `withdraw` refuse to be entered twice |
 
@@ -152,7 +152,7 @@ session and the day's limit are about time by design), `calls-loop` (the constru
 `missing-zero-check` on the guardian (zero means no guardian), complexity and long literals in `_sqrtAtTick`.
 
 Solidity tests with Foundry (`forge` 1.5.1; `sh scripts/foundry-setup.sh` fetches forge-std, then `forge test`):
-`test/MoaVault.t.sol` has 14 unit tests (every refusal: agent, owner-only calls, limits, the average-price floor,
+`test/MoaVault.t.sol` has 15 unit tests (every refusal, the platform fee only up to what the owner accepted: agent, owner-only calls, limits, the average-price floor,
 session scope, end and revocation, creator and platform fees to the unit, fee caps, budgets, halt, stop-loss, pause,
 markets, books on withdrawal) and 5 invariants over 256 runs × 80 random calls by the owner, the agent key, the
 guardian and strangers against mock pool and router (`test/Mocks.sol`): every USDT in the vault accounted for; the
@@ -174,7 +174,7 @@ Tests on a fork of mainnet (each starts its own Hardhat node):
   the server and by the vault; a buy over the session's cap is refused though the vault has no limit; after the end and
   after `revokeSession` nothing is sent; a session for another key the server holds is traded with that key, and a
   server without it sends nothing; the stop-loss never depends on the session.
-- `scripts/fee-fork-test.mjs`, 48 checks: creator fees per agent (who may approve, the 1% cap, exact amounts on buys
+- `scripts/fee-fork-test.mjs`, 51 checks: creator fees per agent (who may approve, the 1% cap, exact amounts on buys
   and sells, nothing to an unapproved creator, the server asking no fee when the approved creator is someone else,
   a withdrawn approval), budgets (a stranger cannot set them; a buy over an agent's budget is refused; the agent key
   cannot credit another agent's $20 to a creator past that agent's budget; a buy for no agent is refused with budgets
@@ -242,7 +242,10 @@ Tests on a fork of mainnet (each starts its own Hardhat node):
    would need its own gas), and owners granting sessions by EIP-712 signature instead of a transaction.
 
 7. The platform fee stays 0. To change it, the guardian calls `setPlatformFee(bps, treasury)` on the factory
-   (Blockscout's *Write contract* tab), at most 20 bps; the trust page and the hire sheet then show it.
+   (Blockscout's *Write contract* tab), at most 20 bps; the trust page then shows it. No vault pays it until its
+   owner accepts, `node scripts/vault.mjs platform-fee 0.2` (and `… 0` to withdraw); a vault never pays more than its
+   owner accepted, whatever the guardian sets. Checked in `test/MoaVault.t.sol` (`test_platformFeeOnlyWhatTheOwnerAccepted`
+   and the fee invariant, both of which fail if the vault ignores the acceptance) and in `scripts/fee-fork-test.mjs`.
 
 8. Owners who want on-chain per-agent budgets: `node scripts/vault.mjs budgets on` (the app's hire sheet then sets
    each agent's budget), or per agent `node scripts/vault.mjs budget <hired agent id> 100`. Creator fees without the

@@ -24,7 +24,9 @@ pragma solidity 0.8.26;
 ///            buy (`setSession`), and can end it at once (`revokeSession`). A vault starts with a 30-day session on its
 ///            starting coins at its starting per-trade limit; after that the key can do nothing until the owner renews.
 ///          - a platform fee switch held by the factory's guardian: 0 unless changed, never above 0.2%, paid in USDT
-///            like the creator fee and counted toward the limits.
+///            like the creator fee and counted toward the limits, and charged to this vault only up to the rate its
+///            owner accepted (`acceptPlatformFee`, 0 until then): the guardian can never charge an owner who did not
+///            accept, nor more than they accepted.
 
 interface IERC20 {
     function balanceOf(address) external view returns (uint256);
@@ -102,6 +104,8 @@ contract MoaVault {
     uint256 public sessionMaxTradeUsdt;
     mapping(uint32 epoch => mapping(address token => bool)) private _sessionToken;
     bool public paused;
+    /// The most platform fee the owner agreed to pay, in basis points. 0 (the start) means none is ever charged here.
+    uint16 public platformFeeAccepted;
     uint256 public maxTradeUsdt; // most USDT the agent may spend in one buy (6 decimals)
     uint256 public maxDailyUsdt; // most USDT the agent may spend on buys per UTC day
     uint16 public maxSlippageBps; // worst price accepted, against the pool's 10-minute average price
@@ -135,6 +139,7 @@ contract MoaVault {
     event BudgetSpent(bytes32 indexed agentId, uint256 usdt, uint256 left);
     event SessionSet(address indexed agent, uint64 until, uint256 maxTradeUsdt, address[] tokens);
     event PlatformPaid(address indexed treasury, bool isBuy, uint256 feeUsdt, uint16 bps);
+    event PlatformFeeAccepted(uint16 bps);
 
     error NotOwner();
     error NotAgent();
@@ -212,6 +217,14 @@ contract MoaVault {
         if (agent_ == address(0) || agent_ == owner || until <= block.timestamp || until > block.timestamp + MAX_SESSION || maxTradeUsdt_ == 0) revert BadSession();
         for (uint256 i = 0; i < tokens.length; i++) if (markets[tokens[i]].pool == address(0)) revert MarketDisabled();
         _setSession(agent_, until, maxTradeUsdt_, tokens);
+    }
+
+    /// @notice Agree to pay the factory's platform fee up to `bps` on this vault (0 withdraws the agreement). A later
+    ///         rise above it is not charged until the owner accepts again; a fall is charged at the lower rate.
+    function acceptPlatformFee(uint16 bps) external onlyOwner {
+        if (bps > MAX_PLATFORM_FEE_BPS) revert FeeTooHigh(bps, MAX_PLATFORM_FEE_BPS);
+        platformFeeAccepted = bps;
+        emit PlatformFeeAccepted(bps);
     }
 
     /// @notice End the agent key's session now. It can do nothing more on this vault until a new session.
@@ -423,6 +436,7 @@ contract MoaVault {
         (bool halted, uint16 pBps, address treasury) = IMoaTerms(factory).tradeTerms();
         if (halted) revert Halted();
         if (pBps > MAX_PLATFORM_FEE_BPS || treasury == address(0)) pBps = 0;
+        if (pBps > platformFeeAccepted) pBps = platformFeeAccepted; // never more than this vault's owner accepted
         Market memory m = markets[token];
         if (!m.enabled) revert MarketDisabled();
         if (!_sessionToken[sessionEpoch][token]) revert NotInSession(token);

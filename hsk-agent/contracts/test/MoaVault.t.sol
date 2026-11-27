@@ -51,7 +51,8 @@ abstract contract Base is Test {
     function _fees(bytes32 id, uint256 amount, uint16 feeAsk) internal view returns (uint256) {
         (address c, uint16 approved) = vault.creatorOf(id);
         uint16 cb = c == address(0) ? 0 : (feeAsk < approved ? feeAsk : approved);
-        return (amount * cb) / 10_000 + (amount * factory.platformFeeBps()) / 10_000;
+        uint16 pb = factory.platformFeeBps() < vault.platformFeeAccepted() ? factory.platformFeeBps() : vault.platformFeeAccepted();
+        return (amount * cb) / 10_000 + (amount * pb) / 10_000;
     }
 }
 
@@ -169,6 +170,8 @@ contract MoaVaultUnit is Base {
         vault.setCreatorFee(A, CREATOR, 50);
         vm.prank(GUARD);
         factory.setPlatformFee(20, TREASURY);
+        vm.prank(OWNER);
+        vault.acceptPlatformFee(20);
         uint256 before = usdt.balanceOf(address(vault));
         _buy(A, 10e6, 100); // asks 1%, gets the 0.5% approved
         assertEq(usdt.balanceOf(CREATOR), 50_000);
@@ -176,6 +179,31 @@ contract MoaVaultUnit is Base {
         assertEq(before - usdt.balanceOf(address(vault)), 10e6);
         assertEq(vault.costUsdt(address(weth)), 10e6 - 70_000);
         assertEq(vault.spentOnDay(block.timestamp / 1 days), 10e6);
+    }
+
+    function test_platformFeeOnlyWhatTheOwnerAccepted() public {
+        vm.prank(GUARD);
+        factory.setPlatformFee(20, TREASURY);
+        _buy(bytes32(0), 10e6, 0);
+        assertEq(usdt.balanceOf(TREASURY), 0, "charged an owner who never accepted");
+        vm.prank(STRANGER);
+        vm.expectRevert(MoaVault.NotOwner.selector);
+        vault.acceptPlatformFee(20);
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSelector(MoaVault.FeeTooHigh.selector, uint16(21), uint16(20)));
+        vault.acceptPlatformFee(21);
+        vm.prank(OWNER);
+        vault.acceptPlatformFee(10);
+        _buy(bytes32(0), 10e6, 0);
+        assertEq(usdt.balanceOf(TREASURY), 10_000, "the guardian's 0.2% is held to the owner's 0.1%");
+        vm.prank(GUARD);
+        factory.setPlatformFee(5, TREASURY);
+        _buy(bytes32(0), 10e6, 0);
+        assertEq(usdt.balanceOf(TREASURY), 15_000, "a lower rate is charged at the lower rate");
+        vm.prank(OWNER);
+        vault.acceptPlatformFee(0);
+        _buy(bytes32(0), 10e6, 0);
+        assertEq(usdt.balanceOf(TREASURY), 15_000, "withdrawn acceptance: nothing more");
     }
 
     function test_feeCaps() public {
@@ -332,7 +360,7 @@ contract Handler is Test {
         amount = bound(amount, 1e6, 120e6);
         ask = uint16(bound(ask, 0, 150));
         (address c, uint16 rate) = _creatorRate(id, ask);
-        uint16 pRate = factory.platformFeeBps();
+        uint16 pRate = factory.platformFeeBps() < vault.platformFeeAccepted() ? factory.platformFeeBps() : vault.platformFeeAccepted();
         uint256 cFee = (amount * rate) / 10_000;
         uint256 pFee = (amount * pRate) / 10_000;
         uint256 minOut = vault.minOutFloor(address(weth), true, amount - cFee - pFee);
@@ -361,7 +389,7 @@ contract Handler is Test {
         bytes32 id = ids[which % 3];
         ask = uint16(bound(ask, 0, 150));
         (address c, uint16 rate) = _creatorRate(id, ask);
-        uint16 pRate = factory.platformFeeBps();
+        uint16 pRate = factory.platformFeeBps() < vault.platformFeeAccepted() ? factory.platformFeeBps() : vault.platformFeeAccepted();
         uint256 minOut = vault.minOutFloor(address(weth), false, amount);
         uint256 c0 = c == address(0) ? 0 : usdt.balanceOf(c);
         uint256 t0 = usdt.balanceOf(TREASURY);
@@ -408,6 +436,11 @@ contract Handler is Test {
         vault.setCreatorFee(ids[1 + (which % 2)], creators[who % 2], uint16(bound(bps, 0, 100)));
     }
 
+    function acceptPlatformFee(uint16 bps) external {
+        vm.prank(OWNER);
+        vault.acceptPlatformFee(uint16(bound(bps, 0, 20)));
+    }
+
     function setPlatformFee(uint16 bps) external {
         vm.prank(GUARD);
         factory.setPlatformFee(uint16(bound(bps, 0, 20)), TREASURY);
@@ -438,7 +471,7 @@ contract Handler is Test {
         tokens[0] = address(weth);
         bytes memory call;
         address target = address(vault);
-        uint8 w = which % 8;
+        uint8 w = which % 9;
         if (w == 0) call = abi.encodeCall(MoaVault.setLimits, (type(uint256).max, type(uint256).max, 1000));
         else if (w == 1) call = abi.encodeCall(MoaVault.withdraw, (address(usdt), 1));
         else if (w == 2) call = abi.encodeCall(MoaVault.setSession, (a, uint64(block.timestamp + 300 days), type(uint256).max, tokens));
@@ -446,6 +479,7 @@ contract Handler is Test {
         else if (w == 4) call = abi.encodeCall(MoaVault.setBudget, (ids[0], type(uint256).max));
         else if (w == 5) call = abi.encodeCall(MoaVault.setAgent, (a));
         else if (w == 6) { target = address(factory); call = abi.encodeCall(MoaVaultFactory.setPlatformFee, (20, a)); }
+        else if (w == 8) call = abi.encodeCall(MoaVault.acceptPlatformFee, (20));
         else { target = address(factory); call = abi.encodeCall(MoaVaultFactory.setHalted, (true)); }
         vm.prank(a);
         (bool ok,) = target.call(call);

@@ -194,7 +194,7 @@ export async function vaultStatus(cfg: ExecConfig) {
     vaultVersion(cfg, cfg.vault),
     // version 3: per-agent budgets on or off, and the factory guardian's halt of all agent trading
     v3 ? read('budgetsOn') : Promise.resolve(false),
-    v3 ? termsOf(cfg, cfg.vault).catch(() => ({ halted: false, platformFeeBps: 0 })) : Promise.resolve({ halted: false, platformFeeBps: 0 }), read('maxTradeUsdt'), read('maxDailyUsdt'), read('maxSlippageBps'), read('remainingToday'), read('paused'), read('stopLossBps'),
+    v3 ? termsOf(cfg, cfg.vault).catch(() => ({ halted: false, platformFeeBps: 0, offeredBps: 0 })) : Promise.resolve({ halted: false, platformFeeBps: 0, offeredBps: 0 }), read('maxTradeUsdt'), read('maxDailyUsdt'), read('maxSlippageBps'), read('remainingToday'), read('paused'), read('stopLossBps'),
     balance(USDT, cfg.vault), cfg.owner ? balance(USDT, cfg.owner) : Promise.resolve(0n),
     // held, what it cost, what it is worth at the pool price now, and the value under which the stop-loss applies
     ...Object.values(TOKENS).map((t) => read('position', [t.address]) as Promise<readonly [bigint, bigint, bigint, bigint]>),
@@ -212,6 +212,8 @@ export async function vaultStatus(cfg: ExecConfig) {
     halted: (halted as { halted: boolean }).halted,
     /** 0 unless the factory's guardian set a platform fee (at most 0.2%); shown to the user only when it is not 0 */
     platformFeeBps: (halted as { platformFeeBps: number }).platformFeeBps,
+    /** the factory's rate; it applies to this vault only up to what its owner accepted (acceptPlatformFee) */
+    platformFeeOfferedBps: (halted as { offeredBps: number }).offeredBps,
     /** version 3: the agent key's session on this vault (who, until when, which coins, most per buy, whether Moa holds that key) */
     session: v3 ? await sessionOf(cfg, cfg.vault).catch(() => undefined) : undefined,
     walletUsdt: formatUnits(walletUsdt as bigint, 6),
@@ -276,11 +278,14 @@ export async function sessionOf(cfg: ExecConfig, vault: Address) {
 }
 
 /** The factory's terms every version-3 vault reads on a trade: the guardian's halt and the platform fee. */
-async function termsOf(cfg: ExecConfig, vault: Address): Promise<{ halted: boolean; platformFeeBps: number }> {
+/** platformFeeBps is what this vault pays now: the factory's rate, never above what its owner accepted. */
+async function termsOf(cfg: ExecConfig, vault: Address): Promise<{ halted: boolean; platformFeeBps: number; offeredBps: number }> {
   const pub = clientOf(cfg);
   const f = (await pub.readContract({ address: vault, abi, functionName: 'factory' })) as Address;
   const [halted, bps, treasury] = (await pub.readContract({ address: f, abi: factoryAbi, functionName: 'tradeTerms' })) as readonly [boolean, number, Address];
-  return { halted, platformFeeBps: treasury === zeroAddress || bps > 20 ? 0 : Number(bps) };
+  const offered = treasury === zeroAddress || bps > 20 ? 0 : Number(bps);
+  const accepted = Number(await pub.readContract({ address: vault, abi, functionName: 'platformFeeAccepted' }));
+  return { halted, platformFeeBps: Math.min(offered, accepted), offeredBps: offered };
 }
 
 /** The current factory's platform fee in basis points; 0 for a factory without one, or when it cannot be read. */

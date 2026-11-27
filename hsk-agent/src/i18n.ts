@@ -51,7 +51,7 @@ const shEn = {
   hsSessionNew: (until: string, max: string) => `Moa's agent may trade on your vault until ${until}, at most $${max} a buy. Your wallet asks once to allow it.`,
   hsSessionOk: (until: string) => `Moa's agent may trade on your vault until ${until}.`,
   hsPlatformFee: (f: string, usd: string) => `Platform fee ${f} of each trade ($${usd} on this buy), inside your limits.`,
-  trPlatformFee: (f: string) => `Platform fee now: ${f} of each agent trade, paid in USDT by the vault. It can never exceed 0.2%.`,
+  trPlatformFee: (f: string) => `Platform fee now: ${f} of each agent trade, paid in USDT, only by vaults whose owner accepted it. It can never exceed 0.2%, nor what an owner accepted.`,
 };
 const shKo: typeof shEn = {
   shTab: '사람들이 만든 에이전트', shHead: '사람들이 만든 에이전트',
@@ -87,7 +87,7 @@ const shKo: typeof shEn = {
   hsSessionNew: (until, max) => `Moa 에이전트는 ${until}까지, 한 번에 최대 $${max}까지 내 금고에서 거래할 수 있어요. 지갑에서 한 번 허락해요.`,
   hsSessionOk: (until) => `Moa 에이전트는 ${until}까지 내 금고에서 거래할 수 있어요.`,
   hsPlatformFee: (f, usd) => `플랫폼 수수료: 거래마다 ${f} (이번 매수 $${usd}), 내 한도 안에서 나가요.`,
-  trPlatformFee: (f) => `지금 플랫폼 수수료: 에이전트 거래마다 ${f}, 금고가 USDT로 내요. 0.2%를 넘을 수 없어요.`,
+  trPlatformFee: (f) => `지금 플랫폼 수수료: 에이전트 거래마다 ${f}, 주인이 받아들인 금고만 USDT로 내요. 0.2%도, 주인이 받아들인 만큼도 넘을 수 없어요.`,
 };
 
 const en = {
