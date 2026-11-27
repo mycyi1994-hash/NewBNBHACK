@@ -137,12 +137,8 @@ export function gapStats(xs: GapPoint[]) {
 
 /* ---------- the spread hunter ---------- */
 
+/** Whether the hunter has enough records for a past result (and so can be hired). */
 export type HunterState = { building: true; points: number; spanMs: number } | { building: false };
-/**
- * The hunter's rule, walked over the records: in when the pool is cheaper than the exchange by more than a round
- * trip on HSKSwap costs (at REF_USD), out when the pool is back at or above the exchange. Buys and sells are priced
- * at the pool price with the recorded fee and slip, so the result is what the vault would have got on HSKSwap.
- */
 /** The hunter sells after this long in the coin, whatever the gap: a pool that never trades never closes its discount. */
 export const MAX_HOLD_MS = 3 * 86_400_000;
 /** ...or once the pool price is this far under what it paid. */
@@ -154,14 +150,15 @@ const closedAt = (p: GapPoint) => -roundTrip(p) / 2;
  * The hunter's rule, walked over the records.
  *  In: the pool is cheaper than the exchange by more than a round trip on HSKSwap costs (at REF_USD), and the record
  *      has already shown this pool closing such a discount once (a stale pool that never trades never qualifies).
- *  Out, the first of: the pool price has risen a round trip over what it paid (the discount paid off); the pool is
- *      back at the exchange price; MAX_HOLD_MS in the coin; or the pool price STOP under what it paid.
+ *  Out, the first of: the pool price has risen a round trip over what it paid (the discount paid off); the pool has
+ *      risen and is back at the exchange price (an exchange that falls to the pool closes nothing for the vault);
+ *      MAX_HOLD_MS in the coin; or the pool price STOP under what it paid.
  * Buys and sells are priced at the pool price with the recorded fee and slip: what the vault would get on HSKSwap.
  */
 export function hunterRun(xs: GapPoint[]) {
   const pts = [...xs].filter((p) => gapOf(p) !== undefined).sort((a, b) => a.t - b.t);
   let cash = 1, qty = 0, peak = 1, maxDd = 0, trades = 0, inside = 0, since = 0, entry = 0, paid = 0;
-  let dip = false, reverted = false;
+  let dip = false, reverted = false, dipGap = 0, dipPool = 0;
   const equity: { time: number; value: number }[] = [], bench: { time: number; value: number }[] = [], marks: Mark[] = [];
   const exits: ('target' | 'closed' | 'time' | 'stop')[] = [];
   const p0 = pts[0]?.pool ?? 1;
@@ -172,7 +169,7 @@ export function hunterRun(xs: GapPoint[]) {
       qty = (cash * (1 - POOL_FEE)) / (p.pool * (1 + (p.buy ?? 0))); cash = 0; trades++; since = p.t;
       marks.push({ time: Math.floor(p.t / 1000), side: 'buy', price: p.pool });
     } else if (qty > 0) {
-      const why = p.pool >= entry * (1 + rt) ? 'target' : g >= 0 ? 'closed' : p.t - since >= MAX_HOLD_MS ? 'time' : p.pool <= entry * (1 - STOP) ? 'stop' : null;
+      const why = p.pool >= entry * (1 + rt) ? 'target' : g >= 0 && p.pool > entry ? 'closed' : p.t - since >= MAX_HOLD_MS ? 'time' : p.pool <= entry * (1 - STOP) ? 'stop' : null;
       if (why) {
         const got = qty * p.pool * (1 - (p.sell ?? 0)) * (1 - POOL_FEE);
         marks.push({ time: Math.floor(p.t / 1000), side: 'sell', price: p.pool, ret: got / paid - 1 });
@@ -180,9 +177,11 @@ export function hunterRun(xs: GapPoint[]) {
         cash = got; qty = 0;
       }
     }
-    // What the record shows about this pool: a discount past a round trip, later closed.
-    if (g < -rt) dip = true;
-    else if (dip && g >= closedAt(p)) { reverted = true; dip = false; }
+    // What the record shows about this pool: a discount past a round trip, later closed BY THE POOL RISING. A gap that
+    // closes because the exchange came down to the pool is no evidence: the vault only profits when the pool rises.
+    // The pool must have risen at least as far as the gap narrowed from its deepest point to "closed".
+    if (g < -rt) { if (!dip || g < dipGap) { dipGap = g; dipPool = p.pool; } dip = true; }
+    else if (dip && g >= closedAt(p)) { if (p.pool / dipPool - 1 >= closedAt(p) - dipGap) reverted = true; dip = false; }
     if (qty > 0 && k > 0) inside += p.t - pts[k - 1].t;
     const v = cash + qty * p.pool;
     peak = Math.max(peak, v); maxDd = Math.max(maxDd, 1 - v / peak);

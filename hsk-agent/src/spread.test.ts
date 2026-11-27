@@ -82,6 +82,18 @@ test('a pool whose price never moves never qualifies, however wide the gap', () 
   assert.equal(r.trades, 0);
 });
 
+test('a gap closed by the exchange falling to the pool is not counted, and does not end a position', () => {
+  // the exchange drops 2% to the pool and comes back: the pool never moved, so the record shows no reversion
+  const exLed = rec(24, () => 98, (h) => (h >= 2 && h < 3 ? 98 : 100));
+  assert.equal(hunterRun(exLed).reverted, false);
+  assert.equal(hunterRun(exLed).trades, 0);
+  // a pool-led reversion first, then a buy at 98; the exchange falls to 98 (gap closed, pool flat): it stays in
+  const r = hunterRun(rec(30, (h) => (h >= 1 && h < 2 ? 98 : h < 3 ? 100 : 98), (h) => (h < 5 ? 100 : 98)));
+  assert.equal(r.trades, 1);
+  assert.equal(r.holding, true);
+  assert.deepEqual(r.exits, []);
+});
+
 test('a discount that does not close is sold after the time limit, a falling pool on the stop', () => {
   // reverts once at hour 2, then sits 2% under the exchange for four days
   const flat = rec(4 * 24 + 6, (h) => (h >= 1 && h < 2 ? 98 : h < 3 ? 100 : 98));
