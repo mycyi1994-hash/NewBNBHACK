@@ -1,8 +1,0 @@
-packages:
-  - apps/*
-  - packages/*
-  - scripts
-
-# pnpm 10 blocks dependency lifecycle scripts by default; allow only the ones we need.
-onlyBuiltDependencies:
-  - esbuild

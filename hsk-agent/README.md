@@ -1,252 +1,59 @@
-# Moa — AI money assistant on HSK Chain
+# Moa app: how it works and how to run it
 
-Entry for the HSK Chain Horizon Hackathon · Seoul (AI Agent Trading track).
-
-Moa watches the coin market with you, picks a trading agent that fits you, and hands it the job. Each agent follows
-one fixed, published rule on one coin. It either asks you before every trade or trades on its own, and it always
-trades from **your own vault** on HSKSwap: a contract only you can withdraw from, with the limits and the stop-loss
-you set enforced on-chain.
-
-**Open it:** https://grabitmoa.onrender.com (log in with a wallet on HSK Chain; without one the whole app still
-works as a demo that sends nothing).
-
-## On HSK Chain mainnet
-
-| What | Where |
-| --- | --- |
-| MoaVaultFactory (current, source published) | [`0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546`](https://hsk.blockscout.com/address/0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546) |
-| A user's vault, made by the server when that wallet logged in | [`0x6A355aE335f06971C337c900783C2e016410b33C`](https://hsk.blockscout.com/address/0x6A355aE335f06971C337c900783C2e016410b33C) · [creation](https://hsk.blockscout.com/tx/0x3b69260d046140866ca1b5429c625c69e9a5f1cf93efd3c54c5d84f60f1afb0b) |
-| First trade through a vault: $1 of WBTC on HSKSwap, asked for in the chat (first version of the vault) | [transaction](https://hsk.blockscout.com/tx/0x955cd89b5e89200d606300df1afeca3c3adb337c200e6743af7b64595c2441ee) |
-| Agent wallet (can only call `trade` and `stopOut`; cannot withdraw) | [`0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE`](https://hsk.blockscout.com/address/0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE) |
-
-Not on mainnet yet, as of 26 Nov 2026: a trade and a stop-loss on a vault of the current version. Both were run on
-a local fork of mainnet (below). The contracts are unaudited.
-
-## Three minutes
-
-1. **Log in** (top right). One free signature; no transaction. Your vault is made for you: the server pays the gas,
-   your wallet is the owner.
-2. **Deposit** USDT from the account menu: the vault's address, a QR code, or one click from your wallet.
-3. On the trade screen pick an agent under the chart. Its buys and sells are drawn on the chart; press **Replay**
-   to watch its three-year backtest play out day by day.
-4. **Hire** it. Choose *Asks me first* or *Trades on its own*. For the second, the sheet recommends a daily limit
-   and a stop-loss for your vault and saves them with the same button.
-5. Ask Moa: "what is in my vault?", "pick an agent for me", "how are my agents doing?".
-6. **Withdraw** everything from the account menu whenever you like.
-
-## What the vault enforces
-
-`contracts/src/MoaVault.sol`, one per user, made by `contracts/src/MoaVaultFactory.sol`:
-
-- **Only the owner withdraws.** The agent key can call `trade` (USDT ↔ WHSK, WETH, WBTC on HSKSwap) and nothing else.
-- **Limits are the owner's.** A per-trade and a per-day limit on what agents may spend, and the worst price accepted
-  against the pool. A vault starts with no spending limit: the owner sets one in the account menu or while hiring,
-  where it is recommended and filled in. Selling back to USDT is never held up by a spending limit.
-- **Stop-loss on-chain.** The vault tracks what each holding cost. Once a holding is worth less than the owner's
-  stop-loss allows, **anyone** can call `stopOut(token)`: the vault sells all of it and keeps the USDT. It does not
-  depend on Moa's server. It refuses while the pool price is away from its own 10-minute average, so a price pushed
-  for one transaction can neither set it off nor make the sale cheap.
-- **Lock.** The owner can stop the agent at any time; deposits, withdrawals and the stop-loss keep working.
-
-Checked on a fork of mainnet (`contracts/scripts/fork-test.mjs`, 42 checks): a second user gets a different vault and
-cannot touch the first; an order over a limit is refused by the contract; a sell goes through on a day whose
-spending limit is used up; the stop-loss is refused right after the price is pushed down and carried out by a
-stranger once the price has held, with the stranger getting nothing.
-
-## How the screen is organised
-
-| | Agent market (left menu) | Moa (right, on every screen) | My agents (bar on top + page) |
-| --- | --- | --- | --- |
-| Job | Shows which agents exist, with their backtests | Explains, recommends, asks before each trade, reports | Shows what each hired agent is doing now |
-| The user | Browses, compares, saves | Asks, approves | Watches, pauses |
-| Never does | Set amounts or trade | Trade on its own, invent numbers, store settings | Recommend or explain |
-| AI | None (backtests only) | Classifies free text and answers general questions | None (rules only) |
-
-- **One conversation.** Moa sits on the right of every screen and keeps the same conversation when you move between
-  screens. On screens under 1180px it slides up as a sheet.
-- **From the conversation to an agent.** "Can you buy for me?", "pick one for me", the bar's "Get a pick from Moa",
-  or the AI's `recommend_agent` tool all end in the same agent card inside the conversation, with "Hire",
-  "Other agents" and "Why this one?". You never have to open the market to hire.
-- **The trade screen is one screen.** Market and price on top, the chart in the middle, and under it a panel with
-  the agents for that market. Picking an agent moves no money: the chart switches to daily candles and marks every
-  buy and sell of its backtest, and the panel shows the result against just holding, the two curves and the list of
-  trades (`src/Dock.tsx`; the trades come from `marks` in `src/agents.ts`). The chart also draws the lines the rule
-  itself looks at (its averages, its channel, its RSI levels) and shades the days it was holding. The backtest
-  covers three years by default, so agents compare like for like and a slow rule has enough trades to judge; the
-  panel can switch to one year or to all history, and says the result in one sentence before the numbers. HashKey's
-  own candles only start at its listing dates (2024-05-29 for the BTC and ETH perpetuals), so the days before are
-  Gate spot daily candles joined in front (`dailyHistory` in `src/agents.ts`); the join is marked on the chart and
-  named under the backtest, and the joined days carry no volume. Hiring is a button on that backtest.
-  Moa's agent card and the agent market open the same view ("See the backtest").
-- **The leaderboard is per coin.** One coin's best agents on one chart, against just holding that coin (the dashed
-  line); moving over the chart reads a day, best first, and the line under the pointer comes forward.
-- **Two pages in the market.** "Top agents" ranks the agents that can trade (steady = Sharpe ratio, bold = period
-  return) with their equity curves on one chart; "Marketplace" is the searchable, filterable card grid with a "Hire"
-  button on every card. Both read `src/agents.ts`; nothing on them is invented (no creators, no subscriber counts).
-- **Moa's briefing.** The conclusion for the coin on screen first, the numbers in one table, one leading choice that
-  goes to an agent. Moving to another coin's chart gets that coin's briefing, and a choice always acts on the coin
-  it names.
-- **A backtest you can read and replay.** The result is in money ("put in 1,000,000 won → 1,455,000; just holding →
-  840,000", amount selectable, dollars in English) with the same amounts on the curve. Tags read off the backtest
-  say what kind of strategy it is (risk by worst drop, how often it trades, how long it holds; cut-offs in the
-  tooltip), and "About this strategy" says who it suits, where it works and fails, its source, who has used it and
-  how far it has been tested, with "no published test" stated where that is the case. "Replay" plays the backtest a
-  daily candle at a time from 14 days before it starts (`src/replay.ts`): candles, the rule's lines, buys and sells,
-  the money and the trade list all advance together; pause, seek and 1×/4×/16×.
-- **Anyone can make an agent.** "Make an agent" is one screen: pick the coin, start from a published strategy and
-  change its numbers, add conditions by hand, or describe the rule in a sentence; the backtest reruns on every
-  change. A made rule is data, not code (`src/spec.ts`): a few conditions of the form "this is above/below that",
-  run by one interpreter that decides on past days only, long-only, daily, one coin. The sentence reader is a fixed
-  set of patterns, not a model, and says what it could not read. Twelve built-in strategies are expressible as this
-  data and a test checks they decide identically. Made agents are saved per account (`src/madeStore.ts`: the wallet
-  that logged in, or this browser before that), show under their coin's chart with the full backtest and replay,
-  are labelled "made by you, no published test", and are hired through the same sheet as any agent. Making one is
-  four short steps (`src/Builder.tsx`): the coin, a starting point (published strategies grouped as long term, swing
-  and short term, each with what it returned on that coin; or your own words; or an empty rule), the buy and sell
-  conditions, then a name.
-- **Long term, swing, short term.** Every strategy is placed by how much history its rule looks at (`HORIZON` in
-  `src/agents.ts`): months to a year, a few weeks, or days. Under the chart they stand as three columns side by side, each
-  a ranked list with Moa's pick on top; a row shows the strategy's one-year return and its worst drop, and the column's
-  header says what just holding returned. On the exchange tab the chart is kept shorter so the three columns have
-  room. The HSKSwap tab lists the same strategies as the exchange tab (signals come
-  from the exchange's daily candles, trades happen on HSKSwap) plus the agents that buy on a schedule.
-- **Several agents, each with its own budget.** "My agents" is a tab under the same chart (`src/MineDock.tsx`): one row
-  per hired agent with how much of its budget it has spent, what it holds now and what it has made or lost, a total
-  across all of them, and a warning when the agents may still spend more USDT than the vault holds. It opens first
-  for anyone who has hired an agent.
-- **The pool's liquidity, read from the chain.** Above the HSKSwap chart: what the pool holds at each price, as
-  columns of blocks, twenty steps of 1% around the price now (10% either way); USDT under the price, the coin over it, and how far
-  a $100 and a $1,000 buy would move the price (`src/depth.ts`, from the pool's price, its liquidity in range and
-  its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three pools held one full-range
-  position (the HSK pool three small ranges more), so every column is the same height; liquidity added to one
-  stretch would raise that column alone.
-- **Liquidity strategy: liquidity in blocks on HSKSwap, for a beginner.** The "Liquidity strategy" button next to the
-  pool's liquidity opens a screen with the coin's chart filling the height on the left and an order panel on the right
-  (`src/LpStudio.tsx`). The first step offers six ready-made strategies (`src/lpStrategies.ts`: slow buy, buy more the
-  deeper it falls, crash catcher, sell a little on every rise, fees near the price, set and leave), each a name, one
-  plain line and how far it reaches; no past or expected returns are shown or quoted by Moa. Or the user answers three questions
-  (what to do, how far, how much). Either way the orders are drawn on the chart at their prices, the range edges are
-  lines to drag, and the panel answers in one plain sentence ("If bitcoin comes down to $54,114 it buys with $100.00
-  in 18 orders"), with what happens at ±5%, a plain warning of what a further fall or rise means, and the exact
-  approvals the wallet will ask for (`src/lpAmount.ts` splits and rounds the amounts; a coin side too small to matter
-  is said, not hidden). Moa explains each choice. "Adjust blocks" opens a block editor under the chart (`src/LpBlocks.tsx`): one
-  column of cells per order, USDT left and the coin right of the price, shapes even / near / half and half / ends /
-  custom, every column set by click, paint, arrow keys, with undo and redo, plus the order spacing and the number of
-  orders below and above; the two sides are independent, so dragging one edge moves only that side. Typed sentences
-  change the plan the same way, and the AI's `set_lp_plan` tool can pick a strategy by name or
-  fills the same plan. Supplying is the user's own wallet: exact approvals, then every step as one Uniswap V3 position
-  through HSKSwap's own position manager (`0xDF0A9b83…0cad5`, whose factory is the router's) in one transaction
-  (`src/lp.ts`). Positions already in the pool are listed with their fees, to collect or take out. The step holding the
-  price is left empty, so every position starts with one token. Checked on a mainnet fork: `contracts/scripts/lp-fork-test.mjs`
-  (17 checks: 20 steps in one transaction, a sale through the USDT steps turns them into WBTC and earns fees, collect and
-  remove pay the wallet, a stranger cannot take them out) and in the browser with a test wallet (log in, 100 USDT in 10
-  steps, supply, listed, taken out, wallet back to 500 USDT). Not yet done on mainnet.
-- **nanotradingclub's fire chart as the heatmap.** The "Heatmap" switch next to Indicators puts nanotradingclub's own
-  fire chart where Moa's chart was, for the coin and interval on screen: its order-book heatmap of nine exchanges, its
-  liquidation map and liquidations, drawn by its own code, with its own switches (heatmap, order book, liquidation
-  map, volume profile). It is a frame (`NanoChart` in `src/ChartExtras.tsx`) on nanotradingclub's development site
-  (`nntdev.pages.dev/fire?embed=1`; embed mode hides that site's menus and chat and nothing else); its public site is
-  left as it is and only linked to. Nothing of it loads until the switch is on. nanotradingclub
-  decides which sites may show its chart; Moa's server reads that from its response headers (`server/nanoFrame.ts`,
-  `/api/nano-frame`) and, until this address is allowed, says so and links to the chart on nanotradingclub instead of
-  showing a broken frame. Coins nanotradingclub does not collect (HSK) say that too.
-- **Moa is given the same numbers.** Its market tool now also returns each pool's depth, and for BTC and ETH the
-  thickest stacks of resting orders within 8% of the price and the liquidations of the last hour and day
-  (`marketSnapshot` in `server/moaAgent.ts`, about 2.6 KB, fetched at most once every three minutes).
-- **Agents have names and faces.** Each rule has a short name and its own coloured mark ("BTC Turtle", "ETH
-  Guardian"); the rule it follows and where the rule comes from stay beside it as the subtitle and the origin tag.
-- **The vault is on screen, not in a footnote.** `src/VaultCard.tsx` shows the same vault three ways (sidebar,
-  under Moa's input, the card on "My agents"): connected or demo, the per-trade limit, and a gauge of today's
-  limit. An order waiting for approval is a card that names the agent, the trade, the reason, and the limits the
-  contract will check; a fill is a receipt with a link to the HSK explorer. Without a vault the app says "Demo
-  mode: orders are not sent", once and calmly.
-- **One accent.** Primary actions are one filled blue button everywhere; green and red mean gain, loss, buy and
-  sell and nothing else. Numbers use one format (a true minus sign, one decimal).
-- **When data does not load, the screen says so.** The chart, the agents under it and the agent market each show
-  what failed, in one line, with "Try again" (`StateBox` in `src/ui.tsx`); loading shows a spinner with words, not
-  an empty box. RSI and the momentum rule's 12-month return are drawn in a pane of their own under the price chart,
-  with their own axis, scrolling in step with it.
-- **Moa never leaves you waiting.** Each model call is streamed and has a 90-second deadline with one retry
-  (`server/moaAgent.ts`); the server sends a line every 5 seconds while it works, and the browser stops waiting after
-  25 seconds of silence or 150 seconds in total and answers with the on-device parser, marked as offline.
-- **Sizes follow the screen.** `src/styles.css` is written in the pixels measured at a 1440px screen; the build
-  (`pxToRem` in `vite.config.ts`) turns them into rem and the root font size steps up on wider screens, so a 2560px
-  monitor gets a slightly larger interface (15px base instead of 14px) instead of small type in a wide frame. Latin and digits are
-  Google Sans Flex, Korean is Pretendard.
-- **Twenty published strategies, and what stands behind each.** Nineteen position rules and plain dollar-cost
-  averaging come from named, public sources (`src/agents.ts`, text in `src/ruleText.ts`): 12-month time-series
-  momentum, the 1/3/12-month trend blend, dual momentum, the 10-month average rule, the golden cross, Turtle
-  systems 1 and 2, Donchian's four-week rule and 5/20 averages, Allen's 4-9-18, MACD, Ichimoku, Keltner, Parabolic
-  SAR, ADX, Aroon, short-horizon crypto momentum, Connors' RSI(2) and Double 7's. Each carries a proof level shown
-  on the agent (`PROOF`): tested in a paper, a real trading record, published by its author, a widely followed
-  signal, or no published test. What differs from the source (long only, daily checks, a parameter Moa had to
-  choose) is said in the text, and nothing claims a fund runs these agents. The four indicator rules and three DCA
-  variations without a public source wait behind "show more". Published strategies lead every default order.
-- **The recommendation is a rule, not a model** (`src/recommend.ts`): only agents that can trade on HSKSwap → the coin
-  on screen or named → risk 1–2 for first-timers, 1–3 otherwise → published classics before the rest → the smallest
-  worst drop in the backtest (an agent that never traded in the window does not outrank one that did).
-- **The hire sheet is the only place money settings change** (`src/HireSheet.tsx`): amount per buy, total budget,
-  "asks me before each trade", the vault limits. Hiring from the market, from Moa's card, from a plan Moa drafted,
-  and changing the amount later all open this sheet.
-- **Ask before each trade** (`src/runner.ts`): while the app is open, each hired agent's rule decides its next order
-  (position agents buy when their signal turns on and sell when it turns off; collect agents buy once a day; custom
-  plans follow their steps, stop-loss and take-profit first). Moa asks; "Buy $10" sends it to the vault through
-  `/api/agent-trade`, "Skip this time" records the skip. No model is involved in that path.
-- **Pause** is a button on each chip in the bar and works without Moa or the AI.
-- **Same agent, same numbers.** `src/agents.ts` scores every agent once, over the same last three years (or all a younger coin has); the market,
-  the agents under the chart, Moa's cards and the server tool all read it.
-
-## Status
-
-| Part | State |
-| --- | --- |
-| Web app (trade, agent market, my agents, Moa on every screen) | Working |
-| Market data: HashKey Global candles, HSKSwap pool price from HSK Chain mainnet (chain 177), Gate spot | Live |
-| Agents (`src/agents.ts`) | 47 agents: 27 can be hired (BTC, ETH, HSK on HSKSwap; 0.3% fee in the backtest), 20 "signal only" for coins HSKSwap does not list (**demo**, 0.1% fee) |
-| Moa's brain (`server/moaAgent.ts`) | Claude Sonnet 5.5, tools `get_market`, `propose_plan`, `recommend_agent`, `execute_trade`. Falls back to the on-device parser when the API is unreachable. Agent requests (pick one, stop, how is it doing) are answered without the AI |
-| Account (`src/account.ts`, `src/Account.tsx`, `server/session.ts`) | **Log in** at the top right with a wallet: one free signature, no transaction. The account shows a nickname and the address; its menu shows the wallet's own vault with **Deposit** (address, QR code, or send from the wallet), **Withdraw**, **Limits** and **Lock trading**, all sent by the user's wallet. With several wallets in the browser, logging in asks which one. Made agents, hired agents and trade history are kept per wallet (per browser before logging in) |
-| Hired agents | Two ways of working, chosen when hiring. **Asks first**: every order waits for the user's OK while the app is open. **On its own** (`server/autoRunner.ts`): the server runs the same rule every five minutes and sends the order at once, app open or not, inside the agent's own budget and whatever limits the owner set on the vault. The server also carries out stop-losses that are due, and an agent does not buy straight back in after one |
-| Production server (`server/main.ts`, [`DEPLOY.md`](DEPLOY.md)) | One Node process for the built app, the API and the agents on auto. Running at https://grabitmoa.onrender.com |
-| Vaults (`contracts/src/MoaVaultFactory.sol`, `contracts/src/MoaVault.sol`) | One vault per user, made when the wallet first logs in; the server pays the gas, the wallet is the owner and signs nothing. The current factory is on mainnet with its source published (addresses above). 42 checks on a fork of mainnet |
-| Execution (`server/executor.ts`) | Approved agent orders and “실행”/“execute” in the chat go to the vault of the wallet that is logged in, and only with that wallet's session; an order without one is refused. Not logged in, or on a server without a factory, the app is a **demo**: agents ask, nothing is sent |
-| Pause | In the app it stops new orders. Locking a vault on-chain is the owner's `pause` (`contracts/scripts/vault.mjs`) |
-
-UI reference: Google AI Studio web (via Mobbin). `src/styles.css` is built from measured captures: 208px sidebar, hairlines, 14/20 type, outlined buttons, grey selected chips with a dot, blue links and assistant marks. The layout (sidebar, screen, Moa on the right) is Moa's own.
+See the [root README](../README.md) for what Moa is, what is on mainnet, and where the code comes from.
 
 ## Run
 
-Put the server-side secrets in `.env.local` (git-ignored):
+Server-side secrets go in `.env.local` (git-ignored):
 
 ```
-ANTHROPIC_API_KEY=...
+ANTHROPIC_API_KEY=...            # Moa's chat; without it the chat falls back to the on-device parser
 # optional: real vaults. The factory makes one vault per logged-in wallet; the agent key trades for them.
 MOA_FACTORY_ADDRESS=0x...
 MOA_AGENT_PRIVATE_KEY=0x...
 MOA_RPC_URL=https://mainnet.hsk.xyz
-# optional: MOA_MAX_VAULTS_PER_DAY=20 (vaults this server pays to make per day), MOA_SESSION_SECRET=...
+# optional: MOA_DATA_DIR, MOA_SESSION_SECRET, MOA_MAX_VAULTS_PER_DAY
 ```
 
 ```bash
 npm install
-npm run dev      # http://127.0.0.1:5180
-npm test         # parser, agent scoring, recommend rule, runner, login-session and auto-runner tests
-npm start        # the production server: needs `npm run build` first (see DEPLOY.md)
-npm run build
+npm run dev        # http://127.0.0.1:5180
+npm test           # rules, backtests, recommendation, runner, sessions, auto runner, LP math
+npm run build      # typecheck + production build
+npm start          # production server (after build); see DEPLOY.md
 ```
 
-### Deploy the vaults to HSK Chain mainnet
+Without a factory address, or before a wallet logs in, the app is a **demo**: agents ask, nothing is sent.
 
-[`contracts/MAINNET.md`](contracts/MAINNET.md) has the steps: make the agent key, dry run, deploy the factory (one
-transaction), publish the source on the explorer, then log in to the app, deposit and trade. The scripts check every
-address on-chain before sending, show the plan and gas cost first, and ask for a typed word before each transaction.
-The deploying wallet's key is typed into a hidden prompt and is never stored.
+## Parts
 
-### Try execution on a local fork of HSK mainnet (no real funds)
+| Part | Files | Notes |
+| --- | --- | --- |
+| Agents and backtests | `src/agents.ts`, `src/spec.ts`, `src/ruleText.ts` | Each agent is one rule on one coin, scored on 3 years of daily candles (HashKey Global; Gate spot joined in front where HashKey's history is shorter, marked on the chart). Made agents may use 4-hour or hourly candles (1 year / 90 days). 0.3% fee per trade on HSKSwap, no slippage modelled. |
+| Recommendation | `src/recommend.ts` | A fixed order, no model. 1. Agents that can trade on HSKSwap, for the coin asked about. 2. Risk the user's level allows. 3. Working now. 4. Beat just holding. 5. Published classics first. 6. Smallest worst fall. Agents the user already hired are skipped when another fits. |
+| Making an agent | `src/Builder.tsx`, `src/madeStore.ts` | The rule is data ("this is above/below that"), read by one interpreter that decides on past candles only, long only. A sentence reader with fixed patterns (no model) can start one. |
+| Hiring and running | `src/HireSheet.tsx`, `src/runner.ts`, `server/autoRunner.ts` | **Asks first:** each order waits for the user's OK while the app is open. **On its own:** the server checks every 5 minutes, on the agent's own candle interval, and sends orders inside the agent's budget and the vault's limits. |
+| Vault and execution | `contracts/src/MoaVault.sol`, `contracts/src/MoaVaultFactory.sol`, `server/executor.ts` | One vault per user. Only the owner withdraws. The agent key may only `trade` (USDT ↔ WHSK/WETH/WBTC on HSKSwap) and `stopOut`. Per-trade and per-day limits, and a worst accepted price. Anyone may trigger a due stop-loss, which is refused while the pool price is away from its 10-minute average. Orders go only to the logged-in wallet's vault. |
+| Moa (chat) | `server/moaAgent.ts`, `src/MoaFeed.tsx` | Claude through the Anthropic API, with tools to read the market, recommend an agent, draft a plan, set a liquidity plan, and execute a trade. Execution needs the user's explicit "실행"/"execute" in that message. Answers stream; on timeout the browser answers with the on-device parser, marked offline. |
+| Liquidity on HSKSwap | `src/lp.ts`, `src/LpStudio.tsx`, `src/LpBlocks.tsx`, `src/lpStrategies.ts`, `src/lpAmount.ts` | Liquidity in blocks: each block is one Uniswap V3 position through HSKSwap's own position manager (`0xDF0A9b83…0cad5`), all minted in one transaction from the user's wallet after exact-amount approvals. Six ready-made strategies (no past or expected returns shown), three plain questions, or a block-by-block editor. Positions can be collected or removed. |
+| Pool depth | `src/depth.ts`, `src/dex.ts` | Read from the pool's price, in-range liquidity and initialized ticks on HSK Chain (chain 177). |
+| Heatmap | `src/ChartExtras.tsx`, `server/nanoFrame.ts` | The "Heatmap" switch shows the fire chart of nanotradingclub, a separate project by the same author, in a frame from its development site. The server reads that site's frame headers and links out instead when framing is not allowed. |
+| Account | `src/account.ts`, `server/session.ts` | Login is one wallet signature (no transaction). The server pays the gas to make the user's vault. |
+
+## Contracts on a local fork of mainnet (no real funds)
 
 ```bash
 cd contracts && npm install && node scripts/compile.cjs
-node --experimental-strip-types scripts/fork-test.mjs      # factory, vault and executor checks
-npx hardhat node --port 8546 &                              # keep running
-node scripts/fork-setup.mjs                                 # deploys the factory, gives a test wallet 500 USDT, writes ../.env.fork.local
-cd .. && npx vite --mode fork                               # log in with the first Hardhat test account (add the fork to your wallet as chain 177, RPC http://127.0.0.1:8546), deposit, then hire an agent and approve its first buy
+node --experimental-strip-types scripts/fork-test.mjs     # vault and factory checks
+node scripts/lp-fork-test.mjs                              # liquidity blocks: mint, earn fees, collect, remove
+npx hardhat node --port 8546 &                             # then: node scripts/fork-setup.mjs; cd .. && npx vite --mode fork
 ```
+
+Mainnet deployment steps: [`contracts/MAINNET.md`](contracts/MAINNET.md). The scripts check every address on-chain,
+show the plan and gas first, and ask for a typed word before each transaction. Keys are typed into a hidden prompt
+and never stored.
+
+## Deploy
+
+[`DEPLOY.md`](DEPLOY.md) (Render, root directory `hsk-agent`). The service has a persistent disk, so each deploy
+takes it offline for a minute or two.

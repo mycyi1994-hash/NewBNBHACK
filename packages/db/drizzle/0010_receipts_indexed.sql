@@ -1,1 +1,0 @@
-ALTER TABLE "receipts" ADD COLUMN "indexed" jsonb;

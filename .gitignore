@@ -1,42 +1,16 @@
 node_modules/
 dist/
-.next/
-.turbo/
 coverage/
 *.tsbuildinfo
 
-# secrets
+# secrets: never committed
 .env
 .env.*
 !.env.example
 *.pem
 *.key
-.studio/
-.baw/
 
-# vendored docs (fetched by scripts/fetch-docs.sh)
-docs/vendor/*
-!docs/vendor/ENDPOINTS.md
-
-# Foundry build output and local script runs (packages/rwa-lp). A live deployment's manifest
-# goes to packages/rwa-lp/deployments/, which is committed; a local fork rehearsal's goes to
-# deployments/rehearsal/ (MANIFEST_DIR), which is not.
-packages/rwa-lp/out/
-packages/rwa-lp/cache/
-packages/rwa-lp/broadcast/
-packages/rwa-lp/deployments/rehearsal/
-
-# Cloudflare Workers build of apps/web (OpenNext, G2-2) and wrangler's local state. .dev.vars holds
-# the secrets of a local preview (wrangler dev), like .env.
-.open-next/
-.wrangler/
-.dev.vars
-.dev.vars.*
-
-# local
-.DS_Store
-*.log
-.claude/settings.local.json
-
-# Agent worktrees created by the Claude Code harness (never part of the repo)
-.claude/worktrees/
+# local data, screenshots and test output
+data/
+test-results/
+playwright-report/

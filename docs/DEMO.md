@@ -1,52 +1,21 @@
-# DEMO.md — the 4-minute video and the judges' 15-minute path
+# Demo video script (3 minutes)
 
-Author: Minseo Kang. Filming 10/6~10/7, editing 10/8. Screen recording + narration (English, with English subtitles — 9/27, D-26/D-27). Live-trade scenes are filmed during the regular session (22:30~05:00 KST).
+Record at 1440×900 with the app in Korean (or English). Log in with a wallet whose vault holds a few USDT. Each
+scene says what is on screen and what is said. Say only what the screen shows; no promises of returns.
 
-## 1. Video script (≤ 4:00)
-
-| Time | Screen | Narration gist |
+| Time | On screen | Narration |
 | --- | --- | --- |
-| 0:00–0:20 | Home. House plan card: principal $x, interest earned $y, n shares collected | "The principal stays put. Only the interest becomes stock. This plan is a record Yieldvest has been running on its own since late September." |
-| 0:20–1:30 | Invite trial run-through: invite code → NVDA → safe mode $5 → Test it on-chain (the simulation sentence) → Buy now → receipt (BscScan) | "Anyone gets all the way through with one invite code in under 3 minutes. Before executing, it tests the purchase on the blockchain, shows it in plain words, and leaves a receipt and a reason." |
-| 1:30–2:20 | Turn on yield mode → risk disclosure → deposit receipt → the house plan's cumulative interest chart → weekend DEFERRED record ("US market is closed. Retrying at Monday 22:30.") → Monday buy receipt | "Yield mode buys only with the interest from the Venus deposit. Because it buys only during the regular session, it waits over the weekend. It records why it waited, too." |
-| 2:20–3:10 | Claude Code screen: one-line skill install → "Start Yieldvest" → the assistant reads out the risk disclosure → `baw` preview and confirm → fill → `/report` | "The user's AI assistant executes through the Agentic Wallet. The server only decides; signing happens on the user's device." |
-| 3:10–3:40 | Guardian screen + corporate-action SKIPPED record + share count display (multiplier applied) | "The guardian watches for protocol anomalies, depegs and price gaps, and it also understands earnings restrictions and splits." |
-| 3:40–4:00 | README module matrix + /dx page (p95, off-hours gap chart) + DX report | "7 modules, every call instrumented, 2 weeks of off-hours data. It's all in the report." |
+| 0:00–0:15 | Trade screen, BTC chart, Moa on the right | "Moa is a trading assistant for people who have never traded. You give an agent a little money; it follows one rule, from your own vault on HSK Chain." |
+| 0:15–0:35 | Moa's opening and briefing; press "Moa에게 추천받기" | "Moa looks at the market first and says it plainly. Asked for a pick, it doesn't use a model to choose: it takes agents that are working now, keeps the ones that beat just holding, and picks the one that fell least." |
+| 0:35–0:55 | The agent card in the chat → 자세히: the past result against holding | "Every agent is shown against simply holding the coin over the same three years. Most don't beat it, and the screen says so." |
+| 0:55–1:20 | 맡기기 → the hire sheet: $1 per buy, $3 budget, "매번 묻기" → the hire card in the chat | "I give it three dollars, one dollar per buy. It asks me before every trade." |
+| 1:20–1:40 | When it asks: press buy → the receipt with the HSK Chain explorer link | "The order goes from my own vault on HSKSwap. Only I can withdraw; the agent's key can only trade inside my limits." |
+| 1:40–1:55 | My agents: the slots, the portfolio ring, the running indicator | "Each agent has its own money, holdings and profit or loss, and I can stop any of them." |
+| 1:55–2:20 | Make an agent: coin → start from a strategy → "얼마나 자주 볼까요? 1시간마다" → the result card | "Anyone can make an agent: four short steps, checking daily, every four hours or every hour, with the past result redrawn on every change." |
+| 2:20–2:45 | DEX tab → 유동성 공급 전략 → 조금씩 모으기 → the blocks on the chart and the one-sentence result | "On HSKSwap, Moa also places liquidity in blocks: small Uniswap V3 positions under the price that buy as it falls and earn the fee." |
+| 2:45–3:00 | The vault contract on the HSK explorer; the README's mainnet table | "The vault, the factory and the trades are on HSK Chain mainnet; the contracts are open and unaudited. Moa: rules you can read, money you control." |
 
-Filming checklist: browser zoom 125%, lock to either dark or light, mask addresses and keys, failure scenes use real failure records (no staging), 3 links in the last frame (live, repo, DX).
+## Shots to have ready
 
-### 1.1 Agent draft (10/2): where the read-only views fit — a person decides
-
-> Author: coding agent, at a human's request on 10/2. The script above is the person's and is left as it is; these are optional swaps that keep the video at 4:00. Every screen named here exists on the branch today (DECISIONS D-31, D-32), and each shows real data only once the worker records it on the deployed site.
-
-| Swap into | Seconds | Screen | Narration gist |
-| --- | --- | --- | --- |
-| 0:20–1:30 (Judge Mode), before **Buy now** | 10 | `/check?ticker=NVDA&usd=5`: per token "Would buy about … shares for $5.00 now" (or "Would wait" with the next try), and the seven rules with what each read | "Before any money moves, you can ask the agent's own rules what they would do right now — and see every number they read." |
-| 0:20–1:30, at the stock pick | 8 | `/compare?ticker=NVDA`: bStocks and Ondo side by side; Ondo's $5 quote refused (40375), the $50 quote in shares and price per share | "Two issuers of the same share. We show both, in shares, and you choose; a plan never switches." |
-| 1:30–2:20 (yield mode), on Earn | 8 | The calculator: $1,000 at today's listed APY → interest a year, the first buy after N days, about how many shares a month | "Small interest, next investment — at today's rate, and we say it's a projection." |
-| 2:20–3:10 (Claude Code), after the fill | 12 | In Claude Code with `claude mcp add --transport http yieldvest <site>/api/mcp`: "Would Yieldvest buy NVDA now?" → the `preflight` tool's answer; then `/wallet?address=<the team wallet>` showing the bought shares at the on-chain multiplier | "Any assistant can ask the same engine through MCP — read-only. And your wallet shows what you own in real shares, not tokens." |
-| Cut to make room | −38 | Shorten 3:10–3:40 (guardian) to 15 s and 3:40–4:00 (README, /dx) to 12 s, or drop one swap | — |
-
-Before filming, check two lines of the script against the repository on the day: 3:40 says "7 modules" — the README module matrix today shows the RWA Data, Market, Trading, Transaction and DeFi APIs plus the Agentic Wallet, with the Wallet API, b402 and Agent Studio not in use; and "2 weeks of off-hours data" needs the production tape (`/dx`). The filming checklist's "mask addresses" applies to `/wallet` too: film a team wallet whose address may be shown.
-
-## 2. The judges' 15-minute path (draft for the top of the README)
-
-```
-# Yieldvest — Interest buys the stock. Principal stays.
-Live: https://…  ·  Video (3:50): https://…  ·  DX report: docs/… · Judge Mode: code in submission form
-
-**60-second summary** Principal sits in a USDT interest account (Venus); only the interest automatically buys US stock tokens (bStocks/Ondo) during the regular session.
-Safe mode (contribution only) is the default. Every purchase is tested on-chain through the Transaction API first and leaves a receipt and a one-line reason.
-
-**3-minute trial** Home → [invite code] → stock → $5 → Test it on-chain → Buy now → receipt → [Stop this plan]
-
-**Record of Yieldvest's own runs** (auto-generated table: date · plan · outcome · amount · shares · receipt)
-
-**Module matrix** (PLAN §6.1 table)
-
-**Use it with Agentic Wallet** `npx skills add …` → "Start Yieldvest"
-
-**Risks** /risk — Not a bank. Principal can be lost. Safe mode is the default.
-
-**Run it** pnpm i · cp .env.example .env · pnpm dev — even without keys, Home comes up honestly in the UNAVAILABLE state, with no STALE data.
-```
+- A hired agent with at least one fill, so My agents shows a real PnL.
+- The explorer pages of the vault and of one trade (from `docs/MAINNET_CHECKLIST.md`).

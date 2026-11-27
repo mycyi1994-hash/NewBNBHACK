@@ -1,1 +1,0 @@
-ALTER TABLE "receipts" DROP COLUMN "indexed";
