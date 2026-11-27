@@ -5,6 +5,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { loadQuotes } from '../src/market.ts';
 import * as cex from '../src/cex.ts';
+import { poolState } from '../src/dex.ts';
+import { poolDepth } from '../src/depth.ts';
+import { nanoBrief, NANO_REFRESH_MS } from '../src/nano.ts';
+import { ASSETS } from '../src/intent.ts';
 import { executeTrade, vaultStatus, type ExecConfig, type TradeResult } from './executor.ts';
 import { loadAgents, type Agent } from '../src/agents.ts';
 import { recommend, type Level } from '../src/recommend.ts';
@@ -51,7 +55,7 @@ Rules:
 const tools: Anthropic.Beta.BetaTool[] = [
   {
     name: 'get_market',
-    description: 'Live prices: HSKSwap pool prices on HSK Chain (HSK, ETH, BTC vs USDT) with the gap to Gate spot, the HashKey Global BTC/USDT perpetual, and the vault of the logged-in user when there is one: its USDT, each coin it holds with what that cost and what it is worth now (holdings[].costUsdt, valueUsdt), the limits the owner set (a missing limit means none), the stop-loss (stopLossBps) and whether trading is locked (paused). Use it for questions about positions and profit or loss.',
+    description: 'Live prices: HSKSwap pool prices on HSK Chain (HSK, ETH, BTC vs USDT) with the gap to Gate spot, the HashKey Global BTC/USDT perpetual, and the vault of the logged-in user when there is one: its USDT, each coin it holds with what that cost and what it is worth now (holdings[].costUsdt, valueUsdt), the limits the owner set (a missing limit means none), the stop-loss (stopLossBps) and whether trading is locked (paused). Use it for questions about positions and profit or loss. It also returns poolDepth for each HSKSwap pool, read from the chain: how many USDT move the pool price by 1, 2 and 5 percent either way (usdtToMove) and how far a buy of 10, 100 or 1000 USDT moves it (buyMovesPricePct); use it when asked how big an order the pool can take or how thin it is. And exchangeBook for BTC and ETH, from nanotradingclub (nine exchanges added together, not HSK Chain and not HashKey): the thickest stacks of resting orders within 8 percent under the price (buyWalls) and over it (sellWalls) with their size in USD and distance in percent, and forced liquidations in USD over the last hour and 24 hours, split into long and short positions closed. A field that is null or missing was not available: say so rather than guess.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     strict: true,
   },
@@ -113,16 +117,38 @@ const tools: Anthropic.Beta.BetaTool[] = [
   },
 ];
 
-async function marketSnapshot(cfg: ExecConfig) {
-  const [quotes, perp, vault] = await Promise.all([
+/** Each pool's depth from the chain, read at most once every three minutes. A pool that cannot be read is left out. */
+let depthKept: { at: number; value: unknown[] } | null = null;
+async function poolDepths() {
+  if (depthKept && Date.now() - depthKept.at < NANO_REFRESH_MS) return depthKept.value;
+  const value = (await Promise.all(ASSETS.map(async (asset) => {
+    try {
+      const d = poolDepth(await poolState(asset));
+      return {
+        asset,
+        usdtToMove: Object.fromEntries(d.bands.map((x) => [`${x.pct > 0 ? '+' : ''}${x.pct}%`, Math.round(x.usdt)])),
+        buyMovesPricePct: Object.fromEntries(d.impact.map((x) => [`$${x.usd}`, +(x.pct * 100).toFixed(3)])),
+      };
+    } catch { return null; }
+  }))).filter((x) => x !== null);
+  if (value.length) depthKept = { at: Date.now(), value };
+  return value;
+}
+
+export async function marketSnapshot(cfg: ExecConfig) {
+  const [quotes, perp, vault, depth, book] = await Promise.all([
     loadQuotes(),
     cex.ticker().then((t) => ({ last: t.last, change24hPct: +((t.last / t.open - 1) * 100).toFixed(2) })).catch((e: unknown) => ({ unavailable: String(e) })),
     vaultStatus(cfg).catch((e: unknown) => ({ configured: false, error: String(e) })),
+    poolDepths(),
+    Promise.all((['BTC', 'ETH'] as const).map((c) => nanoBrief(c).catch(() => null))),
   ]);
   return {
     hskswap: quotes.map((q) => ({ asset: q.asset, poolPriceUsd: q.pool ?? null, gateSpotUsd: q.exchange ?? null, gapPct: q.gap !== undefined ? +(q.gap * 100).toFixed(2) : null })),
     hashkeyGlobalBtcPerp: perp,
     vault,
+    poolDepth: depth,
+    exchangeBook: { source: 'nanotradingclub: nine exchanges added together (Binance, Bybit, Hyperliquid, Gate, Bitfinex, Upbit, Bithumb; futures and spot)', coins: book.filter((x) => x !== null) },
     note: 'HSKSwap fee is 0.3% per swap.',
   };
 }

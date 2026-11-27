@@ -1,5 +1,6 @@
 // HSKSwap (Uniswap V3 fork) pool details read straight from HSK Chain mainnet: reserves, recent swaps, price history.
 import type { Asset } from './intent.ts';
+import type { PoolState } from './depth.ts';
 
 const RPC = 'https://mainnet.hsk.xyz';
 export const EXPLORER = 'https://hsk.blockscout.com';
@@ -69,5 +70,27 @@ export async function poolDetail(asset: Asset, days = 1): Promise<PoolDetail> {
     swaps,
     head,
     at: now,
+  };
+}
+
+/* ---------- depth: the liquidity around the price, tick by tick ---------- */
+
+const int256 = (v: number) => (v < 0 ? 2n ** 256n + BigInt(v) : BigInt(v)).toString(16).padStart(64, '0');
+const call = (to: string, data: string) => rpc<string>('eth_call', [{ to, data }, 'latest']);
+
+/** The pool's price, the liquidity in range and every initialized tick within reach of the price (about a 4x move either way). */
+export async function poolState(asset: Asset): Promise<PoolState> {
+  const pool = POOLS[asset].pool;
+  const [slot0, liq, spacingHex] = await Promise.all([call(pool, '0x3850c7bd'), call(pool, '0x1a686502'), call(pool, '0xd0c93a7c')]);
+  const tick = Number(s256(slot0.slice(66, 130))), spacing = Number(s256(spacingHex.slice(2)));
+  const word = Math.floor(tick / spacing) >> 8;
+  const words = [word - 1, word, word + 1];
+  const maps = await Promise.all(words.map((w) => call(pool, '0x5339c296' + int256(w))));
+  const at: number[] = [];
+  maps.forEach((hex, i) => { const bits = BigInt(hex); for (let b = 0; b < 256; b++) if ((bits >> BigInt(b)) & 1n) at.push(((words[i] << 8) + b) * spacing); });
+  const nets = await Promise.all(at.map((t) => call(pool, '0xf30dba93' + int256(t))));
+  return {
+    sqrtPrice: Number(BigInt(slot0.slice(0, 66))) / 2 ** 96, tick, liquidity: Number(BigInt(liq)),
+    ticks: at.map((t, i) => ({ tick: t, net: Number(s256(nets[i].slice(66, 130))) })),
   };
 }

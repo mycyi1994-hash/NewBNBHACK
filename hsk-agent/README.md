@@ -113,6 +113,20 @@ stranger once the price has held, with the stranger getting nothing.
   per hired agent with how much of its budget it has spent, what it holds now and what it has made or lost, a total
   across all of them, and a warning when the agents may still spend more USDT than the vault holds. It opens first
   for anyone who has hired an agent.
+- **The pool's depth, read from the chain.** Above the HSKSwap chart: how many USDT move the pool's price 1, 2 and 5
+  percent either way, and how far a $100 and a $1,000 buy would move it (`src/depth.ts`, from the pool's price,
+  its liquidity in range and its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three
+  pools held one full-range position (the HSK pool three small ranges more), so the blocks are even; liquidity
+  added to one stretch would show in that block alone.
+- **Heatmap and liquidations on the exchange chart.** The "Heatmap" button next to Indicators lays two layers over
+  the candles: the order book of nine exchanges by price (under the candles) and forced liquidations as circles
+  (over them). The data is nanotradingclub's public files (`src/nano.ts`): exchange data, not HSK Chain data, and
+  for coins it collects (BTC and ETH among them, not HSK). Nothing is fetched until a layer is switched on, then
+  every three minutes while the tab is in front; the book's history is about an hour, so switching it on moves the
+  chart to one-minute candles.
+- **Moa is given the same numbers.** Its market tool now also returns each pool's depth, and for BTC and ETH the
+  thickest stacks of resting orders within 8% of the price and the liquidations of the last hour and day
+  (`marketSnapshot` in `server/moaAgent.ts`, about 2.6 KB, fetched at most once every three minutes).
 - **Agents have names and faces.** Each rule has a short name and its own coloured mark ("BTC Turtle", "ETH
   Guardian"); the rule it follows and where the rule comes from stay beside it as the subtitle and the origin tag.
 - **The vault is on screen, not in a footnote.** `src/VaultCard.tsx` shows the same vault three ways (sidebar,

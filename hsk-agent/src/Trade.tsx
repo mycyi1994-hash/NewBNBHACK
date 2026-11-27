@@ -6,6 +6,9 @@ import { gateCandles, GATE_SECONDS, type GateInterval } from './gate.ts';
 import { EXPLORER, POOLS, poolDetail, type PoolDetail } from './dex.ts';
 import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
+import { mountHeat, type HeatInput } from './heatLayer.ts';
+import type { HeatColumn, Liq } from './nano.ts';
+import { DepthStrip, HeatLegend, HeatMenu, useHeat, type HeatKind } from './ChartExtras.tsx';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
@@ -83,7 +86,9 @@ export interface Badge { time: number; side: 'buy' | 'sell' | 'note'; text: stri
 /** What a backtest adds to the chart: the rule's own lines, its buys and sells, and the days it was holding. */
 export interface Study { rule: RuleId; made?: MadeSpec; badges: Badge[]; bands: { from: number; to: number }[] }
 
-function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until }: {
+function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until, heat, liqs }: {
+  /** Layers from the Heatmap button: the order book under the candles, liquidations over them. */
+  heat?: HeatColumn[] | null; liqs?: Liq[] | null;
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
   /** Show everything from this time to now (a backtest's window). `key` says when to apply it again. */
   range?: { from: number; key: string };
@@ -127,7 +132,9 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
 
   useEffect(() => {
     if (!box.current) return;
-    const c = createChart(box.current, chartOptions());
+    // No background of its own: the heatmap is painted underneath, on the white of the box.
+    const base = chartOptions();
+    const c = createChart(box.current, { ...base, layout: { ...base.layout, background: { type: ColorType.Solid, color: 'transparent' } } });
     chart.current = c;
     main.current = c.addCandlestickSeries({ upColor: '#16a34a', downColor: '#dc2626', borderVisible: false, wickUpColor: '#16a34a', wickDownColor: '#dc2626' });
     box.current.querySelector('a')?.setAttribute('aria-label', 'TradingView Lightweight Charts');
@@ -263,6 +270,16 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
   // The replay moved a day: show that much of every series. (Not on mount: the data was just drawn.)
   useEffect(() => { if (!drawn.current) { drawn.current = true; return; } if (chart.current && layers.current.length) draw(); }, [until]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The heatmap and the liquidations: painted only while one of them is on.
+  const under = useRef<HTMLCanvasElement>(null), over = useRef<HTMLCanvasElement>(null);
+  const heatIn = useRef<HeatInput>({ heat: null, liqs: null, times: [], v: 0 });
+  useEffect(() => { heatIn.current = { heat: heat ?? null, liqs: liqs ?? null, times: candles.map((x) => x.time), v: heatIn.current.v + 1 }; }, [heat, liqs, candles]);
+  const layered = !!heat || !!liqs;
+  useEffect(() => {
+    if (!layered || !chart.current || !main.current || !under.current || !over.current) return;
+    return mountHeat(under.current, over.current, chart.current, main.current, () => heatIn.current);
+  }, [layered]);
+
   // Buys and sells as filled labels over the chart, kept on their candles as the chart moves.
   useEffect(() => {
     const el = layer.current, c = chart.current, m = main.current;
@@ -311,7 +328,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
 
   return (
     <div className="chart-wrap">
-      <div className="chart-main"><div ref={box} className="chart" /><div ref={layer} className="chart-badges" aria-hidden /></div>
+      <div className="chart-main"><canvas ref={under} className="chart-heat" aria-hidden /><div ref={box} className="chart" /><canvas ref={over} className="chart-liq" aria-hidden /><div ref={layer} className="chart-badges" aria-hidden /></div>
       {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneSpec?.kind === 'mom' && study ? (study.made ? t.term('ret', paneSpec.days) : t.ovLabel[study.rule]) : `RSI(${paneSpec?.kind === 'rsi' ? paneSpec.period : 14})`}</span><div ref={subBox} className="chart" /></div>}
     </div>
   );
@@ -594,31 +611,49 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
   const up = chg >= 0;
   const perp = market.kind === 'perp';
   const gap = dexPrice !== undefined && t ? dexPrice / t.last - 1 : undefined;
+  // The heatmap layers start off every time: nothing is fetched until one is switched on.
+  const [want, setWant] = useState<Set<HeatKind>>(() => new Set());
+  const toggleHeat = (k: HeatKind) => {
+    const next = new Set(want);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    setWant(next);
+    // The book's history is about an hour long: it only shows on short candles.
+    if (k === 'book' && next.has('book') && !sel && interval !== '1m') setIv('1m');
+  };
+  const layers = useHeat(market.base, want);
 
   return (
     <>
       <div className="market-head">
-        <MarketPicker value={market} onChange={setMarket} />
-        <div className={`last ${up ? 'pos' : 'neg'}`}><RollNum text={t ? px(t.last) : '—'} /></div>
-        <div className="stats">
-          <Stat label={s.change24h} value={t ? `${arrow(up)} ${up ? '+' : ''}${chg.toFixed(2)}%` : '—'} cls={up ? 'pos' : 'neg'} />
+        <div className="mh-top">
+          <div className="mh-main">
+            <MarketPicker value={market} onChange={setMarket} />
+            <div className={`last ${up ? 'pos' : 'neg'}`}><RollNum text={t ? px(t.last) : '—'} /></div>
+            {t && <span className={`mh-chg ${up ? 'pos' : 'neg'}`} data-tip={s.change24h}>{arrow(up)} {up ? '+' : ''}{chg.toFixed(2)}%</span>}
+            {gap !== undefined && dexPrice !== undefined && (
+              <span className="mh-dex" data-tip={s.mhDexTip}>HSKSwap<b>${px(dexPrice)}</b><em className={gap < 0 ? 'pos' : 'neg'}>{gap < 0 ? s.mhLow(`${Math.abs(gap * 100).toFixed(2)}%`) : s.mhHigh(`${(gap * 100).toFixed(2)}%`)}</em></span>
+            )}
+          </div>
+          {venueTabs}
+        </div>
+        <div className="mh-stats">
           {perp && <Stat label={s.mark} value={mi ? px(mi.mark) : '—'} />}
           {perp && <Stat label={s.index} value={mi ? px(mi.index) : '—'} />}
           <Stat label={s.high24h} value={t ? px(t.high) : '—'} />
           <Stat label={s.low24h} value={t ? px(t.low) : '—'} />
           <Stat label={s.vol24h} value={t ? `${compact(t.volBase)} ${market.base}` : '—'} />
-          {gap !== undefined && dexPrice !== undefined && <Stat label="HSKSwap" value={`$${px(dexPrice)} (${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(2)}%)`} />}
         </div>
-        {venueTabs}
       </div>
 
       <section className="chart-card">
         <div className="chart-toolbar">
           <IntervalBar list={CEX_IV} value={interval} set={pickIv} label={(v) => s.ivLabel[v]} />
           <IndMenu on={inds} toggle={toggleInd} />
+          <HeatMenu want={want} toggle={toggleHeat} book={layers.book.state} liq={layers.liq.state} />
+          <HeatLegend book={layers.book.state === 'on'} liq={layers.liq.state === 'on'} />
           {sel ? <BacktestChip a={sel} replay={replay} onClose={() => setSel(null)} /> : <span className="live"><span className="live-dot" /> {s.live} · HashKey Global</span>}
         </div>
-        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
+        {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} heat={layers.book.data} liqs={layers.liq.data} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
 
       <Dock venue="cex" coin={market.base} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} onBuild={() => onBuild(market.base)} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
@@ -666,26 +701,29 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   return (
     <>
       <div className="market-head">
-        <div className="pair">
-          <span className={`coin coin-${asset.toLowerCase()} big`} />
-          <div>
-            <div className="pair-name">{p.symbol}/USDT <span className="tag">HSKSwap · {s.spot}</span></div>
-            <div className="muted">Uniswap V3 · 0.3% · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></div>
+        <div className="mh-top">
+          <div className="mh-main">
+            <div className="pair">
+              <span className={`coin coin-${asset.toLowerCase()} big`} />
+              <div className="pair-name">{p.symbol}/USDT <span className="tag">HSKSwap · {s.spot}</span></div>
+            </div>
+            <div className="coin-switch has-pill" role="tablist" aria-label={s.stratAsset}>
+              <SlidePill dep={asset} />
+              {ASSETS.map((a) => <button key={a} role="tab" aria-selected={a === asset} className={a === asset ? 'on' : ''} onClick={() => setAsset(a)}>{a}</button>)}
+            </div>
+            <div className="last"><RollNum text={detail ? `$${fmtPrice(detail.price)}` : '—'} /></div>
+            {gap !== undefined && gate?.exchange !== undefined && (
+              <span className="mh-dex" data-tip={s.vsGateLabel}>{s.gateSpot}<b>${fmtPrice(gate.exchange)}</b><em className={gap < 0 ? 'pos' : 'neg'}>{gap < 0 ? s.mhLow(`${Math.abs(gap * 100).toFixed(2)}%`) : s.mhHigh(`${(gap * 100).toFixed(2)}%`)}</em></span>
+            )}
           </div>
+          {venueTabs}
         </div>
-        <div className="coin-switch has-pill" role="tablist" aria-label={s.stratAsset}>
-          <SlidePill dep={asset} />
-          {ASSETS.map((a) => <button key={a} role="tab" aria-selected={a === asset} className={a === asset ? 'on' : ''} onClick={() => setAsset(a)}>{a}</button>)}
-        </div>
-        <div className="last"><RollNum text={detail ? `$${fmtPrice(detail.price)}` : '—'} /></div>
-        <div className="stats">
-          <Stat label={s.gateSpot} value={gate?.exchange !== undefined ? `$${fmtPrice(gate.exchange)}` : '—'} />
-          <Stat label={s.vsGateLabel} value={gap === undefined ? '—' : `${gap > 0 ? '+' : ''}${(gap * 100).toFixed(2)}%`} cls={gap === undefined ? '' : gap < 0 ? 'pos' : 'neg'} />
+        <div className="mh-stats">
           <Stat label={s.poolUsdt} value={detail ? `$${compact(detail.reserveUsdt)}` : '—'} />
           <Stat label={s.swaps24h} value={detail ? String(detail.swaps.length) : '—'} />
           <Stat label={s.vol24h} value={detail ? `$${compact(vol)}` : '—'} />
+          <span className="mh-pool">Uniswap V3 · 0.3% · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></span>
         </div>
-        {venueTabs}
       </div>
       <section className="chart-card">
         <div className="chart-toolbar">
@@ -694,6 +732,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
           {sel ? <BacktestChip a={sel} replay={replay} onClose={() => setSel(null)} />
             : <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>}
         </div>
+        <DepthStrip asset={asset} />
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
       <Dock venue="dex" coin={asset} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
