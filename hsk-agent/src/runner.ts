@@ -4,7 +4,7 @@
 //  - "auto": the server calls the same decide() on its own timer and sends the order at once, app open or not.
 // Either way the order goes to the owner's vault, which enforces the owner's limits again.
 import type { Asset, Plan } from './intent.ts';
-import type { RuleId } from './agents.ts';
+import type { Agent, RuleId } from './agents.ts';
 import type { MadeSpec } from './spec.ts';
 
 export type Mode = 'ask' | 'auto';
@@ -17,6 +17,7 @@ export type Side = 'buy' | 'sell';
 export type Why =
   | { k: 'signalOn' }
   | { k: 'signalOff' }
+  | { k: 'weight'; pct: number }
   | { k: 'daily'; mult: number }
   | { k: 'plan' }
   | { k: 'stop'; pct: number; key: string }
@@ -65,6 +66,8 @@ export interface HiredAgent extends Amounts {
 
 export type Signal =
   | { kind: 'position'; live: boolean }
+  /** A weight agent: the share of its budget it wants in the coin now, the band it rebalances on, and the coin's price. */
+  | { kind: 'weight'; target: number; band: number; price: number }
   | { kind: 'collect'; mult: number }
   | { kind: 'custom'; price?: number };
 export type Decision =
@@ -106,6 +109,8 @@ export function decide(h: HiredAgent, s: Signal, now: number, opts: { maxTradeUs
   const b = book(h);
   const left = Math.max(0, h.budgetUsd - b.spent);
   const cap = (usd: number) => cents(Math.min(usd, left, opts.maxTradeUsd ?? Infinity));
+
+  if (s.kind === 'weight') return decideWeight(h, s, b, opts);
 
   if (s.kind === 'position') {
     const want: Side | null = b.qty > 0 && !s.live ? 'sell' : b.qty === 0 && s.live && left >= 1 ? 'buy' : null;
@@ -151,6 +156,35 @@ export function decide(h: HiredAgent, s: Signal, now: number, opts: { maxTradeUs
   return usd >= 1 ? { type: 'order', order: { side: 'buy', usd, why: { k: 'plan' } } } : { type: 'skip', why: { k: 'tooSmall' } };
 }
 
+/**
+ * A weight agent's next order. Its position is its target share × its own budget: it buys or sells the difference,
+ * at the coin's price, once the share it holds is `band` or more away from the target. A buy never takes the cost of
+ * what it holds past the budget, and stays within the vault's per-trade limit; a sell never sells more than it holds.
+ */
+function decideWeight(h: HiredAgent, s: Extract<Signal, { kind: 'weight' }>, b: ReturnType<typeof book>, opts: { maxTradeUsd?: number }): Decision {
+  if (!(s.price > 0) || !(h.budgetUsd > 0)) return { type: 'idle' };
+  const goal = Math.min(1, Math.max(0, Number.isFinite(s.target) ? s.target : 0));
+  const value = b.qty * s.price, held = value / h.budgetUsd;
+  const want: Side | null = Math.abs(goal - held) >= s.band - 1e-9 ? (goal > held ? 'buy' : 'sell') : null;
+  if (h.pending) return h.pending.side !== want ? { type: 'cancel' } : { type: 'idle' };
+  if (!want) return { type: 'idle', clearDeclined: !!h.declined };
+  if (h.declined === want) return { type: 'idle' };
+  const why: Why = { k: 'weight', pct: Math.round(goal * 100) };
+  if (want === 'sell') {
+    const qty = goal === 0 ? b.qty : Math.min(b.qty, (value - goal * h.budgetUsd) / s.price);
+    return qty > TINY ? { type: 'order', order: { side: 'sell', qty, why } } : { type: 'idle' };
+  }
+  const room = Math.max(0, h.budgetUsd - b.basis);
+  const usd = cents(Math.min(goal * h.budgetUsd - value, room, opts.maxTradeUsd ?? Infinity));
+  return usd >= 1 ? { type: 'order', order: { side: 'buy', usd, why } } : { type: 'idle' };
+}
+
+/** What an agent's backtest says to do now, as the runner reads it: a weight, in or out, or today's collect multiple. */
+export function agentSignal(a: Pick<Agent, 'kind' | 'live' | 'mult' | 'target' | 'band' | 'price'>): Signal {
+  if (a.kind === 'collect') return { kind: 'collect', mult: a.mult };
+  return a.target !== undefined ? { kind: 'weight', target: a.target, band: a.band ?? 0.1, price: a.price } : { kind: 'position', live: a.live };
+}
+
 export type Status = 'paused' | 'confirm' | 'done' | 'working' | 'waiting';
 
 /** One word for the bar. "working" means it holds coins or already acted in this period. */
@@ -179,7 +213,7 @@ export function lastEvent<K extends LogEvent['k']>(h: HiredAgent, ...kinds: K[])
 
 /** The note stored on-chain with the trade (the vault keeps 120 characters). */
 export function chainNote(name: string, why: Why, mode: Mode = 'ask'): string {
-  const w = why.k === 'signalOn' ? 'signal on' : why.k === 'signalOff' ? 'signal off' : why.k === 'daily' ? `daily buy x${why.mult}`
+  const w = why.k === 'signalOn' ? 'signal on' : why.k === 'signalOff' ? 'signal off' : why.k === 'weight' ? `rebalance to ${why.pct}%` : why.k === 'daily' ? `daily buy x${why.mult}`
     : why.k === 'plan' ? 'plan buy' : why.k === 'stop' ? `stop-loss -${why.pct}%` : `take-profit +${why.pct}%`;
   return `Moa agent ${name}: ${w}, ${mode === 'auto' ? 'standing order from the owner' : 'approved by the owner'}`.slice(0, 120);
 }

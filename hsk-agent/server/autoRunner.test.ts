@@ -174,4 +174,6 @@ test('a made agent on hourly candles is re-read within one pass of each candle c
   assert.equal(signalTtl({ spec }), 10 * 60_000, 'a made agent saved before intervals: daily');
   assert.ok(signalTtl({ spec: { ...spec, interval: '1h' } }) <= TICK_MS, 'hourly: never older than one pass');
   assert.ok(signalTtl({ spec: { ...spec, interval: '4h' } }) <= TICK_MS);
+  assert.ok(signalTtl({ source: { type: 'market', agentId: 'rsi2h-ETHUSDT-PERPETUAL', kind: 'position', rule: 'rsi2h', base: 'ETH' } }) <= TICK_MS, 'a short-term market agent too');
+  assert.equal(signalTtl({ source: { type: 'market', agentId: 'trend200-ETHUSDT-PERPETUAL', kind: 'position', rule: 'trend200', base: 'ETH' } }), 10 * 60_000);
 });

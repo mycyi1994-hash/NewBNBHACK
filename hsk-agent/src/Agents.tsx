@@ -10,7 +10,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from '
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import { useT } from './i18n.ts';
-import { ACTIVE_DAYS, active, byMerit, idle, type Agent, type Tier } from './agents.ts';
+import { ACTIVE_DAYS, active, byMerit, idle, type Agent, type Tier, DEMOTED } from './agents.ts';
 import { agentName, freshLine, pct, ruleLines, Face } from './AgentCard.tsx';
 import { CoinMark } from './CoinMark.tsx';
 import { markColor } from './Mark.tsx';
@@ -209,7 +209,7 @@ function Rail({ agents, coins, onOpen }: { agents: Agent[]; coins: string[]; onO
   const { t } = useT();
   const [coin, setCoin] = useState('BTC');
   const on = coins.includes(coin) ? coin : coins[0] ?? coin;
-  const rows = useMemo(() => agents.filter((a) => a.base === on).sort(byMerit).slice(0, 10), [agents, on]);
+  const rows = useMemo(() => agents.filter((a) => a.base === on && !DEMOTED.has(a.rule)).sort(byMerit).slice(0, 10), [agents, on]);
   return (
     <aside className="mp-rail" aria-label={t.mpRankTitle}>
       <header className="mp-rail-head">
@@ -228,7 +228,7 @@ function Rail({ agents, coins, onOpen }: { agents: Agent[]; coins: string[]; onO
               <button onClick={() => onOpen(a)}>
                 <span className={`mp-rank-n${i < 3 ? ' top' : ''}`}>{i + 1}</span>
                 <Face rule={a.rule} size="sm" />
-                <span className="mp-rank-name"><b>{a.made?.name ?? t.agNick[a.rule]}</b>{active(a) && <i className="mp-rank-live" aria-hidden />}</span>
+                <span className="mp-rank-name"><b>{a.made?.name ?? t.agNick[a.rule]}</b>{a.interval && <small className="mp-rank-iv">{t.ivTag[a.interval]}</small>}{active(a) && <i className="mp-rank-live" aria-hidden />}</span>
                 <span className={`mp-rank-v ${sign(edge)}`}>{pct(edge)}</span>
               </button>
             </li>
@@ -260,9 +260,11 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
   const coins = useMemo(() => ['BTC', 'ETH', 'HSK'].filter((c) => runnable.some((a) => a.base === c)), [runnable]);
   const board = coins.includes(coin) ? coin : coins[0] ?? coin;
   // "Published classics" is the first tab: only strategies with a public record, best risk-adjusted result first.
-  const ranked = useMemo(() => runnable.filter((a) => a.base === board && a.kind === 'position' && (rank !== 'classic' || a.tier === 1))
+  const ranked = useMemo(() => runnable.filter((a) => a.base === board && a.kind === 'position' && (rank === 'classic' ? a.tier === 1 : !DEMOTED.has(a.rule)))
     .sort((p, r) => Number(!active(p)) - Number(!active(r)) || Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank, board]);
-  const top = ranked.slice(0, 6);
+  // The chart draws curves over one shared stretch of time, so it holds agents scored over the same window as the
+  // leader (three years of daily candles, or the short-term agents' hourly / 4-hour windows); the list keeps them all.
+  const top = ranked.filter((a) => (a.interval ?? '1d') === (ranked[0]?.interval ?? '1d')).slice(0, 6);
   const working = useMemo(() => ranked.filter((a) => active(a)), [ranked]);
   const resting = useMemo(() => ranked.filter((a) => !active(a)), [ranked]);
   const assets = useMemo(() => runnable.map((a) => a.base).filter((b, i, xs) => xs.indexOf(b) === i), [runnable]);
@@ -276,8 +278,10 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
 
   // Lead with the two agents doing best right now (the default order), but only on the unfiltered view.
   const plain = !q.trim() && asset === 'all' && origin === 'all' && sort === 'pick';
-  const feat = plain ? shown.slice(0, 2) : [];
-  const rest = plain ? shown.slice(2) : shown;
+  // The research's demoted classics sit in their own group at the end, out of the default order.
+  const lead = shown.filter((a) => !DEMOTED.has(a.rule)), classic = shown.filter((a) => DEMOTED.has(a.rule));
+  const feat = plain ? lead.slice(0, 2) : [];
+  const rest = plain ? lead.slice(2) : lead;
   const star = (id: string) => setStars((cur) => {
     const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id);
     try { localStorage.setItem('moa.stars', JSON.stringify([...next])); } catch { /* storage unavailable */ }
@@ -396,6 +400,12 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
                   {rest.map((a) => <MarketCard key={a.id} a={a} starred={stars.has(a.id)} onStar={() => star(a.id)} onOpen={onOpen} onHire={onHire} />)}
                 </div>
               </section>
+              {classic.length > 0 && (
+                <details className="mp-sec mp-classic">
+                  <summary><h2 className="mp-h2">{t.mpClassic} <small>{classic.length}</small></h2><span>{t.mpClassicSub}</span><Icon name="down" size={16} /></summary>
+                  <div className="mp-grid">{classic.map((a) => <MarketCard key={a.id} a={a} starred={stars.has(a.id)} onStar={() => star(a.id)} onOpen={onOpen} onHire={onHire} />)}</div>
+                </details>
+              )}
             </div>
             <Rail agents={runnable} coins={coins} onOpen={onOpen} />
           </div>

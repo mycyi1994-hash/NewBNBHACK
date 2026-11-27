@@ -3,8 +3,11 @@
 // Every source named here is a real, published one. What differs from the source (long only, daily checks, a
 // parameter Moa had to choose) is said in the text, and nothing claims a fund runs these agents.
 
+import { SHORT_TEXT, type ShortTextRule } from './shortText.ts';
+import { QUANT_TEXT, type QuantTextRule } from './quantText.ts';
+
 export type MoreRule = 'multiTrend' | 'dualMom' | 'turtle2' | 'donchian' | 'ma520' | 'triple' | 'macd' | 'ichimoku'
-  | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7' | 'made';
+  | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7' | 'made' | ShortTextRule | QuantTextRule;
 
 export interface RuleText {
   nick: string;      // the agent's short name
@@ -26,7 +29,7 @@ const P_EN = 'Published by its author and widely used. This exact rule has no fo
 const U_KO = '차트 분석가와 시스템 트레이더들이 널리 써요. 이 규칙 그대로 운용하는 기관에 대한 기록은 없어요.';
 const P_KO = '저자가 직접 공개했고 널리 쓰여요. 다만 이 규칙 그대로를 공식 검증한 기록은 없어서, 여기 백테스트로 확인하셔야 해요.';
 
-export const RULE_TEXT: Record<'en' | 'ko', Record<MoreRule, RuleText>> = {
+export const RULE_TEXT: Record<'en' | 'ko', Record<Exclude<MoreRule, ShortTextRule | QuantTextRule>, RuleText>> = {
   en: {
     multiTrend: {
       nick: 'Century', rule: 'Multi-horizon trend · 1/3/12m', line: 'Holds while at least two of the 1-, 3- and 12-month returns are positive.',
@@ -297,5 +300,5 @@ export const RULE_TEXT: Record<'en' | 'ko', Record<MoreRule, RuleText>> = {
 
 /** One field of every added rule, for spreading into i18n's per-field maps. */
 export function more<K extends keyof RuleText>(lang: 'en' | 'ko', key: K): Record<MoreRule, RuleText[K]> {
-  return Object.fromEntries(Object.entries(RULE_TEXT[lang]).map(([id, v]) => [id, v[key]])) as Record<MoreRule, RuleText[K]>;
+  return Object.fromEntries(Object.entries({ ...RULE_TEXT[lang], ...SHORT_TEXT[lang], ...QUANT_TEXT[lang] }).map(([id, v]) => [id, v[key]])) as Record<MoreRule, RuleText[K]>;
 }

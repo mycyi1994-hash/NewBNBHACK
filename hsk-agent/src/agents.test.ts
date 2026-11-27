@@ -73,8 +73,11 @@ test('an agent that never traded in the window does not outrank one that did', (
 });
 
 test('recommend puts a published classic before an indicator rule, even with a larger worst drop', () => {
-  const agents = [fake({ id: 'boll-ETH', rule: 'boll', base: 'ETH', maxDd: 0.05, tier: 2, risk: 1 }), fake({ id: 'trend200-ETH', rule: 'trend200', base: 'ETH', maxDd: 0.2, tier: 1 })];
-  assert.equal(recommend(agents, { coin: 'ETH', level: 'new' })!.pick.id, 'trend200-ETH');
+  const agents = [fake({ id: 'boll-ETH', rule: 'boll', base: 'ETH', maxDd: 0.05, tier: 2, risk: 1 }), fake({ id: 'maEns-ETH', rule: 'maEns', base: 'ETH', maxDd: 0.2, tier: 1 })];
+  assert.equal(recommend(agents, { coin: 'ETH', level: 'new' })!.pick.id, 'maEns-ETH');
+  // A demoted classic is only picked when nothing else fits.
+  assert.equal(recommend([...agents, fake({ id: 'trend200-ETH', rule: 'trend200', base: 'ETH', maxDd: 0.01, tier: 1 })], { coin: 'ETH', level: 'new' })!.pick.id, 'maEns-ETH');
+  assert.equal(recommend([fake({ id: 'trend200-ETH', rule: 'trend200', base: 'ETH', maxDd: 0.2, tier: 1 })], { coin: 'ETH' })!.pick.id, 'trend200-ETH');
 });
 
 test('a replay covers the lead-in and every day of the backtest, one daily candle at a time', () => {
@@ -96,7 +99,7 @@ test('every rule decides on past days only and comes with its origin, proof leve
     assert.ok(TIER[r.id] >= 1 && PROOF[r.id], `${r.id} has a tier and a proof level`);
     for (const o of overlays(r.id, b)) assert.equal(o.values.length, b.length);
   }
-  assert.equal(POSITION_RULES.filter((r) => TIER[r.id] === 1).length + 1, 20, 'twenty published strategies: nineteen position rules and plain DCA');
+  assert.equal(POSITION_RULES.filter((r) => TIER[r.id] === 1).length + 1, 25, 'twenty-five published strategies: twenty-four position rules and plain DCA');
   // Dual momentum stays out while the other coin is stronger over the same year.
   const strong = bars(wave.map((v, i) => v * 1.002 ** i));
   assert.ok(positions('dualMom', b, strong).filter(Boolean).length < positions('dualMom', b).filter(Boolean).length);
@@ -143,14 +146,14 @@ const fake = (p: Partial<Agent>): Agent => ({
 test('recommend: runnable only, the coin asked for, the risk the level allows, smallest worst drop', () => {
   const agents = [
     fake({ id: 'boll-SOL', rule: 'boll', base: 'SOL', runnable: false, maxDd: 0.01, risk: 1 }),
-    fake({ id: 'break-ETH', rule: 'break', base: 'ETH', maxDd: 0.05, risk: 3 }),
+    fake({ id: 'brkAtr-ETH', rule: 'brkAtr', base: 'ETH', maxDd: 0.05, risk: 3 }),
     fake({ id: 'trend-ETH', rule: 'trend', base: 'ETH', maxDd: 0.12, risk: 2 }),
     fake({ id: 'boll-ETH', rule: 'boll', base: 'ETH', maxDd: 0.09, risk: 1 }),
     fake({ id: 'daily-ETH', rule: 'daily', kind: 'collect', base: 'ETH', maxDd: 0.3, risk: 1 }),
     fake({ id: 'trend-BTC', rule: 'trend', base: 'BTC', maxDd: 0.02, risk: 2 }),
   ];
   const pro = recommend(agents, { coin: 'ETH', level: 'pro' })!;
-  assert.equal(pro.pick.id, 'break-ETH');
+  assert.equal(pro.pick.id, 'brkAtr-ETH');
   assert.equal(pro.scope, 'coin');
   const newbie = recommend(agents, { coin: 'ETH', level: 'new' })!;
   assert.equal(newbie.pick.id, 'boll-ETH', 'risk 3 is left out for a first-timer');
@@ -255,4 +258,146 @@ test('a sentence can name the interval', async () => {
   assert.equal(parse('on 4h candles buy when RSI is under 30, sell when RSI is over 55').interval, '4h');
   assert.equal(parse('RSI가 30 밑이면 사고 55 넘으면 팔아').interval, undefined, 'no interval named: the builder keeps its choice');
   assert.equal(parse('14일 수익률이 0보다 높으면 사').interval, undefined, '"14일" is not an hour');
+});
+
+/* ---------- short-term market agents ---------- */
+
+test('short-term agents decide on their own candles and say so: interval carried, honest window', async () => {
+  const A = await import('./agents.ts');
+  const { STRINGS } = await import('./i18n.ts');
+  const shorts = A.POSITION_RULES.filter((r) => A.ruleInterval(r.id) !== '1d').map((r) => r.id);
+  assert.ok(shorts.length >= 8 && shorts.length <= 12, `${shorts.length} short-term rules`);
+  const hourly = barsOf(wave(3000), HOUR), four = barsOf(wave(3000), 4 * HOUR);
+  for (const id of shorts) {
+    const iv = A.ruleInterval(id);
+    const a = A.scorePosition(id, market('BTCUSDT-PERPETUAL'), iv === '1h' ? hourly : four)!;
+    assert.ok(a, `${id} scores`);
+    assert.equal(a.interval, iv, `${id} carries its interval`);
+    assert.equal(a.days, iv === '1h' ? 90 : 365, `${id}: the window is the interval's own`);
+    assert.equal(A.horizonOf(a), 'short');
+    assert.equal(A.PROOF[id], 'none', `${id}: no published test on these candles`);
+    assert.ok(A.TIER[id] >= 2, `${id} is not presented as a published classic`);
+    for (const lang of ['en', 'ko'] as const) {
+      const t = STRINGS[lang];
+      for (const f of [t.agNick[id], t.agRule[id], t.agLine[id], t.agPlain[id], t.agOrigin[id], t.agFrom[id], t.agProof[id], t.ovLabel[id]]) assert.ok(f && f.length > 1, `${id} ${lang} text`);
+      assert.equal(t.agRules[id].length, 2);
+    }
+  }
+  assert.equal(STRINGS.ko.mpOver(90), '지난 90일 기준');
+  assert.equal(STRINGS.en.mpOver(1095), 'over 3 years', 'daily agents read as before');
+  assert.equal(A.ruleInterval('trend200'), '1d');
+  // A daily agent is untouched by all this.
+  assert.equal(A.scorePosition('trend', market('BTCUSDT-PERPETUAL'), bars(rising(2000)))!.interval, undefined);
+});
+
+test('short-term rules are the published rules on shorter candles, with the stated entry levels', async () => {
+  const A = await import('./agents.ts');
+  const b = barsOf(wave(1500), HOUR);
+  for (const [s, base] of [['macd4h', 'macd'], ['bollh', 'boll'], ['rsih', 'rsi'], ['donch1h', 'break'], ['donch4h', 'break']] as const)
+    assert.deepEqual(A.positions(s, b), A.positions(base, b), `${s} is ${base} on its candles`);
+  const c = b.map((x) => x.close), r2 = (await import('./indicators.ts')).rsi(c, 2);
+  const p = A.positions('rsi2h', b);
+  for (let i = 1; i < b.length; i++) if (p[i] && !p[i - 1]) assert.ok(r2[i] < 10, 'Connors entry: RSI(2) under 10');
+  // Decided on what was known at each close: a prefix of the candles gives a prefix of the positions.
+  for (const id of ['rsi2h', 'ema921h', 'donch1h'] as const) assert.deepEqual(A.positions(id, b).slice(0, 700), A.positions(id, b.slice(0, 700)), `${id} never looks ahead`);
+});
+
+test('the engine takes a share of the money per candle; on/off rules pay exactly what they did', async () => {
+  const A = await import('./agents.ts');
+  const b = bars(wave(1400)), mk = market('BTCUSDT-PERPETUAL');
+  const on = A.positions('trend', b);
+  const asBool = A.backtest('x', 'trend', on, 60, mk, b, 1095)!;
+  const asOnes = A.backtest('x', 'trend', on.map((x) => (x ? 1 : 0)), 60, mk, b, 1095)!;
+  assert.equal(asOnes.total, asBool.total, 'shares of 0 and 1 are in and out');
+  assert.equal(asBool.total, A.scorePosition('trend', mk, b)!.total);
+  const half = A.backtest('x', 'trend', on.map((x) => (x ? 0.5 : 0)), 60, mk, b, 1095)!;
+  assert.equal(half.trades, asBool.trades);
+  assert.ok(Math.abs(half.total) < Math.abs(asBool.total), 'half the exposure, a smaller result either way');
+  assert.equal(half.mult, half.live ? 0.5 : 0, 'the share it holds now');
+});
+
+test('a trailing stop exits on a fall from the high and waits for the rule to re-arm', async () => {
+  const A = await import('./agents.ts');
+  const closes = [...Array.from({ length: 40 }, () => 100), ...Array.from({ length: 20 }, (_, i) => 100 + i * 2), 110, 100, 95, 98, 104, 108];
+  const b = bars(closes);
+  const raw = closes.map(() => true);
+  const st = A.withTrailingStop(raw, b, 2, 10);
+  const exit = st.findIndex((x, i) => i > 40 && !x);
+  assert.ok(exit > 59, 'held through the rise');
+  assert.ok(st.slice(exit).every((x) => !x), 'stays out while the rule never went out');
+  assert.deepEqual(A.withTrailingStop([...raw.slice(0, -2), false, true], b, 2, 10).slice(-1), [true], 're-arms after the rule goes out and back in');
+});
+
+/* ---------- the research set (quant-research.md #1–#7) ---------- */
+
+test('the research set: published parameters, shares between 0 and 1, decided on past days only', async () => {
+  const A = await import('./agents.ts');
+  const wv = Array.from({ length: 900 }, (_, i) => 100 * (1 + 0.4 * Math.sin(i / 23)) * 1.0015 ** i);
+  const b = bars(wv), c = wv;
+  for (const r of ['volTarget', 'donchEns', 'tsmom3', 'coreTrend', 'maEns'] as const) {
+    const tg = A.targets(r, b);
+    assert.ok(tg.every((x) => x >= 0 && x <= 1), `${r} stays between 0 and 1`);
+    assert.deepEqual(tg.slice(0, 600), A.targets(r, b.slice(0, 600)), `${r} never looks ahead`);
+    const held = A.exposure(r, b) as number[];
+    for (let i = 1; i < held.length; i++) if (held[i] !== held[i - 1]) assert.ok(Math.abs(held[i] - held[i - 1]) >= A.BAND[r] - 1e-9, `${r} only moves by its band`);
+  }
+  assert.equal(A.BAND.volTarget, 0.15); assert.equal(A.BAND.donchEns, 0.1);
+  // B1: min(1, 50% / EWMA volatility with a 20-day half-life).
+  const vol = A.ewmaVol(c, 20);
+  A.targets('volTarget', b).forEach((x, i) => { if (Number.isFinite(vol[i])) assert.ok(Math.abs(x - Math.min(1, 0.5 / vol[i])) < 1e-12); });
+  // A3: thirds, updated only on Mondays (UTC).
+  const m = A.targets('tsmom3', b);
+  for (let i = 92; i < b.length; i++) {
+    assert.ok([0, 1 / 3, 2 / 3, 1].some((v) => Math.abs(v - m[i]) < 1e-12));
+    if (new Date(b[i].time * 1000).getUTCDay() !== 1) assert.equal(m[i], m[i - 1], 'holds between Mondays');
+    else assert.equal(m[i], [7, 28, 91].filter((d) => c[i] > c[i - d]).length / 3);
+  }
+  // B3: half the B1 share always, half the B1 share times the A3 score.
+  const core = A.targets('coreTrend', b), v1 = A.targets('volTarget', b);
+  core.forEach((x, i) => assert.ok(Math.abs(x - (0.5 * v1[i] + 0.5 * m[i] * v1[i])) < 1e-12));
+  // A2: thirds by how many of the 20-, 50-, 100-day averages the close is above.
+  assert.ok(A.targets('maEns', b).every((x) => [0, 1 / 3, 2 / 3, 1].some((v) => Math.abs(v - x) < 1e-12)));
+  // A4 + C1 and the Turtle/Donchian variants are in or out, and the stop only ever removes days from the parent.
+  for (const [g, p] of [['breakC', 'break'], ['turtle2C', 'turtle2'], ['donchianC', 'donchian']] as const) {
+    const guarded = A.positions(g, b), parent = A.positions(p, b);
+    assert.ok(guarded.every((x, i) => !x || parent[i]), `${g} holds only when ${p} would`);
+  }
+  assert.deepEqual(A.positions('brkAtr', b).slice(0, 600), A.positions('brkAtr', b.slice(0, 600)));
+});
+
+test('a weight agent is scored on its share, carries its live target, and reports its average exposure', async () => {
+  const A = await import('./agents.ts');
+  const b = bars(Array.from({ length: 1400 }, (_, i) => 100 * (1 + 0.3 * Math.sin(i / 40)) * 1.001 ** i));
+  const a = A.scorePosition('volTarget', market('BTCUSDT-PERPETUAL'), b)!;
+  assert.equal(a.days, 1095);
+  assert.equal(a.band, 0.15);
+  assert.ok(a.target !== undefined && a.target >= 0 && a.target <= 1);
+  assert.ok(a.exposure! > 0 && a.exposure! <= 1);
+  assert.equal(a.mult, (A.exposure('volTarget', b) as number[])[b.length - 1], 'what it holds today, after the band');
+  assert.ok((a.moves ?? 0) >= a.trades, 'every resize is a trade');
+  assert.ok(a.marks.filter((x) => x.resize).every((x) => (x.mult ?? 0) > 0 && (x.mult ?? 0) <= 1));
+  // Fees on the share that changes hands: a flat price and a share that moves 0 → 0.5 → 1 → 0 pays 0.5 + 0.5 + 1 of the fee.
+  const flat = bars(Array.from({ length: 300 }, () => 100));
+  const path = flat.map((_, i) => (i < 100 ? 0 : i < 150 ? 0.5 : i < 200 ? 1 : 0));
+  const t = A.backtest('x', 'volTarget', path, 60, market('BTCUSDT-PERPETUAL'), flat, 1095)!;
+  assert.ok(Math.abs(t.total - ((1 - 0.003 * 0.5) ** 2 * (1 - 0.003) - 1)) < 1e-12);
+  assert.equal(t.trades, 1, 'one entry');
+  assert.equal(t.moves, 3, 'three trades');
+  // An on/off agent has no target: the runner treats it as in or out.
+  assert.equal(A.scorePosition('trend', market('BTCUSDT-PERPETUAL'), b)!.target, undefined);
+});
+
+test('retired and demoted per the research; a retired agent can still be found by anyone who hired it', async () => {
+  const A = await import('./agents.ts');
+  for (const r of ['rsi2', 'double7', 'boll'] as const) {
+    assert.ok(A.isRetired({ rule: r, base: 'BTC' }) && A.isRetired({ rule: r, base: 'ETH' }), `${r} retired on BTC and ETH`);
+    assert.ok(!A.isRetired({ rule: r, base: 'HSK' }), `${r} stays on HSK`);
+  }
+  assert.ok(A.isRetired({ rule: 'macd', base: 'HSK' }), 'standalone MACD retired everywhere');
+  assert.ok(!A.isRetired({ rule: 'rsi2h', base: 'BTC' }) && !A.isRetired({ rule: 'macd4h', base: 'BTC' }), 'the short-term set stays, labelled');
+  for (const r of ['golden', 'ichimoku', 'trend200', 'tsmom', 'break', 'psar', 'adx', 'aroon', 'keltner'] as const) assert.ok(A.DEMOTED.has(r), `${r} demoted`);
+  assert.ok(!A.DEMOTED.has('breakC') && !A.DEMOTED.has('volTarget'));
+  // agentById looks the rule up with the retired ones included (positionAgents(m, true)); the market lists without them.
+  const src = (await import('node:fs')).readFileSync(new URL('./agents.ts', import.meta.url), 'utf8');
+  assert.match(src, /positionAgents\(m, true\)\)\.find\(\(a\) => a\.id === id\)/);
 });

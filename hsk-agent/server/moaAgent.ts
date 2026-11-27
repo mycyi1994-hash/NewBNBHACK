@@ -180,7 +180,7 @@ const pctOf = (v: number) => +(v * 100).toFixed(1);
 function forModel(a: Agent) {
   return {
     name: `${a.base} ${STRINGS.en.agNick[a.rule]}`, strategy: STRINGS.en.agRule[a.rule], origin: STRINGS.en.agOrigin[a.rule], rule: STRINGS.en.agLine[a.rule], canHire: a.runnable,
-    backtestDays: a.days, periodReturnPct: pctOf(a.total), justHoldingPct: pctOf(a.hold), worstDropPct: -pctOf(a.maxDd), feePerTradePct: pctOf(a.fee),
+    backtestDays: a.days, candles: a.interval ?? '1d', periodReturnPct: pctOf(a.total), justHoldingPct: pctOf(a.hold), worstDropPct: -pctOf(a.maxDd), feePerTradePct: pctOf(a.fee),
     now: a.kind === 'position' ? (a.live ? 'holding' : 'waiting for its signal') : a.mult > 0 ? `would buy x${a.mult} today` : 'skips today',
   };
 }

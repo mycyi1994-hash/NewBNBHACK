@@ -3,7 +3,7 @@
 // user presses the button. Amounts are the user's to choose: any number can be typed. If the user has set a
 // per-trade limit on their own vault, the sheet says so when an amount goes above it.
 import { useEffect, useMemo, useState } from 'react';
-import type { Agent } from './agents.ts';
+import { isWeightRule, type Agent } from './agents.ts';
 import { describe, scheduleOf, type Plan } from './intent.ts';
 import { useT } from './i18n.ts';
 import { limitsText, vaultWhy, type VaultInfo } from './parts.tsx';
@@ -90,6 +90,8 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
   const name = target.kind === 'agent' ? agentName(t, target.agent) : target.kind === 'custom'
     ? t.customName((target.plan.steps.find((s) => 'asset' in s) as { asset?: string } | undefined)?.asset ?? 'HSK') : hiredName(t, target.hired);
   const rule = target.kind === 'agent' ? target.agent.rule : target.kind === 'edit' && target.hired.source.type === 'market' ? target.hired.source.rule : undefined;
+  // A weight agent holds a share of its budget and rebalances: there is no per-buy amount, only the budget.
+  const weighted = !!rule && isWeightRule(rule);
   const base = target.kind === 'agent' ? target.agent.base : target.kind === 'edit' && target.hired.source.type === 'market' ? target.hired.source.base : undefined;
   const doubles = rule === 'smart' || rule === 'rsiDca';
   // How many buys the budget covers at this size: the plain version of "per buy" and "budget".
@@ -124,7 +126,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
       setBusy(0);
       onReloadVault();
     }
-    onConfirm({ perBuyUsd: per, budgetUsd: budget, mode });
+    onConfirm({ perBuyUsd: weighted ? budget : per, budgetUsd: budget, mode });
   };
 
   return (
@@ -141,18 +143,18 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
             <p>{t.agPlain[rule]}</p>
           </div>
         )}
-        <div className="hire-two">
-          <label className="field" htmlFor="hire-per">
+        <div className={weighted ? 'hire-one' : 'hire-two'}>
+          {!weighted && <label className="field" htmlFor="hire-per">
             <span>{t.hsPer}</span>
             <Stepper id="hire-per" label={t.hsPer} value={per} options={PER} onChange={setPerKeep} />
-          </label>
+          </label>}
           <label className="field" htmlFor="hire-budget">
             <span>{t.hsBudget}</span>
             <Stepper id="hire-budget" label={t.hsBudget} value={budget} options={BUDGET} onChange={setBudget} />
           </label>
         </div>
-        {budget < per ? <p className="hire-sub warn">{t.hsBudgetLow}</p> : <p className="hire-times">{t.hsTimes(times)}</p>}
-        {!auto && per > maxTrade && <p className="hire-sub warn">{t.hsOverLimit(money(maxTrade))}</p>}
+        {weighted ? <p className="hire-times">{t.hsWeight}</p> : budget < per ? <p className="hire-sub warn">{t.hsBudgetLow}</p> : <p className="hire-times">{t.hsTimes(times)}</p>}
+        {!weighted && !auto && per > maxTrade && <p className="hire-sub warn">{t.hsOverLimit(money(maxTrade))}</p>}
         {doubles && <p className="hire-sub">{t.hsDouble(money(Math.min(per * 2, maxTrade)))}</p>}
         {editing && <p className="hire-sub">{t.hsSpent(money(book(target.hired).spent))}</p>}
 

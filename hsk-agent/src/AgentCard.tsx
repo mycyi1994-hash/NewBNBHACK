@@ -150,7 +150,7 @@ export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions 
         <details className="acard-more">
           <summary>{t.acRules}</summary>
           <ul>{t.agRules[a.rule].map((r) => <li key={r}>{r}</li>)}</ul>
-          <p className="acard-foot">{t.acFoot(`${(a.fee * 100).toFixed(1)}%`, a.days)}</p>
+          <p className="acard-foot">{t.acFoot(`${(a.fee * 100).toFixed(1)}%`, a.days, a.interval)}</p>
         </details>
         {actions}
       </div>

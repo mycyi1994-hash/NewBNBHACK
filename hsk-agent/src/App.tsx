@@ -24,7 +24,7 @@ import MoaFeed, { type MoaAsk, type MoaContext, type MoaInject } from './MoaFeed
 import HireSheet, { type HireTarget } from './HireSheet.tsx';
 import { agentById, loadAgents, type Agent } from './agents.ts';
 import type { Asset } from './intent.ts';
-import { chainNote, decide, newId, type HireChoice, type HiredAgent, type Signal } from './runner.ts';
+import { agentSignal, chainNote, decide, newId, type HireChoice, type HiredAgent, type Signal } from './runner.ts';
 import { hiredName } from './hiredText.ts';
 import { agentName } from './AgentCard.tsx';
 import { autoList, autoPut, autoRemove, sendAgentTrade } from './moaClient.ts';
@@ -225,7 +225,7 @@ function Shell() {
     if (h.source.type === 'custom') return { kind: 'custom', price: quotes.find((q) => q.asset === h.asset)?.pool };
     const a = agentFor(h.source.agentId);
     if (!a) return undefined;
-    return a.kind === 'position' ? { kind: 'position', live: a.live } : { kind: 'collect', mult: a.mult };
+    return agentSignal(a);
   };
   const maxTradeUsd = vault?.configured && vault.maxTradeUsdt ? Number(vault.maxTradeUsdt) : undefined;
 

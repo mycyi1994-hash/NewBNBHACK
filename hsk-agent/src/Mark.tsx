@@ -18,6 +18,22 @@ export const FAMILY: Record<RuleId, Family> = {
   rsi: 'dip', boll: 'dip', rsi2: 'dip', double7: 'dip',
   daily: 'col', smart: 'col', trendDca: 'col', rsiDca: 'col',
   made: 'made',
+  // Short-term agents take the family of the rule they shorten.
+  rsi2h: 'dip', rsi2q: 'dip', bollh: 'dip', rsih: 'dip', ema921h: 'cross', macd4h: 'cross',
+  donch1h: 'brk', donch4h: 'brk',
+  // The research set: holding a share (teal), voting breakouts and stops (green), momentum (blue), averages (violet).
+  volTarget: 'col', coreTrend: 'col', donchEns: 'brk', brkAtr: 'brk', breakC: 'brk', turtle2C: 'brk', donchianC: 'brk', tsmom3: 'mom', maEns: 'avg',
+};
+/** A Turtle/Donchian rule with the chandelier stop added wears its parent's symbol with a small shield in the corner. */
+const GUARDED: Partial<Record<RuleId, RuleId>> = { breakC: 'break', turtle2C: 'turtle2', donchianC: 'donchian' };
+/**
+ * A short-term agent wears the symbol of the rule it shortens, a little smaller, with a clock in the corner whose
+ * hand points at its candle length: one o'clock for hourly, four o'clock for 4-hour candles.
+ */
+const SHORT: Partial<Record<RuleId, { like: RuleId; hours: 1 | 4 }>> = {
+  rsi2h: { like: 'rsi2', hours: 1 }, rsi2q: { like: 'rsi2', hours: 4 }, ema921h: { like: 'ma520', hours: 1 },
+  macd4h: { like: 'macd', hours: 4 }, bollh: { like: 'boll', hours: 1 },
+  rsih: { like: 'rsi', hours: 1 }, donch1h: { like: 'break', hours: 1 }, donch4h: { like: 'donchian', hours: 4 },
 };
 
 /** Light, mid and deep stop of each family's gradient (top-left to bottom-right). */
@@ -41,6 +57,21 @@ const COIN: Record<string, [string, string, string]> = {
 
 /** One rule's symbol. `ink` draws it, `cut` draws the details cut into it (the tile colour on a mark). */
 function glyph(rule: RuleId, ink: string, cut: string): ReactNode {
+  const guarded = GUARDED[rule];
+  if (guarded) return <>
+    <g transform="translate(35 35) scale(.8) translate(-32 -32)">{glyph(guarded, ink, cut)}</g>
+    <path d="M16 9.5l6.5 2.4v4.6c0 4-2.7 6.9-6.5 8.3-3.8-1.4-6.5-4.3-6.5-8.3v-4.6z" fill={ink} />
+    <path d="M13.2 16.6l2 2 3.8-4" fill="none" stroke={cut} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+  </>;
+  const short = SHORT[rule];
+  if (short) {
+    const a = ((short.hours * 30 - 90) * Math.PI) / 180;
+    return <>
+      <g transform="translate(35 35) scale(.8) translate(-32 -32)">{glyph(short.like, ink, cut)}</g>
+      <circle cx="16" cy="16" r="7.2" fill={ink} />
+      <path d={`M16 16V11.2M16 16L${(16 + 4.4 * Math.cos(a)).toFixed(2)} ${(16 + 4.4 * Math.sin(a)).toFixed(2)}`} stroke={cut} strokeWidth={1.9} strokeLinecap="round" />
+    </>;
+  }
   const s = { fill: 'none', stroke: ink, strokeWidth: 5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   const f = { fill: ink };
   switch (rule) {
@@ -209,6 +240,42 @@ function glyph(rule: RuleId, ink: string, cut: string): ReactNode {
         <path d="M22 28c0-12 20-12 20 0" fill="none" stroke={ink} strokeWidth={4.2} strokeLinecap="round" opacity=".75" />
         <path d="M13.5 27.5h37l-4.5 20h-28z" {...f} stroke={ink} strokeWidth={1.5} strokeLinejoin="round" />
         <path d="M25 33v9M32 33v9M39 33v9" stroke={cut} strokeWidth={2.6} strokeLinecap="round" />
+      </>;
+    // ---- the research set ----
+    case 'volTarget': // Balance: a dial held in the middle
+      return <>
+        <path d="M13 41a19 19 0 0 1 38 0" {...s} />
+        <path d="M32 41l7.5-11" {...s} strokeWidth={4.5} />
+        <circle cx="32" cy="41" r="4.5" {...f} />
+        <path d="M18 47.5h28" {...s} strokeWidth={4} opacity=".55" />
+      </>;
+    case 'coreTrend': // Anchor: half always held
+      return <>
+        <circle cx="32" cy="17.5" r="4.5" fill="none" stroke={ink} strokeWidth={4} />
+        <path d="M32 22v25M24 29h16" {...s} strokeWidth={4.5} />
+        <path d="M17 37c1.5 7 8 10.5 15 10.5S45.5 44 47 37" {...s} strokeWidth={4.5} />
+      </>;
+    case 'donchEns': // Chorus: six votes, raised hands of different heights
+      return <>
+        {[0, 1, 2, 3, 4, 5].map((k) => <rect key={k} x={13 + k * 6.6} y={46 - [10, 16, 12, 22, 18, 26][k]} width="4.6" height={[10, 16, 12, 22, 18, 26][k]} rx="2.3" {...f} opacity={k % 2 ? 1 : 0.7} />)}
+      </>;
+    case 'tsmom3': // Tempo: three arrows up, a week, a month and a quarter
+      return <>
+        {[[19, 12], [32, 20], [45, 28]].map(([x, h]) => <g key={x}><path d={`M${x} 47V${47 - h}`} {...s} strokeWidth={4.5} /><path d={`M${x - 5} ${52 - h}l5-5 5 5`} {...s} strokeWidth={4.5} /></g>)}
+      </>;
+    case 'maEns': // Trio: three averages, the price riding above
+      return <>
+        <path d="M13 44c7-3 12-7 19-7s12 3 19 1" {...s} strokeWidth={4} opacity=".5" />
+        <path d="M13 38c7-4 12-9 19-9s12 3 19 1" {...s} strokeWidth={4} opacity=".75" />
+        <path d="M13 32c7-5 12-11 19-11s12 3 19 0" {...s} strokeWidth={4.5} />
+        <circle cx="47" cy="17" r="4" {...f} />
+      </>;
+    case 'brkAtr': // Climber: an arrow over the ceiling, a stop climbing behind it
+      return <>
+        <path d="M13 28h38" {...s} strokeWidth={3.5} strokeDasharray="1 6.5" opacity=".7" />
+        <path d="M15 46l9-8 7 4 15-23" {...s} />
+        <path d="M38 18.5h8.5V27" {...s} strokeWidth={4.5} />
+        <path d="M14 51h8v-4h8v-4h8" {...s} strokeWidth={3.5} opacity=".6" />
       </>;
     default: // made: a sparkle, someone's own idea
       return <>

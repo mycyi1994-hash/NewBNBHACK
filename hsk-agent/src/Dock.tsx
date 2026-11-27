@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
-import { byMerit, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
+import { byMerit, DEMOTED, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
 import { TEMPLATES } from './spec.ts';
 import { useMade } from './madeStore.ts';
 import { AgentCard, agentName, condText, drop, freshLine, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
@@ -50,6 +50,8 @@ export type Period = 'year' | 'std' | 'all';
 /** The backtest on screen: the standard three years from the list, or the same agent over one year or all its history. */
 export function useBacktest(sel: Agent | null) {
   const [period, setPeriod] = useState<Period>('std');
+  // A short-term agent has no separate one-year view: its own window is the standard one.
+  useEffect(() => { if (sel?.interval && period === 'year') setPeriod('std'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [other, setOther] = useState<{ agent: Agent; period: Period } | null>(null);
   useEffect(() => {
     setOther(null);
@@ -69,6 +71,7 @@ export function trips(a: Agent): Trip[] {
   const out: Trip[] = [];
   let open: Mark | null = null;
   for (const m of a.marks) {
+    if (m.resize) continue;   // a weight agent resizing inside a round trip
     if (m.side === 'buy') open = m;
     else if (open) { out.push({ buy: open, sell: m, ret: m.ret ?? m.price / open.price - 1 }); open = null; }
   }
@@ -108,12 +111,12 @@ export function standing(a: Agent, cursor: number | null) {
 
 /** Risk by the worst drop, frequency by trades a year, holding by days in the coin. The cut-offs are shown in the tags' tooltip. */
 export function profile(a: Agent) {
-  const perYear = a.trades / Math.max(1, a.days / 365);
+  const perYear = (a.target !== undefined ? a.moves ?? a.trades : a.trades) / Math.max(1, a.days / 365);
   return {
     perYear,
     risk: (a.maxDd >= 0.45 ? 'hi' : a.maxDd >= 0.25 ? 'mid' : 'lo') as 'hi' | 'mid' | 'lo',
     freq: (a.kind === 'collect' && perYear >= 200 ? 'daily' : perYear >= 12 ? 'often' : perYear >= 3 ? 'some' : 'rare') as 'daily' | 'often' | 'some' | 'rare',
-    hold: (a.inMarket >= 0.7 ? 'most' : a.inMarket >= 0.3 ? 'half' : 'cash') as 'most' | 'half' | 'cash',
+    hold: ((a.exposure ?? a.inMarket) >= 0.7 ? 'most' : (a.exposure ?? a.inMarket) >= 0.3 ? 'half' : 'cash') as 'most' | 'half' | 'cash',
   };
 }
 
@@ -239,13 +242,18 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
             <span className="bt-sum"><b>{m(now.hold)}</b><em className={sign(hold)}>{pct(hold)}</em></span>
           </div>
           {live ? <span className="bt-edge live"><i />{t.rpAt(day(cursor))}</span> : <span className={`bt-edge ${sign(edge)}`}>{t.vsHold(pct(edge))}</span>}
+          {/* The fair second benchmark for an agent that holds part of the money: the same average share of the coin,
+              bought at the start and left alone, the rest in USDT (research: compare with a static mix). */}
+          {!live && a.kind === 'position' && a.exposure !== undefined && a.exposure < 0.995 && (
+            <span className={`bt-edge mix ${sign(a.total - a.exposure * a.hold)}`} data-tip={t.mixTip(Math.round(a.exposure * 100), pct(a.exposure * a.hold))}>{t.vsMix(pct(a.total - a.exposure * a.hold), Math.round(a.exposure * 100))}</span>
+          )}
         </div>
         <p className="bt-say">{t.btSay({ collect: a.kind === 'collect', better: a.total >= a.hold, trades: a.trades, hold: pct(a.hold), total: pct(a.total), held: `${Math.round(a.inMarket * 100)}%` })}{t.btFx && <span className="bt-fx"> {t.btFx}</span>}</p>
         <dl className="bt-stats">
           <div><dt>{t.thDd}</dt><dd>{drop(a.maxDd)}</dd></div>
           <div><dt>{t.thSharpe}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
-          <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.trades)}</dd></div>
-          <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>
+          <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.target !== undefined ? a.moves ?? a.trades : a.trades)}</dd></div>
+          {a.target !== undefined ? <div><dt>{t.btAvgShare}</dt><dd>{Math.round((a.exposure ?? 0) * 100)}%</dd></div> : <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>}
         </dl>
         <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id).slice(0, 5) : []} upto={cursor} label={(v) => m(v, true)} onPick={onSelect} />
         <div className="bt-legend">
@@ -329,7 +337,7 @@ function TopPick({ a, n, onOpen, onHire }: { a: Agent; n: number; onOpen: () => 
           <b>{a.made?.name ?? t.agNick[a.rule]}<em className={`tk-fresh${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</em></b>
           <small>{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</small>
         </span>
-        <span className="tk-num"><small>{t.mpVsHold}</small><b className={edge > 0 ? 'pos' : edge < 0 ? 'neg' : ''}>{pct(edge)}</b></span>
+        <span className="tk-num"><small>{t.mpVsHold}</small><b className={edge > 0 ? 'pos' : edge < 0 ? 'neg' : ''}>{pct(edge)}</b>{a.interval && <small className="tk-win">{t.mpOver(a.days)}</small>}</span>
       </button>
       {a.runnable ? <button className="btn-primary sm tk-hire" onClick={onHire}>{t.acHire}</button> : <span className="tk-only">{t.wzSignalOnly}</span>}
     </li>
@@ -361,7 +369,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   useEffect(() => { setTab((cur) => (sel ? 'bt' : cur === 'bt' ? 'top' : cur)); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One order, Moa's: published classics first, then the smaller worst drop. (Other orders live in the agent market.)
-  const all = useMemo(() => (list ? [...list].sort(byMerit) : []), [list]);
+  // The research's demoted classics keep their place in the list, after the others.
+  const all = useMemo(() => (list ? [...list].sort((p, r) => Number(DEMOTED.has(p.rule)) - Number(DEMOTED.has(r.rule)) || byMerit(p, r)) : []), [list]);
   // With enough published strategies for the market, the rules without a published source wait behind one row.
   const [more, setMore] = useState(false);
   const classics = all.filter((a) => a.tier === 1 || a.made);
@@ -375,8 +384,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const hint = isRunnable(coin) ? t.mkSignalTrade : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
   // "Doing well now": the same order as everywhere (working first, then beating just holding), the first few.
-  const best = all.slice(0, 6);
-  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? hint : '';
+  const best = all.filter((a) => !DEMOTED.has(a.rule)).slice(0, 6);
+  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days, shown.interval)}` : tab === 'list' ? hint : '';
 
   return (
     <section className={`tdock venue-${venue}`} aria-label={t.mkTitle}>
@@ -399,7 +408,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
         {tab === 'bt' && sel && (
           <div className={`seg${busy ? ' busy' : ''}`} role="group" aria-label={t.thPeriod} aria-busy={busy}>
             {busy && <span className="spin" aria-hidden />}
-            {(['year', 'std', 'all'] as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} aria-pressed={period === p} onClick={() => setPeriod(p)}>{p === 'year' ? t.btYear : p === 'std' ? t.btStd : t.btAll}</button>)}
+            {/* A short-term agent is scored over its own window (90 days hourly, a year of 4-hour candles): that is its standard period. */}
+            {((sel?.interval ? ['std', 'all'] : ['year', 'std', 'all']) as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} aria-pressed={period === p} onClick={() => setPeriod(p)}>{p === 'year' ? t.btYear : p === 'std' ? (sel?.interval ? t.btDays(sel.days) : t.btStd) : t.btAll}</button>)}
           </div>
         )}
         {tab === 'bt' && sel && <button className="icon-btn sm" onClick={() => onSelect(null)} aria-label={t.btBack} data-tip={t.btBack}><Icon name="close" size={16} /></button>}
@@ -449,7 +459,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             ))}
             {groups.map((g) => (
               <section key={g.h} className={`hz-col hz-${g.h} stagger`} aria-label={t.hz[g.h]}>
-                <header className="hz-head" data-tip={t.hzOrder}><b>{t.hz[g.h]}<small>{g.rows.length}</small></b><em>{t.hzLegend}</em><p>{t.hzSub[g.h]}</p><em>{t.hzHold(pct(g.rows[0].hold))}</em></header>
+                <header className="hz-head" data-tip={t.hzOrder}><b>{t.hz[g.h]}<small>{g.rows.length}</small></b><em>{t.hzLegend}</em><p>{t.hzSub[g.h]}</p><em>{t.hzHold(pct(g.rows[0].hold))}</em>{g.h === 'short' && <p className="hz-fee">{t.hzShortFee}</p>}</header>
                 {g.rows.map((a, i) => <AgentCard key={a.id} agent={a} size="cell" rank={i + 1} picked={sel?.id === a.id} best={a.id === pickOf(g.h)} onPick={() => { onSelect(a); setTab('bt'); }} />)}
               </section>
             ))}

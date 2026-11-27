@@ -8,7 +8,7 @@
 //     backtest wins (ties: higher period return, then id).
 //  5. Agents the user already hired are skipped when another fits.
 // It never ranks by past return first: the top of many backtests is usually the one that got lucky.
-import { byMerit, type Agent, type Risk } from './agents.ts';
+import { byMerit, DEMOTED, type Agent, type Risk } from './agents.ts';
 
 export type Level = 'new' | 'some' | 'pro';
 export interface Recommendation { pick: Agent; others: Agent[]; scope: 'coin' | 'all'; pool: number }
@@ -22,7 +22,9 @@ export function recommend(agents: Agent[], opts: { coin?: string; level?: Level 
   if (!runnable.length) return null;
   const forCoin = opts.coin ? runnable.filter((a) => a.base === opts.coin) : [];
   const scope = forCoin.length ? 'coin' : 'all';
-  const inScope = forCoin.length ? forCoin : runnable;
+  // The research's demoted classics are picked only when nothing else fits (the order among the rest is unchanged).
+  const scoped = forCoin.length ? forCoin : runnable;
+  const inScope = scoped.some((a) => !DEMOTED.has(a.rule)) ? scoped.filter((a) => !DEMOTED.has(a.rule)) : scoped;
   const risk = maxRiskFor(opts.level);
   const fits = inScope.filter((a) => a.risk <= risk);
   const ranked = [...(fits.length ? fits : inScope)].sort(byDrop);

@@ -15,6 +15,7 @@ export function whyText(t: Strings, w: Why): string {
   switch (w.k) {
     case 'signalOn': return t.whySignalOn;
     case 'signalOff': return t.whySignalOff;
+    case 'weight': return t.whyWeight(w.pct);
     case 'daily': return t.whyDaily(String(Math.round(w.mult * 100) / 100));
     case 'plan': return t.whyPlan;
     case 'stop': return t.whyStop(w.pct);

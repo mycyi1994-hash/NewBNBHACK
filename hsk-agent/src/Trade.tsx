@@ -14,10 +14,10 @@ import type { VaultInfo } from './parts.tsx';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
-import type { MadeSpec } from './spec.ts';
+import { INTERVAL_SECONDS, type MadeSpec } from './spec.ts';
 import { LEAD_DAYS, SPEEDS, useReplay, type Replay } from './replay.ts';
 import Dock, { px, useBacktest, useMarketAgents } from './Dock.tsx';
-import { collectHistory, dailyHistory, overlays, paneOf, type Agent, type Pane, type RuleId } from './agents.ts';
+import { collectHistory, dailyHistory, madeHistory, overlays, paneOf, type Agent, type Pane, type RuleId } from './agents.ts';
 import { pct } from './AgentCard.tsx';
 import { Icon } from './Icons.tsx';
 import type { MoaContext } from './MoaFeed.tsx';
@@ -586,7 +586,8 @@ function useCex(m: cex.Market) {
 
 /** A backtest for the chart: the rule's lines, the buys and sells pinned to the candle that holds that day's close, the holding days. */
 function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string; btRest: string; btSeamTag: string }): Study {
-  const DAY = 86_400;
+  // One step of the agent's own candles: a day, or an hour or four for a short-term agent.
+  const DAY = a.interval ? INTERVAL_SECONDS[a.interval] : 86_400;
   const at = (dayOpen: number) => {
     const close = dayOpen + DAY - 1;
     if (!candles.length || close < candles[0].time) return null;
@@ -602,6 +603,7 @@ function studyOf(a: Agent, candles: cex.Candle[], t: { buy: string; sell: string
   if (a.kind === 'position') {
     let open: number | null = null;
     for (const m of a.marks) {
+      if (m.resize) continue;   // a weight agent's resizes: the shaded bands show when it holds, the trades list every change
       const time = at(m.time);
       if (m.side === 'buy') open = m.time; else if (open !== null) { bands.push({ from: open, to: m.time }); open = null; }
       if (time === null) continue;
@@ -744,16 +746,19 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
   const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
   const { t, mi } = useCex(market);
   const [inds, toggleInd] = useStoredInds();
-  const key = `cex-${market.symbol}-${interval}`;
-  // Daily candles come with the days before the exchange listed the market (Gate spot, joined in front), the
-  // same history the agents are scored on, so a backtest's whole window is on the chart.
-  const { candles, more, err, retry } = useCandles(key, (n) => (interval === '1d' && n > 100 ? dailyHistory(market) : cex.klines(market, interval, n)), (first) => cex.klines(market, interval, 1000, first.time * 1000 - 1), 15000);
   const { list, failed, retry: reloadAgents } = useMarketAgents('cex', market, asset);
   const sel = list?.find((a) => a.id === selId) ?? null;
-  // A backtest runs on daily candles: show it on the daily chart (the user can still change the interval after).
-  useEffect(() => { if (sel) setIv('1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A picked short-term agent decides on hourly or 4-hour candles: the chart loads the same history it was scored on.
+  const deep = !!sel?.interval && sel.interval === interval;
+  const key = `cex-${market.symbol}-${interval}${deep ? '-deep' : ''}`;
+  // Daily candles come with the days before the exchange listed the market (Gate spot, joined in front), the
+  // same history the agents are scored on, so a backtest's whole window is on the chart.
+  const { candles, more, err, retry } = useCandles(key, (n) => (n > 100 && interval === '1d' ? dailyHistory(market) : n > 100 && deep && sel?.interval ? madeHistory(market, sel.interval) : cex.klines(market, interval, n)), (first) => cex.klines(market, interval, 1000, first.time * 1000 - 1), 15000);
+  // A backtest is drawn on the candles it decided on: picking an agent switches the chart to its interval (daily,
+  // or hourly / 4-hour for a short-term agent). On any other interval the marks are not drawn, never misplaced.
+  useEffect(() => { if (sel) setIv(sel.interval ?? '1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const { period, setPeriod, shown, busy } = useBacktest(sel);
-  const study = useMemo(() => (shown && interval === '1d' ? studyOf(shown, candles, s) : undefined), [shown, candles, s, interval]);
+  const study = useMemo(() => (shown && interval === (shown.interval ?? '1d') ? studyOf(shown, candles, s) : undefined), [shown, candles, s, interval]);
   const replay = useReplay(study ? shown : null);
   const chg = t ? (t.last / t.open - 1) * 100 : 0;
   const up = chg >= 0;
@@ -822,9 +827,9 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   const gap = gate?.gap;
   const { list, failed, retry: reloadAgents } = useMarketAgents('dex', market, asset);
   const sel = list?.find((a) => a.id === selId) ?? null;
-  useEffect(() => { if (sel) setIv('1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (sel) setIv(sel.interval ?? '1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const { period, setPeriod, shown, busy } = useBacktest(sel);
-  const study = useMemo(() => (shown && iv === '1d' ? studyOf(shown, candles, s) : undefined), [shown, candles, s, iv]);
+  const study = useMemo(() => (shown && iv === (shown.interval ?? '1d') ? studyOf(shown, candles, s) : undefined), [shown, candles, s, iv]);
   const replay = useReplay(study ? shown : null);
 
   // Real HSKSwap swaps, pinned to the Gate candle they fall in.

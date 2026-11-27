@@ -22,7 +22,31 @@ import { MADE_PREFIX, madeById, madeList } from './madeStore.ts';
 export type PositionRule =
   | 'tsmom' | 'multiTrend' | 'dualMom' | 'trend200' | 'golden' | 'break' | 'turtle2' | 'donchian' | 'ma520' | 'triple'
   | 'macd' | 'ichimoku' | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7'
-  | 'trend' | 'ema' | 'rsi' | 'boll';
+  | 'trend' | 'ema' | 'rsi' | 'boll' | ShortRule | QuantRule;
+/**
+ * Short-term agents: standard rules run on hourly or 4-hour candles, so they trade in hours and days instead of
+ * weeks. Where the source is a daily rule this is Moa's shorter version, with no published test (PROOF 'none').
+ */
+export type ShortRule = 'rsi2h' | 'rsi2q' | 'ema921h' | 'macd4h' | 'bollh' | 'rsih' | 'donch1h' | 'donch4h';
+/**
+ * The research set (scratchpad/quant-research.md, "implement in this order" #1–#7), daily candles:
+ *  - holding a share of the money between 0 and 1 (WEIGHT_RULES): volatility-targeted holding (B1), the Donchian
+ *    ensemble with midpoint stops and volatility sizing (A1), multi-horizon momentum (A3), core plus trend (B3) and
+ *    the price-above-average ensemble (A2);
+ *  - in or out with a chandelier stop (C1): the 20-day breakout (A4) and the Turtle/Donchian rules with the stop added.
+ */
+export type QuantRule = WeightRule | 'brkAtr' | 'breakC' | 'turtle2C' | 'donchianC';
+export type WeightRule = 'volTarget' | 'donchEns' | 'tsmom3' | 'coreTrend' | 'maEns';
+/** Each weight rule's rebalance band: the share held only moves when its target moves this far (research: B1 15 points, the others 10). */
+export const BAND: Record<WeightRule, number> = { volTarget: 0.15, donchEns: 0.10, tsmom3: 0.10, coreTrend: 0.10, maEns: 0.10 };
+export const isWeightRule = (rule: RuleId): rule is WeightRule => rule in BAND;
+/**
+ * Retired by the research: the evidence is against them on BTC and ETH (large coins show momentum, not reversal) or
+ * they cannot survive the costs. Hidden from the market, rankings and Moa's picks; still scored for anyone who hired one.
+ */
+export const isRetired = (a: { rule: RuleId; base: string }) => a.rule === 'macd' || ((a.rule === 'rsi2' || a.rule === 'double7' || a.rule === 'boll') && (a.base === 'BTC' || a.base === 'ETH'));
+/** Demoted to "classic": single-setting rules the research says newer ensembles supersede, or with no crypto evidence. */
+export const DEMOTED: ReadonlySet<RuleId> = new Set<RuleId>(['golden', 'ichimoku', 'trend200', 'tsmom', 'break', 'turtle2', 'donchian', 'psar', 'adx', 'aroon', 'keltner']);
 export type CollectRule = 'daily' | 'smart' | 'trendDca' | 'rsiDca';
 /** `made` is an agent someone built themselves (its rule is data: see spec.ts). */
 export type RuleId = PositionRule | CollectRule | 'made';
@@ -45,6 +69,12 @@ export const TIER: Record<RuleId, Tier> = {
   macd: 1, ichimoku: 1, keltner: 1, psar: 1, adx: 1, aroon: 1, cryptoMom: 1, rsi2: 1, double7: 1, daily: 1,
   trend: 2, ema: 2, rsi: 2, boll: 2,
   smart: 3, trendDca: 3, rsiDca: 3, made: 3,
+  // Standard indicator rules on shorter candles (the indicator itself has no preferred candle length) ...
+  ema921h: 2, macd4h: 2, bollh: 2, rsih: 2,
+  // ... and shorter versions of published daily systems: Moa's own variation.
+  rsi2h: 3, rsi2q: 3, donch1h: 3, donch4h: 3,
+  // The research set: published strategies (tier 1), and Moa's combinations of published parts (tier 3).
+  volTarget: 1, donchEns: 1, tsmom3: 1, maEns: 1, brkAtr: 1, coreTrend: 3, breakC: 3, turtle2C: 3, donchianC: 3,
 };
 /**
  * What stands behind a rule, said plainly on every agent:
@@ -64,6 +94,8 @@ export const HORIZON: Record<Exclude<RuleId, 'made'>, Horizon> = {
   daily: 'long', smart: 'long', trendDca: 'long', rsiDca: 'long',
   break: 'swing', donchian: 'swing', macd: 'swing', ichimoku: 'swing', keltner: 'swing', adx: 'swing', aroon: 'swing', cryptoMom: 'swing', trend: 'swing', ema: 'swing', boll: 'swing',
   ma520: 'short', triple: 'short', psar: 'short', rsi2: 'short', double7: 'short', rsi: 'short',
+  rsi2h: 'short', rsi2q: 'short', ema921h: 'short', macd4h: 'short', bollh: 'short', rsih: 'short', donch1h: 'short', donch4h: 'short',
+  volTarget: 'long', coreTrend: 'long', turtle2C: 'long', donchEns: 'swing', tsmom3: 'swing', maEns: 'swing', brkAtr: 'swing', breakC: 'swing', donchianC: 'swing',
 };
 /** A made rule is placed by the longest stretch of days any of its conditions looks at. */
 export function horizonOf(a: { rule: RuleId; made?: MadeSpec }): Horizon {
@@ -78,9 +110,21 @@ export const PROOF: Record<RuleId, Proof> = {
   donchian: 'book', ma520: 'book', triple: 'book', macd: 'book', ichimoku: 'book', keltner: 'book', psar: 'book', adx: 'book', aroon: 'book', rsi2: 'book', double7: 'book', daily: 'book',
   golden: 'common',
   trend: 'none', ema: 'none', rsi: 'none', boll: 'none', smart: 'none', trendDca: 'none', rsiDca: 'none', made: 'none',
+  rsi2h: 'none', rsi2q: 'none', ema921h: 'none', macd4h: 'none', bollh: 'none', rsih: 'none', donch1h: 'none', donch4h: 'none',
+  // Peer-reviewed or working-paper tests (each text says which, and that the costs and assets differed); a practitioner
+  // rule for the chandelier stop; nothing published for the 50/50 blend.
+  volTarget: 'paper', donchEns: 'paper', tsmom3: 'paper', maEns: 'paper', brkAtr: 'paper', coreTrend: 'none', breakC: 'book', turtle2C: 'book', donchianC: 'book',
 };
+/** The candles a short-term rule decides on. Every other rule is daily. */
+export const SHORT_INTERVAL: Record<ShortRule, Exclude<SpecInterval, '1d'>> = {
+  rsi2h: '1h', rsi2q: '4h', ema921h: '1h', macd4h: '4h', bollh: '1h', rsih: '1h', donch1h: '1h', donch4h: '4h',
+};
+/** The candle interval any rule decides on. */
+export const ruleInterval = (rule: RuleId): SpecInterval => (rule in SHORT_INTERVAL ? SHORT_INTERVAL[rule as ShortRule] : '1d');
+/** Short-term rules that are an existing rule unchanged, only on shorter candles. */
+const SAME_AS: Partial<Record<ShortRule, PositionRule>> = { macd4h: 'macd', bollh: 'boll', rsih: 'rsi', donch1h: 'break', donch4h: 'break' };
 /** Days of history a rule needs before its first decision (the slow ones need their long averages). */
-const NEED: Partial<Record<RuleId, number>> = { tsmom: 365, multiTrend: 365, dualMom: 365, trend200: 200, golden: 200, rsi2: 200, double7: 200, ichimoku: 90 };
+const NEED: Partial<Record<RuleId, number>> = { tsmom: 365, multiTrend: 365, dualMom: 365, trend200: 200, golden: 200, rsi2: 200, double7: 200, ichimoku: 90, rsi2h: 200, rsi2q: 200, donchEns: 151, tsmom3: 92, coreTrend: 92, maEns: 100 };
 
 export const POSITION_RULES: { id: PositionRule; style: Style; risk: Risk }[] = [
   { id: 'tsmom', style: 'trend', risk: 2 },
@@ -106,6 +150,23 @@ export const POSITION_RULES: { id: PositionRule; style: Style; risk: Risk }[] = 
   { id: 'ema', style: 'trend', risk: 2 },
   { id: 'rsi', style: 'revert', risk: 3 },
   { id: 'boll', style: 'revert', risk: 1 },
+  { id: 'rsi2h', style: 'revert', risk: 3 },
+  { id: 'rsi2q', style: 'revert', risk: 3 },
+  { id: 'ema921h', style: 'trend', risk: 3 },
+  { id: 'macd4h', style: 'trend', risk: 3 },
+  { id: 'bollh', style: 'revert', risk: 3 },
+  { id: 'rsih', style: 'revert', risk: 3 },
+  { id: 'donch1h', style: 'trend', risk: 3 },
+  { id: 'donch4h', style: 'trend', risk: 3 },
+  { id: 'volTarget', style: 'trend', risk: 2 },
+  { id: 'donchEns', style: 'trend', risk: 2 },
+  { id: 'tsmom3', style: 'trend', risk: 2 },
+  { id: 'coreTrend', style: 'trend', risk: 2 },
+  { id: 'maEns', style: 'trend', risk: 2 },
+  { id: 'brkAtr', style: 'trend', risk: 3 },
+  { id: 'breakC', style: 'trend', risk: 3 },
+  { id: 'turtle2C', style: 'trend', risk: 2 },
+  { id: 'donchianC', style: 'trend', risk: 3 },
 ];
 export const COLLECT_RULES: { id: CollectRule; risk: Risk }[] = [
   { id: 'daily', risk: 1 },
@@ -156,6 +217,13 @@ export interface Agent {
   /** Position: entries. Collect: buys. */
   trades: number;
   inMarket: number;
+  /** Position agents: the average share of the money held in the coin (1 while in for an in/out rule), and every
+   *  trade made (entries, exits and a weight agent's resizes), so the fee drag can be read off. */
+  exposure?: number;
+  moves?: number;
+  /** A weight agent: today's target share of its budget (before the band) and the band it rebalances on. */
+  target?: number;
+  band?: number;
   equity: { time: number; value: number }[];
   /** Buying once at the start and holding, on the same days as `equity` (the line the agent is compared with). */
   bench: { time: number; value: number }[];
@@ -185,6 +253,8 @@ export interface Mark {
   mult?: number;
   /** Position exits: return of that round trip after fees. */
   ret?: number;
+  /** A weight agent changing the size it holds (not an entry or an exit); `mult` is the new share. */
+  resize?: true;
 }
 
 /* ---------- candles, cached for 10 minutes so live signals refresh ---------- */
@@ -324,10 +394,115 @@ const keltner = (bars: Bar[]) => { const e = I.ema(bars.map((b) => b.close), 20)
 const latch = (n: number, enter: (i: number) => boolean, exit: (i: number) => boolean) => { const pos: boolean[] = []; let on = false; for (let i = 0; i < n; i++) { if (!on && enter(i)) on = true; else if (on && exit(i)) on = false; pos.push(on); } return pos; };
 
 /**
+ * The chandelier exit (Charles LeBeau; research C1) on top of any in/out rule: once in, the stop is the highest high
+ * of the last `n` candles minus `k` average true ranges (Wilder, `n` candles), and it only ever moves up. A close
+ * under it exits, and the agent stays out until the rule itself goes out and gives a fresh entry. Closes only.
+ */
+export function withTrailingStop(pos: boolean[], bars: Bar[], k = 3, n = 22): boolean[] {
+  const atr = atrSeries(bars, n), hh = prevHighIncl(bars, n), out: boolean[] = [];
+  let on = false, stop = -Infinity, wait = false;
+  for (let i = 0; i < pos.length; i++) {
+    const c = bars[i].close, level = Number.isFinite(atr[i]) ? hh[i] - k * atr[i] : -Infinity;
+    if (!pos[i]) { on = false; wait = false; out.push(false); continue; }
+    if (wait) { out.push(false); continue; }
+    if (!on) { on = true; stop = level; out.push(true); continue; }
+    stop = Math.max(stop, level);
+    if (c < stop) { on = false; wait = true; out.push(false); continue; }
+    out.push(true);
+  }
+  return out;
+}
+/** Highest high of the n candles ending today (the chandelier's anchor). */
+const prevHighIncl = (bars: Bar[], n: number) => bars.map((_, i) => { if (i < n - 1) return NaN; let v = -Infinity; for (let j = i - n + 1; j <= i; j++) v = Math.max(v, bars[j].high); return v; });
+
+/* ----- the research set's sizing: a share of the money per day ----- */
+
+const logRets = (c: number[]) => c.map((x, i) => (i ? Math.log(x / c[i - 1]) : NaN));
+/** Annualised EWMA volatility of daily log returns with the given half-life in days (Harvey et al. 2018). */
+export function ewmaVol(c: number[], halfLife = 20): number[] {
+  const lam = 0.5 ** (1 / halfLife), r = logRets(c), out = NANS(c.length);
+  let v = NaN;
+  for (let i = 1; i < c.length; i++) {
+    if (i < halfLife) continue;
+    if (Number.isNaN(v)) { let s = 0; for (let j = 1; j <= i; j++) s += r[j] ** 2; v = s / i; } else v = lam * v + (1 - lam) * r[i] ** 2;
+    out[i] = Math.sqrt(v * 365);
+  }
+  return out;
+}
+/** Annualised standard deviation of the last n daily returns. */
+function rollVol(c: number[], n: number): number[] {
+  const r = logRets(c);
+  return c.map((_, i) => { if (i < n) return NaN; let m = 0; for (let j = i - n + 1; j <= i; j++) m += r[j]; m /= n; let s = 0; for (let j = i - n + 1; j <= i; j++) s += (r[j] - m) ** 2; return Math.sqrt((s / (n - 1)) * 365); });
+}
+const clamp01 = (x: number) => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
+/** Volatility-targeted holding (B1): min(1, 50% / EWMA vol, 20-day half-life). */
+const volWeight = (c: number[]) => ewmaVol(c, 20).map((v) => (Number.isFinite(v) && v > 0 ? Math.min(1, 0.5 / v) : 0));
+/** Multi-horizon momentum (A3): the share of the 7-, 28- and 91-day returns that are positive, updated once a week (Mondays, UTC). */
+function momScore(bars: Bar[]): number[] {
+  const c = bars.map((b) => b.close), out: number[] = [];
+  let held = 0;
+  for (let i = 0; i < c.length; i++) {
+    if (i >= 91 && new Date(bars[i].time * 1000).getUTCDay() === 1) held = [7, 28, 91].filter((d) => c[i] > c[i - d]).length / 3;
+    out.push(i >= 91 ? held : 0);
+  }
+  return out;
+}
+/** Donchian ensemble (A1): per lookback, in on a close above the prior n-day high close; a stop at the n-day close range's midpoint that only rises. */
+function donchianVotes(c: number[], lookbacks: number[]): number[] {
+  const votes = new Array<number>(c.length).fill(0);
+  for (const n of lookbacks) {
+    let on = false, stop = -Infinity;
+    for (let i = n; i < c.length; i++) {
+      let hiPrior = -Infinity, hi = -Infinity, lo = Infinity;
+      for (let j = i - n; j < i; j++) hiPrior = Math.max(hiPrior, c[j]);
+      for (let j = i - n + 1; j <= i; j++) { hi = Math.max(hi, c[j]); lo = Math.min(lo, c[j]); }
+      const mid = (hi + lo) / 2;
+      if (!on && c[i] > hiPrior) { on = true; stop = mid; } else if (on) { stop = Math.max(stop, mid); if (c[i] < stop) on = false; }
+      if (on) votes[i] += 1 / lookbacks.length;
+    }
+  }
+  return votes;
+}
+/** The target share of the money for a weight rule on each day, before the rebalance band. */
+export function targets(rule: WeightRule, bars: Bar[]): number[] {
+  const c = bars.map((b) => b.close);
+  switch (rule) {
+    case 'volTarget': return volWeight(c);
+    case 'donchEns': { const v = donchianVotes(c, [10, 20, 30, 60, 90, 150]), sd = rollVol(c, 90); return v.map((x, i) => clamp01(Number.isFinite(sd[i]) && sd[i] > 0 ? x * (0.25 / sd[i]) : 0)); }
+    case 'tsmom3': return momScore(bars);
+    case 'coreTrend': { const w = volWeight(c), m = momScore(bars); return w.map((x, i) => clamp01(0.5 * x + 0.5 * m[i] * x)); }
+    case 'maEns': { const ma = [20, 50, 100].map((n) => I.sma(c, n)); return c.map((x, i) => (Number.isFinite(ma[2][i]) ? ma.filter((m) => x > m[i]).length / 3 : 0)); }
+  }
+}
+/** Hold the share until the target moves at least `band` away from it (research: rebalance only on a big enough move). */
+export function banded(target: number[], band: number): number[] {
+  let w = 0;
+  return target.map((x) => { const v = clamp01(x); if (Math.abs(v - w) >= band - 1e-9) w = v; return w; });
+}
+/** The 20-day breakout (A4) with the chandelier stop: in on a close at the 20-day high close, out under the stop. */
+function breakoutAtr(bars: Bar[]): boolean[] {
+  const c = bars.map((b) => b.close), atr = atrSeries(bars, 22), hh = prevHighIncl(bars, 22), out: boolean[] = [];
+  let on = false, stop = -Infinity;
+  for (let i = 0; i < c.length; i++) {
+    let top = -Infinity; if (i >= 21) for (let j = i - 19; j <= i; j++) top = Math.max(top, c[j]);
+    const level = Number.isFinite(atr[i]) ? hh[i] - 3 * atr[i] : NaN;
+    if (!on && i >= 22 && Number.isFinite(level) && c[i] >= top) { on = true; stop = level; } else if (on) { stop = Math.max(stop, level); if (c[i] < stop) on = false; }
+    out.push(on);
+  }
+  return out;
+}
+
+/**
  * Position per day (decided at that day's close). `ref` is the other major coin's candles, used only by the
  * dual-momentum rule (which holds this coin only while it is also the stronger of the two).
  */
 export function positions(rule: PositionRule, bars: Bar[], ref?: Bar[]): boolean[] {
+  const same = SAME_AS[rule as ShortRule];
+  if (same) return positions(same, bars, ref);
+  // A weight rule is "in" on any day it holds a share (its size is in exposure()).
+  if (isWeightRule(rule)) return banded(targets(rule, bars), BAND[rule]).map((w) => w > 0);
+  if (rule === 'brkAtr') return breakoutAtr(bars);
+  if (rule === 'breakC' || rule === 'turtle2C' || rule === 'donchianC') return withTrailingStop(positions(rule === 'breakC' ? 'break' : rule === 'turtle2C' ? 'turtle2' : 'donchian', bars), bars, 3, 22);
   const c = bars.map((b) => b.close), n = c.length;
   const ok = Number.isFinite;
   const ret = (i: number, d: number) => (i >= d ? c[i] / c[i - d] - 1 : NaN);
@@ -362,11 +537,15 @@ export function positions(rule: PositionRule, bars: Bar[], ref?: Bar[]): boolean
     case 'rsi': { const r = I.rsi(c); return latch(n, (i) => r[i] < 30, (i) => r[i] > 55); }
     case 'boll': { const b = I.boll(c); return latch(n, (i) => c[i] < b.lo[i], (i) => c[i] > b.mid[i]); }
     case 'rsi2': { const r = I.rsi(c, 2), long = I.sma(c, 200), fast = I.sma(c, 5); return latch(n, (i) => c[i] > long[i] && r[i] < 5, (i) => c[i] > fast[i]); }
+    // Connors' published entry level (RSI(2) under 10), on hourly or 4-hour candles: above the 200-candle average.
+    case 'rsi2h': case 'rsi2q': { const r = I.rsi(c, 2), long = I.sma(c, 200), fast = I.sma(c, 5); return latch(n, (i) => c[i] > long[i] && r[i] < 10, (i) => c[i] > fast[i]); }
+    case 'ema921h': { const f = I.ema(c, 9), s = I.ema(c, 21); return c.map((_, i) => i >= 21 && f[i] > s[i]); }
     case 'double7': {
       const long = I.sma(c, 200);
       const edge = (i: number, low: boolean) => { if (i < 6) return false; for (let j = i - 6; j < i; j++) if (low ? c[j] < c[i] : c[j] > c[i]) return false; return true; };
       return latch(n, (i) => c[i] > long[i] && edge(i, true), (i) => edge(i, false));
     }
+    default: return new Array<boolean>(n).fill(false);
   }
 }
 
@@ -374,6 +553,8 @@ export function positions(rule: PositionRule, bars: Bar[], ref?: Bar[]): boolean
 export interface Overlay { values: number[]; tone: 'main' | 'fast' | 'mid' | 'up' | 'down'; dots?: boolean }
 export function overlays(rule: RuleId, bars: Bar[], made?: MadeSpec): Overlay[] {
   if (made) return specLines(made, bars);
+  const same = SAME_AS[rule as ShortRule];
+  if (same) return overlays(same, bars);
   const c = bars.map((b) => b.close);
   const L = (values: number[], tone: Overlay['tone']): Overlay => ({ values, tone });
   switch (rule) {
@@ -385,7 +566,8 @@ export function overlays(rule: RuleId, bars: Bar[], made?: MadeSpec): Overlay[] 
     case 'triple': return [L(I.sma(c, 4), 'fast'), L(I.sma(c, 9), 'mid'), L(I.sma(c, 18), 'main')];
     case 'macd': return [L(I.ema(c, 12), 'fast'), L(I.ema(c, 26), 'main')];
     case 'smart': return [L(I.sma(c, 20), 'main')];
-    case 'rsi2': return [L(I.sma(c, 5), 'fast'), L(I.sma(c, 200), 'main')];
+    case 'rsi2': case 'rsi2h': case 'rsi2q': return [L(I.sma(c, 5), 'fast'), L(I.sma(c, 200), 'main')];
+    case 'ema921h': return [L(I.ema(c, 9), 'fast'), L(I.ema(c, 21), 'main')];
     case 'boll': { const b = I.boll(c); return [L(b.up, 'main'), L(b.mid, 'mid'), L(b.lo, 'main')]; }
     case 'break': return [L(prevHigh(bars, 20), 'up'), L(prevLow(bars, 10), 'down')];
     case 'turtle2': return [L(prevHigh(bars, 55), 'up'), L(prevLow(bars, 20), 'down')];
@@ -400,12 +582,15 @@ export function overlays(rule: RuleId, bars: Bar[], made?: MadeSpec): Overlay[] 
 export type Pane = { kind: 'mom'; days: number } | { kind: 'rsi'; period: number; levels: number[] };
 export function paneOf(rule: RuleId, made?: MadeSpec): Pane | null {
   if (made) return specPane(made);
+  const same = SAME_AS[rule as ShortRule];
+  if (same) return paneOf(same);
   switch (rule) {
     case 'tsmom': case 'multiTrend': case 'dualMom': return { kind: 'mom', days: 365 };
     case 'cryptoMom': return { kind: 'mom', days: 28 };
     case 'rsi': return { kind: 'rsi', period: 14, levels: [30, 55] };
     case 'rsiDca': return { kind: 'rsi', period: 14, levels: [35, 65] };
     case 'rsi2': return { kind: 'rsi', period: 2, levels: [5] };
+    case 'rsi2h': case 'rsi2q': return { kind: 'rsi', period: 2, levels: [10] };
     default: return null;
   }
 }
@@ -421,9 +606,19 @@ function stats(rets: number[], perDay = 1) {
  * all the history there is). Fees on every entry and exit. A younger coin is scored over what it has after the
  * rule's warm-up; with too little left the agent is not offered at all.
  */
-export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window = WINDOW, ref?: Bar[]): Agent | null {
+/** What a rule holds each day: in or out, or for a weight rule the share of the money after its rebalance band. */
+export function exposure(rule: PositionRule, bars: Bar[], ref?: Bar[]): Exposure[] {
+  return isWeightRule(rule) ? banded(targets(rule, bars), BAND[rule]) : positions(rule, bars, ref);
+}
+export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window?: number, ref?: Bar[]): Agent | null {
   const def = POSITION_RULES.find((r) => r.id === rule)!;
-  return run({ id: `${rule}-${market.symbol}`, rule, style: def.style, risk: def.risk }, positions(rule, bars, ref), NEED[rule] ?? WARMUP, market, bars, window);
+  // `bars` are candles of the rule's interval (madeHistory for a short-term rule); the window is in days.
+  const iv = ruleInterval(rule);
+  const a = run({ id: `${rule}-${market.symbol}`, rule, style: def.style, risk: def.risk }, exposure(rule, bars, ref), NEED[rule] ?? WARMUP, market, bars, window ?? WINDOW_DAYS[iv], PER_DAY[iv]);
+  if (!a) return null;
+  // A weight agent's live signal: today's target share (before the band) and its band; the runner rebalances on it.
+  const sized = isWeightRule(rule) && bars.length ? { target: clamp01(targets(rule, bars)[bars.length - 1]), band: BAND[rule] } : {};
+  return { ...a, ...sized, ...(iv !== '1d' ? { interval: iv } : {}) };
 }
 /**
  * A made agent, scored exactly like the built-in ones: same fees, same decision code, same numbers. `bars` are
@@ -440,7 +635,14 @@ export async function scoreMadeLive(spec: MadeSpec, market: cex.Market, window?:
 }
 /** An intraday agent needs at least this many days of its candles after its look-back to be scored at all. */
 const MIN_INTRADAY_DAYS = 30;
-function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: boolean[], need: number, market: cex.Market, bars: Bar[], window: number, perDay = 1): Agent | null {
+/**
+ * The position on each candle: in or out (boolean), or a share of the money between 0 and 1 (a number, for rules that
+ * size their exposure, e.g. by volatility). The fee is paid on the share that changes hands, so a boolean rule pays
+ * exactly what it always did.
+ */
+export type Exposure = boolean | number;
+const share = (x: Exposure | undefined) => (typeof x === 'number' ? Math.min(1, Math.max(0, Number.isFinite(x) ? x : 0)) : x ? 1 : 0);
+function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: Exposure[], need: number, market: cex.Market, bars: Bar[], window: number, perDay = 1): Agent | null {
   const { rule } = who, def = who;
   // The window is in days; on intraday candles it covers that many days' worth of candles.
   const span = window === Infinity ? Infinity : Math.round(window * perDay);
@@ -448,18 +650,23 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: b
   if (bars.length - 1 - start < Math.min(perDay === 1 ? MIN_DAYS : MIN_INTRADAY_DAYS * perDay, span)) return null;
   const runnable = isRunnable(market.base);
   const fee = runnable ? FEE_HSKSWAP : FEE_HASHKEY;
-  let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0;
+  let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0, held = 0, moves = 0;
   const rets: number[] = [];
   const equity: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
   const bench: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
   const marks: Mark[] = [];
   let entry = 0;
   for (let i = start; i < bars.length - 1; i++) {
-    const was = i > start && pos[i - 1], now = pos[i];
+    const was = i > start ? share(pos[i - 1]) : 0, now = share(pos[i]);
     let day = 1;
-    if (now && !was) { day *= 1 - fee; trades++; entry = bars[i].close; marks.push({ time: bars[i].time, side: 'buy', price: entry }); }
-    if (!now && was) { day *= 1 - fee; marks.push({ time: bars[i].time, side: 'sell', price: bars[i].close, ret: (bars[i].close / entry) * (1 - fee) ** 2 - 1 }); }
-    if (now) { day *= bars[i + 1].close / bars[i].close; inDays++; }
+    if (now > 0 && was === 0) { trades++; entry = bars[i].close; marks.push({ time: bars[i].time, side: 'buy', price: entry }); }
+    if (now === 0 && was > 0) marks.push({ time: bars[i].time, side: 'sell', price: bars[i].close, ret: (bars[i].close / entry) * (1 - fee) ** 2 - 1, ...(was < 1 ? { mult: 0 } : {}) });
+    // A weight agent also resizes while it holds: each change is a trade, marked with the new share.
+    if (now > 0 && was > 0 && now !== was) marks.push({ time: bars[i].time, side: now > was ? 'buy' : 'sell', price: bars[i].close, mult: Math.round(now * 100) / 100, resize: true });
+    if (now > 0 && was === 0 && now < 1) marks[marks.length - 1].mult = Math.round(now * 100) / 100;
+    if (now !== was) { day *= 1 - fee * Math.abs(now - was); moves++; }
+    held += now;
+    if (now > 0) { const r = bars[i + 1].close / bars[i].close; day *= now === 1 ? r : 1 + now * (r - 1); inDays++; }
     eq *= day;
     rets.push(day - 1);
     peak = Math.max(peak, eq);
@@ -469,13 +676,13 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: b
   }
   const steps = bars.length - 1 - start;
   const days = perDay === 1 ? steps : Math.round(steps / perDay);
-  const live = pos[bars.length - 1];
+  const size = share(pos[bars.length - 1]), live = size > 0;
   return {
     id: who.id, kind: 'position', rule, style: def.style, risk: def.risk, tier: TIER[rule], base: market.base,
     runnable, source: 'hashkey', market, fee,
     days, from: bars[start].time, to: bars[bars.length - 1].time,
     total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets, perDay),
-    trades, inMarket: inDays / steps, equity, bench, marks, live, mult: live ? 1 : 0, price: bars[bars.length - 1].close,
+    trades, inMarket: inDays / steps, exposure: held / steps, moves, equity, bench, marks, live, mult: size, price: bars[bars.length - 1].close,
     seam: (seams.get(market.symbol) ?? 0) > bars[start].time ? seams.get(market.symbol) : undefined,
   };
 }
@@ -534,7 +741,8 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
 export async function rescore(a: Agent, window: number): Promise<Agent | null> {
   if (a.made) return a.market ? scoreMadeLive(a.made, a.market, window) : null;
   if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), window) : null;
-  return a.market ? scorePosition(a.rule as PositionRule, a.market, await hashkeyDaily(a.market), window, await refBars(a.market)) : null;
+  const iv = ruleInterval(a.rule);
+  return a.market ? scorePosition(a.rule as PositionRule, a.market, await madeHistory(a.market, iv), window, iv === '1d' ? await refBars(a.market) : undefined) : null;
 }
 
 /** An agent that never traded in the window has no worst drop to judge, so it does not outrank one that did. */
@@ -561,9 +769,23 @@ export const beatsHold = (a: Pick<Agent, 'total' | 'hold'>) => a.total > a.hold;
 export const byMerit = (a: Agent, b: Agent) => Number(!active(a)) - Number(!active(b)) || Number(!beatsHold(a)) - Number(!beatsHold(b)) || a.tier - b.tier || Number(idle(a)) - Number(idle(b)) || a.maxDd - b.maxDd || b.total - a.total || a.id.localeCompare(b.id);
 
 /** The position agents for any HashKey market (the chart's market may not be in the listing). */
-export async function positionAgents(m: cex.Market): Promise<Agent[]> {
+export async function positionAgents(m: cex.Market, withRetired = false): Promise<Agent[]> {
   const [bars, ref] = await Promise.all([hashkeyDaily(m), refBars(m)]);
-  return POSITION_RULES.map((r) => scorePosition(r.id, m, bars, WINDOW, ref)).filter((a): a is Agent => a !== null);
+  const daily = POSITION_RULES.filter((r) => ruleInterval(r.id) === '1d' && (withRetired || !isRetired({ rule: r.id, base: m.base }))).map((r) => scorePosition(r.id, m, bars, WINDOW, ref));
+  return [...daily, ...await shortAgents(m)].filter((a): a is Agent => a !== null);
+}
+/**
+ * The short-term agents of a coin the vault can trade (BTC, ETH and HSK): each on its own hourly or 4-hour closed
+ * candles. A coin whose shorter candles do not load still gets its daily agents.
+ */
+export async function shortAgents(m: cex.Market): Promise<Agent[]> {
+  if (!isRunnable(m.base)) return [];
+  const rules = POSITION_RULES.filter((r) => ruleInterval(r.id) !== '1d');
+  const sets = await Promise.all((['1h', '4h'] as const).map(async (iv) => {
+    const bars = await madeHistory(m, iv).catch(() => [] as Bar[]);
+    return bars.length ? rules.filter((r) => ruleInterval(r.id) === iv).map((r) => scorePosition(r.id, m, bars)) : [];
+  }));
+  return sets.flat().filter((a): a is Agent => a !== null);
 }
 /** The agents someone made for this market, scored on the same candles. */
 export async function madeAgents(m: cex.Market): Promise<Agent[]> {
@@ -609,5 +831,10 @@ export async function agentById(id: string): Promise<Agent | null> {
   }
   const m = cex.MARKETS.find((x) => x.symbol === rest);
   if (!m) return null;
-  return (await positionAgents(m)).find((a) => a.id === id) ?? null;
+  // Retired agents are still found here, so anyone who hired one keeps it working.
+  return (await positionAgents(m, true)).find((a) => a.id === id) ?? null;
 }
+
+/** The backtest engine itself, for rules that size their exposure (0..1 per candle) or add a stop of their own. */
+export const backtest = (id: string, rule: RuleId, pos: Exposure[], need: number, market: cex.Market, bars: Bar[], window: number, perDay = 1) =>
+  run({ id, rule, style: 'trend', risk: 3 }, pos, need, market, bars, window, perDay);
