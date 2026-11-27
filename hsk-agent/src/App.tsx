@@ -422,7 +422,7 @@ function Shell() {
           onHire={setSheet} onEdit={(id) => { const h = hiredRef.current.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
           onPause={pause} onResume={resume} onApprove={(id, o) => void approve(id, o)} onDecline={decline}
           onExecuted={(x) => { record(x); reloadVault(); }} onGoto={(v) => { go(v); if (window.matchMedia(NARROW).matches) setMoaOpen(false); }} onShow={openBacktest} onBuild={(text) => openBuilder({ text, coin: tradeCtx.asset })}
-          onAttention={attention} onClose={() => setMoaOpen(false)} />
+          onAttention={attention} onClose={() => setMoaOpen(false)} onVaultChanged={reloadVault} />
       </div>
       {moaOpen && <div className="moa-scrim" onClick={() => setMoaOpen(false)} aria-hidden />}
       {!moaOpen && (

@@ -5,9 +5,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { checkFactory, createVault, execConfigFromEnv, executeTrade, feesReceived, forOwner, serviceOn, vaultStatus, type CreatorRef, type ExecConfig, type FactoryCheck } from './executor.ts';
 import * as session from './session.ts';
 import { openStore, storeFile, type AutoStore } from './autoStore.ts';
-import { autoBlock, startRunner } from './autoRunner.ts';
+import { autoBlock, newRunnerState, runnerEvery, startRunner, type RunnerState } from './autoRunner.ts';
 import { frameCheck } from './nanoFrame.ts';
-import { cleanHistory, issueTicket, MOA_LIMITS, rateLimiter, ticketBook } from './guard.ts';
+import { cleanHistory, cleanOrder, issueTicket, MOA_LIMITS, rateLimiter, ticketBook } from './guard.ts';
 import type { HiredAgent } from '../src/runner.ts';
 import { openShares, sharesFile, type ShareStore } from './shareStore.ts';
 import { openSpreads, spreadsFile, startRecorder, type SpreadStore } from './spreadStore.ts';
@@ -63,6 +63,8 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
   setOnchainSource(async (asset) => (asset === 'HSK' ? onchain.view() : null));
   // Trades Moa proposes run only from their Confirm button's single-use ticket; Moa's answers are rationed.
   const tickets = ticketBook(secret);
+  // The auto runner's last looks, for /api/auto/status; set when the runner starts (only where the server can trade).
+  let runner: RunnerState | null = null;
   const num = (v: string | undefined, d: number) => (Number(v) > 0 ? Number(v) : d);
   const askLimit = rateLimiter({ perMinute: num(env.MOA_AI_PER_MINUTE, MOA_LIMITS.perMinute), perDayKnown: num(env.MOA_AI_PER_DAY, MOA_LIMITS.perDayKnown), perDayAnon: num(env.MOA_AI_PER_DAY_ANON, MOA_LIMITS.perDayAnon), perDayAll: num(env.MOA_AI_PER_DAY_ALL, MOA_LIMITS.perDayAll) });
   // Every trade the server sends costs the agent wallet gas: at most a few a minute and 100 a day per wallet.
@@ -139,6 +141,17 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       if (req.url === '/api/auto' && req.method === 'GET') {
         if (!who) return send(401, { error: 'Log in first.' });
         return send(200, { agents: store.list(who) });
+      }
+      // Is the auto runner alive, when did it last look and when does it look next? Public. What each of my agents
+      // decided at that look, and why, only for the wallet that logged in (and only its own agents).
+      if (req.url.split('?')[0] === '/api/auto/status' && req.method === 'GET') {
+        const q = new URL(req.url, 'http://x').searchParams.get('owner');
+        const run = runner ? { on: true, every: runner.every, startedAt: runner.startedAt, passes: runner.passes, lastPassAt: runner.lastPassAt ?? null, nextAt: runner.nextAt ?? null, error: runner.passError ?? null } : { on: false, why: serviceOn(base) ? 'starting' : 'demo' };
+        const mine = !!who && (!q || q.toLowerCase() === who.toLowerCase());
+        if (!mine) return send(200, { runner: run, now: Date.now() });
+        const look = runner?.owners.get(who!.toLowerCase());
+        const agents = store.list(who!).filter((a) => a.mode === 'auto').map((a) => ({ id: a.id, paused: a.paused, check: runner?.agents.get(a.id) ?? null }));
+        return send(200, { runner: run, now: Date.now(), owner: { lastLookAt: look?.at ?? null, error: look?.error ?? null }, agents });
       }
       if (req.url === '/api/auto' && req.method === 'POST') {
         const body = await posted();
@@ -264,6 +277,22 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         console.log(`[moa] confirmed order for ${who} ${t.order.side} ${t.order.amount} ${t.order.asset}: ${r.ok ? r.txHash : r.reason}`);
         return send(200, { ...r, request: { asset: t.order.asset, side: t.order.side, amount: t.order.amount } });
       }
+      // An order asked for in plain words while the AI is off: the app read it with its fixed parser (no model), and
+      // the server turns it into the same single-use ticket the AI's proposals get. Nothing is sent from here: the
+      // order runs only when this wallet presses Confirm under it, and the vault checks its limits again.
+      if (req.url === '/api/moa/propose' && req.method === 'POST') {
+        const body = await posted();
+        if (!body) return;
+        if (!who) return send(401, { error: 'Log in first.', why: 'login' });
+        if (askLimit.take(`w:${who.toLowerCase()}`, true)) return send(429, { error: 'Too many requests. Wait a minute.' });
+        const o = cleanOrder({ ...body, note: '' });
+        if (!o) return send(400, { error: 'Not an order.' });
+        const mine = await forOwner(base, who);
+        if (!serviceOn(base) || !mine.vault) return send(409, { error: 'There is no vault to send this order from.', why: 'noVault' });
+        const sym = { HSK: 'WHSK', ETH: 'WETH', BTC: 'WBTC' }[o.asset];
+        const note = o.side === 'buy' ? `User asked to buy $${o.amount} of ${sym} on HSKSwap.` : `User asked to sell ${o.amount} ${sym} on HSKSwap.`;
+        return send(200, { proposal: issueTicket(secret, who, { ...o, note }) });
+      }
       // A hired agent's order that the user approved on screen. No model is involved: the order is the
       // agent's own rule, the user pressed the button, and the vault enforces its limits again on-chain.
       // JSON from this origin only, and only for the vault of the wallet that logged in.
@@ -294,7 +323,7 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
     /** Start the agents that work on their own. Only where the server can trade at all. */
     startAuto: () => {
       let stop = () => {};
-      void settle.then(() => { if (serviceOn(base)) stop = startRunner(base, store); });
+      void settle.then(() => { if (serviceOn(base)) { runner = newRunnerState(runnerEvery()); stop = startRunner(base, store, runner); } });
       // The gap recorder runs on every server, trading or not: MOA_SPREAD_MS shortens it for a local trial (one minute at least).
       const stopRec = startRecorder(spreads, Number(env.MOA_SPREAD_MS) || RECORD_EVERY_MS);
       const stopChain = startOnchain('HSK', onchain, Number(env.MOA_ONCHAIN_MS) || READ_EVERY_MS);

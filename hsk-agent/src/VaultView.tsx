@@ -6,6 +6,8 @@ import { useT } from './i18n.ts';
 import type { Quote } from './market.ts';
 import { Icon } from './Icons.tsx';
 import { CopyAddress, StateBox } from './ui.tsx';
+import RunnerPanel from './RunnerPanel.tsx';
+import { useHired } from './store.ts';
 import { asVault, EXPLORER, listVaults, readVault, vaultHistory, vaultLink, type VaultEvent, type VaultListing, type VaultSnapshot } from './vaultRead.ts';
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -61,6 +63,7 @@ function AllVaults({ bad }: { bad: boolean }) {
 
 function OneVault({ address, quotes }: { address: `0x${string}`; quotes: Quote[] }) {
   const { t } = useT();
+  const { hired } = useHired();
   const [snap, setSnap] = useState<VaultSnapshot | null>(null);
   const [events, setEvents] = useState<VaultEvent[] | null>(null);
   const [failed, setFailed] = useState<'' | 'vault' | 'history'>('');
@@ -137,6 +140,8 @@ function OneVault({ address, quotes }: { address: `0x${string}`; quotes: Quote[]
           </ul>
         )}
       </section>
+
+      {snap && <RunnerPanel hired={hired} owner={snap.owner} />}
 
       <section className="vv-card">
         <header className="vv-head"><b>{t.vvHistory}</b><small>{events ? t.vvHistorySub(events.length, trades.length) : ''}</small></header>

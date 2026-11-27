@@ -13,11 +13,13 @@ import { useT } from './i18n.ts';
 import { SlidePill } from './motion.tsx';
 import { Icon as SIcon, Spark } from './Icons.tsx';
 import { limitsText, type VaultInfo } from './parts.tsx';
+import { parseOrder, parseVaultChange, type ChatOrder, type VaultChange } from './chatOrders.ts';
+import { setLimits, setPaused, setStopLoss, type SendResult } from './account.ts';
 import { fmtPrice } from './market.ts';
 import { CopyButton, RichText } from './ui.tsx';
 import { VaultLine } from './VaultCard.tsx';
 import { parse } from './spec.ts';
-import { askMoa, confirmProposal, EXECUTE_WORDS, toStep, type Exec, type Proposal, type StepKey } from './moaClient.ts';
+import { askMoa, confirmProposal, EXECUTE_WORDS, proposeOrder, toStep, type Exec, type Proposal, type StepKey } from './moaClient.ts';
 import { describe, parseIntent, type Plan } from './intent.ts';
 import { reply as offlineReply } from './moa.ts';
 import type { Execution } from './store.ts';
@@ -53,7 +55,7 @@ export type MoaInject = MoaAsk & { n: number };
 export type { Level };
 interface Choice { label: string; act: () => void; primary?: boolean }
 interface Note {
-  id: number; at: number; role: 'moa' | 'you'; text: string; plan?: Plan; goal?: string; execs?: Exec[]; proposals?: Proposal[]; offline?: boolean;
+  id: number; at: number; role: 'moa' | 'you'; text: string; plan?: Plan; goal?: string; execs?: Exec[]; proposals?: Proposal[]; offline?: boolean; demoOrder?: ChatOrder; change?: VaultChange;
   follow: string[]; choices?: Choice[]; chosen?: string; sky?: { level: Level; list: Weather[] };
   agent?: { a: Agent; rec?: { pool: number } }; list?: { agents: Agent[]; coin?: string }; status?: string; hired?: string; order?: { hiredId: string; orderId: string };
 }
@@ -90,7 +92,7 @@ function coinIn(q: string): string | undefined {
   return undefined;
 }
 
-export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agents, agentsFailed, hired, sending, now, onHire, onEdit, onPause, onResume, onApprove, onDecline, onExecuted, onGoto, onShow, onBuild, onAttention, onClose }: {
+export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agents, agentsFailed, hired, sending, now, onHire, onEdit, onPause, onResume, onApprove, onDecline, onExecuted, onGoto, onShow, onBuild, onAttention, onClose, onVaultChanged }: {
   /** The liquidity studio's plan while it is open; Moa fills it from the conversation. */
   lp?: LpPlan | null; onLp?: (p: LpPlan | null) => void;
   quotes: Quote[]; vault: VaultInfo | null; inject?: MoaInject | null; context: MoaContext;
@@ -98,6 +100,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
   onHire: (target: HireTarget) => void; onEdit: (id: string) => void; onPause: (id: string) => void; onResume: (id: string) => void;
   onApprove: (id: string, orderId: string) => void; onDecline: (id: string, orderId: string) => void;
   onExecuted: (x: Execution[]) => void; onGoto: (v: 'trade' | 'agents' | 'mine') => void; onShow: (a: Agent) => void; onBuild: (text: string) => void; onAttention: () => void; onClose?: () => void;
+  /** After the owner's wallet changed the vault's limits, stop-loss or lock from a card here. */
+  onVaultChanged?: () => void;
 }) {
   const { t, lang } = useT();
   const [notes, setNotes] = useState<Note[]>([]);
@@ -396,6 +400,17 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     return true;
   };
 
+  /** An order read without the AI: a server ticket and the Confirm card when this wallet has a vault; otherwise the
+   *  order as a demo card, and what it needs to be real. "All" of a coin is what the vault holds of it. */
+  const offlineOrder = async (o: ChatOrder) => {
+    const sym = { HSK: 'WHSK', ETH: 'WETH', BTC: 'WBTC' }[o.asset];
+    const amount = o.amount === 'all' ? Number(vault?.holdings?.find((x) => x.symbol === sym)?.amount ?? 0) : o.amount;
+    if (!(amount > 0)) { push({ role: 'moa', text: t.offOrderNone(o.asset), offline: true, follow: [] }); return; }
+    const r = await proposeOrder({ asset: o.asset, side: o.side, amount });
+    if (r.ok) { push({ role: 'moa', text: t.offOrderCard, proposals: [r.p], offline: true, follow: [] }); return; }
+    push({ role: 'moa', text: r.why === 'login' ? t.offOrderLogin : r.why === 'noVault' ? t.offOrderNoVault : t.offOrderFailed, demoOrder: { ...o, amount }, offline: true, follow: [] });
+  };
+
   /** Agent requests Moa answers itself, without the AI. Returns true when handled. */
   const local = (q: string): boolean => {
     const list = hiredRef.current;
@@ -405,6 +420,14 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       if (!running.length) { say({ text: t.nothingToStop, follow: [] }, 400); return true; }
       running.forEach((h) => onPause(h.id));
       say({ text: t.pausedSay(running.map((h) => hiredName(t, h)).join(', ')), follow: [] }, 400);
+      if (vault?.configured && !vault.paused) say({ text: t.vcxAlsoLock, change: { kind: 'lock', on: true }, follow: [] }, 900);
+      return true;
+    }
+    // Limits, stop-loss, lock: Moa reads the words and shows the change; only the owner's wallet can sign it.
+    const change = parseVaultChange(q);
+    if (change) {
+      if (!vault?.configured) { say({ text: vault?.signedIn ? t.vcxNoVault : t.vcxLogin, follow: [] }, 300); return true; }
+      say({ text: t.vcxSay, change, follow: [] }, 300);
       return true;
     }
     if (VAULT_WORDS.test(q) && vault?.configured) {
@@ -491,6 +514,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       // No server or the AI is unreachable: answer with the on-device parser, clearly marked. A question about a
       // coin is answered from the market data the briefing uses rather than with a request for a goal.
       const p = parseIntent(q);
+      const order = parseOrder(q);
+      if (order) { await offlineOrder(order); setBusy(null); lastNoteAt.current = Date.now(); return; }
       if (!p.steps.length && marketOffline(q)) { setBusy(null); lastNoteAt.current = Date.now(); return; }
       push({ role: 'moa', text: offlineReply(p, quotes, lang), plan: p.steps.length ? p : undefined, goal: q, offline: true, follow: [] });
     }
@@ -635,6 +660,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
               </div>
             )}
             {n.execs?.map((x, k) => <Receipt key={k} x={x} />)}
+            {n.demoOrder && <DemoOrderCard o={n.demoOrder} />}
+            {n.change && vault && <VaultChangeCard change={n.change} vault={vault} onDone={() => onVaultChanged?.()} />}
             {n.proposals?.map((p) => <ProposalCard key={p.token} p={p} vault={vault} onDone={(x) => onExecuted([{ at: Date.now(), ok: x.ok, asset: x.request.asset, side: x.request.side, amount: x.request.amount, reason: x.reason, txHash: x.txHash, explorerUrl: x.explorerUrl, amountIn: x.amountIn, amountOut: x.amountOut, tokenIn: x.tokenIn, tokenOut: x.tokenOut }])} />)}
             {n.plan && n.plan.steps.length > 0 && (
               <div className="plan-mini">
@@ -762,6 +789,66 @@ function ProposalCard({ p, vault, onDone }: { p: Proposal; vault: VaultInfo | nu
           <button className="btn-primary" disabled={state === 'sending'} onClick={() => void go()}>{state === 'sending' ? <span className="spin" aria-hidden /> : null}{t.executeBtn}</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** An order the app read while it could not get a ticket: shown as it would be sent, marked as a demo, no button. */
+function DemoOrderCard({ o }: { o: ChatOrder }) {
+  const { t } = useT();
+  const amount = o.amount === 'all' ? 0 : o.amount;
+  return (
+    <div className="proposal off demo" role="group" aria-label={t.confirmTitle}>
+      <b>{t.confirmTitle} <span className="fork-badge">{t.offDemoTag}</span></b>
+      <p className="proposal-what">{o.side === 'buy' ? t.propBuy(money(amount), o.asset) : t.propSell(qtyText(amount), o.asset)}</p>
+      <p className="muted small">{t.offDemoBody}</p>
+    </div>
+  );
+}
+
+/**
+ * A change to the vault's own settings that Moa read from the chat: the difference, and a button that asks the
+ * owner's wallet to sign it. Moa never signs; until the wallet does, nothing changes.
+ */
+function VaultChangeCard({ change, vault, onDone }: { change: VaultChange; vault: VaultInfo; onDone: () => void }) {
+  const { t } = useT();
+  const [state, setState] = useState<'open' | 'signing' | 'no' | SendResult>('open');
+  const usd = (v?: string | number | null) => (v === undefined || v === null ? t.lmNoLimit : `$${money(Number(v))}`);
+  // With a daily limit and no separate per-trade one, the contract holds the daily amount as both.
+  const tradeNow = vault.maxTradeUsdt !== undefined && vault.maxTradeUsdt !== vault.maxDailyUsdt ? vault.maxTradeUsdt : undefined;
+  const rows: [string, string, string][] = change.kind === 'limits'
+    ? [...(change.perDay !== undefined ? [[t.lmDay, usd(vault.maxDailyUsdt), usd(change.perDay)] as [string, string, string]] : []),
+       ...(change.perTrade !== undefined ? [[t.lmTrade, usd(tradeNow), usd(change.perTrade)] as [string, string, string]] : [])]
+    : change.kind === 'stop' ? [[t.vcxStop, vault.stopLossBps ? `−${vault.stopLossBps / 100}%` : t.vvOff, change.pct ? `−${change.pct}%` : t.vvOff]]
+      : [[t.vcxLock, vault.paused ? t.vvPaused : t.vvOpenNow, change.on ? t.vvPaused : t.vvOpenNow]];
+  const same = rows.every(([, a, b]) => a === b);
+  const sign = async () => {
+    if (!vault.net || !vault.vault) return;
+    setState('signing');
+    let r: SendResult;
+    if (change.kind === 'limits') {
+      const day = change.perDay !== undefined ? change.perDay : vault.maxDailyUsdt !== undefined ? Number(vault.maxDailyUsdt) : null;
+      const trade = change.perTrade !== undefined ? change.perTrade : tradeNow !== undefined ? Number(tradeNow) : null;
+      r = await setLimits(vault.net, vault.vault, trade === null ? null : String(trade), day === null ? null : String(day), vault.maxSlippageBps ?? 150);
+    } else if (change.kind === 'stop') r = await setStopLoss(vault.net, vault.vault, Math.round(change.pct * 100));
+    else r = await setPaused(vault.net, vault.vault, change.on);
+    setState(r);
+    if (r.ok) onDone();
+  };
+  const done = typeof state === 'object';
+  return (
+    <div className={`proposal vcx${state === 'no' ? ' off' : ''}`} role="group" aria-label={t.vcxTitle}>
+      <b>{t.vcxTitle}</b>
+      <dl className="vcx-diff">{rows.map(([k, a, b]) => <div key={k}><dt>{k}</dt><dd><s>{a}</s> → <b>{b}</b></dd></div>)}</dl>
+      <p className="muted small">{same ? t.vcxSame : t.vcxBody}</p>
+      {done ? ((state as SendResult).ok ? <p className="vcx-ok"><SIcon name="check" size={14} />{t.vcxDone} <a href={`${vault.net?.explorer ?? 'https://hsk.blockscout.com'}/tx/${(state as { txHash: string }).txHash}`} target="_blank" rel="noreferrer">{t.viewTx} ↗</a></p>
+        : <p className="muted small warn">{(state as { why: string }).why === 'rejected' ? t.txRejected : t.txFailed((state as { detail?: string }).detail ?? '')}</p>)
+        : state === 'no' ? <p className="muted small">{t.propCancelled}</p> : (
+          <div className="proposal-act">
+            <button className="btn-text" disabled={state === 'signing'} onClick={() => setState('no')}>{t.cancel}</button>
+            <button className="btn-primary" disabled={state === 'signing' || same} onClick={() => void sign()}>{state === 'signing' ? <span className="spin" aria-hidden /> : <SIcon name="shield" size={14} />}{state === 'signing' ? t.txWaiting : t.vcxSign}</button>
+          </div>
+        )}
     </div>
   );
 }

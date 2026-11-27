@@ -21,6 +21,8 @@ import { RollNum } from './motion.tsx';
 import { pct } from './AgentCard.tsx';
 import type { CSSProperties } from 'react';
 import { MyShared } from './Shared.tsx';
+import RunnerPanel from './RunnerPanel.tsx';
+import { useSession } from './account.ts';
 
 const loc = () => (document.documentElement.lang === 'en' ? 'en-US' : 'ko-KR');
 const when = (t: number) => new Date(t).toLocaleString(loc(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -38,6 +40,7 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
 }) {
   const { t } = useT();
   const toast = useToast();
+  const signedIn = !!useSession();
   const [removing, setRemoving] = useState<HiredAgent | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   // Someone with no agent yet gets one ready to start: Moa's pick for bitcoin at the level they chose.
@@ -173,6 +176,7 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
       {/* The agents this wallet made and shared, with their real hires and the fees the vaults paid it. */}
       <MyShared onBuild={onBuild} />
 
+      {(signedIn || hired.some((h) => h.mode === 'auto')) && <RunnerPanel hired={hired} />}
       <VaultCard vault={vault} />
       <p className="muted small">{t.mineStopNote} <a href="?trust">{t.navTrust}</a></p>
 

@@ -16,6 +16,19 @@ export interface MoaCtx { level?: 'new' | 'some' | 'pro' | null; asset?: string 
  *  without the Confirm button under a proposed order (its server ticket, see confirmProposal). */
 export const EXECUTE_WORDS = /(실행|execute)/i;
 
+/**
+ * An order read from the user's words by the app's fixed reader while the AI is off: the server returns the same
+ * single-use ticket Moa's proposals carry, or says why it cannot (not logged in, no vault on this server).
+ */
+export async function proposeOrder(o: { asset: 'HSK' | 'ETH' | 'BTC'; side: 'buy' | 'sell'; amount: number }): Promise<{ ok: true; p: Proposal } | { ok: false; why: 'login' | 'noVault' | 'failed' }> {
+  try {
+    const r = await fetch('/api/moa/propose', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify(o) });
+    const j = (await r.json().catch(() => null)) as { proposal?: Proposal; why?: string } | null;
+    if (r.ok && j?.proposal) return { ok: true, p: j.proposal };
+    return { ok: false, why: r.status === 401 ? 'login' : j?.why === 'noVault' ? 'noVault' : 'failed' };
+  } catch { return { ok: false, why: 'failed' }; }
+}
+
 /** The Confirm button: send back the server's single-use ticket for exactly the order shown. */
 export async function confirmProposal(p: Proposal): Promise<Exec> {
   const request = { asset: p.asset, side: p.side, amount: p.amount };
