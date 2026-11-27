@@ -509,11 +509,13 @@ export const ACTIVE_DAYS = 30;
  * months has a small worst drop because it did nothing; it should not lead a list of agents to hire today.
  */
 export const active = (a: Agent, now = Date.now() / 1000) => a.live || (lastTradeDays(a, now) ?? Infinity) <= ACTIVE_DAYS;
+/** It made more than buying the coin at the start of the same window and holding it. */
+export const beatsHold = (a: Pick<Agent, 'total' | 'hold'>) => a.total > a.hold;
 /**
- * The default order everywhere: agents working now first, then published classics, then the smaller worst drop,
- * then the better return. Agents that never traded in the window come last within a group.
+ * The default order everywhere: agents working now first; among them, the ones that beat just holding; then
+ * published classics, then the smaller worst drop, then the better return. Agents that never traded come last.
  */
-export const byMerit = (a: Agent, b: Agent) => Number(!active(a)) - Number(!active(b)) || a.tier - b.tier || Number(idle(a)) - Number(idle(b)) || a.maxDd - b.maxDd || b.total - a.total || a.id.localeCompare(b.id);
+export const byMerit = (a: Agent, b: Agent) => Number(!active(a)) - Number(!active(b)) || Number(!beatsHold(a)) - Number(!beatsHold(b)) || a.tier - b.tier || Number(idle(a)) - Number(idle(b)) || a.maxDd - b.maxDd || b.total - a.total || a.id.localeCompare(b.id);
 
 /** The position agents for any HashKey market (the chart's market may not be in the listing). */
 export async function positionAgents(m: cex.Market): Promise<Agent[]> {

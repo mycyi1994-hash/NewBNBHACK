@@ -178,3 +178,10 @@ test('recommend skips agents already hired when another fits', () => {
   assert.equal(recommend([a, b], { coin: 'BTC', exclude: ['break-BTC'] })!.pick.id, 'golden-BTC');
   assert.equal(recommend([a], { coin: 'BTC', exclude: ['break-BTC'] })!.pick.id, 'break-BTC', 'nothing else fits, so the hired one is still shown');
 });
+
+test('among agents working now, one that beat just holding comes before a steadier one that did not', () => {
+  const now = Date.now() / 1000;
+  const steadyLoser = fake({ id: 'trend200-BTC', rule: 'trend200', tier: 1, maxDd: 0.1, total: 0.2, hold: 0.6, live: true });
+  const winner = fake({ id: 'break-BTC', rule: 'break', tier: 1, maxDd: 0.35, total: 0.9, hold: 0.6, marks: [{ time: now - 3 * DAY, side: 'buy', price: 1 }] });
+  assert.equal(recommend([steadyLoser, winner], { coin: 'BTC', level: 'pro' })!.pick.id, 'break-BTC');
+});

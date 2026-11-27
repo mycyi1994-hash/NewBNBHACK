@@ -25,7 +25,7 @@ import { loadWeather, skyOf, type Weather } from './weather.ts';
 import type { LpPlan } from './lp.ts';
 import { parseLp, reachOf, widthFor } from './lpTalk.ts';
 import { POOLS } from './dex.ts';
-import { isRunnable, type Agent } from './agents.ts';
+import { beatsHold, isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
 import { AgentCard, agentName, drop, explainAgent, Face } from './AgentCard.tsx';
 import type { HireTarget } from './HireSheet.tsx';
@@ -192,7 +192,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     const hiredIds = hiredRef.current.flatMap((h) => (h.source.type === 'market' ? [h.source.agentId] : []));
     const r = recommend(list, { coin, level: levelRef.current, exclude: hiredIds });
     if (!r) { say({ text: t.agentsFailed, follow: [] }); return; }
-    const text = coin && r.scope === 'all' ? t.recNoCoin(coin) : r.scope === 'coin' ? t.recCoin(r.pick.base) : t.recAll;
+    const beat = beatsHold(r.pick);
+    const text = coin && r.scope === 'all' ? t.recNoCoin(coin) : r.scope === 'coin' ? t.recCoin(r.pick.base, beat) : t.recAll(beat);
     agentNote(r.pick, text, { pool: r.pool });
   };
   const othersNote = (a: Agent) => {
