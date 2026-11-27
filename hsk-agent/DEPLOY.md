@@ -31,6 +31,9 @@ Environment variables:
 Optional: `MOA_RPC_URL` (default `https://mainnet.hsk.xyz`), `MOA_MAX_VAULTS_PER_DAY` (default 20: how many
 vaults the agent wallet will pay to create per day).
 
+`/api/health` shows `dataDir` (where the agents on auto are kept) and `autoOwners` (how many wallets have logged
+in). If `autoOwners` falls back to 0 after a redeploy, the disk is not mounted at `dataDir`.
+
 The agent key is the only secret that touches funds. It can trade inside each vault's limits and pay gas from its
 own wallet; it cannot withdraw from any vault. Anyone who can read the service's environment can read it.
 

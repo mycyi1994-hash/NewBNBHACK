@@ -59,7 +59,8 @@ function useVault() {
       // The server no longer knows this session (it expired, or the server restarted with a new secret).
       if (token && j.signedIn === false) logOut();
       setV(j);
-    }).catch(() => setV({ configured: false }));
+      // One failed check (the server restarting, the network) keeps what was known instead of flipping to "demo".
+    }).catch(() => setV((had) => had ?? { configured: false }));
   }, [token]);
   useEffect(() => { setV(null); load(); const t = setInterval(load, 30_000); return () => clearInterval(t); }, [load]);
   const create = useCallback((address: string) => {

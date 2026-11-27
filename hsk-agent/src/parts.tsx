@@ -25,9 +25,10 @@ export function limitsText(t: { limTrade: (a: string) => string; limDay: (a: str
 }
 
 /** Why orders are or are not real right now. */
-export type VaultWhy = 'on' | 'login' | 'making' | 'off';
+export type VaultWhy = 'on' | 'login' | 'making' | 'wait' | 'off';
 export function vaultWhy(v: VaultInfo | null): VaultWhy {
-  if (v?.configured) return 'on';
-  if (!v?.service) return 'off';
+  if (!v) return 'wait';
+  if (v.configured) return 'on';
+  if (!v.service) return 'off';
   return v.signedIn ? 'making' : 'login';
 }

@@ -1,7 +1,7 @@
 // The vault, shown the same way wherever it appears: what it is (connected or demo), the limits the contract
 // enforces, and how much of today's limit is used. Three sizes: the sidebar line, the line under Moa's input,
 // and the full card on "My agents". Without a vault nothing is sent, and the card says so calmly, once.
-import { limitsText, vaultWhy, type VaultInfo } from './parts.tsx';
+import { limitsText, vaultWhy, type VaultInfo, type VaultWhy } from './parts.tsx';
 import { useT } from './i18n.ts';
 import { Icon } from './Icons.tsx';
 import { CopyAddress } from './ui.tsx';
@@ -20,6 +20,15 @@ function Gauge({ frac, label }: { frac: number; label: string }) {
   return <span className={`gauge${frac >= 0.9 ? ' full' : ''}`} role="img" aria-label={label}><i style={{ width: `${Math.round(frac * 100)}%` }} /></span>;
 }
 
+/** The badge next to "Vault": connected, or what is missing. "Demo mode" is only for a server that cannot trade. */
+function stateText(t: ReturnType<typeof useT>['t'], why: VaultWhy): string {
+  return why === 'on' ? t.vcLive : why === 'login' ? t.vcAskLogin : why === 'making' ? t.vcMakingTag : why === 'wait' ? t.vcWait : t.vcDemo;
+}
+/** The sentence that goes with it when there is no vault yet. */
+function stateLine(t: ReturnType<typeof useT>['t'], why: VaultWhy): string {
+  return why === 'login' ? t.vcLoginLine : why === 'making' ? t.acMaking : why === 'wait' ? t.vcWait : t.vcDemoLine;
+}
+
 /** Sidebar: one row. Connected shows what is left today with a thin gauge; demo says so in two words. */
 export function VaultMini({ vault }: { vault: VaultInfo | null }) {
   const { t } = useT();
@@ -27,10 +36,10 @@ export function VaultMini({ vault }: { vault: VaultInfo | null }) {
   const u = on ? vaultUse(vault!) : null;
   const why = vaultWhy(vault);
   return (
-    <div className={`vault-mini${on ? ' on' : ''}`} data-tip={on ? (u!.none ? limitsText(t, vault!) : t.vcSide(usd(u!.left))) : why === 'login' ? t.vcLoginLine : why === 'making' ? t.acMaking : t.vcDemoLine}>
+    <div className={`vault-mini${on ? ' on' : ''}`} data-tip={on ? (u!.none ? limitsText(t, vault!) : t.vcSide(usd(u!.left))) : stateLine(t, why)}>
       <span className="nav-icon"><Icon name="shield" size={18} /></span>
       <span className="nav-text">
-        <span className="vm-top"><b>{t.mineVault}</b><span className={`vm-state${on ? ' on' : ''}`}><i />{on ? t.vcLive : t.vcDemo}</span></span>
+        <span className="vm-top"><b>{t.mineVault}</b><span className={`vm-state${on ? ' on' : ''}`}><i />{stateText(t, why)}</span></span>
         {u && (u.none ? <small>{limitsText(t, vault!)}</small> : <><Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} /><small>{t.vcSide(usd(u.left))}</small></>)}
       </span>
     </div>
@@ -41,7 +50,7 @@ export function VaultMini({ vault }: { vault: VaultInfo | null }) {
 export function VaultLine({ vault }: { vault: VaultInfo | null }) {
   const { t } = useT();
   const why = vaultWhy(vault);
-  if (!vault?.configured) return <><Icon name="shield" size={14} /><span>{t.vcDemo}</span><span className="vl-sep">·</span><span>{why === 'login' ? t.vcLoginShort : why === 'making' ? t.vcMaking : t.vcDemoShort}</span></>;
+  if (!vault?.configured) return <><Icon name="shield" size={14} /><span>{stateText(t, why)}</span>{why !== 'wait' && why !== 'making' && <><span className="vl-sep">·</span><span>{why === 'login' ? t.vcLoginShort : t.vcDemoShort}</span></>}</>;
   const u = vaultUse(vault);
   const empty = num(vault.usdtBalance) === 0 && !vault.holdings?.length;
   return (
@@ -64,7 +73,7 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
       <header className="vc-head">
         <span className="vc-ic" aria-hidden><Icon name="shield" size={18} /></span>
         <b>{t.mineVault}</b>
-        <span className={`vm-state${on ? ' on' : ''}`}><i />{on ? t.vcLive : t.vcDemo}</span>
+        <span className={`vm-state${on ? ' on' : ''}`}><i />{stateText(t, vaultWhy(vault))}</span>
         {on && vault?.localFork && <span className="fork-badge">{t.localFork}</span>}
         {on && vault!.vault && <span className="vc-addr"><CopyAddress value={vault!.vault} label={t.copyAddress} done={t.addressCopied} />{vault!.explorerUrl && <a href={vault!.explorerUrl} target="_blank" rel="noreferrer">{t.vcExplorer} ↗</a>}</span>}
       </header>
@@ -84,7 +93,7 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
             <div><dt>{t.balance}</dt><dd>{usd(num(vault!.usdtBalance))}</dd></div>
           </dl>
         </div>
-      ) : <p className="vc-demo">{vaultWhy(vault) === 'login' ? t.vcLoginLine : vaultWhy(vault) === 'making' ? t.acMaking : t.vcDemoLine}</p>}
+      ) : <p className="vc-demo">{stateLine(t, vaultWhy(vault))}</p>}
       <ul className="vc-safe">{t.vcSafe.map((s) => <li key={s}><Icon name="check" size={14} />{s}</li>)}</ul>
     </section>
   );

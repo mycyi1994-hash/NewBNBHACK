@@ -118,7 +118,7 @@ export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
         const dir = process.cwd();
         const files = ['.env', '.env.local', '.env.development', '.env.development.local'].filter((f) => existsSync(join(dir, f)));
         const key = env.ANTHROPIC_API_KEY ?? '';
-        const out: Record<string, unknown> = { envDir: dir, envFiles: files, anthropicKey: key ? `set (${key.length} chars, starts ${key.slice(0, 7)}…)` : 'missing', factory: factory === 'ok' ? `ok (${asSet.factory})` : factory === 'none' ? 'not configured' : factory === 'old' ? `${asSet.factory} is not the current MoaVaultFactory: deploy the current one and set its address` : `${asSet.factory}: the chain could not be reached at start`, agentKey: env.MOA_AGENT_PRIVATE_KEY ? 'set' : 'missing', autoOwners: store.owners().length };
+        const out: Record<string, unknown> = { envDir: dir, envFiles: files, anthropicKey: key ? `set (${key.length} chars, starts ${key.slice(0, 7)}…)` : 'missing', factory: factory === 'ok' ? `ok (${asSet.factory})` : factory === 'none' ? 'not configured' : factory === 'old' ? `${asSet.factory} is not the current MoaVaultFactory: deploy the current one and set its address` : `${asSet.factory}: the chain could not be reached at start`, agentKey: env.MOA_AGENT_PRIVATE_KEY ? 'set' : 'missing', dataDir: env.MOA_DATA_DIR || './data (MOA_DATA_DIR is not set)', dataFile: existsSync(storeFile(env)) ? 'kept' : 'none yet', autoOwners: store.owners().length };
         if (key && req.url.includes('ping')) {
           try {
             const { default: Anthropic } = await import('@anthropic-ai/sdk');
