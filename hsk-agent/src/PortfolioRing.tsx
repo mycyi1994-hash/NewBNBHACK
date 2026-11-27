@@ -137,7 +137,7 @@ export function Portfolio({ rows, hired, vault, quotes, priceOf, now, ready, onS
                     onFocus={() => mode === 'agent' && setActive(r.h.id)} onBlur={() => setActive(null)}
                     onClick={() => onOpen(r.h.id)}>
                     <span className="pf-who">
-                      <span className={`pf-face${r.running ? ' orbit' : ''}`}>{r.h.source.type === 'market' ? <Face rule={r.h.source.rule} size="sm" /> : <span className="face sm"><Icon name="bot" size={16} /></span>}</span>
+                      <span className={`pf-face${r.running ? ' orbit' : ''}`}>{r.h.source.type === 'market' ? <Face rule={r.h.source.rule} base={r.h.source.base} size="sm" /> : <span className="face sm"><Icon name="bot" size={16} /></span>}</span>
                       <span className="pf-name">
                         <b>{hiredName(t, r.h)}</b>
                         <small><i className={`pf-dot ${r.status}`} aria-hidden />{statusText(t, r.h, now)}</small>

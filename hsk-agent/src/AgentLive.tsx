@@ -4,7 +4,6 @@
 import type { CSSProperties } from 'react';
 import { useT, type Strings } from './i18n.ts';
 import { Face, pct, ruleLines } from './AgentCard.tsx';
-import { Icon } from './Icons.tsx';
 import { RollNum } from './motion.tsx';
 import { book, pnl, statusOf, type HiredAgent, type Status } from './runner.ts';
 import { hiredName, money, qtyText, signedMoney, statusText } from './hiredText.ts';
@@ -12,9 +11,9 @@ import { hiredName, money, qtyText, signedMoney, statusText } from './hiredText.
 /** Running = watching the market and able to act (not paused, not finished). */
 export const isRunning = (st: Status) => st !== 'paused' && st !== 'done';
 
-/** The agent's mark: its face, or the bot icon for a plan made in conversation. */
+/** The agent's mark with its coin badge; a plan made in conversation gets the mark of agents people make. */
 export function Mark({ h, size = 'md' }: { h: HiredAgent; size?: 'sm' | 'md' | 'lg' }) {
-  return h.source.type === 'market' ? <Face rule={h.source.rule} size={size} /> : <span className={`face ${size}`}><Icon name="bot" size={size === 'sm' ? 16 : 20} /></span>;
+  return <Face rule={h.source.type === 'market' ? h.source.rule : 'made'} base={h.asset} size={size} />;
 }
 
 /** What the agent does, in one plain line, from the rule's own text (nothing new is claimed). */

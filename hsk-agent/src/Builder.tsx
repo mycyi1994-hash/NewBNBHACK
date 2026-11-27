@@ -335,7 +335,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
     <aside className={`bd-proof${started ? '' : ' is-beat'}`} aria-label={t.wzPreview} aria-live="polite">
       {!started && <span className="bd-eyebrow">{t.wzBeat}</span>}
       <div className="bd-who">
-        {started ? <Face rule={d.from ?? 'made'} size="lg" /> : <CoinMark base={market.base} big />}
+        {started ? <Face rule={d.from ?? 'made'} base={market.base} size="lg" /> : <CoinMark base={market.base} big />}
         <b>{started ? name : market.base}</b>
       </div>
       {proofBody}
@@ -344,7 +344,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
   // On a narrow screen the card sits under the step; this strip keeps its answer in view while the rule is edited.
   const strip = (
     <div className="bd-strip" aria-hidden>
-      {started ? <Face rule={d.from ?? 'made'} size="sm" /> : <CoinMark base={market.base} />}
+      {started ? <Face rule={d.from ?? 'made'} base={market.base} size="sm" /> : <CoinMark base={market.base} />}
       <b>{started ? name : market.base}</b>
       {result && started && !blocking.length
         ? <><em className={result.total >= 0 ? 'pos' : 'neg'}>{pct(result.total)}</em><span className={`bd-strip-edge ${edge >= 0 ? 'ahead' : 'behind'}`}>{t.bqHoldLegend(pct(result.hold))}</span></>
@@ -472,7 +472,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
         {step === 3 && panel(t.bqName, (
           <>
             <label className="bd-name">
-              <Face rule={d.from ?? 'made'} />
+              <Face rule={d.from ?? 'made'} base={market.base} />
               <input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value.slice(0, 40) })} placeholder={autoName} maxLength={40} aria-label={t.buName} />
             </label>
             <p className="bd-review">

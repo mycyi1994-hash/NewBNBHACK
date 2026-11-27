@@ -42,7 +42,7 @@ export default function MineDock({ hired, quotes, vault, now, sending, onOpen, o
         return (
           <div key={h.id} className={`md-row st-${st}`} role="row">
             <span role="cell" className="md-who">
-              {h.source.type === 'market' ? <Face rule={h.source.rule} size="sm" /> : <span className="face sm" aria-hidden><Icon name="chat" size={16} /></span>}
+              {h.source.type === 'market' ? <Face rule={h.source.rule} base={h.source.base} size="sm" /> : <span className="face sm" aria-hidden><Icon name="chat" size={16} /></span>}
               <span className="md-main">
                 <button className="md-name" onClick={() => onOpen(h.id)}>{hiredName(t, h)}{h.mode === 'auto' && <span className="auto-tag">{t.autoBadge}</span>}</button>
                 <small>{h.asset} · {t.mdPer(money(h.perBuyUsd))}</small>

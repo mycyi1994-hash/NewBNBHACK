@@ -6,12 +6,14 @@
 // It shows; it does not run anything. "Hire" opens the hire sheet over this page, a row or a card title
 // hands the agent to Moa on the right. Every number comes from agents.ts; nothing is invented, so there are
 // no creators, followers or subscriber counts here.
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import { useT } from './i18n.ts';
 import { byMerit, idle, type Agent, type Tier } from './agents.ts';
-import { agentName, drop, pct, statePill, Equity, Face } from './AgentCard.tsx';
+import { agentName, drop, pct, ruleLines, statePill, Face } from './AgentCard.tsx';
+import { CoinMark } from './CoinMark.tsx';
+import { markColor } from './Mark.tsx';
 import { Icon, Spark } from './Icons.tsx';
 
 type Tab = 'top' | 'market';
@@ -108,6 +110,32 @@ function TopChart({ agents, coin, hot, setHot, onOpen }: { agents: Agent[]; coin
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The card's chart: the agent's money line over just holding the coin (grey, dashed), both from the same start, so
+ * the big number above is the gap you can see. A flat stretch is the agent sitting in cash.
+ */
+function CardChart({ a, up, label }: { a: Agent; up: boolean; label: string }) {
+  const W = 200, H = 72;
+  const thin = <T,>(xs: T[]) => xs.filter((_, i) => i % Math.max(1, Math.floor(xs.length / 64)) === 0 || i === xs.length - 1);
+  const eq = thin(a.equity), bn = thin(a.bench);
+  if (eq.length < 2) return null;
+  const e0 = eq[0].value || 1, b0 = bn[0]?.value || 1;
+  const ev = eq.map((p) => p.value / e0), bv = bn.map((p) => p.value / b0);
+  const lo = Math.min(...ev, ...bv), hi = Math.max(...ev, ...bv), span = hi - lo || 1;
+  const line = (vs: number[]) => vs.map((v, i) => `${i ? 'L' : 'M'}${((i / (vs.length - 1)) * W).toFixed(1)},${(H - 4 - ((v - lo) / span) * (H - 8)).toFixed(1)}`).join('');
+  const d = line(ev);
+  return (
+    <figure className="mp-chart">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden className={up ? 'up' : 'down'}>
+        {bv.length > 1 && <path className="hold" d={line(bv)} fill="none" vectorEffect="non-scaling-stroke" />}
+        <path className="area" d={`${d}L${W},${H}L0,${H}Z`} />
+        <path className="draw line" pathLength={1} d={d} fill="none" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <figcaption><i aria-hidden />{label}</figcaption>
+    </figure>
   );
 }
 
@@ -232,18 +260,26 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
       {!failed && tab === 'market' && (
         <>
           <div className="mp-filters">
-            <label className="mp-search"><Icon name="search" size={16} /><input id="mp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.mpSearch} aria-label={t.mpSearch} autoComplete="off" /></label>
-            <select value={asset} onChange={(e) => setAsset(e.target.value)} aria-label={t.fAsset}>
-              <option value="all">{t.fAsset}</option>
-              {assets.map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-            <select value={origin} onChange={(e) => setOrigin(e.target.value as 'all' | '1' | '2' | '3')} aria-label={t.fOrigin}>
-              <option value="all">{t.fOrigin}</option>
-              {([1, 2, 3] as Tier[]).map((k) => <option key={k} value={String(k)}>{t.agTier[k]}</option>)}
-            </select>
-            <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label={t.fSort}>
-              {(['pick', 'dd', 'total', 'sharpe'] as Sort[]).map((k) => <option key={k} value={k}>{t.fSort}: {k === 'pick' ? t.sortPick : t.agSort[k]}</option>)}
-            </select>
+            <label className="mp-search"><Icon name="search" size={18} /><input id="mp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.mpSearch} aria-label={t.mpSearch} autoComplete="off" /></label>
+            <div className="mp-coins" role="group" aria-label={t.fAsset}>
+              {['all', ...assets].map((b) => (
+                <button key={b} className={asset === b ? 'on' : ''} aria-pressed={asset === b} onClick={() => setAsset(b)}>
+                  {b !== 'all' && <CoinMark base={b} />}{b === 'all' ? t.mpAll : b}
+                </button>
+              ))}
+            </div>
+            <span className="mp-pick">
+              <select value={origin} onChange={(e) => setOrigin(e.target.value as 'all' | '1' | '2' | '3')} aria-label={t.fOrigin}>
+                <option value="all">{t.fOrigin}</option>
+                {([1, 2, 3] as Tier[]).map((k) => <option key={k} value={String(k)}>{t.agTier[k]}</option>)}
+              </select>
+            </span>
+            <span className="mp-pick sort">
+              <svg className="mp-pick-ic" width="16" height="16" viewBox="0 0 20 20" aria-hidden><path d="M6 4v12M3 13l3 3 3-3M14 16V4M11 7l3-3 3 3" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label={t.fSort}>
+                {(['pick', 'dd', 'total', 'sharpe'] as Sort[]).map((k) => <option key={k} value={k}>{k === 'pick' ? t.sortPick : t.agSort[k]}</option>)}
+              </select>
+            </span>
           </div>
 
           <div className="mp-grid stagger" key={`${asset}-${sort}-${origin}`}>
@@ -251,33 +287,37 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
             {shown.map((a) => {
               const pill = statePill(t, a);
               const edge = a.total - a.hold;
+              // The source in a few words: the year for a published classic, otherwise what kind of rule it is.
+              // The full source stays one hover away, and in the backtest.
+              const year = a.tier === 1 ? /\b(1[89]|20)\d{2}\b/.exec(t.agOrigin[a.rule])?.[0] : undefined;
               return (
-                <article key={a.id} className={`mp-card${a.runnable ? '' : ' signal-only'}`}>
-                  <button className="mp-title" onClick={() => onOpen(a)}>
-                    <Face rule={a.rule} />
-                    <span className="mp-name"><b>{agentName(t, a)}</b><small>{t.agRule[a.rule]}</small></span>
-                  </button>
-                  <div className="mp-meta">
-                    <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span>
-                    <span className={`badge ${pill.cls}`}><i />{pill.text}</span>
-                  </div>
-                  <div className="mp-lead">
-                    <div>
-                      <small>{t.cardEdge(a.days)}</small>
-                      <b className={sign(edge)}>{pct(edge)}</b>
-                    </div>
-                    <Equity pts={a.equity} up={edge >= 0} />
-                  </div>
-                  <dl className="mp-stats">
-                    <div><dt>{t.thTotal}</dt><dd className={sign(a.total)}>{pct(a.total)}</dd></div>
-                    <div><dt>{t.thDd}</dt><dd>{drop(a.maxDd)}</dd></div>
-                    <div><dt>{t.thSharpe}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
-                  </dl>
-                  <footer className="mp-foot">
-                    <button className={`mp-star${stars.has(a.id) ? ' on' : ''}`} onClick={() => star(a.id)} aria-pressed={stars.has(a.id)} aria-label={t.agStar} data-tip={t.agStar}>
-                      <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2L2.5 8l5.2-.7L10 2.5z" fill={stars.has(a.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
+                <article key={a.id} className={`mp-card${a.runnable ? '' : ' signal-only'}`} style={{ '--fam': markColor(a.rule) } as CSSProperties}>
+                  <header className="mp-top">
+                    <button className="mp-title" onClick={() => onOpen(a)}>
+                      <Face rule={a.rule} base={a.base} size="xl" />
+                      <span className="mp-name">
+                        <b>{agentName(t, a)}</b>
+                        <span className="mp-sub">
+                          <span className={`mp-origin tier-${a.tier}`} data-tip={t.agOrigin[a.rule]}>{a.tier === 1 && <i aria-hidden>★</i>}{year ? t.mpSince(year) : t.agTier[a.tier]}</span>
+                          {pill.cls === 'sig-good' && <span className="mp-live"><i aria-hidden />{pill.text}</span>}
+                        </span>
+                      </span>
                     </button>
-                    <button className="mp-run ghost" onClick={() => onOpen(a)}>{t.acBacktest}</button>
+                    <button className={`mp-star${stars.has(a.id) ? ' on' : ''}`} onClick={() => star(a.id)} aria-pressed={stars.has(a.id)} aria-label={t.agStar} data-tip={t.agStar}>
+                      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2L2.5 8l5.2-.7L10 2.5z" fill={stars.has(a.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>
+                    </button>
+                  </header>
+                  <p className="mp-plain">{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</p>
+                  <div className="mp-result">
+                    <div className="mp-num">
+                      <small>{t.mpVsHold}</small>
+                      <b className={sign(edge)}>{pct(edge)}</b>
+                      <span>{t.mpOver(a.days)}</span>
+                    </div>
+                    <CardChart a={a} up={edge >= 0} label={t.mpHoldLine} />
+                  </div>
+                  <footer className="mp-foot">
+                    <button className="mp-run ghost" onClick={() => onOpen(a)}>{t.mpMore}</button>
                     <button className="mp-run" onClick={() => onHire(a)}>{t.acHire}</button>
                   </footer>
                 </article>

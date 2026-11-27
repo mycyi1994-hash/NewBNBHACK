@@ -71,7 +71,7 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
           return (
             <li key={h.id} className={`slot mine st-${st}${r.running ? ' run' : ''}`} style={{ '--agent': r.color } as CSSProperties}>
               <div className="slot-row">
-                <span className={`slot-face${r.running ? ' orbit' : ''}`}>{h.source.type === 'market' ? <Face rule={h.source.rule} /> : <Icon name="bot" size={22} />}</span>
+                <span className={`slot-face${r.running ? ' orbit' : ''}`}>{h.source.type === 'market' ? <Face rule={h.source.rule} base={h.source.base} /> : <Icon name="bot" size={22} />}</span>
                 <span className="slot-main">
                   <span className="slot-name"><button className="tbl-link" onClick={() => onOpen(h.id)}>{hiredName(t, h)}</button>{h.mode === 'auto' && <span className="auto-tag">{t.autoBadge}</span>}</span>
                   <span className="state">
@@ -127,7 +127,7 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
           <li className="slot ready">
             <div className="slot-row">
               {ready ? <>
-                <span className="slot-face"><Face rule={ready.rule} /></span>
+                <span className="slot-face"><Face rule={ready.rule} base={ready.base} /></span>
                 <span className="slot-main">
                   <span className="slot-name"><b>{agentName(t, ready)}</b><span className="ready-tag"><i aria-hidden />{t.slotReadyTag}</span></span>
                   <span className="slot-rules">{ruleLines(t, ready).join(' · ')}</span>

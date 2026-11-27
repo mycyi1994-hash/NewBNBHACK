@@ -660,7 +660,7 @@ function OrderCard({ h, orderId, sending, vault, onApprove, onDecline }: {
   return (
     <div className={`order-card${open ? ' open' : ''}`}>
       <header className="oc-head">
-        {h.source.type === 'market' ? <Face rule={h.source.rule} size="sm" /> : <span className="face sm r-daily" aria-hidden><SIcon name="bot" size={14} /></span>}
+        {h.source.type === 'market' ? <Face rule={h.source.rule} base={h.source.base} size="sm" /> : <span className="face sm" aria-hidden><SIcon name="bot" size={14} /></span>}
         <b>{name}</b>
         {open && <span className="oc-tag"><i />{t.ocAsk}</span>}
       </header>

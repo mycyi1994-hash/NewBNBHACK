@@ -186,7 +186,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
     <div className="bt" key={a.id}>
       <section className="bt-who">
         <div className="bt-title">
-          <Face rule={a.rule} size="lg" />
+          <Face rule={a.rule} base={a.base} size="lg" />
           <div className="bt-name"><b>{agentName(t, a)}</b><small>{t.agRule[a.rule]} · {sourceLine(t, a)}</small></div>
           {here >= 0 && ranked.length > 1 && (
             <span className="bt-step">
