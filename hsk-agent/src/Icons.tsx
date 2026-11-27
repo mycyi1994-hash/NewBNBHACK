@@ -22,6 +22,8 @@ const P: Record<string, string> = {
   trash: 'M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7M10.5 10.5v6M13.5 10.5v6',
   list: 'M8 7h11M8 12h11M8 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01',
   plus: 'M12 5v14M5 12h14',
+  undo: 'M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11',
+  redo: 'M15 14l5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   down: 'M6 9l6 6 6-6',
   chat: 'M5 5h14v10H10l-5 4z',

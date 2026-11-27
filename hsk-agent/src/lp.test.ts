@@ -101,3 +101,30 @@ test('fill points: by which price half and all of a side has changed hands', () 
   assert.equal(sell.fullTick, bins[7].upper);
   assert.equal(fillPoints(binsOf({ ...defaultPlan('BTC'), usdt: 0 }, TICK), 'usdt'), null);
 });
+
+test('half and half: between even and curve at every step, and the sides can have their own counts', async () => {
+  const { heightsOf, shapeWeight } = await import('./lp.ts');
+  for (let d = 1; d <= 10; d++) {
+    const v = shapeWeight('spotCurve', d, 10);
+    assert.ok(Math.abs(v - (1 + shapeWeight('curve', d, 10)) / 2) < 1e-12);
+    assert.ok(v <= 1 && v >= shapeWeight('curve', d, 10));
+  }
+  const plan: LpPlan = { ...defaultPlan('BTC'), usdt: 100, coin: 0.002, shape: 'bidask', perSide: 4, perSideUp: 7 };
+  const bins = binsOf(plan, TICK);
+  assert.equal(bins.length, 11);
+  assert.equal(bins.filter((b) => b.side === 'usdt').length, 4);
+  const up = bins.filter((b) => b.side === 'coin');
+  assert.equal(up.length, 7);
+  assert.equal(up[6].upper - up[0].lower, 7 * 60);
+  assert.ok(up[6].amount > up[0].amount, 'bid-ask on the upper side is scaled to its own count');
+  assert.ok(Math.abs(up.reduce((s, b) => s + b.amount, 0) - 0.002) < 1e-12);
+  // custom weights are perSide + perSideUp long
+  const w = Array(11).fill(0); w[3] = 10; w[10] = 5;
+  const c = binsOf({ ...plan, shape: 'custom', weights: w }, TICK);
+  assert.equal(c[3].amount, 100); assert.ok(Math.abs(c[10].amount - 0.002) < 1e-12);
+  assert.deepEqual(heightsOf({ ...plan, shape: 'custom', weights: w }, c), w);
+  const h = heightsOf({ ...plan, shape: 'spot' }, bins);
+  assert.ok(h.every((x) => x === 10));
+  // without perSideUp the sides match, as before
+  assert.equal(binsOf({ ...defaultPlan('BTC'), perSide: 5 }, TICK).length, 10);
+});

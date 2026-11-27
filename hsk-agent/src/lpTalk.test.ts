@@ -35,3 +35,15 @@ test('widths reach about what was asked', () => {
     assert.ok(Math.abs(reachOf(w) - pct) / pct < 0.35, `${pct}% -> ${reachOf(w).toFixed(1)}%`);
   }
 });
+
+test('one side at a time: each side reaches its own distance with one shared step width', async () => {
+  const { sidesFor, countFor } = await import('./lpTalk.ts');
+  const w = sidesFor(5, 15);
+  assert.equal(w.step % 60, 0);
+  assert.ok(w.perSideUp! > w.perSide, JSON.stringify(w));
+  const reach = (n: number, side: 'down' | 'up') => (side === 'down' ? (1 - Math.pow(1.0001, -w.step * (n + 0.5))) : (Math.pow(1.0001, w.step * (n + 0.5)) - 1)) * 100;
+  assert.ok(Math.abs(reach(w.perSide, 'down') - 5) < 1.5, String(reach(w.perSide, 'down')));
+  assert.ok(Math.abs(reach(w.perSideUp!, 'up') - 15) < 2, String(reach(w.perSideUp!, 'up')));
+  assert.equal(countFor(80, 60, 'down'), 20, 'capped at 20 a side');
+  assert.deepEqual(widthFor(8).perSideUp, widthFor(8).perSide);
+});

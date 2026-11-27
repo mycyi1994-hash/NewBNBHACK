@@ -11,12 +11,27 @@ export const reachOf = (plan: Pick<LpPlan, 'step' | 'perSide'>) => pctOf(plan.st
  * The step width and count whose far edge lands closest to `pct` percent from the price: 0.6% steps up to about 12%,
  * 1.2% up to about 24%, 2.4% beyond; between 3 and 20 steps a side.
  */
-export function widthFor(pct: number): Pick<LpPlan, 'step' | 'perSide'> {
+export function widthFor(pct: number): Pick<LpPlan, 'step' | 'perSide' | 'perSideUp'> {
   // measured as a fall, the longer of the two ways: a 10% fall spans more ticks than a 10% rise
   const ticks = -Math.log(1 - Math.min(90, Math.max(0.5, pct)) / 100) / Math.log(1.0001);
-  const step = pct <= 12 ? SPACING : pct <= 24 ? SPACING * 2 : SPACING * 4;
+  const step = stepFor(pct);
   // the far edge sits perSide steps past the edge of the step holding the price, about half a step away from it
-  return { step, perSide: Math.max(3, Math.min(20, Math.round((ticks - step / 2) / step))) };
+  const perSide = Math.max(3, Math.min(20, Math.round((ticks - step / 2) / step)));
+  return { step, perSide, perSideUp: perSide };
+}
+const stepFor = (pct: number) => (pct <= 12 ? SPACING : pct <= 24 ? SPACING * 2 : SPACING * 4);
+
+/** Steps needed for one side to reach `pct` (a fall under the price, a rise over it) with steps `step` ticks wide. */
+export function countFor(pct: number, step: number, side: 'down' | 'up'): number {
+  const p = Math.min(90, Math.max(0.5, pct)) / 100;
+  const ticks = (side === 'down' ? -Math.log(1 - p) : Math.log(1 + p)) / Math.log(1.0001);
+  return Math.max(2, Math.min(20, Math.round((ticks - step / 2) / step)));
+}
+
+/** Each side reaching its own distance: one step width that suits the farther side, a count per side. */
+export function sidesFor(downPct: number, upPct: number): Pick<LpPlan, 'step' | 'perSide' | 'perSideUp'> {
+  const step = stepFor(Math.max(downPct, upPct));
+  return { step, perSide: countFor(downPct, step, 'down'), perSideUp: countFor(upPct, step, 'up') };
 }
 
 const COIN = /(\d+(?:\.\d+)?|\.\d+)\s*(w?btc|w?eth|w?hsk|비트코인|비트|이더리움|이더)/i;

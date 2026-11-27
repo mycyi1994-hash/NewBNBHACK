@@ -14,11 +14,12 @@ import { chainCall, sendTx, useSession } from './account.ts';
 import type { VaultInfo } from './parts.tsx';
 import { Icon, type IconName } from './Icons.tsx';
 import { NANO_REFRESH_MS } from './nano.ts';
-import { widthFor } from './lpTalk.ts';
-import { LP_STRATEGIES, replay, strategyPlan, type LpStrategy, type LpStrategyId, type Replay } from './lpStrategies.ts';
+import { sidesFor, widthFor } from './lpTalk.ts';
+import { LP_STRATEGIES, strategyPlan, type LpStrategy, type LpStrategyId } from './lpStrategies.ts';
+import LpBlocks from './LpBlocks.tsx';
 import type { DragLine, LadderStep, Zone } from './Trade.tsx';
 import { allocate, coinQty, fullFill, holdingsAt, maxUsd, money, priceText, SMALL_SIDE_USD, type Wallet } from './lpAmount.ts';
-import { allowanceOf, approveCall, balanceOf, binsOf, collectCall, fillPoints, mintCall, positionsOf, priceAt, removeCall, shapeWeight, USDT, NPM, SPACING, type Bin, type Goal, type LpPlan, type Position, type Shape } from './lp.ts';
+import { allowanceOf, approveCall, balanceOf, binsOf, collectCall, fillPoints, heightsOf, mintCall, positionsOf, priceAt, removeCall, USDT, NPM, type Bin, type Goal, type LpPlan, type Position, type Shape } from './lp.ts';
 
 export type LpZone = Zone;
 /** What the studio draws on the chart. */
@@ -26,13 +27,13 @@ export interface StudioChart { zones: Zone[]; ladder: LadderStep[]; handles: Dra
 export const STUDIO_IV = ['1h', '4h', '1d'] as const;
 
 const toNum = (raw: bigint, d: number) => Number(raw) / 10 ** d;
-/** Whole dollars for the past results ($812, not $812.09); cents only under a dollar. */
-const usd0 = (v: number) => (v >= 1 ? `$${Math.round(v).toLocaleString('en-US')}` : money(v));
 const GOAL_ICON: Record<Goal, IconName> = { buy: 'dip', sell: 'trend', both: 'collect' };
 const REACH = { min: 1, max: 40 };
 
 type Phase = { k: 'idle' } | { k: 'busy'; step: string } | { k: 'done'; tx: string } | { k: 'failed'; why: string };
 type StepId = 'goal' | 'range' | 'amount';
+/** What undo and redo bring back in the block editor. */
+type Snap = Pick<LpPlan, 'shape' | 'weights' | 'step' | 'perSide' | 'perSideUp' | 'reachPct'>;
 
 export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay, chart, interval, setInterval: setIv }: {
   plan: LpPlan; setPlan: (p: LpPlan) => void; vault: VaultInfo | null; onClose: () => void; onAsset: (a: Asset) => void;
@@ -63,8 +64,10 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
   // Step 1 starts on the ready-made strategies; setting it up by hand is one tap away.
   const [mode, setMode] = useState<'strat' | 'own'>('strat');
   const [strat, setStrat] = useState<LpStrategyId | null>(null);
-  // Each strategy replayed on the coin's last 720 hourly candles (Gate), once per coin.
-  const [past, setPast] = useState<{ asset: Asset; list: Candle[] | null } | null>(null);
+  // The block editor (under the chart, or in the panel on a phone), its undo history, and the risk line's detail.
+  const [blocks, setBlocks] = useState(false);
+  const [hist, setHist] = useState<{ back: Snap[]; fwd: Snap[] }>({ back: [], fwd: [] });
+  const [riskOpen, setRiskOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -75,21 +78,6 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
     const iv = setInterval(() => { if (!document.hidden) void pull(); }, NANO_REFRESH_MS / 3);
     return () => { alive = false; clearInterval(iv); };
   }, [plan.asset]);
-
-  useEffect(() => {
-    if (past?.asset === plan.asset) return;
-    let alive = true;
-    setPast(null);
-    gateCandles(plan.asset, '1h', 720).then((c) => { if (alive) setPast({ asset: plan.asset, list: c.length > 24 ? c : null }); }).catch(() => { if (alive) setPast({ asset: plan.asset, list: null }); });
-    return () => { alive = false; };
-  }, [plan.asset]); // eslint-disable-line react-hooks/exhaustive-deps
-  const replays = useMemo(() => {
-    if (!past || past.asset !== plan.asset || !past.list) return null;
-    const out: Partial<Record<LpStrategyId, Replay>> = {};
-    for (const x of LP_STRATEGIES) { const r = replay(strategyPlan(x), past.list); if (r) out[x.id] = r; }
-    return out;
-  }, [past, plan.asset]);
-  const pastDays = past?.list ? Math.round((past.list[past.list.length - 1].time - past.list[0].time) / 86400) : 30;
 
   const price = pool ? pool.sqrtPrice ** 2 * 10 ** (p.decimals - 6) : undefined;
   const reload = useCallback(async () => {
@@ -168,14 +156,13 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
 
   /* ---------- a ready-made strategy ---------- */
   // It counts as the plan's strategy only while the plan still has its goal, shape and width.
-  const stratNow = strat ? LP_STRATEGIES.find((x) => x.id === strat && x.goal === plan.goal && x.shape === plan.shape && widthFor(x.reachPct).step === plan.step && widthFor(x.reachPct).perSide === plan.perSide) ?? null : null;
+  const stratNow = strat ? LP_STRATEGIES.find((x) => x.id === strat && x.goal === plan.goal && x.shape === plan.shape && widthFor(x.reachPct).step === plan.step && widthFor(x.reachPct).perSide === plan.perSide && (plan.perSideUp ?? plan.perSide) === plan.perSide) ?? null : null;
   const pickStrat = (x: LpStrategy) => {
     const sp = strategyPlan(x);
     const keep = price && total > 0 ? allocate(sp.goal!, total, price, wallet, p.decimals) : { usdt: 0, coin: 0 };
     setPlan({ ...plan, ...sp, usdt: keep.usdt, coin: keep.coin, weights: undefined });
     setStrat(x.id); setOpen(null); setDraft(null);
-    const r = replays?.[x.id], re = reText(r, x);
-    onSay?.(`${t.lpsStratSay(t.lpsStrat[x.id][0], t.lpsStrat[x.id][1])}${re ? ` ${re.now} (${re.vs}).` : ''}`);
+    onSay?.(t.lpsStratSay(t.lpsStrat[x.id][0], t.lpsStrat[x.id][1]));
   };
 
   /* ---------- goal ---------- */
@@ -225,11 +212,14 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
     const top = Math.max(1e-12, ...sizes);
     const ladder: LadderStep[] = live.map((b, i) => ({ from: at(b.lower), to: at(b.upper), size: sizes[i] / top, tone: b.side === 'usdt' ? 'buy' : 'sell', ghost }));
     const zones: Zone[] = [], handles: DragLine[] = [];
+    // Each line moves its own side; the other side keeps how far it reaches (one step width serves both).
+    const nowDown = buyEdge ? (1 - buyEdge[0] / price) * 100 : undefined, nowUp = sellEdge ? (sellEdge[1] / price - 1) * 100 : undefined;
     const move = (side: 'buy' | 'sell') => (v: number) => {
-      const pct = side === 'buy' ? (1 - v / price) * 100 : (v / price - 1) * 100;
-      const clamped = Math.max(REACH.min, Math.min(REACH.max, pct));
-      const w = widthFor(clamped);
-      if (w.step !== plan.step || w.perSide !== plan.perSide) setPlan(withReach(clamped));
+      const pct = Math.max(REACH.min, Math.min(REACH.max, side === 'buy' ? (1 - v / price) * 100 : (v / price - 1) * 100));
+      const dn = side === 'buy' ? pct : nowDown ?? pct, upp = side === 'sell' ? pct : nowUp ?? pct;
+      const w = sidesFor(dn, upp);
+      if (w.step === plan.step && w.perSide === plan.perSide && w.perSideUp === (plan.perSideUp ?? plan.perSide)) return;
+      setPlan({ ...plan, ...w, reachPct: Math.max(dn, upp), weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape });
     };
     const done = () => {
       if (pool) say(plan, pool.tick);
@@ -321,23 +311,25 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
   const mineValue = mine && price ? mine.reduce((v, x) => v + toNum(x.raw1, 6) + toNum(x.raw0, p.decimals) * price, 0) : 0;
   const mineFees = mine && price ? mine.reduce((v, x) => v + toNum(x.fee1, 6) + toNum(x.fee0, p.decimals) * price, 0) : 0;
   const explorer = vault?.net?.explorer ?? 'https://hsk.blockscout.com';
-  const stepPct = (x: number) => `${(Math.pow(1.0001, x) * 100 - 100).toFixed(1)}%`;
   const amountPresets = max !== null && max > 0
     ? [0.25, 0.5, 1].map((f) => ({ label: f === 1 ? t.lpsAll : `${f * 100}%`, v: f === 1 ? max : Math.floor(max * f * 100) / 100 }))
     : [50, 100, 300].map((v) => ({ label: `$${v}`, v }));
 
-  // Custom weights, step by step (Advanced).
-  const weightsNow = (): number[] => {
-    if (plan.shape === 'custom' && plan.weights?.length === bins.length) return plan.weights;
-    const shape = plan.shape === 'custom' ? 'spot' : plan.shape;
-    const raw = bins.map((b) => shapeWeight(shape, b.d, plan.perSide)), top = Math.max(...raw);
-    return raw.map((x) => Math.round((x / top) * 10));
-  };
-  const nudge = (i: number, by: number) => {
-    const w = [...weightsNow()];
-    w[i] = Math.max(0, Math.min(10, (w[i] ?? 0) + by));
-    setPlan({ ...plan, shape: 'custom', weights: w });
-  };
+  /* ---------- the block editor ---------- */
+  const heights = heightsOf(plan, bins);
+  const snap = (): Snap => ({ shape: plan.shape, weights: plan.weights, step: plan.step, perSide: plan.perSide, perSideUp: plan.perSideUp, reachPct: plan.reachPct });
+  const begin = () => setHist((h) => ({ back: [...h.back.slice(-49), snap()], fwd: [] }));
+  const undo = () => { const last = hist.back[hist.back.length - 1]; if (!last) return; setHist({ back: hist.back.slice(0, -1), fwd: [...hist.fwd, snap()] }); setPlan({ ...plan, ...last }); };
+  const redo = () => { const last = hist.fwd[hist.fwd.length - 1]; if (!last) return; setHist({ back: [...hist.back, snap()], fwd: hist.fwd.slice(0, -1) }); setPlan({ ...plan, ...last }); };
+  const setShape = (x: Shape) => { begin(); setPlan({ ...plan, shape: x, weights: x === 'custom' ? heights : undefined }); };
+  const editor = goal && reached && price && bins.length > 0 ? (
+    <LpBlocks bins={bins} heights={heights} goal={goal} price={price} at={at} symbol={p.symbol}
+      shape={plan.shape} onShape={setShape} onBegin={begin} onHeights={(h) => setPlan({ ...plan, shape: 'custom', weights: h })}
+      step={B} onStep={(x) => { begin(); setPlan({ ...plan, step: x, weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape }); }}
+      down={plan.perSide} up={plan.perSideUp ?? plan.perSide}
+      onCounts={(dn, up) => { begin(); setPlan({ ...plan, perSide: dn, perSideUp: up, weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape }); }}
+      canUndo={hist.back.length > 0} canRedo={hist.fwd.length > 0} onUndo={undo} onRedo={redo} onClose={() => setBlocks(false)} />
+  ) : null;
 
   /** How far the plan really reaches (its far edge), which can sit a little off the price that was asked for. */
   const reachText = () => {
@@ -370,33 +362,21 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
     );
   };
 
-  const reText = (r: Replay | undefined, x: LpStrategy) => {
-    if (!r) return null;
-    const vs = x.goal === 'buy' ? t.lpsStratVsBuy(usd0(r.holdValue), usd0(r.allCoinValue)) : x.goal === 'sell' ? t.lpsStratVsSell(usd0(r.holdValue)) : t.lpsStratVsBoth(usd0(r.holdValue));
-    return { now: t.lpsStratRe(pastDays, usd0(r.startValue), usd0(r.endValue), usd0(r.feeValue)), vs };
-  };
   const stratList = (
-    <>
-      <div className="lps-strats" role="radiogroup" aria-label={t.lpsModeStrat}>
-        {LP_STRATEGIES.map((x) => {
-          const on = stratNow?.id === x.id, re = reText(replays?.[x.id], x);
-          const reach = x.goal === 'buy' ? `−${x.reachPct}%` : x.goal === 'sell' ? `+${x.reachPct}%` : `±${x.reachPct}%`;
-          return (
-            <button key={x.id} role="radio" aria-checked={on} className={`lps-strat g-${x.goal}${on ? ' on' : ''}`} onClick={() => { setPreview(null); pickStrat(x); }}
-              onPointerEnter={(e) => { if (e.pointerType === 'mouse') setPreview({ ...plan, ...strategyPlan(x), usdt: 0, coin: 0, weights: undefined }); }} onPointerLeave={() => setPreview(null)}>
-              <span className="lps-goal-ico"><Icon name={GOAL_ICON[x.goal]} size={16} /></span>
-              <span className="lps-strat-txt">
-                <b>{t.lpsStrat[x.id][0]}<em>{reach}</em></b>
-                <small>{t.lpsStrat[x.id][1]}</small>
-                {re ? <span className="lps-strat-re"><b>{re.now}</b><span>{re.vs}</span></span>
-                  : past === null ? <span className="lps-skel" aria-hidden /> : <span className="lps-strat-fail">{t.lpsStratFail}</span>}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {replays && <p className="lps-fine">{t.lpsStratNote(pastDays)}</p>}
-    </>
+    <div className="lps-strats" role="radiogroup" aria-label={t.lpsModeStrat}>
+      {LP_STRATEGIES.map((x) => {
+        const on = stratNow?.id === x.id;
+        const reach = x.goal === 'buy' ? `−${x.reachPct}%` : x.goal === 'sell' ? `+${x.reachPct}%` : `±${x.reachPct}%`;
+        return (
+          <button key={x.id} role="radio" aria-checked={on} className={`lps-strat g-${x.goal}${on ? ' on' : ''}`} onClick={() => { setPreview(null); pickStrat(x); }}
+            onPointerEnter={(e) => { if (e.pointerType === 'mouse') setPreview({ ...plan, ...strategyPlan(x), usdt: 0, coin: 0, weights: undefined }); }} onPointerLeave={() => setPreview(null)}>
+            <span className="lps-goal-ico"><Icon name={GOAL_ICON[x.goal]} size={15} /></span>
+            <span className="lps-strat-txt"><b>{t.lpsStrat[x.id][0]}</b><small>{t.lpsStrat[x.id][1]}</small></span>
+            <em className="lps-strat-reach">{reach}</em>
+          </button>
+        );
+      })}
+    </div>
   );
   const goalBody = () => (
     <>
@@ -470,7 +450,7 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
       </header>
 
       <div className="lps-stage">
-        <div className="lps-chart">
+        <div className={`lps-chart${blocks && editor ? ' editing' : ''}`}>
           {goal && reached && price && (buyEdge || sellEdge) && (
             <div className="lps-out" aria-live="polite">
               {buyEdge && (
@@ -509,6 +489,7 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
             </span>
           </div>
           <div className="lps-chartbox">{chart(layer)}</div>
+          {blocks && editor && <div className="lps-blocks-chart">{editor}</div>}
         </div>
 
         <aside className="lps-ticket">
@@ -561,41 +542,12 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
               </section>
             )}
 
-            <details className="lps-adv" open={roomy || undefined}>
-              <summary>{t.lpsAdvanced}</summary>
-              <div className="lps-row">
-                <span className="lps-label">{t.lpShape}</span>
-                <div className="seg" role="group" aria-label={t.lpShape}>
-                  {(['spot', 'curve', 'bidask', 'custom'] as Shape[]).map((x) => <button key={x} className={plan.shape === x ? 'on' : ''} aria-pressed={plan.shape === x} onClick={() => setPlan({ ...plan, shape: x, weights: x === 'custom' ? plan.weights ?? bins.map(() => 5) : plan.weights })}>{t.lpShapes[x]}</button>)}
-                </div>
-              </div>
-              <div className="lps-row">
-                <span className="lps-label">{t.lpStep}</span>
-                <div className="seg" role="group" aria-label={t.lpStep}>
-                  {[SPACING, SPACING * 2, SPACING * 4].map((x) => <button key={x} className={B === x ? 'on' : ''} aria-pressed={B === x} onClick={() => setPlan({ ...plan, step: x })}>{stepPct(x)}</button>)}
-                </div>
-              </div>
-              <div className="lps-row">
-                <span className="lps-label">{t.lpPerSide}</span>
-                <div className="seg" role="group" aria-label={t.lpPerSide}>
-                  {[5, 10, 15, 20].map((x) => <button key={x} className={plan.perSide === x ? 'on' : ''} aria-pressed={plan.perSide === x} onClick={() => setPlan({ ...plan, perSide: x, weights: undefined, shape: plan.shape === 'custom' ? 'spot' : plan.shape })}>{x}</button>)}
-                </div>
-              </div>
-              {bins.length > 0 && (
-                <div className="lps-bars" style={{ '--n': goal === 'both' || !goal ? bins.length : plan.perSide } as React.CSSProperties}>
-                  {bins.map((b, i) => {
-                    if (!sides(goal ?? 'both').includes(b.side)) return null;
-                    const w = weightsNow()[i] ?? 0, tip = `${priceText(at(b.lower))} – ${priceText(at(b.upper))}`;
-                    return (
-                      <button key={i} className={`lps-bar ${b.side === 'usdt' ? 'buy' : 'sell'}${i === plan.perSide && goal === 'both' ? ' mid' : ''}`} onClick={() => nudge(i, 1)} onContextMenu={(e) => { e.preventDefault(); nudge(i, -1); }} aria-label={tip} title={tip}>
-                        <i style={{ height: `${Math.max(4, w * 10)}%` }} />
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              <p className="lps-tip">{t.lpGap(stepPct(B))}. {t.lpHintClick}.</p>
-            </details>
+            {goal && reached && (
+              <button className={`lps-adv-btn${blocks ? ' on' : ''}`} onClick={() => setBlocks((v) => !v)} aria-expanded={blocks}>
+                <span>{t.lpsAdvanced}</span><small>{t.lpShapes[plan.shape]}</small><Icon name="down" size={14} />
+              </button>
+            )}
+            {blocks && editor && <div className="lps-blocks-panel">{editor}</div>}
 
             {s && (
               <section className="lps-mine">
@@ -619,7 +571,12 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
           </div>
 
           <footer className="lps-foot">
-            {ready && risk.length > 0 && <div className="lps-risk"><Icon name="shield" size={14} /><p><b>{t.lpsRisk}</b> {risk.join(' ')}</p></div>}
+            {ready && risk.length > 0 && (
+              <div className={`lps-risk${riskOpen ? ' open' : ''}`}>
+                <Icon name="shield" size={14} /><p><b>{t.lpsRisk}</b> {risk.join(' ')}</p>
+                <button className="lps-risk-more" onClick={() => setRiskOpen((v) => !v)} aria-expanded={riskOpen}>{riskOpen ? t.lpsRiskLess : t.lpsRiskMore}</button>
+              </div>
+            )}
             {ready && s && short && <p className="lps-note warn">{t.lpNoBal(short)}</p>}
             {!s && ready ? (
               <button className="btn-primary lps-supply" onClick={connect}>{t.lpsConnect}</button>

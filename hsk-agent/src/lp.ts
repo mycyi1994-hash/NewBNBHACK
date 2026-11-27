@@ -14,7 +14,7 @@ export const FEE = 3000;
 export const SPACING = 60;
 const MAX128 = 2n ** 128n - 1n;
 
-export type Shape = 'spot' | 'curve' | 'bidask' | 'custom';
+export type Shape = 'spot' | 'curve' | 'spotCurve' | 'bidask' | 'custom';
 export interface LpPlan {
   asset: Asset;
   /** USDT spread over the steps under the price, and the coin over the steps above it (whole units). */
@@ -22,9 +22,10 @@ export interface LpPlan {
   shape: Shape;
   /** One step's width in ticks (a multiple of 60, the pool's tick spacing; 60 ticks is about 0.6%). */
   step: number;
-  /** Steps on each side of the price. */
+  /** Steps under the price (USDT), and over it (the coin) when that side should differ; it defaults to `perSide`. */
   perSide: number;
-  /** Shape 'custom': a weight 0–10 per step, lowest price first, `2 × perSide` long. */
+  perSideUp?: number;
+  /** Shape 'custom': a weight 0–10 per step, lowest price first, `perSide + perSideUp` long. */
   weights?: number[];
   /** What the user wants, in their words: buy on the way down, sell on the way up, or both for the fees. Unset until chosen. */
   goal?: Goal;
@@ -40,17 +41,19 @@ export interface Bin { lower: number; upper: number; side: 'usdt' | 'coin'; /** 
 export function shapeWeight(shape: Exclude<Shape, 'custom'>, d: number, n: number): number {
   if (shape === 'spot') return 1;
   if (shape === 'curve') return Math.exp(-((d - 1) ** 2) / (2 * Math.max(1, n / 2.5) ** 2));
+  // half even, half curve: both are 1 at their highest, so the average is too
+  if (shape === 'spotCurve') return (1 + shapeWeight('curve', d, n)) / 2;
   return d / n;   // bid-ask: heaviest at the far ends
 }
 
 /** The steps of a plan around a tick, lowest price first, with the amount each one gets. */
 export function binsOf(plan: LpPlan, tick: number): Bin[] {
-  const B = Math.max(SPACING, Math.round(plan.step / SPACING) * SPACING), n = plan.perSide;
+  const B = Math.max(SPACING, Math.round(plan.step / SPACING) * SPACING), n = plan.perSide, m = plan.perSideUp ?? plan.perSide;
   const base = Math.floor(tick / B) * B;   // lower edge of the step the price is in (left empty)
   const out: Bin[] = [];
   for (let d = n; d >= 1; d--) out.push({ lower: base - d * B, upper: base - (d - 1) * B, side: 'usdt', d, weight: 0, amount: 0 });
-  for (let d = 1; d <= n; d++) out.push({ lower: base + d * B, upper: base + (d + 1) * B, side: 'coin', d, weight: 0, amount: 0 });
-  out.forEach((b, i) => { b.weight = plan.shape === 'custom' ? Math.max(0, plan.weights?.[i] ?? 0) : shapeWeight(plan.shape, b.d, n); });
+  for (let d = 1; d <= m; d++) out.push({ lower: base + d * B, upper: base + (d + 1) * B, side: 'coin', d, weight: 0, amount: 0 });
+  out.forEach((b, i) => { b.weight = plan.shape === 'custom' ? Math.max(0, plan.weights?.[i] ?? 0) : shapeWeight(plan.shape, b.d, b.side === 'usdt' ? n : m); });
   for (const side of ['usdt', 'coin'] as const) {
     const total = side === 'usdt' ? plan.usdt : plan.coin, mine = out.filter((b) => b.side === side), w = mine.reduce((s, b) => s + b.weight, 0);
     for (const b of mine) b.amount = total > 0 && w > 0 ? (total * b.weight) / w : 0;
@@ -201,4 +204,15 @@ export function fillPoints(bins: Bin[], side: 'usdt' | 'coin'): { halfTick: numb
   return side === 'usdt'
     ? { halfTick: half.lower, halfAmount, fullTick: far.lower, total }
     : { halfTick: half.upper, halfAmount, fullTick: far.upper, total };
+}
+
+/**
+ * Block heights 0–10 for the editor, one per bin: a custom plan's own weights, or the shape's weights scaled so the
+ * highest block is 10 (and no block that holds something drops to 0).
+ */
+export function heightsOf(plan: Pick<LpPlan, 'shape' | 'weights' | 'perSide' | 'perSideUp'>, bins: Bin[]): number[] {
+  if (plan.shape === 'custom' && plan.weights?.length === bins.length) return plan.weights.map((w) => Math.max(0, Math.min(10, Math.round(w))));
+  const shape = plan.shape === 'custom' ? 'spot' : plan.shape, m = plan.perSideUp ?? plan.perSide;
+  const raw = bins.map((b) => shapeWeight(shape, b.d, b.side === 'usdt' ? plan.perSide : m)), top = Math.max(1e-12, ...raw);
+  return raw.map((x) => (x > 0 ? Math.max(1, Math.round((x / top) * 10)) : 0));
 }
