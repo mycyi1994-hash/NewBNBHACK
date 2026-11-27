@@ -71,7 +71,7 @@ const usesRsi = (cs: Cond[]) => cs.some((c) => c.a.k === 'rsi' || c.b.k === 'rsi
 /** A small (i): the words that are needed only sometimes. */
 function Info({ text }: { text: string }) {
   return (
-    <span className="bd-i" tabIndex={0} role="img" aria-label={text} data-tip={text}>
+    <span className="bd-i tip-tap" tabIndex={0} role="img" aria-label={text} data-tip={text}>
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M8 7.2v3.6M8 5.2v.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
     </span>
   );

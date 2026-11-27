@@ -2,7 +2,7 @@
 //  - tile: under the chart (tap → Moa explains it)
 //  - chat: inside Moa's conversation (numbers, equity, rules; actions come from the conversation)
 import type { ReactNode } from 'react';
-import type { Agent, RuleId } from './agents.ts';
+import { ACTIVE_DAYS, lastTradeDays, type Agent, type RuleId } from './agents.ts';
 import { useT, type Strings } from './i18n.ts';
 import { CoinMark } from './CoinMark.tsx';
 import { Icon } from './Icons.tsx';
@@ -30,6 +30,17 @@ export const ruleLines = (t: Strings, a: { rule: RuleId; made?: MadeSpec }): str
 export function statePill(t: Strings, a: Agent): { text: string; cls: string } {
   if (a.kind === 'position') return a.live ? { text: t.acHolding, cls: 'sig-good' } : { text: t.acWaiting, cls: 'sig-neutral' };
   return a.mult > 0 ? { text: t.acToday(multText(a.mult)), cls: a.mult > 1 ? 'sig-good' : 'sig-neutral' } : { text: t.acRest, cls: 'sig-wait' };
+}
+/**
+ * How recently the agent did something, in words: "Holding now", "Bought 5 days ago", "Sold 23 days ago".
+ * `on` is true when that counts as working now (the same ACTIVE_DAYS as `active` in agents.ts).
+ */
+export function freshLine(t: Strings, a: Agent): { text: string; on: boolean } {
+  if (a.live) return { text: a.kind === 'position' ? t.frHolding : t.frBuyToday, on: true };
+  const d = lastTradeDays(a);
+  if (d === undefined) return { text: t.frNever, on: false };
+  const last = a.marks.reduce((p, m) => (m.time >= p.time ? m : p), a.marks[0]);
+  return { text: t.frAgo(d, last.side === 'buy'), on: d <= ACTIVE_DAYS };
 }
 export const nowLine = (t: Strings, a: Agent) => (a.kind === 'position' ? (a.live ? t.acNowHolding : t.acNowWaiting) : a.mult > 0 ? t.acNowBuy(multText(a.mult)) : t.acNowRest);
 export const sourceLine = (t: Strings, a: Agent) => (a.kind === 'collect' ? t.acSrcCollect : a.runnable ? t.acSrcPos : t.acSrcSignal(a.market?.kind === 'perp'));

@@ -10,8 +10,8 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from '
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import { useT } from './i18n.ts';
-import { active, byMerit, idle, type Agent, type Tier } from './agents.ts';
-import { agentName, drop, pct, ruleLines, statePill, Face } from './AgentCard.tsx';
+import { ACTIVE_DAYS, active, byMerit, idle, type Agent, type Tier } from './agents.ts';
+import { agentName, freshLine, pct, ruleLines, Face } from './AgentCard.tsx';
 import { CoinMark } from './CoinMark.tsx';
 import { markColor } from './Mark.tsx';
 import { Icon, Spark } from './Icons.tsx';
@@ -21,7 +21,6 @@ type Rank = 'classic' | 'steady' | 'bold';
 type Sort = 'pick' | 'dd' | 'total' | 'sharpe';
 const LINE = ['#3b5bdb', '#12b886', '#15aabf', '#f08c00', '#e03131', '#9c36b5', '#868e96', '#f783ac', '#4dabf7', '#fab005'];
 const sign = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
-const day = (s: number) => { const d = new Date(s * 1000); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`; };
 
 function readStars(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem('moa.stars') ?? '[]') as string[]); } catch { return new Set(); }
@@ -139,6 +138,28 @@ function CardChart({ a, up, label }: { a: Agent; up: boolean; label: string }) {
   );
 }
 
+/** One agent in the ranking: rank, mark, name and plain line, freshness, and the one number. */
+function TopRow({ a, n, onOpen }: { a: Agent; n?: number; onOpen: (a: Agent) => void }) {
+  const { t } = useT();
+  const edge = a.total - a.hold;
+  const fresh = freshLine(t, a);
+  return (
+    <li>
+      <button className={`tp-row${n && n <= 3 ? ` medal-${n}` : ''}`} onClick={() => onOpen(a)} style={{ '--fam': markColor(a.rule) } as CSSProperties}>
+        <span className="tp-n">{n ? (n <= 3 ? <Icon name="medal" size={18} /> : n) : ''}</span>
+        <Face rule={a.rule} base={a.base} size="lg" />
+        <span className="tp-main">
+          <b>{agentName(t, a)}</b>
+          <span className="tp-plain">{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</span>
+          <span className={`tp-fresh${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</span>
+        </span>
+        <span className="tp-num"><small>{t.mpVsHold}</small><b className={sign(edge)}>{pct(edge)}</b><span>{t.mpOver(a.days)}</span></span>
+        <span className="tp-go" aria-hidden><Icon name="chevron" size={18} /></span>
+      </button>
+    </li>
+  );
+}
+
 export default function Agents({ agents, failed, onRetry, onHire, onOpen, onRecommend }: {
   agents: Agent[] | null; failed: boolean; onRetry: () => void; onHire: (a: Agent) => void; onOpen: (a: Agent) => void; onRecommend: () => void;
 }) {
@@ -162,6 +183,8 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
   const ranked = useMemo(() => runnable.filter((a) => a.base === board && a.kind === 'position' && (rank !== 'classic' || a.tier === 1))
     .sort((p, r) => Number(!active(p)) - Number(!active(r)) || Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank, board]);
   const top = ranked.slice(0, 6);
+  const working = useMemo(() => ranked.filter((a) => active(a)), [ranked]);
+  const resting = useMemo(() => ranked.filter((a) => !active(a)), [ranked]);
   const assets = useMemo(() => runnable.map((a) => a.base).filter((b, i, xs) => xs.indexOf(b) === i), [runnable]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -232,27 +255,19 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
             </div>
           </section>
 
-          <div className="rank-table" role="table" aria-label={t.mpTabTop}>
-            <div className="rank-head" role="row">
-              <span>{t.thRank}</span><span>{t.thName}</span><span>{t.thEdge}</span><span>{t.thTotal}</span><span>{t.thSharpe}</span><span>{t.thDd}</span><span>{t.thTrades}</span><span>{t.thPeriod}</span>
-            </div>
-            {!agents && !failed && [0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="rank-row skel-block" />)}
-            {ranked.map((a, i) => (
-              <button key={a.id} className={`rank-row${i < 3 ? ` medal-${i + 1}` : ''}`} role="row" onClick={() => onOpen(a)}>
-                <span className="rank-n">{i < 3 ? <Icon name="medal" size={16} /> : i + 1}</span>
-                <span className="rank-name">
-                  <b>{agentName(t, a)}</b>
-                  <small><span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span><span className="rank-src">{t.agRule[a.rule]}</span></small>
-                </span>
-                <span className={sign(a.total - a.hold)}>{pct(a.total - a.hold)}</span>
-                <span className={sign(a.total)}>{pct(a.total)}</span>
-                <span>{a.sharpe.toFixed(2)}</span>
-                <span>{drop(a.maxDd)}</span>
-                <span>{a.trades.toLocaleString('en-US')}</span>
-                <span className="rank-period">{day(a.from)}<br />{day(a.to)}</span>
-              </button>
-            ))}
-          </div>
+          {/* The ranking in plain words: who, what it does, when it last did something, and one number against just
+              holding. Agents that have done nothing for a month fold away at the bottom. */}
+          <ol className="tp-list" aria-label={t.mpTabTop}>
+            {!agents && !failed && [0, 1, 2, 3, 4].map((i) => <li key={i} className="tp-skel skel-block" />)}
+            {working.map((a, i) => <TopRow key={a.id} a={a} n={i + 1} onOpen={onOpen} />)}
+          </ol>
+          {agents && !working.length && <p className="muted">{t.mpNone}</p>}
+          {resting.length > 0 && (
+            <details className="tp-rest">
+              <summary><span>{t.topRest(resting.length)}</span><small>{t.topRestSub(ACTIVE_DAYS)}</small><Icon name="chevron" size={16} /></summary>
+              <ol className="tp-list quiet">{resting.map((a) => <TopRow key={a.id} a={a} onOpen={onOpen} />)}</ol>
+            </details>
+          )}
           <p className="muted small">{t.topNote(runnable.length)} {t.agFoot}</p>
         </>
       )}
@@ -285,7 +300,7 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
           <div className="mp-grid stagger" key={`${asset}-${sort}-${origin}`}>
             {!agents && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="mp-card mp-skel skel-block" />)}
             {shown.map((a) => {
-              const pill = statePill(t, a);
+              const fresh = freshLine(t, a);
               const edge = a.total - a.hold;
               // The source in a few words: the year for a published classic, otherwise what kind of rule it is.
               // The full source stays one hover away, and in the backtest.
@@ -298,8 +313,8 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
                       <span className="mp-name">
                         <b>{agentName(t, a)}</b>
                         <span className="mp-sub">
-                          <span className={`mp-origin tier-${a.tier}`} data-tip={t.agOrigin[a.rule]}>{a.tier === 1 && <i aria-hidden>★</i>}{year ? t.mpSince(year) : t.agTier[a.tier]}</span>
-                          {pill.cls === 'sig-good' && <span className="mp-live"><i aria-hidden />{pill.text}</span>}
+                          <span className={`mp-origin tip-tap tier-${a.tier}`} tabIndex={0} role="note" aria-label={t.agOrigin[a.rule]} data-tip={t.agOrigin[a.rule]}>{a.tier === 1 && <i aria-hidden>★</i>}{year ? t.mpSince(year) : t.agTier[a.tier]}<svg className="mp-i" width="13" height="13" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M8 7.2v3.6M8 5.2v.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></span>
+                          <span className={`mp-live${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</span>
                         </span>
                       </span>
                     </button>

@@ -6,9 +6,10 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Agent } from './agents.ts';
 import { describe, scheduleOf, type Plan } from './intent.ts';
 import { useT } from './i18n.ts';
-import { limitsText, type VaultInfo } from './parts.tsx';
+import { limitsText, vaultWhy, type VaultInfo } from './parts.tsx';
 import { Modal } from './ui.tsx';
-import { agentName } from './AgentCard.tsx';
+import { agentName, Face } from './AgentCard.tsx';
+import { Icon } from './Icons.tsx';
 import { book, type Amounts, type HireChoice, type HiredAgent, type Mode } from './runner.ts';
 import { hiredName, money } from './hiredText.ts';
 import { setLimits, setStopLoss, type SendResult } from './account.ts';
@@ -89,7 +90,12 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
   const name = target.kind === 'agent' ? agentName(t, target.agent) : target.kind === 'custom'
     ? t.customName((target.plan.steps.find((s) => 'asset' in s) as { asset?: string } | undefined)?.asset ?? 'HSK') : hiredName(t, target.hired);
   const rule = target.kind === 'agent' ? target.agent.rule : target.kind === 'edit' && target.hired.source.type === 'market' ? target.hired.source.rule : undefined;
+  const base = target.kind === 'agent' ? target.agent.base : target.kind === 'edit' && target.hired.source.type === 'market' ? target.hired.source.base : undefined;
   const doubles = rule === 'smart' || rule === 'rsiDca';
+  // How many buys the budget covers at this size: the plain version of "per buy" and "budget".
+  const times = per > 0 ? Math.floor(budget / per + 1e-9) : 0;
+  // The demo notice only once the vault has answered: while it loads nothing is known yet.
+  const why = vaultWhy(vault);
   const plan = target.kind === 'custom' ? target.plan : target.kind === 'edit' && target.hired.source.type === 'custom' ? target.hired.source.plan : undefined;
   const noBuy = plan && !plan.steps.some((s) => s.kind === 'accumulate');
   const editing = target.kind === 'edit';
@@ -129,6 +135,12 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
       </button>
     </>}>
       <div className="hire">
+        {rule && (
+          <div className="hire-who">
+            <Face rule={rule} base={base} size="lg" />
+            <p>{t.agPlain[rule]}</p>
+          </div>
+        )}
         <div className="hire-two">
           <label className="field" htmlFor="hire-per">
             <span>{t.hsPer}</span>
@@ -139,7 +151,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
             <Stepper id="hire-budget" label={t.hsBudget} value={budget} options={BUDGET} onChange={setBudget} />
           </label>
         </div>
-        {budget < per && <p className="hire-sub warn">{t.hsBudgetLow}</p>}
+        {budget < per ? <p className="hire-sub warn">{t.hsBudgetLow}</p> : <p className="hire-times">{t.hsTimes(times)}</p>}
         {!auto && per > maxTrade && <p className="hire-sub warn">{t.hsOverLimit(money(maxTrade))}</p>}
         {doubles && <p className="hire-sub">{t.hsDouble(money(Math.min(per * 2, maxTrade)))}</p>}
         {editing && <p className="hire-sub">{t.hsSpent(money(book(target.hired).spent))}</p>}
@@ -153,7 +165,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
               </button>
             ))}
           </div>
-          {auto && !real && <p className="hire-sub warn">{t.hsAutoLogin}</p>}
+          {auto && !real && why !== 'wait' && <p className="hire-sub warn">{t.hsAutoLogin}</p>}
         </div>
 
         {auto && real && (
@@ -184,8 +196,8 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
           </div>
         )}
         {error && <p className="hire-sub warn">{error}</p>}
-        <p className="hire-note">{t.hsNote} {t.hsWithdraw}</p>
-        {!real && <p className="hire-note demo">{vault?.service ? t.hsLogin : t.hsDemo}</p>}
+        <ul className="hire-checks">{t.hsChecks.map((c) => <li key={c}><Icon name="check" size={16} />{c}</li>)}</ul>
+        {(why === 'login' || why === 'off') && <p className="hire-note demo">{why === 'login' ? t.hsLogin : t.hsDemo}</p>}
       </div>
     </Modal>
   );

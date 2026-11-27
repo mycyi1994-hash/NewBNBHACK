@@ -130,7 +130,7 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
                 <span className="slot-face"><Face rule={ready.rule} base={ready.base} /></span>
                 <span className="slot-main">
                   <span className="slot-name"><b>{agentName(t, ready)}</b><span className="ready-tag"><i aria-hidden />{t.slotReadyTag}</span></span>
-                  <span className="slot-rules">{ruleLines(t, ready).join(' · ')}</span>
+                  <span className="slot-rules">{ready.made ? ruleLines(t, ready)[0] : t.agPlain[ready.rule]}</span>
                   <small className="muted">{t.slotReadySub}</small>
                 </span>
                 <span className="slot-go">
