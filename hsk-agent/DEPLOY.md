@@ -33,8 +33,11 @@ Environment variables:
 Optional: `MOA_RPC_URL` (default `https://mainnet.hsk.xyz`), `MOA_MAX_VAULTS_PER_DAY` (default 20: how many
 vaults the agent wallet will pay to create per day).
 
-`/api/health` shows `dataDir` (where the agents on auto are kept) and `autoOwners` (how many wallets have logged
-in). If `autoOwners` falls back to 0 after a redeploy, the disk is not mounted at `dataDir`.
+`/api/health` says only what works (`vaults`, `factory`, `ai`) and nothing about keys, files or paths; it never calls
+the model. Where the agents on auto are kept, and how many wallets the server knows, is printed in the service's
+log when it starts. Moa's answers are rationed: `MOA_AI_PER_MINUTE` (default 6), `MOA_AI_PER_DAY` per logged-in
+wallet (150), `MOA_AI_PER_DAY_ANON` per address when not logged in (30), `MOA_AI_PER_DAY_ALL` for the whole server (3,000).
+Orders the server sends (each costs the agent wallet gas) are capped per wallet: `MOA_TRADES_PER_MINUTE` (5), `MOA_TRADES_PER_DAY` (100), `MOA_TRADES_PER_DAY_ALL` (2,000). On Render the caller's address comes from `X-Forwarded-For` (set `MOA_TRUST_PROXY=1` behind another proxy).
 
 The agent key is the only secret that touches funds. It can trade inside each vault's limits and pay gas from its
 own wallet; it cannot withdraw from any vault. Anyone who can read the service's environment can read it.

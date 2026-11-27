@@ -14,10 +14,10 @@ import { SlidePill } from './motion.tsx';
 import { Icon as SIcon, Spark } from './Icons.tsx';
 import { limitsText, type VaultInfo } from './parts.tsx';
 import { fmtPrice } from './market.ts';
-import { CopyButton, Modal, RichText } from './ui.tsx';
+import { CopyButton, RichText } from './ui.tsx';
 import { VaultLine } from './VaultCard.tsx';
 import { parse } from './spec.ts';
-import { askMoa, EXECUTE_WORDS, toStep, type Exec, type StepKey } from './moaClient.ts';
+import { askMoa, confirmProposal, EXECUTE_WORDS, toStep, type Exec, type Proposal, type StepKey } from './moaClient.ts';
 import { describe, parseIntent, type Plan } from './intent.ts';
 import { reply as offlineReply } from './moa.ts';
 import type { Execution } from './store.ts';
@@ -53,7 +53,7 @@ export type MoaInject = MoaAsk & { n: number };
 export type { Level };
 interface Choice { label: string; act: () => void; primary?: boolean }
 interface Note {
-  id: number; at: number; role: 'moa' | 'you'; text: string; plan?: Plan; goal?: string; execs?: Exec[]; offline?: boolean;
+  id: number; at: number; role: 'moa' | 'you'; text: string; plan?: Plan; goal?: string; execs?: Exec[]; proposals?: Proposal[]; offline?: boolean;
   follow: string[]; choices?: Choice[]; chosen?: string; sky?: { level: Level; list: Weather[] };
   agent?: { a: Agent; rec?: { pool: number } }; list?: { agents: Agent[]; coin?: string }; status?: string; hired?: string; order?: { hiredId: string; orderId: string };
 }
@@ -103,7 +103,6 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
   const [notes, setNotes] = useState<Note[]>([]);
   const [typing, setTyping] = useState(false);
   const [busy, setBusy] = useState<StepKey[] | null>(null);
-  const [confirm, setConfirm] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const feed = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -453,10 +452,9 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
   };
 
   /** Ask Moa right here: the question, live progress steps, then the answer (or the on-device fallback). */
-  const ask = async (text: string, confirmed = false) => {
+  const ask = async (text: string) => {
     const q = text.trim();
     if (!q || busy) return;
-    if (!confirmed && EXECUTE_WORDS.test(q) && vault?.configured) { setConfirm(q); return; }
     interrupt();
     setDraft('');
     if (PRO_WORDS.test(q) && levelRef.current !== 'pro') setLevel('pro');
@@ -479,7 +477,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       const plan = res.plan?.steps.length ? { steps: res.plan.steps.map(toStep), missing: res.plan.missing } : undefined;
       if (res.lp && lpRef.current) lpSet(lpFill({ ...(res.lp.usdt !== undefined ? { usdt: res.lp.usdt } : {}), ...(res.lp.coin !== undefined ? { coin: res.lp.coin } : {}), ...(res.lp.shape ? { shape: res.lp.shape } : {}), ...(res.lp.reachPct ? { ...widthFor(res.lp.reachPct), reachPct: res.lp.reachPct } : {}) }));
       if (res.executions?.length) onExecuted(res.executions.map((x) => ({ at: Date.now(), ok: x.ok, asset: x.request.asset, side: x.request.side, amount: x.request.amount, reason: x.reason, txHash: x.txHash, explorerUrl: x.explorerUrl, amountIn: x.amountIn, amountOut: x.amountOut, tokenIn: x.tokenIn, tokenOut: x.tokenOut })));
-      push({ role: 'moa', text: res.reply, plan, goal: q, execs: res.executions?.length ? res.executions : undefined, follow: [] });
+      push({ role: 'moa', text: res.reply, plan, goal: q, execs: res.executions?.length ? res.executions : undefined, proposals: res.proposals?.length ? res.proposals : undefined, follow: [] });
       if (res.recommend) {
         // The server ran the same rule; show its pick from this screen's data, or pick again if it is missing here.
         const a = agentsRef.current?.find((x) => x.id === res.recommend!.agentId);
@@ -635,6 +633,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
               </div>
             )}
             {n.execs?.map((x, k) => <Receipt key={k} x={x} />)}
+            {n.proposals?.map((p) => <ProposalCard key={p.token} p={p} vault={vault} onDone={(x) => onExecuted([{ at: Date.now(), ok: x.ok, asset: x.request.asset, side: x.request.side, amount: x.request.amount, reason: x.reason, txHash: x.txHash, explorerUrl: x.explorerUrl, amountIn: x.amountIn, amountOut: x.amountOut, tokenIn: x.tokenIn, tokenOut: x.tokenOut }])} />)}
             {n.plan && n.plan.steps.length > 0 && (
               <div className="plan-mini">
                 <b>{t.planMini}</b>
@@ -680,15 +679,6 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       </form>
       <div className="feed-foot"><VaultLine vault={vault} /></div>
 
-      {confirm && (
-        <Modal title={t.confirmTitle} onClose={() => setConfirm(null)} actions={<>
-          <button className="btn-text" onClick={() => setConfirm(null)}>{t.cancel}</button>
-          <button className="btn" onClick={() => { const q = confirm; setConfirm(null); void ask(q, true); }}>{t.executeBtn}</button>
-        </>}>
-          <p className="modal-quote">“{confirm}”</p>
-          <p>{t.confirmBody(vault ? limitsText(t, vault) : t.limNone)}</p>
-        </Modal>
-      )}
     </aside>
   );
 }
@@ -741,6 +731,35 @@ function OrderCard({ h, orderId, sending, vault, onApprove, onDecline }: {
       {outcome?.k === 'failed' && (outcome.demo ? <p className="order-demo">{t.obDemoDone}</p> : <div className="receipt-mini fail"><span className="rc-ic" aria-hidden><SIcon name="close" size={14} /></span><b>{t.receiptFail}</b><span>{t.obFailed(outcome.reason)}</span></div>)}
       {outcome?.k === 'declined' && <p className="muted small-text">{t.obDeclined}</p>}
       {outcome?.k === 'expired' && <p className="muted small-text">{t.obExpired}</p>}
+    </div>
+  );
+}
+
+/**
+ * A trade Moa proposed: nothing is sent until the user presses Confirm here. The button sends the server's one-time
+ * ticket for exactly this order and wallet; it works once and for five minutes.
+ */
+function ProposalCard({ p, vault, onDone }: { p: Proposal; vault: VaultInfo | null; onDone: (x: Exec) => void }) {
+  const { t } = useT();
+  const [state, setState] = useState<'open' | 'sending' | 'no' | Exec>('open');
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { if (state !== 'open') return; const x = setInterval(() => setNow(Date.now()), 5_000); return () => clearInterval(x); }, [state]);
+  if (typeof state === 'object') return <Receipt x={state} />;
+  const expired = now > p.expiresAt;
+  const what = p.side === 'buy' ? t.propBuy(money(p.amount), p.asset) : t.propSell(qtyText(p.amount), p.asset);
+  const go = async () => { setState('sending'); const x = await confirmProposal(p); setState(x); onDone(x); };
+  return (
+    <div className={`proposal${state === 'no' || expired ? ' off' : ''}`} role="group" aria-label={t.confirmTitle}>
+      <b>{t.confirmTitle}</b>
+      <p className="proposal-what">{what}</p>
+      {p.note && <p className="proposal-why">{p.note}</p>}
+      <p className="muted small">{t.confirmBody(vault?.configured ? limitsText(t, vault) : t.limNone)}</p>
+      {state === 'no' ? <p className="muted small">{t.propCancelled}</p> : expired ? <p className="muted small">{t.propExpired}</p> : (
+        <div className="proposal-act">
+          <button className="btn-text" disabled={state === 'sending'} onClick={() => setState('no')}>{t.cancel}</button>
+          <button className="btn-primary" disabled={state === 'sending'} onClick={() => void go()}>{state === 'sending' ? <span className="spin" aria-hidden /> : null}{t.executeBtn}</button>
+        </div>
+      )}
     </div>
   );
 }

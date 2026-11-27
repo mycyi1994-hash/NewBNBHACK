@@ -4,7 +4,7 @@
 // Usage: node --experimental-strip-types scripts/fork-test.mjs   (from hsk-agent/contracts)
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { createPublicClient, createTestClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData } from 'viem';
+import { createPublicClient, createTestClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, encodeDeployData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { executeTrade, vaultStatus, createVault, vaultOf, forOwner, stopOut, TOKENS, USDT } from '../../server/executor.ts';
 
@@ -47,9 +47,15 @@ try {
   const agentW = createWalletClient({ account: agent, chain, transport: http(RPC) });
   console.log('fork block', await pub.getBlockNumber());
 
-  // the factory: every vault starts with $50 per trade, $120 per day, 1.5% slippage floor and the three markets
+  // the factory: every vault starts with $50 per trade, $120 per day, 1.5% slippage floor, a 15% stop-loss and the
+  // three markets; a guardian (a separate key) can halt agent trading on every vault
   const assets = ['HSK', 'ETH', 'BTC'];
-  const deployHash = await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: [agent.address, USDT, ROUTER, 50_000_000n, 120_000_000n, 150, 0, assets.map((a) => TOKENS[a].address), assets.map((a) => POOLS[a])] });
+  const guardian = privateKeyToAccount('0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba');
+  const factoryArgs = (trade, daily, stop) => [agent.address, USDT, ROUTER, trade, daily, 150, stop, assets.map((a) => TOKENS[a].address), assets.map((a) => POOLS[a]), guardian.address];
+  let unsafe = 'deployed';
+  try { await pub.estimateGas({ account: owner, data: encodeDeployData({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: factoryArgs(2n ** 256n - 1n, 2n ** 256n - 1n, 0) }) }); } catch (e) { unsafe = /unsafe starting limits/.test(String(e.message)) ? 'refused' : String(e.message).slice(0, 80); }
+  check('a factory whose vaults would start with no limit and no stop-loss cannot be deployed', unsafe === 'refused', unsafe);
+  const deployHash = await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: factoryArgs(50_000_000n, 120_000_000n, 1500) });
   const deployed = await pub.waitForTransactionReceipt({ hash: deployHash });
   const factory = deployed.contractAddress;
   console.log('factory', factory, 'gas', deployed.gasUsed);
@@ -63,6 +69,7 @@ try {
   const makeGas = (await pub.getTransactionReceipt({ hash: made.txHash })).gasUsed;
   console.log('vault', vault, 'gas', makeGas);
   const read = (address, functionName, args = []) => pub.readContract({ address, abi, functionName, args });
+  check('a new vault starts with the factory\'s safe limits: $50 per trade, $120 per day, a 15% stop-loss', (await read(vault, 'maxTradeUsdt')) === 50_000_000n && (await read(vault, 'maxDailyUsdt')) === 120_000_000n && (await read(vault, 'stopLossBps')) === 1500);
   check('the server made the vault and the wallet is its owner', (await read(vault, 'owner')) === owner.address && (await read(vault, 'agent')) === agent.address);
   const listed = await Promise.all(assets.map((a) => read(vault, 'markets', [TOKENS[a].address])));
   check('the vault starts with HSK, ETH and BTC listed, without the owner signing', listed.every((m, i) => m[3] === true && m[0].toLowerCase() === POOLS[assets[i]]));
@@ -168,7 +175,8 @@ try {
   const hskToken = TOKENS.HSK.address;
   const stopCall = (account) => pub.simulateContract({ address: vault, abi, functionName: 'stopOut', args: [hskToken], account });
   const refusal = async (account) => { try { await stopCall(account); return 'went through'; } catch (e) { return /(NoStopLoss|StopNotReached|PriceMoving|NothingToSell)/.exec(String(e.message))?.[1] ?? String(e.message).slice(0, 80); } };
-  check('with no stop-loss set, nobody can sell the holding', (await refusal(carol)) === 'NoStopLoss');
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setStopLoss', args: [0] }) });
+  check('the owner can turn the starting stop-loss off; with none, nobody can sell the holding', (await read(vault, 'stopLossBps')) === 0 && (await refusal(carol)) === 'NoStopLoss');
   await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setLimits', args: [NO_LIMIT, NO_LIMIT, 300] }) });
   await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setStopLoss', args: [1000] }) });
   const before7 = await read(vault, 'position', [hskToken]);
@@ -209,6 +217,50 @@ try {
   check('with the holding gone there is nothing left to stop out', (await refusal(carol)) === 'NothingToSell');
   const serverStop = await stopOut(cfg, 'HSK');
   check('the server\'s own stop-loss check reports the vault\'s refusal instead of sending', !serverStop.ok && /NothingToSell/.test(serverStop.reason), serverStop.ok ? 'sent!' : serverStop.reason);
+
+  // 9) version 3 hardening: the price floor is the pool's 10-minute average, the guardian's halt, revoking the agent
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setPaused', args: [false] }) });
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setLimits', args: [NO_LIMIT, NO_LIMIT, 150] }) });
+  const before9 = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 5, note: 'calm pool' });
+  check('in a calm pool the agent buys HSK at the average price', before9.ok, before9.ok ? before9.amountOut : before9.reason);
+  // someone pushes the HSK price down in one block, then the agent is sent to sell into it
+  for (let i = 0; i < 3; i++) await pub.waitForTransactionReceipt({ hash: await dumperW.writeContract({ address: ROUTER, abi: routerAbi, functionName: 'exactInputSingle', args: [{ tokenIn: hskToken, tokenOut: USDT, fee: 3000, recipient: dumper.address, amountIn: 10n ** 23n, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n }] }) });
+  const heldHsk = await pub.readContract({ address: hskToken, abi: erc20, functionName: 'balanceOf', args: [vault] });
+  const pushedSell = await executeTrade(cfg, { asset: 'HSK', side: 'sell', amount: Number(formatUnits((heldHsk * 999n) / 1000n, 18)), note: 'into a pushed price' });
+  check('right after the price was pushed down, the agent cannot sell into it: the floor is the 10-minute average', !pushedSell.ok && /PriceMoving/.test(pushedSell.reason), pushedSell.ok ? 'sold!' : pushedSell.reason.slice(0, 100));
+  const spotQ = await read(vault, 'quote', [hskToken, false, heldHsk]);
+  let rawSell = 'went through';
+  try { await pub.simulateContract({ address: vault, abi, functionName: 'trade', args: [hskToken, false, heldHsk, (spotQ * 9_990n) / 10_000n, 'floor from spot'], account: agent }); } catch (e) { rawSell = /(SlippageTooLoose|PriceMoving)/.exec(String(e.message))?.[1] ?? String(e.message).slice(0, 80); }
+  check('a key that asks for a floor from the pushed price is refused too', rawSell === 'SlippageTooLoose', rawSell);
+  await test.increaseTime({ seconds: 660 });
+  await test.mine({ blocks: 1 });
+  const laterSell = await executeTrade(cfg, { asset: 'HSK', side: 'sell', amount: Number(formatUnits((heldHsk * 999n) / 1000n, 18)), note: 'after the price held' });
+  check('once the price has held for 10 minutes the same sell goes through', laterSell.ok, laterSell.ok ? laterSell.amountOut : laterSell.reason);
+
+  const factoryAbi = factoryArtifact.abi;
+  let strangerHalt = 'went through';
+  try { await pub.simulateContract({ address: factory, abi: factoryAbi, functionName: 'setHalted', args: [true], account: carol }); } catch (e) { strangerHalt = /not guardian/.test(String(e.message)) ? 'refused' : String(e.message).slice(0, 60); }
+  check('only the guardian can halt agent trading', strangerHalt === 'refused');
+  const guardianW = createWalletClient({ account: guardian, chain, transport: http(RPC) });
+  await test.setBalance({ address: guardian.address, value: 10n ** 20n });
+  await pub.waitForTransactionReceipt({ hash: await guardianW.writeContract({ address: factory, abi: factoryAbi, functionName: 'setHalted', args: [true] }) });
+  const halted = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 2, note: 'halted' });
+  check('with the guardian\'s halt on, the agent cannot trade on any vault', !halted.ok && /Halted/.test(halted.reason), halted.ok ? 'traded!' : halted.reason.slice(0, 80));
+  check('the vault status reports the halt', (await vaultStatus(cfg)).halted === true);
+  const wBefore = await usdtBal();
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'withdraw', args: [USDT, 1_000_000n] }) });
+  check('while halted the owner still withdraws', wBefore - (await usdtBal()) === 1_000_000n);
+  await pub.waitForTransactionReceipt({ hash: await guardianW.writeContract({ address: factory, abi: factoryAbi, functionName: 'setHalted', args: [false] }) });
+  const resumed = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 2, note: 'resumed' });
+  check('after the guardian lifts the halt, trading works again', resumed.ok, resumed.ok ? '' : resumed.reason);
+
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setAgent', args: [carol.address] }) });
+  const revoked = await executeTrade(cfg, { asset: 'HSK', side: 'buy', amount: 2, note: 'revoked key' });
+  check('after the owner replaces the agent key on the vault, the old key is refused', !revoked.ok && /NotAgent/.test(revoked.reason), revoked.ok ? 'traded!' : revoked.reason.slice(0, 80));
+  let agentSetAgent = 'went through';
+  try { await pub.simulateContract({ address: vault, abi, functionName: 'setAgent', args: [agent.address], account: agent }); } catch (e) { agentSetAgent = /NotOwner/.test(String(e.message)) ? 'refused' : 'other'; }
+  check('the old key cannot put itself back', agentSetAgent === 'refused');
+  await pub.waitForTransactionReceipt({ hash: await ownerW.writeContract({ address: vault, abi, functionName: 'setAgent', args: [agent.address] }) });
 
   // 8) no vault configured -> executor refuses before touching the chain
   const r8 = await executeTrade({ ...cfg, vault: undefined }, { asset: 'HSK', side: 'buy', amount: 5, note: 'x' });

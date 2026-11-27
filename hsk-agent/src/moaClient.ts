@@ -6,12 +6,28 @@ import { authHeaders } from './account.ts';
 export type StepKey = 'thinking' | 'market' | 'plan' | 'agents' | 'execute' | 'writing';
 export interface Exec { ok: boolean; reason?: string; txHash?: string; explorerUrl?: string; amountIn?: string; amountOut?: string; tokenIn?: string; tokenOut?: string; request: { asset: string; side: string; amount: number } }
 export interface ServerStep { kind: Step['kind']; asset?: 'HSK' | 'ETH' | 'BTC'; perBuyUsd?: number; every?: 'hour' | 'day' | 'week'; durationDays?: number; targetQty?: number; deadline?: string; maxPrice?: number; budgetUsd?: number; dropPct?: number; risePct?: number; sellFraction?: number; what?: 'idle USDT' | 'accumulated coins' }
-export interface MoaResult { reply: string; plan?: { steps: ServerStep[]; missing: string[] }; executions: Exec[]; recommend?: { agentId: string; coin: string }; lp?: { usdt?: number; coin?: number; shape?: 'spot' | 'curve' | 'spotCurve' | 'bidask'; reachPct?: number; goal?: 'buy' | 'sell' | 'both'; step?: number; perSide?: number; perSideUp?: number } }
+/** An order Moa proposed: it runs only when the user presses Confirm, which sends back the server's one-time ticket. */
+export interface Proposal { token: string; asset: 'HSK' | 'ETH' | 'BTC'; side: 'buy' | 'sell'; amount: number; note: string; expiresAt: number }
+export interface MoaResult { reply: string; plan?: { steps: ServerStep[]; missing: string[] }; executions: Exec[]; proposals?: Proposal[]; recommend?: { agentId: string; coin: string }; lp?: { usdt?: number; coin?: number; shape?: 'spot' | 'curve' | 'spotCurve' | 'bidask'; reachPct?: number; goal?: 'buy' | 'sell' | 'both'; step?: number; perSide?: number; perSideUp?: number } }
 /** What the server needs to know about the user that is not in the words: their level and the coin on screen. */
 export interface MoaCtx { level?: 'new' | 'some' | 'pro' | null; asset?: string }
 
-/** Same words the server checks before it lets Moa trade. */
+/** Words that send a message to the server's Moa rather than the on-device reader. Not a gate: nothing executes
+ *  without the Confirm button under a proposed order (its server ticket, see confirmProposal). */
 export const EXECUTE_WORDS = /(실행|execute)/i;
+
+/** The Confirm button: send back the server's single-use ticket for exactly the order shown. */
+export async function confirmProposal(p: Proposal): Promise<Exec> {
+  const request = { asset: p.asset, side: p.side, amount: p.amount };
+  try {
+    const r = await fetch('/api/moa/confirm', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ token: p.token }) });
+    const j = (await r.json().catch(() => null)) as (Exec & { error?: string }) | null;
+    if (j && typeof j.ok === 'boolean') return { ...j, request };
+    return { ok: false, reason: j?.error ?? `HTTP ${r.status}`, request };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e), request };
+  }
+}
 
 /**
  * The API conversation must start with the user. When Moa opened the conversation (its notes),
@@ -97,7 +113,7 @@ export type TradeResult =
 
 /** One approved order from a hired agent. buy: amount is USDT; sell: amount is the coin quantity. */
 /** `shared` names the shared agent the order is for; the server looks up its creator and fee itself. */
-export async function sendAgentTrade(req: { asset: string; side: 'buy' | 'sell'; amount: number; note: string; shared?: string }): Promise<TradeResult> {
+export async function sendAgentTrade(req: { asset: string; side: 'buy' | 'sell'; amount: number; note: string; shared?: string; agent?: string }): Promise<TradeResult> {
   try {
     const r = await fetch('/api/agent-trade', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify(req) });
     const j = (await r.json().catch(() => null)) as TradeResult | { error?: string } | null;

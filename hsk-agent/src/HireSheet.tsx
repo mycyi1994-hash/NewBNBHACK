@@ -13,7 +13,8 @@ import { limitsText, vaultWhy, type VaultInfo } from './parts.tsx';
 import { Modal } from './ui.tsx';
 import { agentName, Face, ruleLines } from './AgentCard.tsx';
 import { feeOn, feeText } from './share.ts';
-import { approvedFee, setCreatorFee } from './shareClient.ts';
+import { approvedFee, setChainBudget, setCreatorFee } from './shareClient.ts';
+import { newId } from './runner.ts';
 import { whoText } from './Shared.tsx';
 import { Icon } from './Icons.tsx';
 import { book, type Amounts, type HireChoice, type HiredAgent, type Mode } from './runner.ts';
@@ -90,7 +91,9 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
   const wantDay = dayOn ? day : undefined;
   const saveLimits = auto && real && wantDay !== vault?.maxDailyUsdt;
   const saveStop = auto && real && stopBps !== (vault?.stopLossBps ?? 0);
-  // A shared agent's creator fee: what the owner already approved on this vault, read from the chain.
+  // The hired agent's id, known before hiring: on a version-3 vault its budget and its creator are set for this id.
+  const [hiredId] = useState(() => (target.kind === 'edit' ? target.hired.id : newId()));
+  // A shared agent's creator fee: what the owner already approved for this agent on this vault, read from the chain.
   const sh = target.kind === 'agent' ? target.agent.shared : target.kind === 'edit' ? target.hired.shared : undefined;
   const fee = sh?.feeBps ?? 0;
   const feeVault = real && (vault?.version ?? 0) >= 3 && fee > 0 && !!vault?.vault;
@@ -98,12 +101,17 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
   useEffect(() => {
     if (!feeVault || !sh) return;
     let alive = true;
-    approvedFee(vault!.vault!, sh.creator).then((v) => alive && setApproved(v), () => alive && setApproved('fail'));
+    // A new hire has never been approved; only an agent already hired can have an approval to read.
+    if (target.kind !== 'edit') { setApproved(0); return; }
+    approvedFee(vault!.vault!, hiredId, sh.creator).then((v) => alive && setApproved(v), () => alive && setApproved('fail'));
     return () => { alive = false; };
   }, [feeVault, vault?.vault, sh?.creator]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveFee = feeVault && (approved === 'fail' || (typeof approved === 'number' && approved < fee));
   const feeLoading = feeVault && approved === null;
-  const steps = Number(saveLimits) + Number(saveStop) + Number(saveFee);
+  // Per-agent budgets on the vault (version 3, when the owner turned them on): this agent may spend what is left of its budget.
+  const spent = target.kind === 'edit' ? book(target.hired).spent : 0;
+  const saveBudget = real && (vault?.version ?? 0) >= 3 && !!vault?.budgetsOn && (target.kind !== 'edit' || budget !== start.budgetUsd);
+  const steps = Number(saveLimits) + Number(saveStop) + Number(saveFee) + Number(saveBudget);
   const valid = per > 0 && budget >= per && (!auto || (real && dayOk && stopOk)) && !feeLoading;
 
   const name = target.kind === 'agent' ? agentName(t, target.agent) : target.kind === 'custom'
@@ -153,13 +161,18 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
       }
       if (saveFee && sh) {
         setBusy(++n);
-        const r = await setCreatorFee(vault.net, vault.vault, sh.creator, fee);
+        const r = await setCreatorFee(vault.net, vault.vault, hiredId, sh.creator, fee);
+        if (!r.ok) { setBusy(0); setError(words(r)); onReloadVault(); return; }
+      }
+      if (saveBudget) {
+        setBusy(++n);
+        const r = await setChainBudget(vault.net, vault.vault, hiredId, budget - spent);
         if (!r.ok) { setBusy(0); setError(words(r)); onReloadVault(); return; }
       }
       setBusy(0);
       onReloadVault();
     }
-    onConfirm({ perBuyUsd: weighted ? budget : per, budgetUsd: budget, mode });
+    onConfirm({ perBuyUsd: weighted ? budget : per, budgetUsd: budget, mode, id: hiredId });
   };
 
   return (

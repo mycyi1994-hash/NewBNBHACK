@@ -281,7 +281,7 @@ function Shell() {
     const enName = h.source.type === 'market' ? agentName(STRINGS.en, h.source) : STRINGS.en.customName(h.asset);
     // Demo (no vault: not logged in, or this server has no vault service): the answer is recorded, nothing is sent.
     const demo = !vaultRef.current?.configured;
-    const r = demo ? { ok: false as const, reason: 'No vault is connected (demo).' } : await sendAgentTrade({ asset: h.asset, side: o.side, amount, note: chainNote(enName, o.why, 'ask', o.journal?.hash), shared: h.shared?.id });
+    const r = demo ? { ok: false as const, reason: 'No vault is connected (demo).' } : await sendAgentTrade({ asset: h.asset, side: o.side, amount, note: chainNote(enName, o.why, 'ask', o.journal?.hash), shared: h.shared?.id, agent: h.id });
     const at = Date.now();
     const position = h.source.type === 'market' && h.source.kind === 'position';
     const key = 'key' in o.why ? o.why.key : undefined;
@@ -372,12 +372,12 @@ function Shell() {
       if (sheet.kind === 'agent') {
         const a = sheet.agent;
         setExtra((cur) => ({ ...cur, [a.id]: a }));
-        h = { id: newId(), createdAt: at, source: { type: 'market', agentId: a.id, kind: a.kind, rule: a.rule, base: a.base }, asset: a.base as Asset, ...v, mode, spec: a.made, paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
+        h = { id: choice.id ?? newId(), createdAt: at, source: { type: 'market', agentId: a.id, kind: a.kind, rule: a.rule, base: a.base }, asset: a.base as Asset, ...v, mode, spec: a.made, paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
         // Someone else's agent: who made it and their fee travel with it, and the server counts the hire.
         if (a.shared) { h.shared = { id: a.shared.id, creator: a.shared.creator, ...(a.shared.nick ? { nick: a.shared.nick } : {}), feeBps: a.shared.feeBps }; if (session) void countHire(a.shared.id); }
       } else {
         const first = sheet.plan.steps.find((s) => 'asset' in s) as { asset?: Asset } | undefined;
-        h = { id: newId(), createdAt: at, source: { type: 'custom', goal: sheet.goal, plan: sheet.plan }, asset: first?.asset ?? 'HSK', ...v, mode, paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
+        h = { id: choice.id ?? newId(), createdAt: at, source: { type: 'custom', goal: sheet.goal, plan: sheet.plan }, asset: first?.asset ?? 'HSK', ...v, mode, paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
       }
       add(h);
       if (mode === 'auto') pushAuto(h);

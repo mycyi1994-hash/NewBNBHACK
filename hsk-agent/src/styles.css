@@ -2649,3 +2649,12 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .pr-axis { margin-top: 2px; }
 .tdock.venue-dex { height: clamp(190px, 22vh, 360px); }
 @media (min-height: 1200px) { .tdock.venue-dex { height: clamp(260px, 30vh, 420px); } }
+
+/* an order Moa proposed: it runs only from this Confirm button (server ticket, server/guard.ts) */
+.proposal { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1.5px solid var(--accent); border-radius: 12px; background: var(--accent-tint); }
+.proposal.off { border-color: var(--line-card); background: var(--fill); }
+.proposal > b { font-size: 13px; color: var(--accent-ink); }
+.proposal.off > b { color: var(--ink-3); }
+.proposal-what { margin: 0; font-size: 17px; line-height: 24px; font-weight: 800; color: var(--ink-title); }
+.proposal-why { margin: 0; font-size: 13px; color: var(--ink-2); }
+.proposal-act { display: flex; justify-content: flex-end; gap: 8px; }

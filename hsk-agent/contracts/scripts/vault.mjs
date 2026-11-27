@@ -10,14 +10,17 @@
 //   node scripts/vault.mjs stop 10 | stop off     stop-loss: sell a holding once it is worth 10% less than it cost
 //   node scripts/vault.mjs stopout WHSK           carry out a stop that is due (anyone's key works; the USDT stays in the vault)
 //   node scripts/vault.mjs agent 0x…              replace my vault's agent wallet (e.g. if its key may have leaked)
-//   node scripts/vault.mjs creator 0x… 0.5        approve the maker of a shared agent at up to 0.5% of each trade (version 3; "0" withdraws it)
+//   node scripts/vault.mjs creator <agent> 0x… 0.5  approve the maker of one hired agent at up to 0.5% of its trades (version 3; "0" withdraws)
+//   node scripts/vault.mjs budget <agent> 100      what one hired agent may still spend on buys, in USDT (version 3)
+//   node scripts/vault.mjs budgets on | off        when on, every buy must fit the budget of the agent it is for (version 3)
+//   (<agent> is the hired agent's id in the app; the vault keys it as keccak256 of that id)
 //
 // The factory address comes from --factory 0x…, else MOA_FACTORY_ADDRESS, else deployments/hsk-mainnet.json.
 // A vault made by an earlier factory still answers status, fund, withdraw, pause, limits and agent: add
 // `--factory <that factory's address>` to reach it, for example to withdraw what is left in it.
 // Everything except `status` needs the vault owner's key: MOA_OWNER_PRIVATE_KEY if set, otherwise asked for with the
 // typing hidden (never written to a file, never printed). Each command shows what it will do and asks you to type a word first.
-import { createWalletClient, http, isAddress, getAddress, parseUnits, formatUnits, formatEther, encodeFunctionData, zeroAddress } from 'viem';
+import { createWalletClient, http, isAddress, getAddress, parseUnits, formatUnits, formatEther, encodeFunctionData, zeroAddress, keccak256, stringToHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { CHAIN, RPC, USDT, MARKETS, ERC20, FORK, WHERE, artifact, client, confirm, option, ownerKey, record, txUrl, usd, cap, limitOf, same, fail, EXPLORER } from './hsk.mjs';
 
@@ -65,7 +68,7 @@ if (cmd === 'status' && rest[0]) {
   await status(v);
   process.exit(0);
 }
-if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent', 'creator'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
+if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent', 'creator', 'budget', 'budgets'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
 
 const key = await ownerKey('the vault owner\'s wallet');
 if (!key) fail(cmd === 'status' ? 'usage: status <owner address>' : 'the key is missing or is not a 64-hex private key.');
@@ -123,12 +126,22 @@ if (cmd === 'fund') {
   const bps = rest[0] === 'off' ? 0 : Math.round(Number(rest[0]) * 100);
   if (!(bps >= 0 && bps <= 9000)) fail('usage: stop <percent, up to 90> | stop off');
   await run(bps ? `Set the stop-loss: anyone may sell a holding once it is worth ${bps / 100}% less than it cost.` : 'Turn the stop-loss off.', 'stop', call('setStopLoss', [bps]));
-} else if (cmd === 'creator') {
-  const bps = Math.round(Number(rest[1]) * 100);
-  if (!isAddress(rest[0] ?? '') || !(bps >= 0 && bps <= 100)) fail('usage: creator <creator address> <percent, 0 to 1>');
+} else if (cmd === 'creator' || cmd === 'budget' || cmd === 'budgets') {
   const version = await pub.readContract({ address: vault, abi, functionName: 'VERSION' }).then(Number, () => 2);
-  if (version < 3) fail('this vault is an earlier version and cannot pay creator fees.');
-  await run(bps ? `Approve ${rest[0]} at up to ${bps / 100}% of each trade an agent they made makes for you, paid in USDT.` : `Withdraw the creator fee approval of ${rest[0]}.`, 'creator', call('setCreatorFee', [getAddress(rest[0]), bps]));
+  if (version < 3) fail('this vault is an earlier version: it has no per-agent creator fees or budgets.');
+  const id = (x) => keccak256(stringToHex(x));
+  if (cmd === 'creator') {
+    const bps = Math.round(Number(rest[2]) * 100);
+    if (!rest[0] || !isAddress(rest[1] ?? '') || !(bps >= 0 && bps <= 100)) fail('usage: creator <hired agent id> <creator address> <percent, 0 to 1>');
+    await run(bps ? `Approve ${rest[1]} as the maker of agent ${rest[0]}, at up to ${bps / 100}% of each of its trades, paid in USDT.` : `Withdraw the creator approval of agent ${rest[0]}.`, 'creator', call('setCreatorFee', [id(rest[0]), getAddress(rest[1]), bps]));
+  } else if (cmd === 'budget') {
+    const amount = amountOf(rest[1], 6);
+    if (!rest[0] || amount < 0n || rest[1] === undefined) fail('usage: budget <hired agent id> <USDT>');
+    await run(`Agent ${rest[0]} may spend ${usd(amount)} USDT more on buys (counts while budgets are on).`, 'budget', call('setBudget', [id(rest[0]), amount]));
+  } else {
+    if (rest[0] !== 'on' && rest[0] !== 'off') fail('usage: budgets on | off');
+    await run(rest[0] === 'on' ? 'Budgets on: every buy must fit the budget of the agent it is for; a buy for no agent needs a budget for agent id 0.' : 'Budgets off: buys are held only by the per-trade and daily limits.', 'budgets', call('setBudgetsOn', [rest[0] === 'on']));
+  }
 } else if (cmd === 'agent') {
   if (!isAddress(rest[0] ?? '')) fail('usage: agent <new agent address>');
   if (same(rest[0], owner)) fail('the agent must be a different wallet from the owner.');

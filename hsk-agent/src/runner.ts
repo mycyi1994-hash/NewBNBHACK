@@ -30,7 +30,8 @@ export interface Order { id: string; at: number; side: Side; usd?: number; qty?:
 export interface Fill { at: number; side: Side; usd: number; qty: number; txHash?: string; explorerUrl?: string }
 export interface Amounts { perBuyUsd: number; budgetUsd: number }
 /** What the hire sheet hands back: the amounts and how the agent should work. */
-export interface HireChoice extends Amounts { mode: Mode }
+/** `id`: the hired agent's id, chosen before hiring so the vault's per-agent settings (budget, creator) can name it. */
+export interface HireChoice extends Amounts { mode: Mode; id?: string }
 export type LogEvent =
   | { at: number; k: 'hired'; to: Amounts }
   | { at: number; k: 'asked'; order: Order }

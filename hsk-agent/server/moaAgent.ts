@@ -1,7 +1,8 @@
 // Moa's brain: Claude Sonnet 5.5 with its tools (market data, spreads, plan proposal, agent recommendation, liquidity plan, trade execution).
 // The recommendation is the app's fixed rule (src/recommend.ts); the model only says which coin the user means.
-// Execution is gated twice: the latest user message must explicitly ask to execute, and the vault contract
-// enforces its own caps and slippage floor.
+// The model never executes a trade. It can only propose one (propose_trade): the app shows a card with a Confirm
+// button carrying a single-use ticket the server signed for that wallet and that exact order (server/guard.ts), and
+// only pressing it sends the order. The vault contract then enforces its own limits and price floor.
 import Anthropic from '@anthropic-ai/sdk';
 import { loadQuotes } from '../src/market.ts';
 import * as cex from '../src/cex.ts';
@@ -9,7 +10,8 @@ import { poolState } from '../src/dex.ts';
 import { poolDepth } from '../src/depth.ts';
 import { nanoBrief, NANO_REFRESH_MS } from '../src/nano.ts';
 import { ASSETS } from '../src/intent.ts';
-import { executeTrade, vaultStatus, type ExecConfig, type TradeResult } from './executor.ts';
+import { vaultStatus, type ExecConfig, type TradeResult } from './executor.ts';
+import { cleanOrder, type Order, type Ticket } from './guard.ts';
 import { loadAgents, type Agent } from '../src/agents.ts';
 import { recommend, type Level } from '../src/recommend.ts';
 import { STRINGS } from '../src/i18n.ts';
@@ -20,7 +22,6 @@ export const MODEL = 'claude-sonnet-5-5';
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 /** Default high (the product owner's choice); MOA_EFFORT overrides it for measurement. */
 const EFFORT: Effort = (['low', 'medium', 'high', 'xhigh', 'max'] as const).find((e) => e === process.env.MOA_EFFORT) ?? 'high';
-const EXECUTE_WORDS = /(실행|execute)/i;
 
 export interface ChatTurn { role: 'user' | 'assistant'; content: string }
 export interface PlanStep {
@@ -34,6 +35,8 @@ export interface MoaResult {
   reply: string;
   plan?: { steps: PlanStep[]; missing: string[] };
   executions: (TradeResult & { request: { asset: string; side: string; amount: number } })[];
+  /** Orders Moa proposed: each runs only if the user presses Confirm on its card (see server/guard.ts). */
+  proposals: Ticket[];
   model: string;
   /** Set when recommend_agent ran: the app shows this agent's card under the reply. */
   recommend?: { agentId: string; coin: string };
@@ -50,9 +53,7 @@ Rules:
 - Never invent prices or numbers. Call get_market when you need current prices; quote only what it returns.
 - When the user describes a goal, call propose_plan with structured steps. If something essential is missing (asset, amount, pace or deadline), ask one short question and put it in "missing".
 - Trading venue is HSKSwap on HSK Chain (WHSK, WETH, WBTC against USDT). HashKey Global prices are reference only.
-- Call execute_trade only when the user's latest message explicitly asks to execute (for example "실행" or "execute"), and only for the immediate trade the user asked for or the first buy of the approved plan. Never execute on your own initiative.
-- Execution moves real funds through the user's MoaVault contract. If execute_trade returns an error, explain it plainly; do not retry with different numbers unless the user asks.
-- After an execution, state the result in one or two sentences. Do not paste transaction hashes or links; the app shows a receipt card with the link.
+- You cannot execute trades. When the user clearly asks for a trade now (for example "buy $5 of ETH now"), call propose_trade once with exactly that order; the app shows it as a card with a Confirm button, and only the user's press sends it to their vault. Never propose on your own initiative, and never when the user says not to. Say in one sentence that it waits for their Confirm; never say it was executed.
 - The app has an agent market: agents that each follow one fixed rule on one coin. When the user asks what to hire, which agent to use, or to have buying done for them, call recommend_agent with the coin they mean ("any" if none). The app picks by its own rule and shows the agent card with a Hire button under your reply. Describe the pick in one or two sentences using only the numbers the tool returns. You never hire agents, change amounts or pause agents yourself: hiring and amounts go through a sheet the user confirms, and every agent has a pause button in the bar at the top.
 - When the conversation says the liquidity studio is open, the user is planning HSKSwap liquidity in steps: USDT in steps under the price (it buys the coin as the price comes down into them) and optionally the coin in steps over it (sold as the price goes up). Help them choose the USDT amount, the shape (spot = even; curve = most near the price, most fees while the price moves around it; spotCurve = half even, half curve; bidask = most at the far ends, buys most on a big fall) and how far under the price it reaches (reachPct, e.g. 3, 6, 12, 24). There are ready-made strategies (set_lp_plan's strategy): slowBuy (buy a little on every dip, 8% under the price), dipLadder (buy more the deeper it falls, 15%), crashCatcher (wide under the price for a big fall, 30%), takeProfit (sell a little on every rise, 15% over), rangeFees (both ways, packed near the price, 4%, most fees while the price moves sideways), wideGrid (both ways, even, 20%, set and leave). Do not quote past or expected returns. Call set_lp_plan with what they decided; it changes the plan on their screen. You never supply anything: they press Supply and sign in their wallet. Fees are 0.3% and only earned while the price trades inside a step; say so if they ask about returns, and do not promise any.
 - Keep replies under 90 words. No markdown headers.`;
@@ -126,8 +127,8 @@ const tools: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
-    name: 'execute_trade',
-    description: 'Execute one swap now through the user MoaVault on HSKSwap. Only when the latest user message explicitly asks to execute. buy: amount is USDT to spend. sell: amount is the token quantity to sell.',
+    name: 'propose_trade',
+    description: 'Propose one swap through the user MoaVault on HSKSwap. Nothing is sent: the app shows a Confirm button and only the user pressing it executes. Only when the user clearly asks for this trade now. buy: amount is USDT to spend. sell: amount is the token quantity to sell.',
     input_schema: {
       type: 'object',
       properties: {
@@ -206,14 +207,15 @@ function forModel(a: Agent) {
 /** How long one model call may take before Moa gives up and says so (the app then answers on-device). */
 export const CALL_DEADLINE_MS = 90_000;
 
-export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[], onEvent: (e: MoaEvent) => void = () => {}, ctx: MoaContext = {}, signal?: AbortSignal): Promise<MoaResult> {
+/** Turns a proposed order into a ticket for the logged-in wallet, or says why it cannot be proposed. */
+export type Propose = (o: Order) => Ticket | string;
+
+export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[], onEvent: (e: MoaEvent) => void = () => {}, ctx: MoaContext = {}, signal?: AbortSignal, propose: Propose = () => 'Trades cannot be proposed here.'): Promise<MoaResult> {
   // No silent retries behind the user's back: the SDK default (10 minutes, twice retried) left the chat
   // "reading the message" for half an hour when the API was slow or unreachable.
   const client = new Anthropic({ apiKey, maxRetries: 1, timeout: CALL_DEADLINE_MS });
-  const lastUser = [...history].reverse().find((t) => t.role === 'user')?.content ?? '';
-  const executionAllowed = EXECUTE_WORDS.test(lastUser);
   const messages: Anthropic.Beta.BetaMessageParam[] = history.map((t) => ({ role: t.role, content: t.content }));
-  const result: MoaResult = { reply: '', executions: [], model: MODEL };
+  const result: MoaResult = { reply: '', executions: [], proposals: [], model: MODEL };
 
   for (let i = 0; i < 6; i++) {
     onEvent({ type: 'step', step: i === 0 ? 'thinking' : 'writing' });
@@ -273,21 +275,17 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
           const ok = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
           result.lp = { ...(ok(x.usdt) ? { usdt: x.usdt } : {}), ...(ok(x.coin) ? { coin: x.coin } : {}), ...(x.shape ? { shape: x.shape } : {}), ...(ok(x.reachPct) && x.reachPct! > 0 ? { reachPct: Math.min(60, x.reachPct!) } : {}), ...(preset ? strategyPlan(preset) : {}) };
           content = 'The plan on the screen now shows this. The user supplies it themselves with the Supply button.';
-        } else if (u.name === 'execute_trade') {
-          const input = u.input as { asset: 'HSK' | 'ETH' | 'BTC'; side: 'buy' | 'sell'; amount: number; note: string };
-          if (!executionAllowed) {
-            isError = true;
-            content = 'Refused by the server: the user has not explicitly asked to execute in their latest message. Ask them to confirm with "실행" or "execute".';
-          } else if (result.executions.length > 0) {
-            isError = true;
-            content = 'Refused by the server: only one execution per user message.';
-          } else {
-            onEvent({ type: 'step', step: 'execute', detail: `${input.side} ${input.amount} ${input.side === 'buy' ? 'USDT of ' : ''}${input.asset}` });
-            const r = await executeTrade(cfg, input);
-            result.executions.push({ ...r, request: { asset: input.asset, side: input.side, amount: input.amount } });
-            isError = !r.ok;
-            content = JSON.stringify(r);
-          }
+        } else if (u.name === 'propose_trade') {
+          const order = cleanOrder(u.input);
+          const ticket = order && result.proposals.length === 0 ? propose(order) : null;
+          if (!order) { isError = true; content = 'Not a valid order.'; }
+          else if (result.proposals.length > 0) { isError = true; content = 'Only one proposal per message.'; }
+          else if (typeof ticket === 'string') { isError = true; content = ticket; }
+          else if (ticket) {
+            onEvent({ type: 'step', step: 'execute', detail: `${order.side} ${order.amount} ${order.side === 'buy' ? 'USDT of ' : ''}${order.asset}` });
+            result.proposals.push(ticket);
+            content = 'Shown to the user as a card with a Confirm button. Nothing has been sent; it executes only if they press Confirm within 5 minutes.';
+          } else { isError = true; content = 'Not proposed.'; }
         } else {
           isError = true;
           content = `Unknown tool ${u.name}`;

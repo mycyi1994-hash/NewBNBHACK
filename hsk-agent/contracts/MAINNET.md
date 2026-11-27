@@ -7,20 +7,25 @@ makes a **MoaVault** for each wallet that logs in. Everything below is run on yo
 **Deployed 26 Nov 2026 (first version of the vault, superseded):** factory [`0x49807417fcebfb90e59933f0c44e4f1edf96444c`](https://hsk.blockscout.com/address/0x49807417fcebfb90e59933f0c44e4f1edf96444c)
 ([transaction](https://hsk.blockscout.com/tx/0xedb6a15b62c220ccd46df7927685de73fa516e1fb76ad1c220a5c4c4e37f6ebf)).
 Read back from the chain afterwards: the agent, USDT, router, the three markets and the limits ($10 per trade,
-$30 per day, 1.5%) are as planned. Steps 1 to 3 below are done; the app flow on mainnet (step 5) is not checked yet.
+$30 per day, 1.5%) are as planned. The only trade ever sent on mainnet went through a vault of this version:
+$1 of WBTC asked for in the chat ([transaction](https://hsk.blockscout.com/tx/0x955cd89b5e89200d606300df1afeca3c3adb337c200e6743af7b64595c2441ee)).
+That vault now holds nothing.
 
-That factory starts every vault at $10 per trade and $30 per day, which was the scripts' default on that day.
-Since then limits are each user's own choice: the scripts now start vaults with **no limits**, and the app's
-account menu has **Limits** (per trade, per day, worst price accepted, each with "no limit") and **Lock trading**.
-A vault from the deployed factory can have its limits changed or removed there by its owner, in one transaction.
-For new vaults to start without limits, deploy a new factory with the steps below and point
-`MOA_FACTORY_ADDRESS` at it.
+That factory starts every vault at $10 per trade and $30 per day. The version-2 factory below starts vaults with
+**no limits** (the scripts' default on that day); version 3 refuses that again and starts every vault with $50 per
+trade, $100 per day and a 15% stop-loss (see **Version 3 hardening**). In every version the app's account menu has
+**Limits** (per trade, per day, worst price accepted, each with "no limit") and **Lock trading** for the owner.
 
 **Current factory (version 2 of the vault), deployed 26 Nov 2026, source published:**
 [`0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546`](https://hsk.blockscout.com/address/0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546).
 Read back from the chain: the agent, USDT, router and the three markets as planned; vaults start with no spending
-limit, a 1.5% slippage ceiling and the stop-loss off. One vault has been made by it so far, for the wallet that
-logged in to the app; no trade or stop-loss has happened on it yet.
+limit, a 1.5% slippage ceiling and the stop-loss off. As of 27 Nov 2026 it has made **two** vaults (`vaultCount()` =
+2): [`0x6A35…b33C`](https://hsk.blockscout.com/address/0x6A355aE335f06971C337c900783C2e016410b33C) for `0x9E5f…214c`
+at block 30,678,402, holding 9 USDT its owner deposited, and
+[`0x6505…d309`](https://hsk.blockscout.com/address/0x65058a0122FF56F7962cF7e52396b51F9153d309) for `0x2544…710D` at
+block 30,718,340, empty. No trade and no stop-loss has happened on either. The agent wallet has sent four
+transactions in all: three vault creations (one on the first factory) and the $1 trade above. The vault instances'
+source is not verified on Blockscout yet (`node scripts/verify.mjs vault 0xOWNER` does it).
 
 What version 2 changed:
 - the spending limits apply to buys only, so selling back to USDT is never held up by them (in the first version a
@@ -37,7 +42,8 @@ Vaults made by the first factory keep working as they are; funds in them can be 
 | | What it can do | Where its key lives |
 | --- | --- | --- |
 | **A user's wallet** (owner of that user's vault) | Deposit, withdraw, change the vault's limits, pause it, replace its agent. The only address that can take funds out of that vault. | The user's own wallet (MetaMask and the like). The app asks it to sign; the server never sees the key. |
-| **Agent** (one key for all vaults) | Call `trade()` only: USDT ↔ WHSK / WETH / WBTC on HSKSwap, inside each vault's per-trade cap, per-day cap and slippage floor. Cannot withdraw from any vault. Also pays the gas to make each user's vault. | `hsk-agent/.env.local` on the machine that runs the app (git-ignored). |
+| **Guardian** (version 3) | Halt and resume agent trading on every vault of its factory (`setHalted`). Nothing else: no funds, no limits, never withdrawals or the stop-loss. | A wallet you keep off the server, named at deployment (`--guardian`). |
+| **Agent** (one key for all vaults) | Call `trade()` (and `tradeFor()` on version 3) only: USDT ↔ WHSK / WETH / WBTC on HSKSwap, inside each vault's per-trade cap, per-day cap and slippage floor. Cannot withdraw from any vault. Also pays the gas to make each user's vault. | `hsk-agent/.env.local` on the machine that runs the app (git-ignored). |
 | **Deploying wallet** | Pays the gas for the factory, once. Gets no control: the factory has no owner and nothing in it can be changed. | Yours. Typed into a hidden prompt for the one deploy command; never stored, never printed. |
 
 If the agent key leaks, the worst it can do is trade inside each vault's limits. A vault with no limits has no
@@ -47,8 +53,8 @@ vault with pause or by replacing the agent; a new factory with a new agent key i
 
 ## What you need first
 
-- HSK in the deploying wallet: the dry run prints the estimate (about 1 HSK at the gas price seen on 26 Nov 2026).
-- HSK in the agent wallet: making one user's vault costs it about 0.63 HSK and each trade about 0.15 HSK at that
+- HSK in the deploying wallet: the dry run prints the estimate (about 1 HSK for version 2 at the gas price seen on 26 Nov 2026; the version-3 dry run on 27 Nov 2026 estimated 3.9M gas, about 1.95 HSK).
+- HSK in the agent wallet: making one user's vault costs it about 0.63 HSK (version 3: about 0.90 HSK) and each trade about 0.15 HSK at that
   gas price. The server makes at most `MOA_MAX_VAULTS_PER_DAY` vaults a day (default 20).
 - USDT on HSK Chain in whichever wallet will log in and deposit: `0xf1b50ed67a9e2cc94ad3c477779e2d4cbfff9029`.
 
@@ -119,69 +125,94 @@ node scripts/compile.cjs
    node scripts/verify.mjs vault 0xYOUR_WALLET_ADDRESS
    ```
 
-## Version 3: creator fees for shared agents (not deployed)
+## Version 3 hardening (not deployed)
 
-Nothing below has been sent to mainnet. Version 3 of the vault is compiled and checked on a local fork only.
+Nothing in this section has been sent to mainnet. Version 3 of the vault and factory is compiled and checked on a
+local fork of mainnet only. Vaults cannot be upgraded: the two version-2 vaults above keep working exactly as they
+are (no creator fee, no budgets, the spot price floor) until their owners move to a new vault.
 
-What it adds, and only this: someone who hires an agent another person made and shared can let that person earn a
-fee on it. The **owner** approves a creator on their own vault, `setCreatorFee(creator, bps)`, at most 100 bps (1%):
-the contract refuses more, refuses the agent key as a creator, and only the owner can call it (event `CreatorFeeSet`).
-The agent then trades with `tradeFor(token, isBuy, amountIn, minOut, note, creator, feeBps)`; the vault pays
-`min(feeBps, what the owner approved)` in USDT, from the USDT going in on a buy or coming out on a sell (event
-`CreatorPaid`). An unapproved creator gets nothing and the trade still goes through. `trade(...)` is unchanged and
-pays no one. Limits: on a buy the fee is part of `amountIn`, so the per-trade and per-day limits cover everything that
-leaves the vault. A sell's fee comes out of what the sale returns and, like every sell, is not held up by the limits.
-Stop-loss: a holding's cost is what went into the pool (the fee is not counted as a price fall), so a fee never brings
-a stop-loss forward; `stopOut` is unchanged. Withdrawals, pause and the owner's other controls are unchanged.
-`VERSION()` returns 3; earlier vaults have no `VERSION`, and the server reads that to send them only `trade`.
+What version 3 changes, against what the panel of judges found:
 
-Vaults cannot be upgraded. Vaults made by the current factory (`0xd6bF…6546`, version 2) keep working exactly as
-before and simply pay no creator fee; the app says so in the hire sheet. A new factory makes version-3 vaults for
-wallets that have none yet. Do not list the first factory (`0x4980…444c`) below: its vaults have no stop-loss and
-this server cannot read them, as before; they stay reachable with `vault.mjs --factory 0x4980…` to withdraw.
+| | Version 2 (on mainnet) | Version 3 |
+| --- | --- | --- |
+| Price floor of `trade` | `minOut` within `maxSlippageBps` of the pool price **now** (`slot0`), so a key that moves the pool first could sandwich its own vault | within `maxSlippageBps` of the pool's **10-minute time-weighted average** (the same `observe()` average the stop-loss uses; Uniswap's `getSqrtRatioAtTick` in `_sqrtAtTick`). A pool price already worse than that floor is refused as `PriceMoving` before anything is swapped. Views: `quoteTwap`, `minOutFloor`. In a fast fall the agent's own sell now waits until the price has held, like the stop-loss; the owner can always withdraw |
+| Starting limits | the factory started vaults with **no limit** and the stop-loss off | the factory refuses to deploy with no limit or no stop-loss: per trade above 0, per day at most 10,000 USDT, a stop-loss of 1–50%, slippage up to 3%. The scripts default to **$50 per trade, $100 per day, a 15% stop-loss, 1.5% slippage**. Each owner changes or removes them in the account menu (`setLimits`, `setStopLoss(0)`) |
+| Per-agent budgets | only in the server (`autoRunner`) | `setBudget(agentId, usdt)` and `setBudgetsOn(bool)`, owner only. With budgets on, every buy names an agent (`tradeFor(…, agentId, feeBps)`; `trade` is agent 0) and is refused over what is left of that agent's budget (`OverBudget`). Sells need no budget. `agentId` = keccak256 of the hired agent's id in the app. Off by default, so nothing changes until the owner turns it on; the hire sheet then sets each new agent's budget in the same wallet confirmations |
+| Shared hot agent key | each owner can replace the agent (`setAgent`) or pause; no global switch | the same per vault (now also refusing the owner as agent), plus a **guardian** fixed in the factory at deployment: `setHalted(true)` stops agent trading on every vault at once (`Halted`). It cannot move funds, change limits or block withdrawals, deposits or the stop-loss. The deploy script makes the deploying wallet the guardian unless `--guardian 0x…` names another; keep that key off the server |
+| Creator fee | (none) | approved per hired agent, not per creator: `setCreatorFee(agentId, creator, bps)`, at most 1%. `tradeFor` cannot name a creator at all; the vault pays the creator the owner approved for that agent. The agent key can only choose which agent a trade is for, so with budgets on, a creator can be credited with no more than that agent's own budget |
+| Reentrancy | swaps and stop-outs updated the books after the swap | books before the swap, and `trade`, `tradeFor`, `stopOut` and `withdraw` refuse to be entered twice |
 
-Steps, when you decide to deploy (from `hsk-agent/contracts`):
+Static analysis: Slither 0.11.6 (`audit/slither.txt`), 23 findings, none of them high or medium after the fixes
+above: `divide-before-multiply` in `_quoteAt` (intended: it keeps the intermediate under 2^256; the loss is under one
+unit of the output token at the pools' prices) and in `_sqrtAtTick` (Uniswap's own code), `incorrect-equality` on
+`== 0` checks, `unused-return` of `slot0`/`observe` fields, `calls-loop` in the constructor's market list,
+`reentrancy-events` (events after the router call, which is a fixed, allow-listed contract), `missing-zero-check` on
+the guardian (zero means no guardian, by design), complexity and long literals in `_sqrtAtTick`.
 
-1. Compile and run both fork tests. Both start their own fork node.
+Tests on a fork of mainnet (each starts its own Hardhat node):
+
+- `scripts/fork-test.mjs`, 55 checks: everything above for version 2, plus: a factory with unsafe starting values
+  cannot be deployed; a new vault starts with the safe limits and a 15% stop-loss; the owner can turn it off; right
+  after the price is pushed down, the agent's sell is refused (`PriceMoving`), and so is a key asking for a floor from
+  the pushed price (`SlippageTooLoose`); ten minutes later the same sell goes through; only the guardian can halt;
+  halted, no trade goes through, the status reports it and the owner still withdraws; after the halt is lifted trading
+  works; after the owner replaces the agent key the old key is refused and cannot put itself back.
+- `scripts/fee-fork-test.mjs`, 40 checks: creator fees per agent (who may approve, the 1% cap, exact amounts on buys
+  and sells, nothing to an unapproved creator, the server asking no fee when the approved creator is someone else,
+  a withdrawn approval), budgets (a stranger cannot set them; a buy over an agent's budget is refused; the agent key
+  cannot credit another agent's $20 to a creator past that agent's budget; a buy for no agent is refused with budgets
+  on; selling needs no budget), limits and stop-loss with fees, old vaults sent only `trade`, fees read back from events.
+- `scripts/fuzz-fork-test.mjs`, randomized: 400 random steps (owner limits, budgets, creator approvals, agent buys and
+  sells for random agents asking random fees, strangers calling owner functions, jumps in time), each checked against
+  a model of what the vault must allow and an exact account of every unit of USDT; invariants I1–I8 are at the top of
+  the file. `FUZZ_SEED` and `FUZZ_RUNS` repeat or lengthen a run. On 27 Nov 2026: seed 1, 400 steps, 1,207 checks;
+  seed 7, 300 steps, 1,160 checks; none failed.
+
+### Owner steps, when you decide to deploy (from `hsk-agent/contracts`)
+
+1. Compile and run the three fork tests:
 
    ```bash
    node scripts/compile.cjs
-   node --experimental-strip-types scripts/fork-test.mjs       # 42 checks, the vault as before
-   node --experimental-strip-types scripts/fee-fork-test.mjs   # 28 checks, creator fees and old vaults
+   node --experimental-strip-types scripts/fork-test.mjs
+   node --experimental-strip-types scripts/fee-fork-test.mjs
+   FUZZ_RUNS=400 node --experimental-strip-types scripts/fuzz-fork-test.mjs
    ```
 
-2. Dry run, then deploy the new factory exactly as in **Steps** 2 to 4 above (`deploy-mainnet.mjs`, then
-   `verify.mjs`). One transaction; no funds move. `deployments/hsk-mainnet.json` is overwritten, so copy the old
-   one to `deployments/hsk-mainnet-v2.json` first.
+2. Choose the guardian: a wallet you control that is **not** the agent wallet and not on the server (a hardware
+   wallet is best). Copy `deployments/hsk-mainnet.json` to `deployments/hsk-mainnet-v2.json`, then dry-run:
 
-3. Point the server at it and keep the earlier factories, so every wallet that already has a vault keeps it
-   (`.env.local`, or the host's dashboard):
+   ```bash
+   node scripts/deploy-mainnet.mjs --from 0xYOUR_WALLET --guardian 0xGUARDIAN
+   ```
+
+   It prints the starting values ($50 per trade, $100 per day, 1.5%, 15% stop-loss unless you pass `--max-trade`,
+   `--max-daily`, `--slippage-bps`, `--stop-loss-bps`) and the gas. Then `--send` as in **Steps** 3, and
+   `node scripts/verify.mjs` as in **Steps** 4.
+
+3. Point the server at it and keep the version-2 factory, so the two wallets that have a vault there keep it:
 
    ```
    MOA_FACTORY_ADDRESS=0x…new factory…
    MOA_LEGACY_FACTORY_ADDRESSES=0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546
-   MOA_FEES_FROM_BLOCK=…the block of the deployment transaction…   # optional: where "fees received" starts reading
+   MOA_FEES_FROM_BLOCK=…the block of the deployment transaction…   # optional
    ```
 
-   Without `MOA_FEES_FROM_BLOCK` the server finds the factory's deployment block itself (about 25 reads, once).
+   Do not list the first factory (`0x4980…444c`): its vaults have no stop-loss and this server cannot read them; they
+   stay reachable with `node scripts/vault.mjs status 0x… --factory 0x4980…` to withdraw.
 
-4. Restart the app. `/api/health` should say `factory: ok (0x…)`. A wallet logging in for the first time gets a
-   version-3 vault; one that already has a vault keeps it. In the app: share an agent from *Make an agent*, hire it
-   from another wallet with a fee, approve the fee in the wallet (one transaction), and check the creator's
-   *Agents I shared* shows the fee once the first trade fills.
+4. Restart the app. `/api/health` should say `"factory": "ok"` and `"vaults": "on"`. Log in with a fresh wallet: its
+   vault shows $50 / $100 and a 15% stop-loss in the account menu. Run the mainnet checklist (deposit 5–10 USDT,
+   hire an agent, approve its first buy, a Moa chat order confirmed with its button, withdraw).
 
-5. The same approval without the app: `node scripts/vault.mjs creator 0xCREATOR 0.5` (and `… 0` to withdraw it).
+5. If the agent key may have leaked: from the guardian wallet call `setHalted(true)` on the factory (Blockscout's
+   *Write contract* tab works); every vault's agent trading stops, funds stay where they are. Then make a new agent
+   key, deploy a new factory with it, and lift the halt only if the old key is safe. One owner alone can do the same
+   for their own vault: `node scripts/vault.mjs pause` or `node scripts/vault.mjs agent 0xNEW`.
 
-`scripts/fee-fork-test.mjs`, 28 checks on a fork of mainnet: a wallet with a vault from the earlier factory keeps
-it; the server tells versions 3 and 2 apart; a stranger and the agent key cannot approve a fee; 101 bps and the agent
-key as creator are refused; the owner's approval and its event; a $20 buy pays exactly $0.10 at 0.5%, the vault spends
-exactly $20, the day's spending counts $20 and the holding's cost is $19.90; a sell pays 0.5% of what came out; the
-agent asking for 1% where 0.5% was approved gets 0.5%; an unapproved creator, the agent key naming itself and a
-withdrawn approval all pay nothing while the trade goes through; the agent key cannot withdraw; $10 per-trade and
-$25 daily limits hold with the fee inside them; after a buy that paid 1%, a 1% stop-loss is not set off; on a
-version-2 vault the server sends `trade` (checked by the transaction's function selector) and nothing is paid; the
-fees read back from the vaults' events equal what the creator's wallet received. `scripts/fork-test.mjs` (42 checks)
-passes unchanged on version 3.
+6. Owners who want on-chain per-agent budgets: `node scripts/vault.mjs budgets on` (the app's hire sheet then sets
+   each agent's budget), or per agent `node scripts/vault.mjs budget <hired agent id> 100`. Creator fees without the
+   app: `node scripts/vault.mjs creator <hired agent id> 0xCREATOR 0.5`.
 
 ## The same controls without the app
 
@@ -246,7 +277,8 @@ Not checked:
 
 - The HSKSwap router address is not on the official documentation page that lists the tokens; it was confirmed only
   by its on-chain relation to the pools.
-- `scripts/verify.mjs` has not been run against a real deployment.
+- `scripts/verify.mjs` published the version-2 factory's source; the two vault instances are not verified yet.
 - A real wallet extension (MetaMask): the browser run used a stand-in that signs with a fork test account.
 - Wallets that are contracts (multisigs, smart accounts) cannot log in yet: the login checks an ordinary signature.
-- On mainnet only the factory deployment has happened: no vault has been made and no trade sent there yet.
+- On mainnet: two version-2 vaults exist (above); no trade, stop-loss or creator fee has happened on version 2,
+  and nothing of version 3 is deployed. The one mainnet trade is the $1 chat order on a first-version vault.

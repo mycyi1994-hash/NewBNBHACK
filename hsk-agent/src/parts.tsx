@@ -16,6 +16,10 @@ export interface VaultInfo {
   remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string; maxSlippageBps?: number;
   /** 3 and up can pay the maker of a shared agent a fee the owner approved; 2 cannot. */
   version?: number;
+  /** Version 3: each buy spends from the hired agent's own on-chain budget. */
+  budgetsOn?: boolean;
+  /** Version 3: the factory guardian stopped agent trading on every vault (funds and the stop-loss are untouched). */
+  halted?: boolean;
 }
 
 /** The vault's limits in one line: "$10 per trade · $30 per day", or that there are none. */

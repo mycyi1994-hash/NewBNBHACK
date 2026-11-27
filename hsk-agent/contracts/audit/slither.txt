@@ -1,0 +1,108 @@
+Multiple frameworks detected: solc, Solc-json. Using solc (highest priority). Use --compile-force-framework to override.
+INFO:Detectors:
+Detector: divide-before-multiply
+MoaVault._sqrtAtTick(int24) (src/MoaVault.sol#457-484) performs a multiplication on the result of a division:
+	- ratio = (ratio * 0x48a170391f7dc42444e8fa2) >> 128 (src/MoaVault.sol#480)
+	- ratio = type()(uint256).max / ratio (src/MoaVault.sol#481)
+MoaVault._quoteAt(MoaVault.Market,bool,uint256,uint160) (src/MoaVault.sol#487-493) performs a multiplication on the result of a division:
+	- ((amountIn * q96) / sqrtP) * q96 / sqrtP (src/MoaVault.sol#492)
+MoaVault._quoteAt(MoaVault.Market,bool,uint256,uint160) (src/MoaVault.sol#487-493) performs a multiplication on the result of a division:
+	- ((amountIn * sqrtP) / q96) * sqrtP / q96 (src/MoaVault.sol#491)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#divide-before-multiply
+INFO:Detectors:
+Detector: incorrect-equality
+MoaVault._payCreator(address,bytes32,uint16,bool,uint256) (src/MoaVault.sol#341-345) uses a dangerous strict equality:
+	- fee == 0 (src/MoaVault.sol#342)
+MoaVault.stopOut(address) (src/MoaVault.sol#270-291) uses a dangerous strict equality:
+	- held == 0 || cost == 0 (src/MoaVault.sol#276)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#dangerous-strict-equalities
+INFO:Detectors:
+Detector: unused-return
+MoaVault.stopOut(address) (src/MoaVault.sol#270-291) ignores return value by (sqrtP,tickNow,None,None,None,None,None) = IUniswapV3Pool(m.pool).slot0() (src/MoaVault.sol#278)
+MoaVault.quote(address,bool,uint256) (src/MoaVault.sol#296-300) ignores return value by (sqrtP,None,None,None,None,None,None) = IUniswapV3Pool(m.pool).slot0() (src/MoaVault.sol#298)
+MoaVault.position(address) (src/MoaVault.sol#320-329) ignores return value by (sqrtP,None,None,None,None,None,None) = IUniswapV3Pool(m.pool).slot0() (src/MoaVault.sol#325)
+MoaVault._checkFloor(MoaVault.Market,bool,uint256,uint256) (src/MoaVault.sol#349-355) ignores return value by (sqrtP,tickNow,None,None,None,None,None) = IUniswapV3Pool(m.pool).slot0() (src/MoaVault.sol#353)
+MoaVault._trade(address,bool,uint256,uint256,string,bytes32,uint16) (src/MoaVault.sol#357-403) ignores return value by (sqrtP,None,None,None,None,None,None) = IUniswapV3Pool(m.pool).slot0() (src/MoaVault.sol#393)
+MoaVault._averageTick(address) (src/MoaVault.sol#445-454) ignores return value by (cumulative,None) = IUniswapV3Pool(pool).observe(ago) (src/MoaVault.sol#449)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#unused-return
+INFO:Detectors:
+Detector: missing-zero-check
+MoaVaultFactory.constructor(address,address,address,uint256,uint256,uint16,uint16,address[],address[],address).guardian_ (src/MoaVaultFactory.sol#48) lacks a zero-check on :
+		- guardian = guardian_ (src/MoaVaultFactory.sol#56)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#missing-zero-address-validation
+INFO:Detectors:
+Detector: calls-loop
+MoaVault._setMarket(address,address,bool) (src/MoaVault.sol#419-427) has external calls inside a loop: t0 = p.token0() (src/MoaVault.sol#421)
+	Calls stack containing the loop:
+		MoaVault.constructor(address,address,address,address,uint256,uint256,uint16,uint16,address[],address[])
+MoaVault._setMarket(address,address,bool) (src/MoaVault.sol#419-427) has external calls inside a loop: t1 = p.token1() (src/MoaVault.sol#422)
+	Calls stack containing the loop:
+		MoaVault.constructor(address,address,address,address,uint256,uint256,uint16,uint16,address[],address[])
+MoaVault._setMarket(address,address,bool) (src/MoaVault.sol#419-427) has external calls inside a loop: fee = p.fee() (src/MoaVault.sol#424)
+	Calls stack containing the loop:
+		MoaVault.constructor(address,address,address,address,uint256,uint256,uint16,uint16,address[],address[])
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation/#calls-inside-a-loop
+INFO:Detectors:
+Detector: reentrancy-events
+Reentrancy in MoaVault._payCreator(address,bytes32,uint16,bool,uint256) (src/MoaVault.sol#341-345):
+	External calls:
+	- require(bool,string)(IERC20(usdt).transfer(creator,fee),fee transfer failed) (src/MoaVault.sol#343)
+	Event emitted after the call(s):
+	- CreatorPaid(creator,agentId,isBuy,fee,bps) (src/MoaVault.sol#344)
+Reentrancy in MoaVault._trade(address,bool,uint256,uint256,string,bytes32,uint16) (src/MoaVault.sol#357-403):
+	External calls:
+	- amountOut = _swap(usdt,token,m.fee,swapIn,minOut) (src/MoaVault.sol#389)
+		- require(bool,string)(IERC20(tokenIn).approve(address(router),amountIn),approve failed) (src/MoaVault.sol#430)
+		- router.exactInputSingle(ISwapRouter02.ExactInputSingleParams({tokenIn:tokenIn,tokenOut:tokenOut,fee:fee,recipient:address(this),amountIn:amountIn,amountOutMinimum:minOut,sqrtPriceLimitX96:0})) (src/MoaVault.sol#431-441)
+	- _payCreator(creator,agentId,bps,true,fee) (src/MoaVault.sol#390)
+		- require(bool,string)(IERC20(usdt).transfer(creator,fee),fee transfer failed) (src/MoaVault.sol#343)
+	Event emitted after the call(s):
+	- CreatorPaid(creator,agentId,isBuy,fee,bps) (src/MoaVault.sol#344)
+		- _payCreator(creator,agentId,bps,true,fee) (src/MoaVault.sol#390)
+Reentrancy in MoaVault._trade(address,bool,uint256,uint256,string,bytes32,uint16) (src/MoaVault.sol#357-403):
+	External calls:
+	- gross = _swap(token,usdt,m.fee,amountIn,minOut) (src/MoaVault.sol#397)
+		- require(bool,string)(IERC20(tokenIn).approve(address(router),amountIn),approve failed) (src/MoaVault.sol#430)
+		- router.exactInputSingle(ISwapRouter02.ExactInputSingleParams({tokenIn:tokenIn,tokenOut:tokenOut,fee:fee,recipient:address(this),amountIn:amountIn,amountOutMinimum:minOut,sqrtPriceLimitX96:0})) (src/MoaVault.sol#431-441)
+	- _payCreator(creator,agentId,bps,false,fee_scope_0) (src/MoaVault.sol#400)
+		- require(bool,string)(IERC20(usdt).transfer(creator,fee),fee transfer failed) (src/MoaVault.sol#343)
+	Event emitted after the call(s):
+	- CreatorPaid(creator,agentId,isBuy,fee,bps) (src/MoaVault.sol#344)
+		- _payCreator(creator,agentId,bps,false,fee_scope_0) (src/MoaVault.sol#400)
+Reentrancy in MoaVault._trade(address,bool,uint256,uint256,string,bytes32,uint16) (src/MoaVault.sol#357-403):
+	External calls:
+	- amountOut = _swap(usdt,token,m.fee,swapIn,minOut) (src/MoaVault.sol#389)
+		- require(bool,string)(IERC20(tokenIn).approve(address(router),amountIn),approve failed) (src/MoaVault.sol#430)
+		- router.exactInputSingle(ISwapRouter02.ExactInputSingleParams({tokenIn:tokenIn,tokenOut:tokenOut,fee:fee,recipient:address(this),amountIn:amountIn,amountOutMinimum:minOut,sqrtPriceLimitX96:0})) (src/MoaVault.sol#431-441)
+	- _payCreator(creator,agentId,bps,true,fee) (src/MoaVault.sol#390)
+		- require(bool,string)(IERC20(usdt).transfer(creator,fee),fee transfer failed) (src/MoaVault.sol#343)
+	- gross = _swap(token,usdt,m.fee,amountIn,minOut) (src/MoaVault.sol#397)
+		- require(bool,string)(IERC20(tokenIn).approve(address(router),amountIn),approve failed) (src/MoaVault.sol#430)
+		- router.exactInputSingle(ISwapRouter02.ExactInputSingleParams({tokenIn:tokenIn,tokenOut:tokenOut,fee:fee,recipient:address(this),amountIn:amountIn,amountOutMinimum:minOut,sqrtPriceLimitX96:0})) (src/MoaVault.sol#431-441)
+	- _payCreator(creator,agentId,bps,false,fee_scope_0) (src/MoaVault.sol#400)
+		- require(bool,string)(IERC20(usdt).transfer(creator,fee),fee transfer failed) (src/MoaVault.sol#343)
+	Event emitted after the call(s):
+	- Traded(token,isBuy,amountIn,amountOut,notional,note) (src/MoaVault.sol#402)
+Reentrancy in MoaVault.stopOut(address) (src/MoaVault.sol#270-291):
+	External calls:
+	- amountOut = _swap(token,usdt,m.fee,held,(value * (10_000 - maxSlippageBps)) / 10_000) (src/MoaVault.sol#289)
+		- require(bool,string)(IERC20(tokenIn).approve(address(router),amountIn),approve failed) (src/MoaVault.sol#430)
+		- router.exactInputSingle(ISwapRouter02.ExactInputSingleParams({tokenIn:tokenIn,tokenOut:tokenOut,fee:fee,recipient:address(this),amountIn:amountIn,amountOutMinimum:minOut,sqrtPriceLimitX96:0})) (src/MoaVault.sol#431-441)
+	Event emitted after the call(s):
+	- StoppedOut(token,msg.sender,held,amountOut,cost) (src/MoaVault.sol#290)
+Reentrancy in MoaVault.withdraw(address,uint256) (src/MoaVault.sol#230-235):
+	External calls:
+	- require(bool,string)(IERC20(token).transfer(owner,amount),transfer failed) (src/MoaVault.sol#233)
+	Event emitted after the call(s):
+	- Withdrawn(token,amount) (src/MoaVault.sol#234)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#reentrancy-vulnerabilities-4
+INFO:Detectors:
+Detector: cyclomatic-complexity
+MoaVault._sqrtAtTick(int24) (src/MoaVault.sol#457-484) has a high cyclomatic complexity (23).
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#cyclomatic-complexity
+INFO:Detectors:
+Detector: too-many-digits
+MoaVault._sqrtAtTick(int24) (src/MoaVault.sol#457-484) uses literals with too many digits:
+	- ratio = 0x100000000000000000000000000000000 (src/MoaVault.sol#461)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#too-many-digits
+INFO:Slither:src/MoaVaultFactory.sol analyzed (6 contracts with 102 detectors), 23 result(s) found

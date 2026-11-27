@@ -7,16 +7,18 @@
 //   --from 0x…           MOA_DEPLOYER_ADDRESS   the deploying wallet's address, for a dry run. With --send it comes from the key.
 //   --agent 0x…          MOA_AGENT_ADDRESS      the agent wallet's address. Left out: taken from the agent key in ../.env.local
 //                                               (scripts/agent-key.mjs makes it). The agent's key itself is never needed here.
-//   --max-trade none     MOA_MAX_TRADE_USDT     what every new vault starts with as its per-trade limit in USDT (default none)
-//   --max-daily none     MOA_MAX_DAILY_USDT     what every new vault starts with as its per-day limit in USDT (default none)
+//   --max-trade 50       MOA_MAX_TRADE_USDT     what every new vault starts with as its per-trade limit in USDT (default 50)
+//   --max-daily 100      MOA_MAX_DAILY_USDT     what every new vault starts with as its per-day limit in USDT (default 100)
 //   --slippage-bps 150   MOA_MAX_SLIPPAGE_BPS   what every new vault starts with as its slippage ceiling, 150 = 1.5% (default 150)
-//   --stop-loss-bps 0    MOA_STOP_LOSS_BPS      what every new vault starts with as its stop-loss, 1000 = 10% (default 0: off)
-// Limits are each user's own choice: a vault starts with none, and its owner sets, changes or removes them in the
-// app's account menu (or scripts/vault.mjs limits). Without limits, a leaked agent key could trade a vault's whole
-// balance back and forth and lose it to fees and bad prices; it still could not withdraw.
+//   --stop-loss-bps 1500 MOA_STOP_LOSS_BPS      what every new vault starts with as its stop-loss, 1500 = 15% (default 1500)
+//   --guardian 0x…       MOA_GUARDIAN_ADDRESS   may halt agent trading on every vault at once (default: the deploying wallet)
+// Version 3: the factory refuses to start vaults with no limit or no stop-loss (at most 10,000 USDT a day, a stop-loss of
+// 1% to 50%, slippage up to 3%). Each owner may change or remove them afterwards in the app's account menu (or
+// scripts/vault.mjs limits / stop), so the default protects someone who never looks.
 //
-// The deploying wallet only pays the gas: the factory has no owner, nothing in it can be changed later, and it never
-// holds funds. Each vault it makes belongs to its own user, who can change that vault's limits and agent.
+// The deploying wallet pays the gas and gets nothing else. The guardian can halt and resume agent trading on all vaults
+// (if the agent key may have leaked) and nothing more: no funds, no limits, no withdrawals, never the stop-loss.
+// Keep the guardian key off the server. Each vault belongs to its own user, who can change its limits and agent.
 // The key (--send only) is read from MOA_OWNER_PRIVATE_KEY, or asked for with the typing hidden; it is never stored.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createWalletClient, http, isAddress, getAddress, formatEther, encodeDeployData, encodeAbiParameters } from 'viem';
@@ -40,18 +42,21 @@ const account = key ? privateKeyToAccount(key) : null;
 const from = account?.address ?? address(option('from', 'MOA_DEPLOYER_ADDRESS') ?? option('owner', 'MOA_OWNER_ADDRESS'), 'The deploying wallet\'s address (--from 0x…)');
 if (same(from, agent)) fail('deploy from your own wallet, not from the agent wallet: the agent\'s key sits on a server.');
 
-const maxDaily = limitOf(option('max-daily', 'MOA_MAX_DAILY_USDT'));
-const maxTradeAsked = limitOf(option('max-trade', 'MOA_MAX_TRADE_USDT'));
+const maxDaily = limitOf(option('max-daily', 'MOA_MAX_DAILY_USDT') ?? '100');
+const maxTradeAsked = limitOf(option('max-trade', 'MOA_MAX_TRADE_USDT') ?? '50');
 const maxTrade = maxTradeAsked > maxDaily ? maxDaily : maxTradeAsked;   // no per-trade limit under a daily limit = the daily limit
 const slip = Number(option('slippage-bps', 'MOA_MAX_SLIPPAGE_BPS') ?? 150);
-const stop = Number(option('stop-loss-bps', 'MOA_STOP_LOSS_BPS') ?? 0);
-if (!(Number.isInteger(stop) && stop >= 0 && stop <= 9000)) fail('stop-loss: 0 (off) to 9000 bps.');
-if (maxTrade <= 0n || maxDaily <= 0n || !(Number.isInteger(slip) && slip > 0 && slip <= 1000)) fail('limits: an amount above 0 or "none" for each, and slippage 1 to 1000 bps.');
+const stop = Number(option('stop-loss-bps', 'MOA_STOP_LOSS_BPS') ?? 1500);
+if (!(Number.isInteger(stop) && stop >= 100 && stop <= 5000)) fail('stop-loss: 100 to 5000 bps (the factory refuses to start vaults without one).');
+if (maxTrade <= 0n || maxDaily <= 0n || maxDaily > 10_000_000_000n || !(Number.isInteger(slip) && slip > 0 && slip <= 300)) fail('starting limits: above 0, at most 10,000 USDT a day, and slippage 1 to 300 bps.');
+const guardianAsked = option('guardian', 'MOA_GUARDIAN_ADDRESS');
 
 const pub = client();
 const { abi, bytecode } = artifact('MoaVaultFactory');
 const tokens = Object.values(MARKETS).map((m) => m.token), pools = Object.values(MARKETS).map((m) => m.pool);
-const args = [agent, USDT, ROUTER, maxTrade, maxDaily, slip, stop, tokens, pools];
+const guardian = guardianAsked ? address(guardianAsked, 'The guardian address') : from;
+if (same(guardian, agent)) fail('the guardian must not be the agent wallet: it is the switch for when the agent key is in doubt.');
+const args = [agent, USDT, ROUTER, maxTrade, maxDaily, slip, stop, tokens, pools, guardian];
 
 console.log(`\nMoaVaultFactory → ${WHERE} (${RPC})\n`);
 const problems = await checkAddresses(pub);
@@ -70,12 +75,13 @@ console.log(`  deploying wallet (pays the gas, gets no control)   ${from}`);
 console.log(`  agent (trades for every vault, inside its limits)  ${agent}`);
 console.log(`  each new vault starts with                         per trade: ${cap(maxTrade)} · per day: ${cap(maxDaily)} · ${slip / 100}% slippage ceiling · stop-loss: ${stop ? `${stop / 100}%` : 'off'}`);
 console.log('                                                     (each owner sets their own limits and stop-loss afterwards)');
+console.log(`  guardian (may halt agent trading on every vault)   ${guardian}`);
 console.log(`  markets                                            ${Object.keys(MARKETS).join(', ')} against USDT on HSKSwap`);
 console.log('  transactions                                       1 (the factory)');
 console.log(`  estimated gas                                      ${gas} × ${Number(gasPrice) / 1e9} gwei ≈ ${hsk(cost)} HSK`);
 console.log(`  deploying wallet balance                           ${hsk(balance)} HSK${balance < cost * 2n ? '   ← too little: keep at least twice the estimate' : ''}`);
 console.log(`  agent balance                                      ${hsk(agentBalance)} HSK   (making one user's vault costs it about ${hsk(VAULT_GAS * gasPrice)} HSK, one trade about ${hsk(300_000n * gasPrice)})`);
-console.log('\n  Nothing in the factory can be changed later, the agent included. No funds move in this step.\n');
+console.log('\n  Nothing in the factory can be changed later, the agent included; the guardian can only halt and resume agent trading. No funds move in this step.\n');
 
 if (!send) { console.log('Dry run: nothing was sent. Run again with --send to deploy.\n'); process.exit(0); }
 if (balance < cost) fail('the deploying wallet does not have enough HSK for gas.');
@@ -91,7 +97,7 @@ const factory = receipt.contractAddress;
 // A record of what was deployed, for the README and for verifying the source on the explorer. No secrets in it.
 mkdirSync(new URL('./', RECORD), { recursive: true });
 writeFileSync(RECORD, JSON.stringify({
-  chainId: 177, factory, deployer: from, agent, usdt: USDT, router: ROUTER, markets: MARKETS,
+  chainId: 177, factory, deployer: from, agent, guardian, usdt: USDT, router: ROUTER, markets: MARKETS,
   limits: { maxTradeUsdt: maxTrade.toString(), maxDailyUsdt: maxDaily.toString(), maxSlippageBps: slip, stopLossBps: stop },
   transactions: { deploy: hash }, deployedAt: new Date().toISOString(),
   verify: {

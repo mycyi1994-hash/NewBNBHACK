@@ -24,7 +24,7 @@ const ownerW = createWalletClient({ account: owner, chain, transport: http(RPC) 
 
 const factoryArtifact = JSON.parse(readFileSync(new URL('../out/MoaVaultFactory.json', import.meta.url)));
 const agent = privateKeyToAccount(AGENT_KEY).address;
-const factory = (await pub.waitForTransactionReceipt({ hash: await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: [agent, USDT, ROUTER, 2n ** 256n - 1n, 2n ** 256n - 1n, 150, 0, Object.keys(MARKETS), Object.values(MARKETS)] }) })).contractAddress;
+const factory = (await pub.waitForTransactionReceipt({ hash: await ownerW.deployContract({ abi: factoryArtifact.abi, bytecode: factoryArtifact.bytecode, args: [agent, USDT, ROUTER, 50_000_000n, 100_000_000n, 150, 1500, Object.keys(MARKETS), Object.values(MARKETS), owner.address] }) })).contractAddress;
 // Give the first Hardhat test account 500 USDT (taken from the WHSK pool's balance) so it can log in and deposit.
 const whale = MARKETS['0xB210D2120d57b758EE163cFfb43e73728c471Cf1'];
 await test.impersonateAccount({ address: whale });
@@ -36,4 +36,4 @@ writeFileSync(new URL('../../.env.fork.local', import.meta.url), [
   '# Local HSK mainnet fork (written by contracts/scripts/fork-setup.mjs). Test keys only.',
   `MOA_RPC_URL=${RPC}`, 'MOA_CHAIN_ID=177', `MOA_FACTORY_ADDRESS=${factory}`, `MOA_AGENT_PRIVATE_KEY=${AGENT_KEY}`, 'MOA_EXPLORER=https://hsk.blockscout.com', '',
 ].join('\n'));
-console.log(`fork factory ${factory}: each vault starts with no limits and a 1.5% slippage ceiling. ${owner.address} holds 500 USDT. Wrote .env.fork.local`);
+console.log(`fork factory ${factory}: each vault starts with $50 per trade, $100 a day, a 1.5% slippage ceiling and a 15% stop-loss; the guardian is ${owner.address}, which holds 500 USDT. Wrote .env.fork.local`);

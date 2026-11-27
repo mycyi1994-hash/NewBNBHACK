@@ -7,7 +7,11 @@ import {MoaVault} from "./MoaVault.sol";
 /// @notice Makes one MoaVault per owner, the same way for everyone: the same USDT, router, agent, markets and
 ///         starting limits and stop-loss. Anyone may pay to create a vault for an address; that address is the
 ///         vault's owner and the only one who can withdraw, change its limits and stop-loss, replace its agent or pause it.
-///         The factory has no owner and no setting that can change after deployment, and it never holds funds.
+///         Every vault starts with real limits and a stop-loss (the constructor refuses "no limit" or "no stop-loss" as a
+///         default); each owner may change or remove them afterwards.
+///         One switch: the `guardian` may halt agent trading on every vault at once, for example if the shared agent
+///         key may have leaked. The halt never touches funds: withdrawals, deposits and the stop-loss keep working.
+///         The guardian is fixed at deployment (zero for none); nothing else can change, and the factory never holds funds.
 contract MoaVaultFactory {
     address public immutable usdt;
     address public immutable router;
@@ -16,6 +20,11 @@ contract MoaVaultFactory {
     uint256 public immutable maxDailyUsdt;
     uint16 public immutable maxSlippageBps;
     uint16 public immutable stopLossBps;
+    /// May halt and resume agent trading on every vault this factory made. Nothing else.
+    address public immutable guardian;
+    /// Starting limits above this would be no limit at all: 10,000 USDT a day.
+    uint256 public constant MAX_START_DAILY_USDT = 10_000e6;
+    bool public halted;
 
     address[] private _tokens;
     address[] private _pools;
@@ -24,6 +33,7 @@ contract MoaVaultFactory {
     uint256 public vaultCount;
 
     event VaultCreated(address indexed owner, address vault);
+    event Halted(bool halted);
 
     constructor(
         address agent_,
@@ -34,10 +44,16 @@ contract MoaVaultFactory {
         uint16 slippageBps_,
         uint16 stopLossBps_,
         address[] memory tokens_,
-        address[] memory pools_
+        address[] memory pools_,
+        address guardian_
     ) {
         require(agent_ != address(0) && usdt_ != address(0) && router_ != address(0), "zero address");
         require(tokens_.length > 0 && tokens_.length == pools_.length, "markets mismatch");
+        // Safe starting values: a real per-trade and daily limit and a stop-loss; owners loosen them if they want.
+        require(maxTrade_ > 0 && maxDaily_ >= maxTrade_ && maxDaily_ <= MAX_START_DAILY_USDT, "unsafe starting limits");
+        require(stopLossBps_ >= 100 && stopLossBps_ <= 5_000, "unsafe starting stop-loss");
+        require(slippageBps_ > 0 && slippageBps_ <= 300, "unsafe starting slippage");
+        guardian = guardian_;
         agent = agent_;
         usdt = usdt_;
         router = router_;
@@ -61,6 +77,13 @@ contract MoaVaultFactory {
         vaultOf[owner_] = vault;
         vaultCount++;
         emit VaultCreated(owner_, vault);
+    }
+
+    /// @notice Stop (true) or allow (false) agent trading on every vault at once. Guardian only.
+    function setHalted(bool halted_) external {
+        require(msg.sender == guardian && guardian != address(0), "not guardian");
+        halted = halted_;
+        emit Halted(halted_);
     }
 
     /// @notice The markets every new vault starts with.

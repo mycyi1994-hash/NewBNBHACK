@@ -2,13 +2,12 @@
 // The Anthropic key and the agent key live here and never reach the browser.
 // Every vault action is for the vault of the wallet that logged in: the session token on the request says whose.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { checkFactory, createVault, execConfigFromEnv, executeTrade, feesReceived, forOwner, serviceOn, vaultStatus, type CreatorRef, type ExecConfig, type FactoryCheck } from './executor.ts';
 import * as session from './session.ts';
 import { openStore, storeFile, type AutoStore } from './autoStore.ts';
 import { autoBlock, startRunner } from './autoRunner.ts';
 import { frameCheck } from './nanoFrame.ts';
+import { cleanHistory, issueTicket, MOA_LIMITS, rateLimiter, ticketBook } from './guard.ts';
 import type { HiredAgent } from '../src/runner.ts';
 import { openShares, sharesFile, type ShareStore } from './shareStore.ts';
 import { openSpreads, spreadsFile, startRecorder, type SpreadStore } from './spreadStore.ts';
@@ -57,11 +56,22 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
   // The recorded HSKSwap vs exchange gaps: read by the spread hunter here, and served to the page below.
   const spreads = opts.spreads ?? openSpreads(spreadsFile(env));
   setGapSource(async (asset, days) => spreads.read(asset, days));
+  // Trades Moa proposes run only from their Confirm button's single-use ticket; Moa's answers are rationed.
+  const tickets = ticketBook(secret);
+  const num = (v: string | undefined, d: number) => (Number(v) > 0 ? Number(v) : d);
+  const askLimit = rateLimiter({ perMinute: num(env.MOA_AI_PER_MINUTE, MOA_LIMITS.perMinute), perDayKnown: num(env.MOA_AI_PER_DAY, MOA_LIMITS.perDayKnown), perDayAnon: num(env.MOA_AI_PER_DAY_ANON, MOA_LIMITS.perDayAnon), perDayAll: num(env.MOA_AI_PER_DAY_ALL, MOA_LIMITS.perDayAll) });
+  // Every trade the server sends costs the agent wallet gas: at most a few a minute and 100 a day per wallet.
+  const tradeLimit = rateLimiter({ perMinute: num(env.MOA_TRADES_PER_MINUTE, 5), perDayKnown: num(env.MOA_TRADES_PER_DAY, 100), perDayAnon: 0, perDayAll: num(env.MOA_TRADES_PER_DAY_ALL, 2_000) });
+  // Behind a proxy (Render sets RENDER) the caller's address is the last one the proxy added; otherwise the socket's.
+  const trustProxy = env.MOA_TRUST_PROXY === '1' || !!env.RENDER;
+  const ipOf = (req: IncomingMessage) => (trustProxy ? String(req.headers['x-forwarded-for'] ?? '').split(',').map((x) => x.trim()).filter(Boolean).pop() : undefined) || req.socket.remoteAddress || 'unknown';
   // A factory from an earlier version of the vault is not used: the server then runs as a demo and says why.
   let factory: FactoryCheck = asSet.factory ? 'unreachable' : 'none';
   let base: ExecConfig = { ...asSet, factory: undefined };
   const settle = checkFactory(asSet).then((r) => {
     factory = r;
+    // What /api/health no longer shows: where the agents on auto are kept, and how many wallets the server knows.
+    console.log(`[moa] data in ${storeFile(env)} · ${store.owners().length} wallets known · factory ${r}`);
     if (r === 'ok') base = asSet;
     else if (r !== 'none') console.error(`[moa] MOA_FACTORY_ADDRESS ${asSet.factory} is not usable (${r === 'old' ? 'it is not the current MoaVaultFactory: deploy the current one' : 'the chain could not be reached'}). Running as a demo.`);
   });
@@ -81,7 +91,10 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       try { if (origin) sameOrigin = new URL(origin).host === req.headers.host; } catch { sameOrigin = false; }
       if (!sameOrigin) { send(403, { error: 'Requests from another origin are refused.' }); return null; }
       let raw = '';
-      for await (const chunk of req) raw += chunk;
+      for await (const chunk of req) {
+        raw += chunk;
+        if (raw.length > 32_768) { send(413, { error: 'Too large.' }); req.destroy(); return null; }
+      }
       try { const v = JSON.parse(raw) as unknown; if (v && typeof v === 'object') return v as Record<string, unknown>; } catch { /* fall through */ }
       send(400, { error: 'Invalid JSON.' });
       return null;
@@ -126,6 +139,7 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         const body = await posted();
         if (!body) return;
         if (!who) return send(401, { error: 'Log in first.' });
+        if (body.op !== 'remove' && store.list(who).length >= 20 && !store.list(who).some((a) => a.id === (body.agent as { id?: unknown } | null)?.id)) return send(409, { ok: false, why: 'tooMany' });
         if (body.op === 'remove') return send(200, { ok: true, agent: store.remove(who, String(body.id)) ?? null });
         const agent = cleanAgent(body.agent, shares);
         if (!agent) return send(400, { error: 'Invalid agent.' });
@@ -186,26 +200,24 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         const proto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http');
         return send(200, await frameCheck(`${proto}://${host}`));
       }
-      if (req.url?.startsWith('/api/health') && req.method === 'GET') {
-        const dir = process.cwd();
-        const files = ['.env', '.env.local', '.env.development', '.env.development.local'].filter((f) => existsSync(join(dir, f)));
-        const key = env.ANTHROPIC_API_KEY ?? '';
-        const out: Record<string, unknown> = { envDir: dir, envFiles: files, anthropicKey: key ? `set (${key.length} chars, starts ${key.slice(0, 7)}…)` : 'missing', factory: factory === 'ok' ? `ok (${asSet.factory})` : factory === 'none' ? 'not configured' : factory === 'old' ? `${asSet.factory} is not the current MoaVaultFactory: deploy the current one and set its address` : `${asSet.factory}: the chain could not be reached at start`, agentKey: env.MOA_AGENT_PRIVATE_KEY ? 'set' : 'missing', dataDir: env.MOA_DATA_DIR || './data (MOA_DATA_DIR is not set)', dataFile: existsSync(storeFile(env)) ? 'kept' : 'none yet', autoOwners: store.owners().length };
-        if (key && req.url.includes('ping')) {
-          try {
-            const { default: Anthropic } = await import('@anthropic-ai/sdk');
-            const { MODEL } = await import('./moaAgent.ts');
-            const r = await new Anthropic({ apiKey: key }).messages.create({ model: MODEL, max_tokens: 5, messages: [{ role: 'user', content: 'ping' }] });
-            out.ping = `ok (${r.model})`;
-          } catch (e) { out.ping = `failed: ${e instanceof Error ? e.message : String(e)}`; }
-        }
-        return send(200, out);
+      // Public health: what works, in words, and nothing about keys, paths or files. It never calls the model.
+      // The details are in the server's own log at start.
+      if (path === '/api/health' && req.method === 'GET') {
+        return send(200, { ok: true, vaults: serviceOn(base) ? 'on' : 'demo', factory: factory === 'ok' ? 'ok' : factory === 'none' ? 'not configured' : factory === 'old' ? 'not the current version' : 'not reachable', ai: env.ANTHROPIC_API_KEY ? 'on' : 'off' });
       }
       if (req.url === '/api/moa' && req.method === 'POST') {
-        if (!env.ANTHROPIC_API_KEY) return send(503, { error: 'ANTHROPIC_API_KEY is not set on the server.' });
-        let raw = '';
-        for await (const chunk of req) raw += chunk;
-        const { history, context } = JSON.parse(raw) as { history: { role: 'user' | 'assistant'; content: string }[]; context?: { level?: 'new' | 'some' | 'pro' | null; asset?: string } };
+        const body = await posted();
+        if (!body) return;
+        const history = cleanHistory(body.history);
+        if (!history) return send(400, { error: 'Invalid conversation.' });
+        // Rationed per wallet when logged in, per address otherwise, and in all per day.
+        const limited = askLimit.take(who ? `w:${who.toLowerCase()}` : `ip:${ipOf(req)}`, !!who);
+        if (limited) return send(429, { error: limited === 'minute' ? 'Too many questions at once. Wait a minute.' : limited === 'day' ? (who ? 'That is all the questions for today.' : 'Log in to ask more today.') : 'Moa has answered all it can today.', why: limited });
+        if (!env.ANTHROPIC_API_KEY) return send(503, { error: 'The AI is off on this server.' });
+        const raw = (body.context ?? {}) as { level?: unknown; asset?: unknown };
+        const context = { level: (['new', 'some', 'pro'] as const).find((l) => l === raw.level) ?? null, asset: typeof raw.asset === 'string' ? raw.asset.slice(0, 12) : undefined };
+        // A proposed trade becomes a ticket for this wallet's Confirm button; nothing is sent from here.
+        const propose = (o: Parameters<typeof issueTicket>[2]) => (!who ? 'The user is not logged in: no trade can be proposed. Tell them to log in first.' : !cfg.vault ? 'The user has no vault yet: no trade can be proposed.' : issueTicket(secret, who, o));
         const { runMoa } = await import('./moaAgent.ts');
         // NDJSON stream: real progress steps while Claude works, then the final result
         res.statusCode = 200;
@@ -218,16 +230,28 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         res.on('close', () => gone.abort());
         const beat = setInterval(() => write({ type: 'ping' }), 5000);
         try {
-          const result = await runMoa(env.ANTHROPIC_API_KEY, cfg, history.slice(-20), write, context ?? {}, gone.signal);
+          const result = await runMoa(env.ANTHROPIC_API_KEY, cfg, history, write, context, gone.signal, propose);
           write({ type: 'done', result });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           console.error('[moa] Anthropic call failed:', msg);
-          write({ type: 'error', error: msg });
+          write({ type: 'error', error: 'The AI could not answer.' });
         } finally {
           clearInterval(beat);
         }
         return res.end();
+      }
+      // The Confirm button under an order Moa proposed: its ticket is for this wallet and this exact order, once.
+      if (req.url === '/api/moa/confirm' && req.method === 'POST') {
+        const body = await posted();
+        if (!body) return;
+        if (!who) return send(401, { error: 'Log in first.' });
+        if (tradeLimit.take(`w:${who.toLowerCase()}`, true)) return send(429, { ok: false, reason: 'Too many orders for now. Try again later.' });
+        const t = tickets.redeem(body.token, who);
+        if (!t.ok) return send(t.why === 'otherWallet' ? 403 : 409, { ok: false, reason: t.why === 'expired' ? 'This order expired. Ask Moa again.' : t.why === 'used' ? 'This order was already sent.' : 'This order is not valid.', why: t.why });
+        const r = await executeTrade(cfg, t.order);
+        console.log(`[moa] confirmed order for ${who} ${t.order.side} ${t.order.amount} ${t.order.asset}: ${r.ok ? r.txHash : r.reason}`);
+        return send(200, { ...r, request: { asset: t.order.asset, side: t.order.side, amount: t.order.amount } });
       }
       // A hired agent's order that the user approved on screen. No model is involved: the order is the
       // agent's own rule, the user pressed the button, and the vault enforces its limits again on-chain.
@@ -238,15 +262,19 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         if (!who) return send(401, { error: 'Log in first.' });
         const asset = String(body.asset), side = body.side, amount = Number(body.amount);
         if (!ASSETS.includes(asset) || (side !== 'buy' && side !== 'sell') || !Number.isFinite(amount) || amount <= 0) return send(400, { error: 'Invalid order.' });
+        if (tradeLimit.take(`w:${who.toLowerCase()}`, true)) return send(429, { ok: false, reason: 'Too many orders for now. Try again later.' });
         // A shared agent's order names its creator, looked up here: the browser only says which shared agent it is.
         const creator = creatorOf(sharedOf({ id: body.shared }, shares).shared);
-        const r = await executeTrade(cfg, { asset: asset as 'HSK' | 'ETH' | 'BTC', side, amount, note: String(body.note ?? '').slice(0, 120), creator });
+        const r = await executeTrade(cfg, { asset: asset as 'HSK' | 'ETH' | 'BTC', side, amount, note: String(body.note ?? '').slice(0, 120), creator, agent: typeof body.agent === 'string' && body.agent ? body.agent.slice(0, 40) : undefined });
         console.log(`[moa] agent order for ${who} ${side} ${amount} ${asset}: ${r.ok ? r.txHash : r.reason}`);
         return send(200, r);
       }
       return send(404, { error: 'not found' });
     } catch (e) {
-      return send(500, { error: e instanceof Error ? e.message : String(e) });
+      // The details stay in the server's log; the caller gets no internals.
+      console.error('[moa] request failed:', req.method, req.url?.split('?')[0], e instanceof Error ? e.message : String(e));
+      if (!res.headersSent) return send(500, { error: 'Server error.' });
+      res.end();
     }
   };
 

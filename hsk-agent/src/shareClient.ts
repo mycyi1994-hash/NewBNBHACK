@@ -2,7 +2,7 @@
 // each shared agent's backtest (run here, on the same candles and code as every other agent), and the two vault
 // calls a creator fee needs: reading what the owner approved, and approving it from the owner's own wallet.
 import { useCallback, useEffect, useState } from 'react';
-import { decodeFunctionResult, encodeFunctionData } from 'viem';
+import { decodeFunctionResult, encodeFunctionData, keccak256, parseUnits, stringToHex } from 'viem';
 import * as cex from './cex.ts';
 import { scoreMadeLive, type Agent } from './agents.ts';
 import { authHeaders, chainCall, sendTx, useSession, type Net } from './account.ts';
@@ -110,19 +110,29 @@ export function useFeesShared() {
 /* ---------- the owner's approval on their own vault ---------- */
 
 const FEE_ABI = [
-  { type: 'function', name: 'creatorFeeBps', stateMutability: 'view', inputs: [{ name: 'creator', type: 'address' }], outputs: [{ type: 'uint16' }] },
-  { type: 'function', name: 'setCreatorFee', stateMutability: 'nonpayable', inputs: [{ name: 'creator', type: 'address' }, { name: 'bps', type: 'uint16' }], outputs: [] },
+  { type: 'function', name: 'creatorOf', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'bytes32' }], outputs: [{ name: 'creator', type: 'address' }, { name: 'bps', type: 'uint16' }] },
+  { type: 'function', name: 'setCreatorFee', stateMutability: 'nonpayable', inputs: [{ name: 'agentId', type: 'bytes32' }, { name: 'creator', type: 'address' }, { name: 'bps', type: 'uint16' }], outputs: [] },
+  { type: 'function', name: 'setBudget', stateMutability: 'nonpayable', inputs: [{ name: 'agentId', type: 'bytes32' }, { name: 'usdt', type: 'uint256' }], outputs: [] },
 ] as const;
 type Hex = `0x${string}`;
+/** A hired agent's id on the vault (version 3): keccak256 of its id in the app, the same as the server's agentIdOf. */
+export const chainAgentId = (hiredId: string): Hex => keccak256(stringToHex(hiredId));
 
-/** What this vault's owner approved for this creator, in basis points. Throws when the chain cannot be read. */
-export async function approvedFee(vault: string, creator: string): Promise<number> {
-  const data = encodeFunctionData({ abi: FEE_ABI, functionName: 'creatorFeeBps', args: [creator as Hex] });
-  return Number(decodeFunctionResult({ abi: FEE_ABI, functionName: 'creatorFeeBps', data: await chainCall(vault, data) }));
+/**
+ * What this vault's owner approved for this creator on this hired agent, in basis points (0 when the agent's approved
+ * creator is someone else, or none). Throws when the chain cannot be read.
+ */
+export async function approvedFee(vault: string, hiredId: string, creator: string): Promise<number> {
+  const data = encodeFunctionData({ abi: FEE_ABI, functionName: 'creatorOf', args: [chainAgentId(hiredId)] });
+  const [who, bps] = decodeFunctionResult({ abi: FEE_ABI, functionName: 'creatorOf', data: await chainCall(vault, data) }) as readonly [string, number];
+  return who.toLowerCase() === creator.toLowerCase() ? Number(bps) : 0;
 }
-/** Approve a creator on my own vault (one transaction from my wallet). The vault refuses more than 1%. */
-export const setCreatorFee = (net: Net, vault: string, creator: string, bps: number) =>
-  sendTx(net, vault, encodeFunctionData({ abi: FEE_ABI, functionName: 'setCreatorFee', args: [creator as Hex, bps] }));
+/** Approve the creator of one hired agent on my own vault (one transaction from my wallet). The vault refuses more than 1%. */
+export const setCreatorFee = (net: Net, vault: string, hiredId: string, creator: string, bps: number) =>
+  sendTx(net, vault, encodeFunctionData({ abi: FEE_ABI, functionName: 'setCreatorFee', args: [chainAgentId(hiredId), creator as Hex, bps] }));
+/** Give one hired agent its budget on my own vault (counts while budgets are on). */
+export const setChainBudget = (net: Net, vault: string, hiredId: string, usd: number) =>
+  sendTx(net, vault, encodeFunctionData({ abi: FEE_ABI, functionName: 'setBudget', args: [chainAgentId(hiredId), parseUnits(Math.max(0, usd).toFixed(6), 6)] }));
 
 /** A hired shared agent, scored again from the rule it carries (it is in nobody's local store). */
 export async function scoreHired(h: { source: { type: string; agentId?: string }; spec?: MadeSpec; shared?: { id: string; creator: string; nick?: string; feeBps: number } } | undefined): Promise<Agent | null> {

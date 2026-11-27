@@ -41,9 +41,18 @@ Log in with a wallet on HSK Chain. Without one, the whole app works as a demo th
 They have been run on a local fork of mainnet only (scripts in `hsk-agent/contracts/scripts/`). The contracts are
 **unaudited**.
 
-**Vault version 3 (creator fees) is not deployed.** It is compiled and tested on a fork only (`fork-test.mjs` 42/42,
-`fee-fork-test.mjs` 28/28, both 27 Nov 2026). Until the owner deploys its factory, new vaults are version 2 and pay
-no creator fee; the server tells versions apart and sends version-2 vaults only the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) lists what will be run and recorded here.
+**Vault version 3 is not deployed.** It is compiled and tested on a fork only (27 Nov 2026): `fork-test.mjs` 55/55,
+`fee-fork-test.mjs` 40/40, and a randomized `fuzz-fork-test.mjs` (over 2,900 invariant checks across three seeds, 0
+failed); Slither reports no high or medium findings (`contracts/audit/slither.txt`). Version 3 adds:
+- a price floor from the pool's 10-minute average instead of the price now;
+- safe starting limits that the owner can change;
+- optional on-chain budgets per agent;
+- a guardian that can halt agent trading on every vault (funds, withdrawals and stop-loss untouched);
+- owner-replaceable agent keys;
+- creator fees approved per hired agent.
+
+Until the owner deploys it, new vaults are version 2; the server tells versions apart and sends version-2 vaults only
+the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) lists what will be run and recorded here.
 
 ## What a user sees
 
@@ -76,7 +85,9 @@ no creator fee; the server tells versions apart and sends version-2 vaults only 
   2. among those, the ones that made more than just holding;
   3. the smallest worst fall.
 - **The chat uses Claude through the Anthropic API.** It answers questions and fills forms. It never places an
-  order on its own; an order needs the user's OK or an agent the user set to run on its own.
+  order on its own: it can only propose one, and the order runs from the card's Confirm button, which carries a
+  one-time signed ticket for that wallet and that exact order (5 minutes). Agents the user set to run on their own
+  trade inside their budget and the vault's limits. The chat endpoint is same-origin only and rate-limited.
 
 ## Honest numbers
 
