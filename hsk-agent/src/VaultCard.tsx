@@ -72,27 +72,21 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
     <section className={`vault-card${on ? ' on' : ''}`}>
       <header className="vc-head">
         <span className="vc-ic" aria-hidden><Icon name="shield" size={18} /></span>
-        <b>{t.mineVault}</b>
+        <span className="vc-title"><b>{t.vcCardTitle}</b><small>{t.vcCardSub}</small></span>
         <span className={`vm-state${on ? ' on' : ''}`}><i />{stateText(t, vaultWhy(vault))}</span>
         {on && vault?.localFork && <span className="fork-badge">{t.localFork}</span>}
         {on && vault!.vault && <span className="vc-addr"><CopyAddress value={vault!.vault} label={t.copyAddress} done={t.addressCopied} />{vault!.explorerUrl && <a href={vault!.explorerUrl} target="_blank" rel="noreferrer">{t.vcExplorer} ↗</a>}</span>}
       </header>
       {u ? (
-        <div className="vc-body">
-          <div className="vc-day">
-            {u.none ? <div className="vc-day-top"><span>{t.perDay}</span><b>{t.lmNoLimit}</b></div> : (
-              <>
-                <div className="vc-day-top"><span>{t.perDay}</span><b>{t.vcUsed(usd(u.used), usd(u.max))}</b></div>
-                <Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} />
-                <small>{t.vcSide(usd(u.left))}</small>
-              </>
-            )}
-          </div>
-          <dl className="vc-nums">
-            <div><dt>{t.perTrade}</dt><dd>{vault!.maxTradeUsdt !== undefined ? `$${vault!.maxTradeUsdt}` : t.lmNoLimit}</dd></div>
-            <div><dt>{t.balance}</dt><dd>{usd(num(vault!.usdtBalance))}</dd></div>
-          </dl>
-        </div>
+        <dl className="vc-nums">
+          <div><dt>{t.balance}</dt><dd>${usd(num(vault!.usdtBalance))}</dd></div>
+          <div><dt>{t.lmDay}</dt>{u.none ? <dd>{t.lmNoLimit}</dd> : <>
+            <dd>{t.vcUsed(usd(u.used), usd(u.max))}</dd>
+            <Gauge frac={u.frac} label={t.vcUsed(usd(u.used), usd(u.max))} />
+            <small>{t.vcSide(usd(u.left))}</small>
+          </>}</div>
+          <div><dt>{t.lmTrade}</dt><dd>{vault!.maxTradeUsdt !== undefined ? `$${vault!.maxTradeUsdt}` : t.lmNoLimit}</dd></div>
+        </dl>
       ) : <p className="vc-demo">{stateLine(t, vaultWhy(vault))}</p>}
       <ul className="vc-safe">{t.vcSafe.map((s) => <li key={s}><Icon name="check" size={14} />{s}</li>)}</ul>
     </section>

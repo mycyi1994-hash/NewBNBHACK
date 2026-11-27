@@ -1921,3 +1921,41 @@ button.lps-step-head:hover .lps-step-edit { background: var(--fill-2); color: va
   .lps-pool { display: none; }
   .lps-x { margin-left: auto; }
 }
+
+/* ---------- My agents: one place per agent ---------- */
+.slots { margin: 0 0 20px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.slot { border: 1px solid var(--line-card); border-radius: var(--r-card); background: var(--bg); }
+.slot-row { display: grid; grid-template-columns: 44px minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)) auto; align-items: center; gap: 16px; padding: 14px 16px; }
+.slot.ready .slot-row, .slot.add .slot-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
+.slot-face { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--fill); color: var(--ink-2); }
+.slot-face.skel { opacity: .6; }
+.slot-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.slot-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; }
+.slot-name b, .slot-name .tbl-link { font-size: 15px; font-weight: 700; color: var(--ink-title); }
+.slot-rules { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-main small { font-size: 12.5px; line-height: 18px; }
+.slot-num { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.slot-num small { font-size: 12px; color: var(--ink-3); }
+.slot-num b { font-size: 15px; font-weight: 700; color: var(--ink-title); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.slot-num b em { font-style: normal; font-weight: 500; color: var(--ink-3); }
+.slot-num .gauge { height: 6px; }
+.slot-go { display: flex; align-items: center; gap: 8px; }
+.ready-tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; background: #e6f4ea; color: #137333; font-size: 12px; font-weight: 700; }
+.ready-tag i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.slot.ready { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.slot.add { border-style: dashed; background: var(--rail); }
+.slot.add .slot-face { background: var(--bg); border: 1px dashed var(--line-btn); color: var(--ink-3); }
+.slot .tbl-log { margin: 0; border-top: 1px solid var(--line); }
+.vc-title { display: flex; flex-direction: column; line-height: 1.2; }
+.vc-title small { font-size: 12px; color: var(--ink-3); }
+.vault-card .vc-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 16px; }
+.vault-card .vc-nums > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.vault-card .vc-nums small { font-size: 12.5px; color: var(--ink-3); }
+@media (max-width: 860px) {
+  .slot-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .slot.mine .slot-num { grid-column: 2 / -1; flex-direction: row; align-items: baseline; gap: 8px; }
+  .slot.mine .slot-num .gauge { flex: 1; align-self: center; }
+  .slot.mine .tbl-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .slot.ready .slot-go, .slot.add .slot-go { grid-column: 1 / -1; }
+  .vault-card .vc-nums { grid-template-columns: minmax(0, 1fr); }
+}

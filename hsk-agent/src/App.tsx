@@ -384,7 +384,8 @@ function Shell() {
         {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} />}
         {view === 'build' && <Builder draft={build} onOpen={openBacktest} />}
         {view === 'mine' && (
-          <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now}
+          <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now} agents={agents} agentsFailed={agentsFailed}
+            onStart={(a) => setSheet({ kind: 'agent', agent: a })} onMarket={() => go('agents')} onBuild={() => openBuilder({})}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
             onPause={pause} onResume={resume} onRemove={removeHired} onOpen={(id) => tell({ kind: 'status', hiredId: id })}
             onRecommend={() => tell({ kind: 'recommend' })} />

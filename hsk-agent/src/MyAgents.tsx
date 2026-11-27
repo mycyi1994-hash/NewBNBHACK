@@ -1,7 +1,7 @@
-// My agents: where hired agents live, laid out as a table (name and source, what it is doing now, money,
-// and the controls that matter: ask Moa, change amount, pause, records, remove). Nothing here recommends
-// or explains; that is Moa's job.
-import { Fragment, useState } from 'react';
+// My agents: one place per agent. Each hired agent shows what it is doing, the money it was given and what it
+// holds, with its controls; someone with none gets one ready to start, and the empty places invite another.
+// The agents trade; the vault under them is the wallet they trade from, with the limits it enforces.
+import { useMemo, useState } from 'react';
 import { VaultCard } from './VaultCard.tsx';
 import { useT } from './i18n.ts';
 import type { Quote } from './market.ts';
@@ -11,20 +11,31 @@ import { Modal, useToast } from './ui.tsx';
 import { Icon, Spark } from './Icons.tsx';
 import { book, statusOf, type HiredAgent } from './runner.ts';
 import { eventLine, hiredName, money, moneyLine, qtyText, statusText } from './hiredText.ts';
+import type { Agent } from './agents.ts';
+import { agentName, Face, ruleLines } from './AgentCard.tsx';
+import { readLevel, recommend } from './recommend.ts';
 
 const loc = () => (document.documentElement.lang === 'en' ? 'en-US' : 'ko-KR');
 const when = (t: number) => new Date(t).toLocaleString(loc(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
+/** How many places the page shows: your agents first, then empty places to add more, never fewer than this. */
+const SLOTS = 3;
 
-export default function MyAgents({ hired, quotes, vault, execs, now, onEdit, onPause, onResume, onRemove, onOpen, onRecommend }: {
+export default function MyAgents({ hired, quotes, vault, execs, now, agents, agentsFailed, onEdit, onPause, onResume, onRemove, onOpen, onRecommend, onStart, onMarket, onBuild }: {
   hired: HiredAgent[]; quotes: Quote[]; vault: VaultInfo | null; execs: Execution[]; now: number;
+  agents: Agent[] | null; agentsFailed: boolean;
   onEdit: (id: string) => void; onPause: (id: string) => void; onResume: (id: string) => void; onRemove: (id: string) => void;
   onOpen: (id: string) => void; onRecommend: () => void;
+  /** Opens the hire sheet for the agent that is ready: it asks how much to give it, then the agent starts. */
+  onStart: (a: Agent) => void; onMarket: () => void; onBuild: () => void;
 }) {
   const { t } = useT();
   const toast = useToast();
   const [removing, setRemoving] = useState<HiredAgent | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  // Someone with no agent yet gets one ready to start: Moa's pick for bitcoin at the level they chose.
+  const ready = useMemo(() => (hired.length || !agents ? null : recommend(agents, { coin: 'BTC', level: readLevel() })?.pick ?? null), [hired.length, agents]);
+  const adds = Math.max(1, SLOTS - Math.max(1, hired.length));
   return (
     <div className="page mine-page">
       {removing && (
@@ -41,73 +52,105 @@ export default function MyAgents({ hired, quotes, vault, execs, now, onEdit, onP
       </header>
       <p className="page-sub">{t.mineSub}</p>
 
-      {hired.length > 0 && (
-        <div className="tbl" role="table" aria-label={t.mineTitle}>
-          <div className="tbl-head" role="row">
-            <span role="columnheader">{t.thName}</span><span role="columnheader">{t.thState}</span>
-            <span role="columnheader">{t.thSpent}</span><span role="columnheader">{t.thPnl}</span><span />
-          </div>
-          {hired.map((h) => {
-            const st = statusOf(h, now);
-            const b = book(h);
-            const price = quotes.find((q) => q.asset === h.asset)?.pool;
-            const m = moneyLine(t, h, price);
-            const log = [...h.log].reverse();
-            return (
-              <Fragment key={h.id}>
-                <div className={`tbl-row st-${st}`} role="row">
-                  <span role="cell" className="tbl-main">
-                    <button className="tbl-link" onClick={() => onOpen(h.id)}>{hiredName(t, h)}</button>{h.mode === 'auto' && <span className="auto-tag">{t.autoBadge}</span>}
-                    <small>{h.source.type === 'market' ? t.mineFromMarket : `${t.mineCustom} · “${h.source.goal}”`}</small>
-                  </span>
-                  <span role="cell" className="tbl-main">
-                    <span className="state"><i className={`chip-dot ${st}`} aria-hidden />{statusText(t, h, now)}</span>
-                    <small>{b.qty > 0 ? `${t.scHeld} ${qtyText(b.qty)} ${h.asset}` : `${t.scPer} $${money(h.perBuyUsd)}`}</small>
-                  </span>
-                  <span role="cell" className="tbl-main num">
-                    <span>${money(b.spent)} / ${money(h.budgetUsd)}</span>
-                    <small>{b.qty > 0 && price !== undefined ? `${t.scValue} $${money(b.qty * price)}` : `${t.scPer} $${money(h.perBuyUsd)}`}</small>
-                  </span>
-                  <span role="cell" className={`num ${h.fills.length ? m.cls : ''}`}>{h.fills.length ? m.text : t.scNone}</span>
-                  <span role="cell" className="tbl-actions">
-                    <button className="icon-btn" onClick={() => onOpen(h.id)} aria-label={t.acAsk} data-tip={t.acAsk}><Icon name="chat" size={18} /></button>
-                    <button className="icon-btn" onClick={() => onEdit(h.id)} aria-label={t.scEdit} data-tip={t.scEdit}><Icon name="edit" size={18} /></button>
-                    {h.paused
-                      ? <button className="icon-btn" onClick={() => onResume(h.id)} aria-label={t.stResume} data-tip={t.stResume}><Icon name="play" size={18} /></button>
-                      : <button className="icon-btn" onClick={() => onPause(h.id)} disabled={st === 'done'} aria-label={t.stPause} data-tip={t.stPause}><Icon name="pause" size={18} /></button>}
-                    <button className={`icon-btn${open === h.id ? ' on' : ''}`} onClick={() => setOpen(open === h.id ? null : h.id)} aria-expanded={open === h.id} aria-label={t.mineLog} data-tip={`${t.mineLog} (${h.log.length})`}><Icon name="list" size={18} /></button>
-                    <button className="icon-btn" onClick={() => setRemoving(h)} aria-label={t.mineRemove} data-tip={t.mineRemove}><Icon name="trash" size={18} /></button>
-                  </span>
-                </div>
-                {open === h.id && (
-                  <ol className="tbl-log">
-                    {!log.length && <li className="muted">{t.mineNoLog}</li>}
-                    {log.slice(0, 40).map((e, i) => {
-                      const x = eventLine(t, h, e);
-                      return (
-                        <li key={i}>
-                          <time>{when(e.at)}</time>
-                          <b>{x.label}</b>
-                          <span>{x.detail}</span>
-                          {x.link ? <a href={x.link} target="_blank" rel="noreferrer">{t.viewTx} ↗</a> : <span />}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                )}
-              </Fragment>
-            );
-          })}
-        </div>
-      )}
+      <ol className="slots" aria-label={t.mineTitle}>
+        {hired.map((h) => {
+          const st = statusOf(h, now);
+          const b = book(h);
+          const price = quotes.find((q) => q.asset === h.asset)?.pool;
+          const m = moneyLine(t, h, price);
+          const log = [...h.log].reverse();
+          const frac = h.budgetUsd > 0 ? Math.min(1, b.spent / h.budgetUsd) : 0;
+          return (
+            <li key={h.id} className={`slot mine st-${st}`}>
+              <div className="slot-row">
+                <span className="slot-face">{h.source.type === 'market' ? <Face rule={h.source.rule} /> : <Icon name="bot" size={22} />}</span>
+                <span className="slot-main">
+                  <span className="slot-name"><button className="tbl-link" onClick={() => onOpen(h.id)}>{hiredName(t, h)}</button>{h.mode === 'auto' && <span className="auto-tag">{t.autoBadge}</span>}</span>
+                  <span className="state"><i className={`chip-dot ${st}`} aria-hidden />{statusText(t, h, now)}</span>
+                </span>
+                <span className="slot-num">
+                  <small>{t.slotMoney}</small>
+                  <b>${money(b.spent)} <em>/ ${money(h.budgetUsd)}</em></b>
+                  <span className="gauge" role="img" aria-label={`${Math.round(frac * 100)}%`}><i style={{ width: `${Math.round(frac * 100)}%` }} /></span>
+                </span>
+                <span className="slot-num">
+                  <small>{t.slotHolds}</small>
+                  <b>{b.qty > 0 ? `${qtyText(b.qty)} ${h.asset}` : t.scNone}</b>
+                  <small>{b.qty > 0 && price !== undefined ? `${t.scValue} $${money(b.qty * price)}` : `${t.scPer} $${money(h.perBuyUsd)}`}</small>
+                </span>
+                <span className="slot-num">
+                  <small>{t.thPnl}</small>
+                  <b className={h.fills.length ? m.cls : ''}>{h.fills.length ? m.text : t.scNone}</b>
+                </span>
+                <span className="tbl-actions">
+                  <button className="icon-btn" onClick={() => onOpen(h.id)} aria-label={t.acAsk} data-tip={t.acAsk}><Icon name="chat" size={18} /></button>
+                  <button className="icon-btn" onClick={() => onEdit(h.id)} aria-label={t.scEdit} data-tip={t.scEdit}><Icon name="edit" size={18} /></button>
+                  {h.paused
+                    ? <button className="icon-btn" onClick={() => onResume(h.id)} aria-label={t.stResume} data-tip={t.stResume}><Icon name="play" size={18} /></button>
+                    : <button className="icon-btn" onClick={() => onPause(h.id)} disabled={st === 'done'} aria-label={t.stPause} data-tip={t.stPause}><Icon name="pause" size={18} /></button>}
+                  <button className={`icon-btn${open === h.id ? ' on' : ''}`} onClick={() => setOpen(open === h.id ? null : h.id)} aria-expanded={open === h.id} aria-label={t.mineLog} data-tip={`${t.mineLog} (${h.log.length})`}><Icon name="list" size={18} /></button>
+                  <button className="icon-btn" onClick={() => setRemoving(h)} aria-label={t.mineRemove} data-tip={t.mineRemove}><Icon name="trash" size={18} /></button>
+                </span>
+              </div>
+              {open === h.id && (
+                <ol className="tbl-log">
+                  {!log.length && <li className="muted">{t.mineNoLog}</li>}
+                  {log.slice(0, 40).map((e, i) => {
+                    const x = eventLine(t, h, e);
+                    return (
+                      <li key={i}>
+                        <time>{when(e.at)}</time>
+                        <b>{x.label}</b>
+                        <span>{x.detail}</span>
+                        {x.link ? <a href={x.link} target="_blank" rel="noreferrer">{t.viewTx} ↗</a> : <span />}
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </li>
+          );
+        })}
 
-      {!hired.length && (
-        <div className="empty">
-          <div className="empty-title">{t.mineEmpty}</div>
-          <p className="muted">{t.mineEmptySub}</p>
-          <button className="btn" onClick={onRecommend}><Spark size={14} />{t.barRecommend}</button>
-        </div>
-      )}
+        {!hired.length && (
+          <li className="slot ready">
+            <div className="slot-row">
+              {ready ? <>
+                <span className="slot-face"><Face rule={ready.rule} /></span>
+                <span className="slot-main">
+                  <span className="slot-name"><b>{agentName(t, ready)}</b><span className="ready-tag"><i aria-hidden />{t.slotReadyTag}</span></span>
+                  <span className="slot-rules">{ruleLines(t, ready).join(' · ')}</span>
+                  <small className="muted">{t.slotReadySub}</small>
+                </span>
+                <span className="slot-go">
+                  <button className="btn btn-primary" onClick={() => onStart(ready)}><Icon name="play" size={16} />{t.slotStart}</button>
+                  <button className="btn-text" onClick={onMarket}>{t.slotSwap}</button>
+                </span>
+              </> : <>
+                <span className="slot-face skel" aria-hidden />
+                <span className="slot-main"><span className="slot-name"><b>{agentsFailed ? t.slotReadyFail : t.slotReadyLoading}</b></span></span>
+                {agentsFailed && <span className="slot-go"><button className="btn" onClick={onMarket}>{t.slotMarket}</button></span>}
+              </>}
+            </div>
+          </li>
+        )}
+
+        {Array.from({ length: adds }, (_, i) => (
+          <li key={`add-${i}`} className="slot add">
+            <div className="slot-row">
+              <span className="slot-face plus" aria-hidden><Icon name="plus" size={20} /></span>
+              <span className="slot-main">
+                <span className="slot-name"><b>{t.slotAdd}</b></span>
+                <small className="muted">{t.slotAddSub}</small>
+              </span>
+              <span className="slot-go">
+                <button className="btn" onClick={onMarket}>{t.slotMarket}</button>
+                <button className="btn-text" onClick={onBuild}>{t.slotBuild}</button>
+              </span>
+            </div>
+          </li>
+        ))}
+      </ol>
 
       <VaultCard vault={vault} />
       <p className="muted small">{t.mineStopNote}</p>
