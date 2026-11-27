@@ -160,6 +160,86 @@ function TopRow({ a, n, onOpen }: { a: Agent; n?: number; onOpen: (a: Agent) => 
   );
 }
 
+/** One card in the marketplace: the mark, the name, one plain line, one number with its chart, two actions. */
+function MarketCard({ a, big, starred, onStar, onOpen, onHire }: { a: Agent; big?: boolean; starred: boolean; onStar: () => void; onOpen: (a: Agent) => void; onHire: (a: Agent) => void }) {
+  const { t } = useT();
+  const fresh = freshLine(t, a);
+  const edge = a.total - a.hold;
+  // The source in a few words: the year for a published classic, otherwise what kind of rule it is.
+  // The full source stays one hover away, and in the backtest.
+  const year = a.tier === 1 ? /\b(1[89]|20)\d{2}\b/.exec(t.agOrigin[a.rule])?.[0] : undefined;
+  return (
+    <article className={`mp-card${big ? ' big' : ''}${a.runnable ? '' : ' signal-only'}`} style={{ '--fam': markColor(a.rule) } as CSSProperties}>
+      <header className="mp-top">
+        <button className="mp-title" onClick={() => onOpen(a)}>
+          <Face rule={a.rule} base={a.base} size="xl" />
+          <span className="mp-name">
+            <b>{agentName(t, a)}</b>
+            <span className="mp-sub">
+              <span className={`mp-origin tip-tap tier-${a.tier}`} tabIndex={0} role="note" aria-label={t.agOrigin[a.rule]} data-tip={t.agOrigin[a.rule]}>{a.tier === 1 && <i aria-hidden>★</i>}{year ? t.mpSince(year) : t.agTier[a.tier]}<svg className="mp-i" width="13" height="13" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M8 7.2v3.6M8 5.2v.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></span>
+              <span className={`mp-live${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</span>
+            </span>
+          </span>
+        </button>
+        <button className={`mp-star${starred ? ' on' : ''}`} onClick={onStar} aria-pressed={starred} aria-label={t.agStar} data-tip={t.agStar}>
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2L2.5 8l5.2-.7L10 2.5z" fill={starred ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>
+        </button>
+      </header>
+      <p className="mp-plain">{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</p>
+      <div className="mp-result">
+        <div className="mp-num">
+          <small>{t.mpVsHold}</small>
+          <b className={sign(edge)}>{pct(edge)}</b>
+          <span>{t.mpOver(a.days)}</span>
+        </div>
+        <CardChart a={a} up={edge >= 0} label={t.mpHoldLine} />
+      </div>
+      <footer className="mp-foot">
+        <button className="mp-run ghost" onClick={() => onOpen(a)}>{t.mpMore}</button>
+        <button className="mp-run" onClick={() => onHire(a)}>{t.acHire}</button>
+      </footer>
+    </article>
+  );
+}
+/**
+ * The ranking beside the marketplace, one coin at a time. The order is byMerit: agents working now first, then the
+ * ones that beat just holding. It says nothing about how many people use an agent: there is no such data.
+ */
+function Rail({ agents, coins, onOpen }: { agents: Agent[]; coins: string[]; onOpen: (a: Agent) => void }) {
+  const { t } = useT();
+  const [coin, setCoin] = useState('BTC');
+  const on = coins.includes(coin) ? coin : coins[0] ?? coin;
+  const rows = useMemo(() => agents.filter((a) => a.base === on).sort(byMerit).slice(0, 10), [agents, on]);
+  return (
+    <aside className="mp-rail" aria-label={t.mpRankTitle}>
+      <header className="mp-rail-head">
+        <b>{t.mpRankTitle}</b>
+        <small>{t.mpRankSub}</small>
+        <div className="mp-coins sm" role="group" aria-label={t.fAsset}>
+          {coins.map((c) => <button key={c} className={on === c ? 'on' : ''} aria-pressed={on === c} onClick={() => setCoin(c)}><CoinMark base={c} />{c}</button>)}
+        </div>
+      </header>
+      <ol className="mp-rank">
+        {!agents.length && [0, 1, 2, 3, 4].map((i) => <li key={i} className="mp-rank-skel skel-block" />)}
+        {rows.map((a, i) => {
+          const edge = a.total - a.hold;
+          return (
+            <li key={a.id}>
+              <button onClick={() => onOpen(a)}>
+                <span className={`mp-rank-n${i < 3 ? ' top' : ''}`}>{i + 1}</span>
+                <Face rule={a.rule} size="sm" />
+                <span className="mp-rank-name"><b>{a.made?.name ?? t.agNick[a.rule]}</b>{active(a) && <i className="mp-rank-live" aria-hidden />}</span>
+                <span className={`mp-rank-v ${sign(edge)}`}>{pct(edge)}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="mp-rail-foot"><span><i className="mp-rank-live" aria-hidden />{t.mpRankLive}</span><span>{t.mpRankNum}</span></p>
+    </aside>
+  );
+}
+
 export default function Agents({ agents, failed, onRetry, onHire, onOpen, onRecommend }: {
   agents: Agent[] | null; failed: boolean; onRetry: () => void; onHire: (a: Agent) => void; onOpen: (a: Agent) => void; onRecommend: () => void;
 }) {
@@ -194,6 +274,10 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
     return xs.sort((p, r) => (sort === 'pick' ? byMerit(p, r) : sort === 'sharpe' ? r.sharpe - p.sharpe : sort === 'total' ? r.total - p.total : p.maxDd - r.maxDd));
   }, [runnable, q, asset, sort, origin, t]);
 
+  // Lead with the two agents doing best right now (the default order), but only on the unfiltered view.
+  const plain = !q.trim() && asset === 'all' && origin === 'all' && sort === 'pick';
+  const feat = plain ? shown.slice(0, 2) : [];
+  const rest = plain ? shown.slice(2) : shown;
   const star = (id: string) => setStars((cur) => {
     const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id);
     try { localStorage.setItem('moa.stars', JSON.stringify([...next])); } catch { /* storage unavailable */ }
@@ -297,47 +381,23 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
             </span>
           </div>
 
-          <div className="mp-grid stagger" key={`${asset}-${sort}-${origin}`}>
-            {!agents && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="mp-card mp-skel skel-block" />)}
-            {shown.map((a) => {
-              const fresh = freshLine(t, a);
-              const edge = a.total - a.hold;
-              // The source in a few words: the year for a published classic, otherwise what kind of rule it is.
-              // The full source stays one hover away, and in the backtest.
-              const year = a.tier === 1 ? /\b(1[89]|20)\d{2}\b/.exec(t.agOrigin[a.rule])?.[0] : undefined;
-              return (
-                <article key={a.id} className={`mp-card${a.runnable ? '' : ' signal-only'}`} style={{ '--fam': markColor(a.rule) } as CSSProperties}>
-                  <header className="mp-top">
-                    <button className="mp-title" onClick={() => onOpen(a)}>
-                      <Face rule={a.rule} base={a.base} size="xl" />
-                      <span className="mp-name">
-                        <b>{agentName(t, a)}</b>
-                        <span className="mp-sub">
-                          <span className={`mp-origin tip-tap tier-${a.tier}`} tabIndex={0} role="note" aria-label={t.agOrigin[a.rule]} data-tip={t.agOrigin[a.rule]}>{a.tier === 1 && <i aria-hidden>★</i>}{year ? t.mpSince(year) : t.agTier[a.tier]}<svg className="mp-i" width="13" height="13" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M8 7.2v3.6M8 5.2v.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></span>
-                          <span className={`mp-live${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</span>
-                        </span>
-                      </span>
-                    </button>
-                    <button className={`mp-star${stars.has(a.id) ? ' on' : ''}`} onClick={() => star(a.id)} aria-pressed={stars.has(a.id)} aria-label={t.agStar} data-tip={t.agStar}>
-                      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2L2.5 8l5.2-.7L10 2.5z" fill={stars.has(a.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>
-                    </button>
-                  </header>
-                  <p className="mp-plain">{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</p>
-                  <div className="mp-result">
-                    <div className="mp-num">
-                      <small>{t.mpVsHold}</small>
-                      <b className={sign(edge)}>{pct(edge)}</b>
-                      <span>{t.mpOver(a.days)}</span>
-                    </div>
-                    <CardChart a={a} up={edge >= 0} label={t.mpHoldLine} />
-                  </div>
-                  <footer className="mp-foot">
-                    <button className="mp-run ghost" onClick={() => onOpen(a)}>{t.mpMore}</button>
-                    <button className="mp-run" onClick={() => onHire(a)}>{t.acHire}</button>
-                  </footer>
-                </article>
-              );
-            })}
+          <div className="mp-layout">
+            <div className="mp-mainc">
+              {feat.length > 0 && (
+                <section className="mp-sec" aria-label={t.mpFeatured}>
+                  <h2 className="mp-h2">{t.mpFeatured}</h2>
+                  <div className="mp-grid feat stagger">{feat.map((a) => <MarketCard key={a.id} a={a} big starred={stars.has(a.id)} onStar={() => star(a.id)} onOpen={onOpen} onHire={onHire} />)}</div>
+                </section>
+              )}
+              <section className="mp-sec" aria-label={t.mpAllHead}>
+                {feat.length > 0 && <h2 className="mp-h2">{t.mpAllHead}</h2>}
+                <div className="mp-grid stagger" key={`${asset}-${sort}-${origin}`}>
+                  {!agents && !failed && [0, 1, 2, 3].map((i) => <div key={i} className="mp-card mp-skel skel-block" />)}
+                  {rest.map((a) => <MarketCard key={a.id} a={a} starred={stars.has(a.id)} onStar={() => star(a.id)} onOpen={onOpen} onHire={onHire} />)}
+                </div>
+              </section>
+            </div>
+            <Rail agents={runnable} coins={coins} onOpen={onOpen} />
           </div>
           {agents && !shown.length && <p className="muted">{t.mpNone}</p>}
           <p className="muted small">{t.agFoot}</p>

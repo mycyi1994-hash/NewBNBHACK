@@ -9,6 +9,7 @@ import { fmtPrice, type Quote } from './market.ts';
 import { HeatSwitch, NanoChart, PoolRange, useNanoChart } from './ChartExtras.tsx';
 import LpStudio from './LpStudio.tsx';
 import { defaultPlan, type LpPlan } from './lp.ts';
+import { strategyPlan } from './lpStrategies.ts';
 import type { VaultInfo } from './parts.tsx';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
@@ -883,7 +884,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
         <PoolRange asset={asset} symbol={p.symbol} price={detail?.price} onLp={lp ? () => lp.setPlan(defaultPlan(asset)) : undefined} />
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
-      <Dock venue="dex" coin={asset} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
+      <Dock venue="dex" coin={asset} onLp={lp ? (x) => lp.setPlan({ ...defaultPlan(asset), ...strategyPlan(x) }) : undefined} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
         <div className="swaps">
           <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
           {detail?.swaps.slice(0, 20).map((x) => (

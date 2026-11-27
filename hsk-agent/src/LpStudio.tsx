@@ -63,7 +63,8 @@ export default function LpStudio({ plan, setPlan, vault, onClose, onAsset, onSay
   const [preview, setPreview] = useState<LpPlan | null>(null);
   // Step 1 starts on the ready-made strategies; setting it up by hand is one tap away.
   const [mode, setMode] = useState<'strat' | 'own'>('strat');
-  const [strat, setStrat] = useState<LpStrategyId | null>(null);
+  // Opened with a ready-made strategy (from under the chart): that strategy starts picked.
+  const [strat, setStrat] = useState<LpStrategyId | null>(() => LP_STRATEGIES.find((x) => { const w = widthFor(x.reachPct); return x.goal === plan.goal && x.shape === plan.shape && w.step === plan.step && w.perSide === plan.perSide; })?.id ?? null);
   // The block editor (under the chart, or in the panel on a phone), its undo history, and the risk line's detail.
   const [blocks, setBlocks] = useState(false);
   const [hist, setHist] = useState<{ back: Snap[]; fwd: Snap[] }>({ back: [], fwd: [] });

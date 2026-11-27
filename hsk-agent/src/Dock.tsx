@@ -13,7 +13,10 @@ import type * as cex from './cex.ts';
 import { byMerit, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
 import { TEMPLATES } from './spec.ts';
 import { useMade } from './madeStore.ts';
-import { AgentCard, agentName, condText, drop, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
+import { AgentCard, agentName, condText, drop, freshLine, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
+import { markColor } from './Mark.tsx';
+import { LP_STRATEGIES, type LpStrategy } from './lpStrategies.ts';
+import type { IconName } from './Icons.tsx';
 import { fmtPrice } from './market.ts';
 import { useT } from './i18n.ts';
 import { Icon, Spark } from './Icons.tsx';
@@ -308,9 +311,32 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
   );
 }
 
-type Tab = 'mine' | 'list' | 'bt' | 'swaps';
+type Tab = 'mine' | 'top' | 'list' | 'bt' | 'swaps';
 
-export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, cursor = null, onRetry, onBuild, onSelect, onHire, onAsk, swaps, mine, mineCount = 0, mineAsks = 0 }: {
+const LP_ICON: Record<LpStrategy['goal'], IconName> = { buy: 'dip', sell: 'trend', both: 'collect' };
+
+/** One agent in "doing well now": who, what it does, the one number, and hire. The row opens its past results. */
+function TopPick({ a, n, onOpen, onHire }: { a: Agent; n: number; onOpen: () => void; onHire: () => void }) {
+  const { t } = useT();
+  const edge = a.total - a.hold;
+  const fresh = freshLine(t, a);
+  return (
+    <li className="tk-row" style={{ '--fam': markColor(a.rule) } as CSSProperties}>
+      <button className="tk-open" onClick={onOpen}>
+        <span className="tk-n">{n}</span>
+        <Face rule={a.rule} size="md" />
+        <span className="tk-main">
+          <b>{a.made?.name ?? t.agNick[a.rule]}<em className={`tk-fresh${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</em></b>
+          <small>{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</small>
+        </span>
+        <span className="tk-num"><small>{t.mpVsHold}</small><b className={edge > 0 ? 'pos' : edge < 0 ? 'neg' : ''}>{pct(edge)}</b></span>
+      </button>
+      {a.runnable ? <button className="btn-primary sm tk-hire" onClick={onHire}>{t.acHire}</button> : <span className="tk-only">{t.wzSignalOnly}</span>}
+    </li>
+  );
+}
+
+export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, cursor = null, onRetry, onBuild, onSelect, onHire, onAsk, swaps, mine, mineCount = 0, mineAsks = 0, onLp }: {
   venue: 'cex' | 'dex'; coin: string; list: Agent[] | null; failed: boolean;
   /** The agent picked (its one-year numbers, as in the list) and the backtest on screen (one year or all history). */
   sel: Agent | null; shown: Agent | null; period: Period; setPeriod: (p: Period) => void; busy?: boolean; onRetry?: () => void; onBuild?: () => void;
@@ -319,18 +345,20 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   onSelect: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; swaps?: ReactNode;
   /** The user's hired agents as a table, how many there are, and how many wait for an answer. */
   mine?: ReactNode; mineCount?: number; mineAsks?: number;
+  /** HSKSwap only: open the liquidity studio with a ready-made strategy. */
+  onLp?: (s: LpStrategy) => void;
 }) {
   const { t } = useT();
   // Someone with agents sees how they are doing first; everyone else sees what the market offers.
-  const [tab, setTab] = useState<Tab>(sel ? 'bt' : mineCount ? 'mine' : 'list');
+  const [tab, setTab] = useState<Tab>(sel ? 'bt' : mineCount ? 'mine' : 'top');
   // The first agent hired (or the list arriving after login) brings its row up; the last one removed leaves the tab.
   const had = useRef(mineCount);
   useEffect(() => {
-    if (mineCount > had.current) setTab((cur) => (cur === 'list' || cur === 'bt' && !sel ? 'mine' : cur));
+    if (mineCount > had.current) setTab((cur) => (cur === 'list' || cur === 'top' || cur === 'bt' && !sel ? 'mine' : cur));
     had.current = mineCount;
   }, [mineCount]); // eslint-disable-line react-hooks/exhaustive-deps
   // Picking an agent opens its backtest; closing it goes back to the list.
-  useEffect(() => { setTab((cur) => (sel ? 'bt' : cur === 'bt' ? 'list' : cur)); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setTab((cur) => (sel ? 'bt' : cur === 'bt' ? 'top' : cur)); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One order, Moa's: published classics first, then the smaller worst drop. (Other orders live in the agent market.)
   const all = useMemo(() => (list ? [...list].sort(byMerit) : []), [list]);
@@ -346,6 +374,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const pickOf = (h: Horizon) => all.find((a) => horizonOf(a) === h && !idle(a))?.id;
   const hint = isRunnable(coin) ? t.mkSignalTrade : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
+  // "Doing well now": the same order as everywhere (working first, then beating just holding), the first few.
+  const best = all.slice(0, 6);
   const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? hint : '';
 
   return (
@@ -354,7 +384,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
         <div className="tdock-tabs has-line" role="tablist">
           <SlidePill dep={`${tab}-${sel?.id ?? ''}-${mineCount}`} />
           {mine && <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>{t.navMine}{mineCount > 0 && <span className={`tdock-count${mineAsks ? ' ask' : ''}`}>{mineCount}</span>}</button>}
-          <button role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'on' : ''} onClick={() => setTab('list')}>{t.mkTitle}</button>
+          <button role="tab" aria-selected={tab === 'top'} className={tab === 'top' ? 'on' : ''} onClick={() => setTab('top')}>{t.dkTopTab}</button>
+          <button role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'on' : ''} onClick={() => setTab('list')}>{t.dkAllTab}</button>
           {sel && (
             <button role="tab" aria-selected={tab === 'bt'} className={tab === 'bt' ? 'on' : ''} onClick={() => setTab('bt')}>
               {t.btTab}<span className="tdock-tab-sub">{sel.made?.name ?? t.agNick[sel.rule]}</span>
@@ -364,7 +395,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
         </div>
         <p className="tdock-note">{note}</p>
         {tab === 'mine' && <button className="btn sm tdock-build" onClick={() => setTab('list')}><Icon name="plus" size={14} />{t.mdAdd}</button>}
-        {tab === 'list' && onBuild && <button className="btn sm tdock-build" onClick={onBuild}><Icon name="plus" size={14} />{t.mkBuild}</button>}
+        {(tab === 'list' || tab === 'top') && onBuild && <button className="btn sm tdock-build" onClick={onBuild}><Icon name="plus" size={14} />{t.mkBuild}</button>}
         {tab === 'bt' && sel && (
           <div className={`seg${busy ? ' busy' : ''}`} role="group" aria-label={t.thPeriod} aria-busy={busy}>
             {busy && <span className="spin" aria-hidden />}
@@ -382,6 +413,31 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
             <button className="btn sm" onClick={() => setTab('list')}>{t.mdSee}</button>
           </div>
         ))}
+        {tab === 'top' && (
+          <div className={`tk${venue === 'dex' && onLp ? ' with-lp' : ''}`} key={`top-${venue}-${coin}`}>
+            {venue === 'dex' && onLp && (
+              <section className="tk-lp" aria-label={t.dkLpTitle}>
+                <header className="tk-head"><b>{t.dkLpTitle}</b><small>{t.dkLpSub}</small></header>
+                <div className="tk-lp-grid">
+                  {LP_STRATEGIES.map((x) => (
+                    <button key={x.id} className={`tk-lp-tile g-${x.goal}`} onClick={() => onLp(x)}>
+                      <span className="lps-goal-ico"><Icon name={LP_ICON[x.goal]} size={16} /></span>
+                      <span><b>{t.lpsStrat[x.id][0]}</b><small>{t.lpsStrat[x.id][1]}</small></span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+            <section className="tk-agents" aria-label={t.dkTopTitle}>
+              <header className="tk-head"><b>{t.dkTopTitle}</b><small>{t.dkTopSub}</small>{all.length > best.length && <button className="btn-text sm tk-all" onClick={() => setTab('list')}>{t.dkSeeAll(all.length)}<Icon name="chevron" size={14} /></button>}</header>
+              {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
+              <ol className="tk-list">
+                {!list && !failed && [0, 1, 2, 3].map((i) => <li key={i} className="tk-skel skel-block" />)}
+                {best.map((a, i) => <TopPick key={a.id} a={a} n={i + 1} onOpen={() => { onSelect(a); setTab('bt'); }} onHire={() => onHire(a)} />)}
+              </ol>
+            </section>
+          </div>
+        )}
         {tab === 'list' && (
           <div className="hzb" key={`${venue}-${coin}`} style={{ '--cols': groups.length || 3 } as CSSProperties}>
             {failed && <div className="hzb-wide"><StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} /></div>}

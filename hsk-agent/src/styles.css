@@ -446,7 +446,43 @@ select { padding-right: 8px; }
 .mp-pick.sort select { padding-left: 36px; }
 .mp-pick select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
 /* ---- marketplace: cards. The mark, the name, one plain line, one big number with its chart, two actions. ---- */
-.mp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.market-page { container: mpage / inline-size; }
+.mp-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.mp-mainc { display: flex; flex-direction: column; gap: 36px; min-width: 0; }
+.mp-sec { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.mp-h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink-title); }
+.mp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 24px; }
+.mp-card.big { padding: 24px; gap: 16px; background: radial-gradient(140% 80% at 0% 0%, color-mix(in srgb, var(--fam) 16%, transparent), transparent 65%), var(--bg); }
+.mp-card.big .mp-num b { font-size: 38px; line-height: 46px; }
+.mp-card.big .mp-chart svg { height: 80px; }
+.mp-card.big .mp-plain { font-size: 16.5px; line-height: 24px; }
+/* the ranking: a rail beside the cards on a wide page, a section above them otherwise */
+.mp-rail { order: -1; display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px solid #e4e5e8; border-radius: 20px; background: linear-gradient(180deg, #f8f9fb, var(--bg) 140px); }
+.mp-rail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.mp-rail-head b { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--ink-title); }
+.mp-rail-head small { flex: 1 1 200px; font-size: 12.5px; color: var(--ink-3); }
+.mp-rail-head .mp-coins { margin-left: auto; }
+.mp-coins.sm { height: 34px; } .mp-coins.sm button { height: 28px; padding: 0 10px; font-size: 13px; }
+.mp-rank { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 2px 24px; }
+.mp-rank button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 6px; border: 0; border-radius: 10px; background: none; text-align: left; }
+.mp-rank button:hover { background: var(--hover); }
+.mp-rank-n { width: 20px; flex: none; text-align: center; font-size: 13px; font-weight: 800; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.mp-rank-n.top { color: var(--ink-title); }
+.mp-rank-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.mp-rank-name b { font-size: 14px; font-weight: 600; color: var(--ink-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mp-rank-live { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--pos); }
+.mp-rank-v { flex: none; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mp-rank-skel { height: 40px; border-radius: 10px; margin: 2px 0; }
+.mp-rail-foot { margin: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 12px; color: var(--ink-3); }
+.mp-rail-foot span { display: inline-flex; align-items: center; gap: 6px; }
+.mp-rank li:nth-child(n+7) { display: none; }
+@container mpage (min-width: 1100px) {
+  .mp-layout { grid-template-columns: minmax(0, 1fr) 320px; gap: 40px; align-items: start; }
+  .mp-rail { order: 0; position: sticky; top: 16px; }
+  .mp-rank { grid-template-columns: minmax(0, 1fr); }
+  .mp-rank li:nth-child(n+7) { display: block; }
+}
+@media (max-width: 640px) { .mp-rank li:nth-child(n+6) { display: none; } .mp-rail { padding: 16px; } .mp-rail-head .mp-coins { margin-left: 0; } }
 .mp-card { --fam: #8a8f98; position: relative; display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 20px; border: 1px solid #e4e5e8; border-radius: 20px; overflow: hidden;
   background: radial-gradient(130% 70% at 0% 0%, color-mix(in srgb, var(--fam) 10%, transparent), transparent 62%), var(--bg);
   box-shadow: 0 1px 2px rgba(16, 24, 40, .04); animation: rise var(--d3) var(--ease-in) backwards;
@@ -455,6 +491,7 @@ select { padding-right: 8px; }
 .mp-grid > :nth-child(2) { animation-delay: .03s; } .mp-grid > :nth-child(3) { animation-delay: .06s; } .mp-grid > :nth-child(4) { animation-delay: .09s; }
 .mp-grid > :nth-child(5) { animation-delay: .12s; } .mp-grid > :nth-child(6) { animation-delay: .15s; } .mp-grid > :nth-child(n+7) { animation-delay: .18s; }
 .mp-skel { height: 330px; border-radius: 20px; }
+.mp-grid.feat:empty { display: none; }
 .mp-top { display: flex; align-items: flex-start; gap: 8px; }
 .mp-title { flex: 1; display: flex; align-items: center; gap: 14px; min-width: 0; border: 0; background: none; padding: 0; text-align: left; }
 .mp-title .face.xl { box-shadow: 0 6px 16px -4px color-mix(in srgb, var(--fam) 55%, transparent); transition: transform var(--d2) var(--ease); }
@@ -1429,6 +1466,43 @@ select { padding-right: 8px; }
 }
 .face.r-made { background: #111; color: #fff; }
 .tdock-build { flex: none; }
+/* under the chart: "doing well now", and on HSKSwap the liquidity strategies beside it */
+.tk { display: grid; grid-template-columns: minmax(0, 1fr); }
+@container dock (min-width: 980px) {
+  .tk.with-lp { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+  .tk.with-lp .tk-lp { order: 2; border-left: 1px solid var(--line); }
+}
+.tk-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; padding: 14px 18px 8px; }
+.tk-head b { font-size: 15px; font-weight: 700; color: var(--ink-title); }
+.tk-head small { flex: 1 1 220px; font-size: 12.5px; color: var(--ink-3); }
+.tk-all { margin-left: auto; height: 28px; font-size: 13px; color: var(--accent-ink); }
+.tk-list { list-style: none; margin: 0; padding: 0 10px 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 430px), 1fr)); gap: 4px 16px; }
+.tk-row { --fam: #8a8f98; display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 2px; border-radius: 14px; transition: background-color var(--d1) linear; }
+.tk-row:hover { background: color-mix(in srgb, var(--fam) 7%, var(--bg)); }
+.tk-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 6px; border: 0; background: none; text-align: left; }
+.tk-n { width: 16px; flex: none; text-align: center; font-size: 13px; font-weight: 800; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.tk-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tk-main b { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14.5px; line-height: 20px; font-weight: 700; color: var(--ink-title); white-space: nowrap; }
+.tk-main small { font-size: 13px; line-height: 18px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-fresh { display: inline-flex; align-items: center; gap: 4px; font-style: normal; font-size: 11.5px; font-weight: 600; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; }
+.tk-fresh i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #b5b9be; }
+.tk-fresh.on { color: var(--pos); } .tk-fresh.on i { background: currentColor; }
+.tk-num { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
+.tk-num small { font-size: 11px; line-height: 14px; color: var(--ink-3); white-space: nowrap; }
+.tk-num b { font-size: 18px; line-height: 24px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.tk-hire { flex: none; }
+.tk-only { flex: none; min-width: 56px; text-align: center; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.tk-skel { height: 52px; border-radius: 14px; margin: 4px 0; }
+.tk-lp { padding-bottom: 14px; --buy-ink: #9a5a0c; --buy-bg: #fdf5ea; --sell-ink: #5338d0; --sell-bg: #f4f1ff; }
+.tk-lp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px; padding: 0 16px; }
+.tk-lp-tile { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid #e4e5e8; border-radius: 14px; background: var(--bg); text-align: left; transition: border-color var(--d1) linear, box-shadow var(--d2) var(--ease), transform var(--d2) var(--ease); }
+.tk-lp-tile:hover { border-color: var(--accent); box-shadow: 0 8px 18px -10px rgba(26, 115, 232, .45); transform: translateY(-1px); }
+.tk-lp-tile > span:last-child { min-width: 0; }
+.tk-lp-tile b { display: block; font-size: 13.5px; line-height: 18px; font-weight: 700; color: var(--ink-title); }
+.tk-lp-tile small { display: block; font-size: 12px; line-height: 16px; color: var(--ink-3); }
+.tk-lp-tile .lps-goal-ico { width: 32px; height: 32px; border-radius: 10px; }
+@media (prefers-reduced-motion: reduce) { .tk-lp-tile:hover { transform: none; } }
+@media (max-width: 640px) { .tk-num small { display: none; } .tk-main small { white-space: normal; } }
 
 /* ---------- account (top right): log in, nickname + address, my vault, deposit and withdraw ---------- */
 .acct { position: relative; display: flex; align-items: center; }
