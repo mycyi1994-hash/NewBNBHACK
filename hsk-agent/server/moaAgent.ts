@@ -16,7 +16,8 @@ import { loadAgents, type Agent } from '../src/agents.ts';
 import { recommend, type Level } from '../src/recommend.ts';
 import { STRINGS } from '../src/i18n.ts';
 import { LP_STRATEGIES, strategyPlan } from '../src/lpStrategies.ts';
-import { liveSpread, gapHistory, gapStats, POOL_FEE, TAKER_FEE } from '../src/spread.ts';
+import { spreadRead, gapHistory, gapStats, POOL_FEE, TAKER_FEE } from '../src/spread.ts';
+import { onchainForModel, onchainView } from '../src/onchain.ts';
 
 export const MODEL = 'claude-sonnet-5-5';
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -61,13 +62,13 @@ Rules:
 const tools: Anthropic.Beta.BetaTool[] = [
   {
     name: 'get_market',
-    description: 'Live prices: HSKSwap pool prices on HSK Chain (HSK, ETH, BTC vs USDT) with the gap to Gate spot, the HashKey Global BTC/USDT perpetual, and the vault of the logged-in user when there is one: its USDT, each coin it holds with what that cost and what it is worth now (holdings[].costUsdt, valueUsdt), the limits the owner set (a missing limit means none), the stop-loss (stopLossBps) and whether trading is locked (paused). Use it for questions about positions and profit or loss. It also returns poolDepth for each HSKSwap pool, read from the chain: how many USDT move the pool price by 1, 2 and 5 percent either way (usdtToMove) and how far a buy of 10, 100 or 1000 USDT moves it (buyMovesPricePct); use it when asked how big an order the pool can take or how thin it is. And exchangeBook for BTC and ETH, from nanotradingclub (nine exchanges added together, not HSK Chain and not HashKey): the thickest stacks of resting orders within 8 percent under the price (buyWalls) and over it (sellWalls) with their size in USD and distance in percent, and forced liquidations in USD over the last hour and 24 hours, split into long and short positions closed. A field that is null or missing was not available: say so rather than guess.',
+    description: 'Live prices: HSKSwap pool prices on HSK Chain (HSK, ETH, BTC vs USDT) with the gap to Gate spot, the HashKey Global BTC/USDT perpetual, and the vault of the logged-in user when there is one: its USDT, each coin it holds with what that cost and what it is worth now (holdings[].costUsdt, valueUsdt), the limits the owner set (a missing limit means none), the stop-loss (stopLossBps) and whether trading is locked (paused). Use it for questions about positions and profit or loss. It also returns poolDepth for each HSKSwap pool, read from the chain: how many USDT move the pool price by 1, 2 and 5 percent either way (usdtToMove) and how far a buy of 10, 100 or 1000 USDT moves it (buyMovesPricePct); use it when asked how big an order the pool can take or how thin it is. And hskOnchain: the on-chain flow of the HSK pool (buys and sells in USD over 24 hours and 7 days, which side leans, the largest swap) and its liquidity within 2% now and a day ago; it is a live reading, not a tested signal. And exchangeBook for BTC and ETH, from nanotradingclub (nine exchanges added together, not HSK Chain and not HashKey): the thickest stacks of resting orders within 8 percent under the price (buyWalls) and over it (sellWalls) with their size in USD and distance in percent, and forced liquidations in USD over the last hour and 24 hours, split into long and short positions closed. A field that is null or missing was not available: say so rather than guess.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     strict: true,
   },
   {
     name: 'get_spread',
-    description: 'The HSKSwap pool price against HashKey Global (Gate if HashKey Global does not answer) for HSK, ETH and BTC, with costs: gapPct (pool vs exchange, negative = pool cheaper), grossPct, netPctBySize for $10/$100/$1000 after the HSKSwap fee 0.3%, an assumed exchange taker fee 0.1% and the pool price impact from its real depth, breakEvenUsd (largest size still worth it, 0 = none), and the last 24 hours of recorded gaps (how many records, how many beat the costs). Use it for any question about arbitrage, spreads or the price gap. Say that moving funds between HSK Chain and the exchange is not counted, and that the vault only trades on HSKSwap: the actionable form is the Spread Hunter agent (buys on HSKSwap at a discount, sells when it closes).',
+    description: 'The HSKSwap pool price against HashKey Global (Gate if HashKey Global does not answer) for HSK, ETH and BTC, with costs. vault: what the vault itself can do (it trades only on HSKSwap): buy cheaper there and sell back later, the round-trip cost, what is left if the pool rises to the exchange price, whether the record shows this pool closing a discount, and actionableNow. onlyWithAnExchangeAccount: the cross-venue net after the HSKSwap fee 0.3%, an assumed taker fee 0.1% and the pool price impact, which the vault cannot do. Use it for any question about arbitrage, spreads or the price gap. Say yes only for a coin with actionableNow true, and say plainly that the vault cannot sell on the exchange.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     strict: true,
   },
@@ -163,18 +164,20 @@ async function poolDepths() {
 }
 
 export async function marketSnapshot(cfg: ExecConfig) {
-  const [quotes, perp, vault, depth, book] = await Promise.all([
+  const [quotes, perp, vault, depth, book, chain] = await Promise.all([
     loadQuotes(),
     cex.ticker().then((t) => ({ last: t.last, change24hPct: +((t.last / t.open - 1) * 100).toFixed(2) })).catch((e: unknown) => ({ unavailable: String(e) })),
     vaultStatus(cfg).catch((e: unknown) => ({ configured: false, error: String(e) })),
     poolDepths(),
     Promise.all((['BTC', 'ETH'] as const).map((c) => nanoBrief(c).catch(() => null))),
+    onchainView('HSK').catch(() => null),
   ]);
   return {
     hskswap: quotes.map((q) => ({ asset: q.asset, poolPriceUsd: q.pool ?? null, gateSpotUsd: q.exchange ?? null, gapPct: q.gap !== undefined ? +(q.gap * 100).toFixed(2) : null })),
     hashkeyGlobalBtcPerp: perp,
     vault,
     poolDepth: depth,
+    hskOnchain: onchainForModel(chain),
     exchangeBook: { source: 'nanotradingclub: nine exchanges added together (Binance, Bybit, Hyperliquid, Gate, Bitfinex, Upbit, Bithumb; futures and spot)', coins: book.filter((x) => x !== null) },
     note: 'HSKSwap fee is 0.3% per swap.',
   };
@@ -182,13 +185,24 @@ export async function marketSnapshot(cfg: ExecConfig) {
 
 /** Every coin's spread now and its last day of recorded gaps, for the get_spread tool. */
 export async function spreadSnapshot() {
-  const pc = (v: number) => (Number.isFinite(v) ? +(v * 100).toFixed(3) : null);
+  const pc = (v: number | undefined) => (v !== undefined && Number.isFinite(v) ? +(v * 100).toFixed(3) : null);
   const coins = await Promise.all(ASSETS.map(async (a) => {
-    const [s, hist] = await Promise.all([liveSpread(a).catch(() => null), gapHistory(a, 1).catch(() => [])]);
+    const [r, hist] = await Promise.all([spreadRead(a).catch(() => null), gapHistory(a, 1).catch(() => [])]);
     const st = gapStats(hist);
-    return s ? { asset: a, venue: s.venue, poolPriceUsd: s.pool, exchangePriceUsd: s.exchange, gapPct: pc(s.gap), grossPct: pc(s.gross), netPctBySize: Object.fromEntries(s.sizes.map((z) => [`$${z.usd}`, pc(z.net)])), breakEvenUsd: s.breakEven ?? null, last24h: { records: st.n, beatCosts: st.outside } } : { asset: a, unavailable: 'prices or pool depth not readable now', last24h: { records: st.n, beatCosts: st.outside } };
+    if (!r) return { asset: a, unavailable: 'prices or pool depth not readable now', last24h: { records: st.n, beatCosts: st.outside } };
+    const s = r.s;
+    return {
+      asset: a, venue: s.venue, poolPriceUsd: s.pool, exchangePriceUsd: s.exchange, gapPct: pc(s.gap),
+      // What the vault itself can do: buy on HSKSwap now and sell back there later.
+      vault: s.side === 'poolCheap'
+        ? { action: 'buy on HSKSwap, sell back on HSKSwap later', roundTripCostPct: pc(s.roundTrip), leftIfPoolRisesToExchangePct: pc(s.vaultNet), recordShowsThisPoolClosingADiscount: r.reverted, actionableNow: (s.vaultNet ?? 0) > 0 && r.reverted }
+        : { action: 'only if the vault already holds the coin: selling it on HSKSwap beats the exchange', actionableNow: false },
+      // Not possible for the vault: it needs an exchange account and moving the coins there.
+      onlyWithAnExchangeAccount: { netPctBySize: Object.fromEntries(s.sizes.map((z) => [`$${z.usd}`, pc(z.net)])), breakEvenUsd: s.breakEven ?? null },
+      last24h: { records: st.n, beatCrossVenueCosts: st.outside },
+    };
   }));
-  return { coins, costs: { hskswapFeePct: POOL_FEE * 100, exchangeTakerFeePctAssumed: TAKER_FEE * 100, notCounted: 'moving funds between HSK Chain and the exchange (time and fees), the exchange order book, gas' } };
+  return { coins, costs: { hskswapFeePct: POOL_FEE * 100, exchangeTakerFeePctAssumed: TAKER_FEE * 100, notCounted: 'moving funds between HSK Chain and the exchange (time and fees), the exchange order book, gas' }, rule: 'Answer "yes" only when a coin has vault.actionableNow true. Never present onlyWithAnExchangeAccount as something the vault can do.' };
 }
 
 export type MoaStep = 'thinking' | 'market' | 'plan' | 'agents' | 'execute' | 'writing';

@@ -73,6 +73,9 @@ export interface Spread {
   sizes: SizeEdge[];
   /** The largest size (USD) still worth it; 0 when no size is. Undefined without the pool's depth. */
   breakEven?: number;
+  /** What a vault can do itself (HSKSwap only): buy at REF_USD and later sell back there. The round trip's cost, and
+   *  what is left of the discount if the pool rises all the way to the exchange price. Pool cheaper and depth known only. */
+  roundTrip?: number; vaultNet?: number;
 }
 
 /** The gap between HSKSwap and an exchange for one coin, with what is left of it after costs at each size. */
@@ -84,7 +87,10 @@ export function spreadOf(i: { asset: Asset; pool: number; exchange: number; venu
   const slipAt = (usd: number) => (i.state ? (side === 'poolCheap' ? buySlip(i.state, usd) : sellSlip(i.state, usd)) : NaN);
   const netAt = (usd: number) => gross - fees - slipAt(usd);
   const out: Spread = { asset: i.asset, pool: i.pool, exchange: i.exchange, venue: i.venue, gap, side, gross, fees, sizes: sizes.map((usd) => ({ usd, slip: slipAt(usd), net: netAt(usd) })) };
-  if (i.state) out.breakEven = breakEven(netAt);
+  if (i.state) {
+    out.breakEven = breakEven(netAt);
+    if (side === 'poolCheap') { out.roundTrip = 2 * POOL_FEE + buySlip(i.state, REF_USD) + sellSlip(i.state, REF_USD); out.vaultNet = gross - out.roundTrip; }
+  }
   return out;
 }
 
@@ -137,23 +143,46 @@ export type HunterState = { building: true; points: number; spanMs: number } | {
  * trip on HSKSwap costs (at REF_USD), out when the pool is back at or above the exchange. Buys and sells are priced
  * at the pool price with the recorded fee and slip, so the result is what the vault would have got on HSKSwap.
  */
+/** The hunter sells after this long in the coin, whatever the gap: a pool that never trades never closes its discount. */
+export const MAX_HOLD_MS = 3 * 86_400_000;
+/** ...or once the pool price is this far under what it paid. */
+export const STOP = 0.05;
+/** A discount counts as closed in the record once the gap is back to this or above (half a round trip under the exchange). */
+const closedAt = (p: GapPoint) => -roundTrip(p) / 2;
+
+/**
+ * The hunter's rule, walked over the records.
+ *  In: the pool is cheaper than the exchange by more than a round trip on HSKSwap costs (at REF_USD), and the record
+ *      has already shown this pool closing such a discount once (a stale pool that never trades never qualifies).
+ *  Out, the first of: the pool price has risen a round trip over what it paid (the discount paid off); the pool is
+ *      back at the exchange price; MAX_HOLD_MS in the coin; or the pool price STOP under what it paid.
+ * Buys and sells are priced at the pool price with the recorded fee and slip: what the vault would get on HSKSwap.
+ */
 export function hunterRun(xs: GapPoint[]) {
   const pts = [...xs].filter((p) => gapOf(p) !== undefined).sort((a, b) => a.t - b.t);
-  let cash = 1, qty = 0, peak = 1, maxDd = 0, trades = 0, inside = 0;
+  let cash = 1, qty = 0, peak = 1, maxDd = 0, trades = 0, inside = 0, since = 0, entry = 0, paid = 0;
+  let dip = false, reverted = false;
   const equity: { time: number; value: number }[] = [], bench: { time: number; value: number }[] = [], marks: Mark[] = [];
+  const exits: ('target' | 'closed' | 'time' | 'stop')[] = [];
   const p0 = pts[0]?.pool ?? 1;
-  let lastBuy = 0;
   for (let k = 0; k < pts.length; k++) {
-    const p = pts[k], g = gapOf(p)!;
-    if (qty === 0 && g < -roundTrip(p)) {
-      lastBuy = p.pool * (1 + (p.buy ?? 0));
-      qty = (cash * (1 - POOL_FEE)) / lastBuy; cash = 0; trades++;
+    const p = pts[k], g = gapOf(p)!, rt = roundTrip(p);
+    if (qty === 0 && g < -rt && reverted) {
+      entry = p.pool; paid = cash;
+      qty = (cash * (1 - POOL_FEE)) / (p.pool * (1 + (p.buy ?? 0))); cash = 0; trades++; since = p.t;
       marks.push({ time: Math.floor(p.t / 1000), side: 'buy', price: p.pool });
-    } else if (qty > 0 && g >= 0) {
-      const got = qty * p.pool * (1 - (p.sell ?? 0)) * (1 - POOL_FEE);
-      marks.push({ time: Math.floor(p.t / 1000), side: 'sell', price: p.pool, ret: got / (qty * lastBuy / (1 - POOL_FEE)) - 1 });
-      cash = got; qty = 0;
+    } else if (qty > 0) {
+      const why = p.pool >= entry * (1 + rt) ? 'target' : g >= 0 ? 'closed' : p.t - since >= MAX_HOLD_MS ? 'time' : p.pool <= entry * (1 - STOP) ? 'stop' : null;
+      if (why) {
+        const got = qty * p.pool * (1 - (p.sell ?? 0)) * (1 - POOL_FEE);
+        marks.push({ time: Math.floor(p.t / 1000), side: 'sell', price: p.pool, ret: got / paid - 1 });
+        exits.push(why);
+        cash = got; qty = 0;
+      }
     }
+    // What the record shows about this pool: a discount past a round trip, later closed.
+    if (g < -rt) dip = true;
+    else if (dip && g >= closedAt(p)) { reverted = true; dip = false; }
     if (qty > 0 && k > 0) inside += p.t - pts[k - 1].t;
     const v = cash + qty * p.pool;
     peak = Math.max(peak, v); maxDd = Math.max(maxDd, 1 - v / peak);
@@ -161,7 +190,7 @@ export function hunterRun(xs: GapPoint[]) {
     bench.push({ time: Math.floor(p.t / 1000), value: p.pool / p0 });
   }
   const span = pts.length > 1 ? pts[pts.length - 1].t - pts[0].t : 0;
-  return { pts, equity, bench, marks, trades, maxDd, holding: qty > 0, inMarket: span ? inside / span : 0, span };
+  return { pts, equity, bench, marks, exits, trades, maxDd, holding: qty > 0, reverted, inMarket: span ? inside / span : 0, span };
 }
 
 export function hunterState(xs: GapPoint[]): HunterState {
@@ -172,8 +201,8 @@ export function hunterState(xs: GapPoint[]): HunterState {
 
 /**
  * The hunter as a market agent, so it is hired, asked and run like every other agent (position: in or out).
- * Its in/out comes from the records; with too little history its result numbers are zero and `hunterState` says
- * it is still recording, which the screen shows instead of a result.
+ * Its in/out comes from the records; with too little history its result numbers are zero, it is not hireable
+ * (runnable false), and `hunterState` says it is still recording, which the screen shows instead of a result.
  */
 export function hunterAgent(asset: Asset, xs: GapPoint[]): Agent {
   const r = hunterRun(xs);
@@ -181,7 +210,7 @@ export function hunterAgent(asset: Asset, xs: GapPoint[]): Agent {
   const building = hunterState(xs).building;
   const endV = r.equity[r.equity.length - 1]?.value ?? 1, endB = r.bench[r.bench.length - 1]?.value ?? 1;
   return {
-    id: `spread-${asset}`, kind: 'position', rule: 'spread', style: 'revert', risk: 2, tier: 3, base: asset, runnable: true, source: 'hashkey',
+    id: `spread-${asset}`, kind: 'position', rule: 'spread', style: 'revert', risk: 2, tier: 3, base: asset, runnable: !building, source: 'hashkey',
     fee: POOL_FEE, days: Math.max(1, Math.round(r.span / 86_400_000)), from: Math.floor((r.pts[0]?.t ?? Date.now()) / 1000), to: Math.floor((last?.t ?? Date.now()) / 1000),
     total: building ? 0 : endV - 1, hold: building ? 0 : endB - 1, maxDd: building ? 0 : r.maxDd, sharpe: 0, trades: r.trades, inMarket: r.inMarket,
     equity: building ? [] : r.equity, bench: building ? [] : r.bench, marks: r.marks, live: r.holding, mult: r.holding ? 1 : 0, price: last?.pool ?? 0,
@@ -232,25 +261,36 @@ export const setGapSource = (f: typeof source) => { source = f; };
 export const gapHistory = (asset: Asset, days = 7) => source(asset, days);
 export const spreadAgent = async (asset: Asset) => hunterAgent(asset, await gapHistory(asset, KEEP_DAYS));
 
-/** A short, plain read of every coin's spread now, in the user's language (Moa's answer to "any arbitrage?"). */
-export function spreadBrief(xs: Spread[], lang: 'en' | 'ko'): string {
+/**
+ * Moa's answer to "any arbitrage?", about what the vault can do: it trades only on HSKSwap and cannot sell on the
+ * exchange. "Yes" only when a coin is cheaper on HSKSwap by more than a round trip there AND the record shows this pool
+ * closing such a discount before; the cross-venue number is said to need an exchange account.
+ */
+export function spreadBrief(xs: { s: Spread; reverted: boolean }[], lang: 'en' | 'ko'): string {
   const pc = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(2)}%`;
-  if (!xs.length) return lang === 'ko' ? '지금은 가격을 읽지 못했어요. 잠시 뒤에 다시 물어봐 주세요.' : 'I could not read the prices just now. Ask me again in a moment.';
-  const lines = xs.map((s) => {
-    const n100 = s.sizes.find((z) => z.usd === 100)?.net;
-    const where = s.side === 'poolCheap' ? (lang === 'ko' ? 'HSKSwap이 더 싸요' : 'HSKSwap is cheaper') : (lang === 'ko' ? 'HSKSwap이 더 비싸요' : 'HSKSwap is dearer');
-    const net = n100 === undefined || Number.isNaN(n100) ? '' : lang === 'ko' ? `, 비용 빼면 $100 기준 ${pc(n100)}` : `, ${pc(n100)} after costs at $100`;
-    return `${s.asset}: ${pc(s.gap)} (${where}${net})`;
+  const ko = lang === 'ko';
+  if (!xs.length) return ko ? '지금은 가격을 읽지 못했어요. 잠시 뒤에 다시 물어봐 주세요.' : 'I could not read the prices just now. Ask me again in a moment.';
+  const can = xs.filter(({ s, reverted }) => s.vaultNet !== undefined && s.vaultNet > 0 && reverted);
+  const head = can.length
+    ? (ko ? `있어요: ${can.map((x) => x.s.asset).join(', ')}를 HSKSwap에서 싸게 살 수 있어요.` : `Yes: ${can.map((x) => x.s.asset).join(', ')} can be bought cheaper on HSKSwap.`)
+    : (ko ? '지금은 볼트로 할 수 있는 차익이 없어요.' : 'Nothing your vault can act on right now.');
+  const lines = xs.map(({ s, reverted }) => {
+    if (s.side === 'poolDear') return ko ? `${s.asset}: HSKSwap이 ${pc(s.gap)} 비싸요. 볼트에 이 코인이 있으면 HSKSwap에서 파는 게 거래소보다 나아요.` : `${s.asset}: HSKSwap is ${pc(s.gap)} dearer. If the vault holds it, selling on HSKSwap beats the exchange.`;
+    const net = s.vaultNet === undefined ? '' : ko ? ` 사서 HSKSwap에서 되팔면 왕복 비용 ${pc(-(s.roundTrip ?? 0))}, 풀이 거래소 가격까지 오르면 ${pc(s.vaultNet)} 남아요.` : ` Buying and selling back on HSKSwap costs ${pc(-(s.roundTrip ?? 0))} round trip; ${pc(s.vaultNet)} is left if the pool rises to the exchange price.`;
+    const rec = reverted ? '' : ko ? ' 다만 이 풀이 할인을 닫은 기록이 아직 없어요.' : ' But the record has not yet shown this pool closing a discount.';
+    const cross = s.sizes.find((z) => z.usd === REF_USD)?.net;
+    const ex = cross === undefined || Number.isNaN(cross) ? '' : ko ? ` (거래소에서 팔 수 있을 때만 $${REF_USD} 기준 ${pc(cross)}, 볼트로는 못 해요.)` : ` (Only with an exchange account: ${pc(cross)} at $${REF_USD}; the vault cannot.)`;
+    return `${s.asset}: ${ko ? `HSKSwap이 ${pc(-s.gap).replace('+', '')} 싸요.` : `HSKSwap is ${pc(-s.gap).replace('+', '')} cheaper.`}${net}${rec}${ex}`;
   });
-  const any = xs.some((s) => (s.sizes.find((z) => z.usd === 100)?.net ?? -1) > 0);
-  const head = lang === 'ko'
-    ? (any ? '비용을 넘는 차이가 있어요.' : '지금은 비용을 넘는 차이가 없어요.')
-    : (any ? 'There is a gap that beats the costs.' : 'No gap beats the costs right now.');
-  const tail = lang === 'ko'
-    ? '비용: HSKSwap 수수료 0.3%, 거래소 수수료 0.1%(가정), 풀 가격 영향. 거래소로 옮기는 시간과 비용은 빠져 있어요.'
-    : 'Costs: HSKSwap fee 0.3%, exchange fee 0.1% (assumed), pool price impact. Moving funds to the exchange is not counted.';
-  const act = lang === 'ko'
-    ? '볼트는 HSKSwap에서만 거래해요. HSKSwap이 쌀 때 사서 차이가 닫히면 파는 스프레드 헌터를 트레이드 화면의 스프레드 탭에서 맡길 수 있어요.'
-    : 'Your vault trades only on HSKSwap. The Spread Hunter (Spread tab on the trade screen) buys there at a discount and sells when it closes.';
-  return [head, ...lines, tail, act].join('\n');
+  const tail = ko
+    ? '볼트는 HSKSwap에서만 사고팔아요. 거래소로 옮겨 파는 건 할 수 없고, 그 시간과 비용도 계산에 없어요.'
+    : 'Your vault buys and sells only on HSKSwap. It cannot move coins to the exchange and sell there; that time and cost are not counted.';
+  const act = can.length ? (ko ? '이걸 대신 해 주는 스프레드 헌터가 트레이드 화면의 스프레드 탭에 있어요.' : 'The Spread Hunter on the trade screen’s Spread tab does this for you.') : '';
+  return [head, ...lines, tail, act].filter(Boolean).join('\n');
+}
+
+/** The spread now with what the record says about this pool (has it closed a discount before?), for Moa's answer. */
+export async function spreadRead(asset: Asset): Promise<{ s: Spread; reverted: boolean } | null> {
+  const [s, hist] = await Promise.all([liveSpread(asset).catch(() => null), gapHistory(asset, KEEP_DAYS).catch(() => [] as GapPoint[])]);
+  return s ? { s, reverted: hunterRun(hist).reverted } : null;
 }

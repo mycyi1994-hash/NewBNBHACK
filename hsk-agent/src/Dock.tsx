@@ -24,6 +24,7 @@ import { Icon, Spark } from './Icons.tsx';
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import SpreadPanel from './SpreadPanel.tsx';
+import OnchainPanel from './OnchainPanel.tsx';
 import { ASSETS } from './intent.ts';
 import { feeText } from './share.ts';
 import { whoText } from './Shared.tsx';
@@ -380,7 +381,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
   );
 }
 
-type Tab = 'mine' | 'top' | 'list' | 'spread' | 'bt' | 'swaps';
+type Tab = 'mine' | 'top' | 'list' | 'spread' | 'chain' | 'bt' | 'swaps';
 
 const LP_ICON: Record<LpStrategy['goal'], IconName> = { buy: 'dip', sell: 'trend', both: 'collect' };
 
@@ -460,6 +461,8 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
           <button role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'on' : ''} onClick={() => setTab('list')}>{t.dkAllTab}</button>
           {/* HSKSwap against the exchange, for the three coins a vault trades */}
           {(ASSETS as string[]).includes(coin) && <button role="tab" aria-selected={tab === 'spread'} className={tab === 'spread' ? 'on' : ''} onClick={() => setTab('spread')}>{t.sxTab}</button>}
+          {/* HSK's own chain: the WHSK pool's swaps and liquidity */}
+          {coin === 'HSK' && <button role="tab" aria-selected={tab === 'chain'} className={tab === 'chain' ? 'on' : ''} onClick={() => setTab('chain')}>{t.owTab}</button>}
           {sel && (
             <button role="tab" aria-selected={tab === 'bt'} className={tab === 'bt' ? 'on' : ''} onClick={() => setTab('bt')}>
               {t.btTab}<span className="tdock-tab-sub">{sel.made?.name ?? t.agNick[sel.rule]}</span>
@@ -534,6 +537,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
         )}
         {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} cursor={cursor} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}
         {tab === 'spread' && (ASSETS as string[]).includes(coin) && <SpreadPanel key={coin} asset={coin as Asset} onHire={onHire} />}
+        {tab === 'chain' && coin === 'HSK' && <OnchainPanel />}
         {tab === 'swaps' && swaps}
       </div>
     </section>

@@ -26,7 +26,7 @@ import { loadWeather, skyOf, type Weather } from './weather.ts';
 import type { LpPlan } from './lp.ts';
 import { parseLp, reachOf, widthFor } from './lpTalk.ts';
 import { POOLS } from './dex.ts';
-import { liveSpread, spreadBrief, type Spread } from './spread.ts';
+import { spreadRead, spreadBrief } from './spread.ts';
 import { ASSETS } from './intent.ts';
 import { beatsHold, holdNumbers, isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
@@ -429,8 +429,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     if (SPREAD_WORDS.test(q)) {
       // The spread model (src/spread.ts): the gap against HashKey Global, and what is left after fees and the pool's
       // price impact at $10/$100/$1,000. If the live read fails, the plain gap from the price strip below.
-      void Promise.all(ASSETS.map((a) => liveSpread(a).catch(() => null))).then((xs) => {
-        const got = xs.filter((x): x is Spread => !!x);
+      void Promise.all(ASSETS.map((a) => spreadRead(a).catch(() => null))).then((xs) => {
+        const got = xs.filter((x) => x !== null);
         if (got.length) say({ text: spreadBrief(got, lang), follow: [] }, 200);
         else gapOnly();
       });

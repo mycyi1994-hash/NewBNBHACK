@@ -12,6 +12,8 @@ import type { HiredAgent } from '../src/runner.ts';
 import { openShares, sharesFile, type ShareStore } from './shareStore.ts';
 import { openSpreads, spreadsFile, startRecorder, type SpreadStore } from './spreadStore.ts';
 import { setGapSource, RECORD_EVERY_MS } from '../src/spread.ts';
+import { onchainFile, openOnchain, startOnchain, READ_EVERY_MS } from './onchainStore.ts';
+import { setOnchainSource } from '../src/onchain.ts';
 import { isRunnable, SIGNAL_MARKETS } from '../src/agents.ts';
 import type { Address } from 'viem';
 import type { SharedRef } from '../src/share.ts';
@@ -56,6 +58,9 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
   // The recorded HSKSwap vs exchange gaps: read by the spread hunter here, and served to the page below.
   const spreads = opts.spreads ?? openSpreads(spreadsFile(env));
   setGapSource(async (asset, days) => spreads.read(asset, days));
+  // The on-chain watch for HSK: the WHSK pool's own swaps and liquidity, read from HSK Chain.
+  const onchain = openOnchain('HSK', onchainFile(env, 'HSK'));
+  setOnchainSource(async (asset) => (asset === 'HSK' ? onchain.view() : null));
   // Trades Moa proposes run only from their Confirm button's single-use ticket; Moa's answers are rationed.
   const tickets = ticketBook(secret);
   const num = (v: string | undefined, d: number) => (Number(v) > 0 ? Number(v) : d);
@@ -154,6 +159,12 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       // Shared agents: anyone can list and open them; publishing, stopping and counting a hire need a login, and the
       // creator is always the wallet of that login.
       const path = req.url.split('?')[0];
+      // The on-chain watch, public and read-only (HSK only).
+      if (path === '/api/onchain' && req.method === 'GET') {
+        const asset = new URL(req.url, 'http://x').searchParams.get('asset') ?? 'HSK';
+        if (asset !== 'HSK') return send(400, { error: 'only HSK is watched on chain' });
+        return send(200, { view: onchain.view() });
+      }
       // The gap history, public and read-only: only what this server recorded.
       if (path === '/api/spread' && req.method === 'GET') {
         const q = new URL(req.url, 'http://x').searchParams;
@@ -286,7 +297,8 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       void settle.then(() => { if (serviceOn(base)) stop = startRunner(base, store); });
       // The gap recorder runs on every server, trading or not: MOA_SPREAD_MS shortens it for a local trial (one minute at least).
       const stopRec = startRecorder(spreads, Number(env.MOA_SPREAD_MS) || RECORD_EVERY_MS);
-      return () => { stop(); stopRec(); };
+      const stopChain = startOnchain('HSK', onchain, Number(env.MOA_ONCHAIN_MS) || READ_EVERY_MS);
+      return () => { stop(); stopRec(); stopChain(); };
     },
   };
 }

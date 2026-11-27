@@ -27,6 +27,37 @@ const s256 = (h: string) => { let v = BigInt('0x' + h); if (v >= 2n ** 255n) v -
 export interface Swap { block: number; time: number; side: 'buy' | 'sell'; baseQty: number; usdt: number; price: number; tx: string }
 export interface PoolDetail { asset: Asset; price: number; reserveBase: number; reserveUsdt: number; swaps: Swap[]; head: number; at: number }
 
+/** The chain's latest block number. */
+export const headBlock = async () => parseInt(await rpc<string>('eth_blockNumber', []), 16);
+
+/**
+ * Every swap in the pool between two blocks, newest first. Times are estimated from 2-second blocks back from `head`
+ * read at `now`. The RPC caps eth_getLogs at about 1,000 blocks per call, so this asks in 1,000-block steps, 8 at a time.
+ */
+export async function swapsBetween(asset: Asset, from: number, to: number, head: number, now = Date.now()): Promise<Swap[]> {
+  const p = POOLS[asset];
+  const scale = 10 ** (p.decimals - 6);
+  const starts: number[] = [];
+  for (let f = Math.max(0, from); f <= to; f += 1000) starts.push(f);
+  const logs: { blockNumber: string; data: string; transactionHash: string }[] = [];
+  let k = 0;
+  await Promise.all(Array.from({ length: 8 }, async () => {
+    while (k < starts.length) {
+      const f = starts[k++];
+      const got = await rpc<typeof logs>('eth_getLogs', [{ address: p.pool, fromBlock: '0x' + f.toString(16), toBlock: '0x' + Math.min(to, f + 999).toString(16), topics: [SWAP_TOPIC] }]);
+      logs.push(...got);
+    }
+  }));
+  return logs.map((l): Swap => {
+    const d = l.data.slice(2);
+    const a0 = Number(s256(d.slice(0, 64))) / 10 ** p.decimals;
+    const a1 = Number(s256(d.slice(64, 128))) / 1e6;
+    const sp = Number(BigInt('0x' + d.slice(128, 192))) / 2 ** 96;
+    const block = parseInt(l.blockNumber, 16);
+    return { block, time: now - (head - block) * 2000, side: a1 > 0 ? 'buy' : 'sell', baseQty: Math.abs(a0), usdt: Math.abs(a1), price: sp * sp * scale, tx: l.transactionHash };
+  }).sort((a, b) => b.block - a.block);
+}
+
 export async function poolDetail(asset: Asset, days = 1): Promise<PoolDetail> {
   const p = POOLS[asset];
   const scale = 10 ** (p.decimals - 6);
@@ -40,27 +71,7 @@ export async function poolDetail(asset: Asset, days = 1): Promise<PoolDetail> {
   const sq = Number(BigInt(slot0.slice(0, 66))) / 2 ** 96;
   const now = Date.now();
 
-  // the RPC caps eth_getLogs at about 1,000 blocks per call
-  const from = head - days * BLOCKS_PER_DAY;
-  const starts: number[] = [];
-  for (let f = from; f <= head; f += 1000) starts.push(f);
-  const logs: { blockNumber: string; data: string; transactionHash: string }[] = [];
-  let k = 0;
-  await Promise.all(Array.from({ length: 8 }, async () => {
-    while (k < starts.length) {
-      const f = starts[k++];
-      const got = await rpc<typeof logs>('eth_getLogs', [{ address: p.pool, fromBlock: '0x' + f.toString(16), toBlock: '0x' + Math.min(head, f + 999).toString(16), topics: [SWAP_TOPIC] }]);
-      logs.push(...got);
-    }
-  }));
-  const swaps = logs.map((l): Swap => {
-    const d = l.data.slice(2);
-    const a0 = Number(s256(d.slice(0, 64))) / 10 ** p.decimals;
-    const a1 = Number(s256(d.slice(64, 128))) / 1e6;
-    const sp = Number(BigInt('0x' + d.slice(128, 192))) / 2 ** 96;
-    const block = parseInt(l.blockNumber, 16);
-    return { block, time: now - (head - block) * 2000, side: a1 > 0 ? 'buy' : 'sell', baseQty: Math.abs(a0), usdt: Math.abs(a1), price: sp * sp * scale, tx: l.transactionHash };
-  }).sort((a, b) => b.block - a.block);
+  const swaps = await swapsBetween(asset, head - days * BLOCKS_PER_DAY, head, head, now);
 
   return {
     asset,

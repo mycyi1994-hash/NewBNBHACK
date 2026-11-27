@@ -6,7 +6,7 @@ import type { Agent } from './agents.ts';
 import type { Asset } from './intent.ts';
 import { useT } from './i18n.ts';
 import { Face } from './AgentCard.tsx';
-import { costBand, gapHistory, gapOf, gapStats, hunterAgent, hunterState, KEEP_DAYS, lastOf, liveSpread, POOL_FEE, TAKER_FEE, type GapPoint, type Spread } from './spread.ts';
+import { costBand, gapHistory, gapOf, gapStats, hunterAgent, hunterRun, hunterState, KEEP_DAYS, lastOf, liveSpread, POOL_FEE, TAKER_FEE, type GapPoint, type Spread } from './spread.ts';
 
 const pc = (v: number, d = 2) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v * 100).toFixed(d)}%`;
 const usd = (v: number) => (v >= 1_000_000 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v).toLocaleString('en-US')}`);
@@ -58,11 +58,14 @@ export default function SpreadPanel({ asset, onHire }: { asset: Asset; onHire: (
   const shown = useMemo(() => lastOf(all, days * 86_400_000), [all, days]);
   const stats = useMemo(() => gapStats(shown), [shown]);
   const hunter = useMemo(() => hunterAgent(asset, all), [asset, all]);
+  const run = useMemo(() => hunterRun(all), [all]);
   const hs = hunterState(all);
   // The time axis covers what was recorded inside the window: with only an hour of records the hour fills the chart.
   const to = Date.now(), from = Math.max(to - days * 86_400_000, shown[0]?.t ?? 0);
   const span = (ms: number) => (ms >= 86_400_000 ? t.sxDaysN(Math.floor(ms / 86_400_000)) : ms >= 3_600_000 ? t.sxHoursN(Math.floor(ms / 3_600_000)) : t.sxMinsN(Math.max(0, Math.floor(ms / 60_000))));
   const s = now === 'loading' ? null : now;
+  // "Yes" only for a trade the vault can make: a discount bigger than a round trip, on a pool that has closed one before.
+  const vaultYes = !!s && s.vaultNet !== undefined && s.vaultNet > 0 && run.reverted;
 
   return (
     <div className="sx">
@@ -71,6 +74,15 @@ export default function SpreadPanel({ asset, onHire }: { asset: Asset; onHire: (
         {now === 'loading' ? <div className="skel" style={{ height: 40, width: '70%' }} /> : !s ? <p className="sx-none">{t.sxUnavailable}</p> : <>
           <b className={s.gap < 0 ? 'cheap' : 'dear'}>{pc(s.gap)}</b>
           <span className="sx-side">{s.gap < 0 ? t.sxCheap : t.sxDear}</span>
+          {/* What the vault itself can do: it trades only on HSKSwap. */}
+          <div className={`sx-vault${vaultYes ? ' yes' : ''}`}>
+            <span className="sx-net-head">{t.sxVault}</span>
+            {s.side === 'poolCheap' && s.vaultNet !== undefined ? <>
+              <span className="sx-vault-row"><em>{t.sxRoundTrip}</em><b>{pc(-(s.roundTrip ?? 0))}</b></span>
+              <span className="sx-vault-row"><em>{t.sxIfCloses}</em><b className={s.vaultNet > 0 ? 'pos' : 'neg'}>{pc(s.vaultNet)}</b></span>
+              <p>{vaultYes ? t.sxVaultYes : s.vaultNet <= 0 ? t.sxVaultSmall : t.sxVaultNoRecord}</p>
+            </> : <p>{s.side === 'poolDear' ? t.sxVaultDear : t.sxNoDepth}</p>}
+          </div>
           <div className="sx-net">
             <span className="sx-net-head">{t.sxNet}</span>
             {s.sizes.map((z) => (
@@ -80,7 +92,7 @@ export default function SpreadPanel({ asset, onHire }: { asset: Asset; onHire: (
               </span>
             ))}
           </div>
-          <p className={`sx-verdict${s.breakEven ? ' yes' : ''}`}>{s.breakEven === undefined ? t.sxNoDepth : s.breakEven > 0 ? t.sxBreak(usd(s.breakEven)) : t.sxNoBreak}</p>
+          <p className="sx-verdict">{s.breakEven === undefined ? t.sxNoDepth : s.breakEven > 0 ? t.sxBreak(usd(s.breakEven)) : t.sxNoBreak}</p>
         </>}
         <p className="sx-costs tip-tap" tabIndex={0} data-tip={t.sxNotCounted}>{t.sxCosts(`${(POOL_FEE * 100).toFixed(1)}%`, `${(TAKER_FEE * 100).toFixed(1)}%`)}<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M8 7.2v3.6M8 5.2v.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></p>
       </section>
@@ -108,8 +120,10 @@ export default function SpreadPanel({ asset, onHire }: { asset: Asset; onHire: (
         {hs.building
           ? <p className="sx-building"><i aria-hidden />{t.sxBuilding(span(hs.spanMs))}</p>
           : <p className="sx-result"><small>{t.mpVsHold} · {t.sxRecorded(span(hunter.days * 86_400_000))}</small><b className={hunter.total - hunter.hold >= 0 ? 'pos' : 'neg'}>{pc(hunter.total - hunter.hold, 1)}</b><span>{t.sxTrades(hunter.trades)}</span></p>}
-        <p className="sx-state">{hunter.live ? t.frHolding : t.sxWaiting}</p>
-        <button className="btn-primary sx-hire" onClick={() => onHire(hunter)}>{t.acHire}</button>
+        {!hs.building && <p className="sx-state">{hunter.live ? t.frHolding : run.reverted ? t.sxWaiting : t.sxNoRevert}</p>}
+        <p className="sx-rules">{t.sxExit}</p>
+        {/* Hireable only once there is a past result to judge it by. */}
+        {hunter.runnable && <button className="btn-primary sx-hire" onClick={() => onHire(hunter)}>{t.acHire}</button>}
         <p className="sx-act">{t.sxAct}</p>
       </section>
     </div>
