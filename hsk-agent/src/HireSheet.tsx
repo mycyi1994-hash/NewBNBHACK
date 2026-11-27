@@ -2,13 +2,18 @@
 // conversation, or changing the amount later: all of them open this sheet and nothing changes until the
 // user presses the button. Amounts are the user's to choose: any number can be typed. If the user has set a
 // per-trade limit on their own vault, the sheet says so when an amount goes above it.
+// An agent someone else made shows who made it and their fee. On a vault that can pay creator fees (version 3)
+// the owner approves that fee here, one confirmation in the wallet; an older vault pays nothing and says so.
 import { useEffect, useMemo, useState } from 'react';
 import { isWeightRule, type Agent } from './agents.ts';
 import { describe, scheduleOf, type Plan } from './intent.ts';
 import { useT } from './i18n.ts';
 import { limitsText, vaultWhy, type VaultInfo } from './parts.tsx';
 import { Modal } from './ui.tsx';
-import { agentName, Face } from './AgentCard.tsx';
+import { agentName, Face, ruleLines } from './AgentCard.tsx';
+import { feeOn, feeText } from './share.ts';
+import { approvedFee, setCreatorFee } from './shareClient.ts';
+import { whoText } from './Shared.tsx';
 import { Icon } from './Icons.tsx';
 import { book, type Amounts, type HireChoice, type HiredAgent, type Mode } from './runner.ts';
 import { hiredName, money } from './hiredText.ts';
@@ -84,8 +89,21 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
   const wantDay = dayOn ? day : undefined;
   const saveLimits = auto && real && wantDay !== vault?.maxDailyUsdt;
   const saveStop = auto && real && stopBps !== (vault?.stopLossBps ?? 0);
-  const steps = Number(saveLimits) + Number(saveStop);
-  const valid = per > 0 && budget >= per && (!auto || (real && dayOk && stopOk));
+  // A shared agent's creator fee: what the owner already approved on this vault, read from the chain.
+  const sh = target.kind === 'agent' ? target.agent.shared : target.kind === 'edit' ? target.hired.shared : undefined;
+  const fee = sh?.feeBps ?? 0;
+  const feeVault = real && (vault?.version ?? 0) >= 3 && fee > 0 && !!vault?.vault;
+  const [approved, setApproved] = useState<number | null | 'fail'>(null);
+  useEffect(() => {
+    if (!feeVault || !sh) return;
+    let alive = true;
+    approvedFee(vault!.vault!, sh.creator).then((v) => alive && setApproved(v), () => alive && setApproved('fail'));
+    return () => { alive = false; };
+  }, [feeVault, vault?.vault, sh?.creator]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveFee = feeVault && (approved === 'fail' || (typeof approved === 'number' && approved < fee));
+  const feeLoading = feeVault && approved === null;
+  const steps = Number(saveLimits) + Number(saveStop) + Number(saveFee);
+  const valid = per > 0 && budget >= per && (!auto || (real && dayOk && stopOk)) && !feeLoading;
 
   const name = target.kind === 'agent' ? agentName(t, target.agent) : target.kind === 'custom'
     ? t.customName((target.plan.steps.find((s) => 'asset' in s) as { asset?: string } | undefined)?.asset ?? 'HSK') : hiredName(t, target.hired);
@@ -123,6 +141,11 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
         const r = await setStopLoss(vault.net, vault.vault, stopBps);
         if (!r.ok) { setBusy(0); setError(words(r)); onReloadVault(); return; }
       }
+      if (saveFee && sh) {
+        setBusy(++n);
+        const r = await setCreatorFee(vault.net, vault.vault, sh.creator, fee);
+        if (!r.ok) { setBusy(0); setError(words(r)); onReloadVault(); return; }
+      }
       setBusy(0);
       onReloadVault();
     }
@@ -140,8 +163,27 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
         {rule && (
           <div className="hire-who">
             <Face rule={rule} base={base} size="lg" />
-            <p>{t.agPlain[rule]}</p>
+            <p>{target.kind === 'agent' && target.agent.made ? ruleLines(t, target.agent)[0] : t.agPlain[rule]}</p>
           </div>
+        )}
+        {sh && (
+          <section className="hire-maker" aria-label={t.shWho}>
+            <div className="hire-maker-top">
+              <span className="hire-maker-ic" aria-hidden><Icon name="user" size={18} /></span>
+              <span className="hire-maker-who"><small>{t.shWho}</small><b>{whoText(lang, sh)}</b></span>
+            </div>
+            <span className="sh-label"><Icon name="info" size={14} />{t.shLabel}</span>
+            <p className="hire-maker-fee">
+              <b>{fee ? t.shFee(feeText(fee)) : t.shFeeNone}</b>
+              {fee > 0 && <span>{t.shFeeLine(feeText(fee))} · {t.shFeeExample(money(per), money(feeOn(per, fee)))}</span>}
+            </p>
+            {fee > 0 && (
+              <p className={`hire-maker-st${real && !feeVault ? ' warn' : ''}`}>
+                {!real ? t.shFeeDemo : !feeVault ? t.shFeeOld : feeLoading ? t.shFeeChecking : saveFee ? t.shFeeAsk(feeText(fee)) : t.shFeeHave(feeText(typeof approved === 'number' ? approved : fee))}
+                {feeVault && <small>{t.shFeeLimit}</small>}
+              </p>
+            )}
+          </section>
         )}
         <div className={weighted ? 'hire-one' : 'hire-two'}>
           {!weighted && <label className="field" htmlFor="hire-per">

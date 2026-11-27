@@ -38,7 +38,11 @@ Log in with a wallet on HSK Chain. Without one, the whole app works as a demo th
 - a liquidity supply.
 
 They have been run on a local fork of mainnet only (scripts in `hsk-agent/contracts/scripts/`). The contracts are
-**unaudited**. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) lists what will be run and recorded here.
+**unaudited**.
+
+**Vault version 3 (creator fees) is not deployed.** It is compiled and tested on a fork only (`fork-test.mjs` 42/42,
+`fee-fork-test.mjs` 28/28, both 27 Nov 2026). Until the owner deploys its factory, new vaults are version 2 and pay
+no creator fee; the server tells versions apart and sends version-2 vaults only the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) lists what will be run and recorded here.
 
 ## What a user sees
 
@@ -46,9 +50,14 @@ They have been run on a local fork of mainnet only (scripts in `hsk-agent/contra
   - Under the chart: the agents doing well right now for that coin.
   - On HSKSwap: the pool's liquidity in blocks and six ready-made liquidity strategies.
 - **Agent market.** One card per agent: a mark, a plain one-line rule, and one number (how it did against simply
-  holding the coin), plus a ranking by coin.
+  holding the coin), plus a ranking by coin. Agents come from published research (each card cites its paper),
+  classic rules (folded below), short-term versions on 1h/4h candles, and agents other people made and shared.
 - **Make an agent.** Four short steps (coin, starting point, when to buy and sell, name), with the past result
   redrawn on every change. You can choose to check the price daily, every 4 hours or every hour.
+- **Share an agent.** A made agent can be shared with a link and a creator fee of 0–1%. Others can hire it; the
+  market shows the maker, the fee and a real hire count, and labels it "made by a person, not verified". The fee is
+  paid by the hirer's vault only to a creator the vault owner approved, capped at 1% by the contract (vault
+  version 3, see below).
 - **My agents.** Each agent's money, holdings and profit or loss, a portfolio ring, and a running indicator.
 - **Moa** sits on the right of every screen. It explains, recommends an agent, asks before each trade (or lets the
   agent run on its own), and reports.
@@ -67,8 +76,11 @@ They have been run on a local fork of mainnet only (scripts in `hsk-agent/contra
 
 - Backtests are past results on daily candles over 3 years (90 days or 1 year for hourly and 4-hour agents), with
   a 0.3% fee per trade and no slippage. Past results do not promise future ones.
-- Over the last 3 years, simply holding BTC returned about +62%. **Most agents did not beat that.** The ones that
-  did are shown first, and every card states its number against holding.
+- Over the last 3 years, simply holding BTC returned about +59–62%. **Most agents did not beat that on BTC.** Of the
+  research-based agents, four did (a moving-average ensemble and three breakout rules with a trailing stop, +12% to
+  +19%); on ETH and HSK, whose prices fell, most beat holding. Every card states its number against holding, and the
+  detail view also compares it with a fixed coin/USDT mix of the same average share.
+- Short-term agents (1h/4h) mostly lost money after the 0.3% fee; the app says so where they are listed.
 - Rankings are ordered by these backtests and by recent activity. Moa has no usage or popularity data and does not
   claim any.
 

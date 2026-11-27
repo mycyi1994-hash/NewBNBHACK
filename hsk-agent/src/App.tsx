@@ -30,6 +30,9 @@ import { agentName } from './AgentCard.tsx';
 import { autoList, autoPut, autoRemove, sendAgentTrade } from './moaClient.ts';
 import type { VaultInfo } from './parts.tsx';
 import { ToastProvider, useToast } from './ui.tsx';
+import { SharedLink } from './Shared.tsx';
+import { countHire, scoreHired } from './shareClient.ts';
+import { linkedId } from './share.ts';
 
 type View = 'trade' | 'agents' | 'build' | 'mine';
 const NARROW = '(max-width: 1180px)';
@@ -179,6 +182,9 @@ function Shell() {
   const openBuilder = (x: Omit<BuildDraft, 'n'> = {}) => { setBuild({ ...x, n: ++buildN.current }); go('build'); if (window.matchMedia(NARROW).matches) setMoaOpen(false); };
   const showN = useRef(0);
   const [sheet, setSheet] = useState<HireTarget | null>(null);
+  // A share link (/?agent=<id>) opens that shared agent's card over whatever screen is first.
+  const [linked, setLinked] = useState<string | null>(() => linkedId(window.location.search));
+  const closeLink = () => { setLinked(null); try { window.history.replaceState(null, '', window.location.pathname); } catch { /* the address stays */ } };
   // The liquidity studio's plan: the HSKSwap screen edits it, Moa fills it from the conversation. Null when closed.
   const [lp, setLp] = useState<LpPlan | null>(null);
   const [moaOpen, setMoaOpen] = useState(false);
@@ -212,7 +218,9 @@ function Shell() {
   useEffect(() => {
     if (!missingKey) return;
     let alive = true;
-    const load = () => Promise.all(missingKey.split(',').map((id) => agentById(id).catch(() => null))).then((xs) => {
+    // A shared agent is not in this browser's own store: it is scored from the rule its hire carries.
+    const byId = (id: string) => agentById(id).then((a) => a ?? scoreHired(hiredRef.current.find((h) => h.source.type === 'market' && h.source.agentId === id)));
+    const load = () => Promise.all(missingKey.split(',').map((id) => byId(id).catch(() => null))).then((xs) => {
       if (alive) setExtra((cur) => { const next = { ...cur }; for (const a of xs) if (a) next[a.id] = a; return next; });
     });
     void load();
@@ -260,7 +268,7 @@ function Shell() {
     const enName = h.source.type === 'market' ? agentName(STRINGS.en, h.source) : STRINGS.en.customName(h.asset);
     // Demo (no vault: not logged in, or this server has no vault service): the answer is recorded, nothing is sent.
     const demo = !vaultRef.current?.configured;
-    const r = demo ? { ok: false as const, reason: 'No vault is connected (demo).' } : await sendAgentTrade({ asset: h.asset, side: o.side, amount, note: chainNote(enName, o.why) });
+    const r = demo ? { ok: false as const, reason: 'No vault is connected (demo).' } : await sendAgentTrade({ asset: h.asset, side: o.side, amount, note: chainNote(enName, o.why), shared: h.shared?.id });
     const at = Date.now();
     const position = h.source.type === 'market' && h.source.kind === 'position';
     const key = 'key' in o.why ? o.why.key : undefined;
@@ -352,6 +360,8 @@ function Shell() {
         const a = sheet.agent;
         setExtra((cur) => ({ ...cur, [a.id]: a }));
         h = { id: newId(), createdAt: at, source: { type: 'market', agentId: a.id, kind: a.kind, rule: a.rule, base: a.base }, asset: a.base as Asset, ...v, mode, spec: a.made, paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
+        // Someone else's agent: who made it and their fee travel with it, and the server counts the hire.
+        if (a.shared) { h.shared = { id: a.shared.id, creator: a.shared.creator, ...(a.shared.nick ? { nick: a.shared.nick } : {}), feeBps: a.shared.feeBps }; if (session) void countHire(a.shared.id); }
       } else {
         const first = sheet.plan.steps.find((s) => 'asset' in s) as { asset?: Asset } | undefined;
         h = { id: newId(), createdAt: at, source: { type: 'custom', goal: sheet.goal, plan: sheet.plan }, asset: first?.asset ?? 'HSK', ...v, mode, paused: false, fired: [], fills: [], log: [{ at, k: 'hired', to: v }] };
@@ -381,7 +391,7 @@ function Shell() {
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />}
         {view === 'trade' && <Trade quotes={quotes} show={show} lp={{ plan: lp, setPlan: openLp, vault, say: (text) => tell({ kind: 'note', text }) }}
           mine={{ count: hired.length, asks, node: <MineDock hired={hired} quotes={quotes} vault={vault} now={now} sending={sending} onOpen={(id) => tell({ kind: 'status', hiredId: id })} onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }} onPause={pause} onResume={resume} /> }} onContext={setTradeCtx} onAsk={askMoaAbout} onBuild={(coin) => openBuilder({ coin })} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
-        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} />}
+        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} onBuild={() => openBuilder({})} />}
         {view === 'build' && <Builder draft={build} onOpen={openBacktest} />}
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now} agents={agents} agentsFailed={agentsFailed}
@@ -406,6 +416,7 @@ function Shell() {
         </button>
       )}
       <TabBar view={view} go={go} count={hired.length} asks={asks} onMoa={() => setMoaOpen((v) => !v)} />
+      {linked && !sheet && <SharedLink id={linked} onClose={closeLink} onOpen={(a) => { closeLink(); openBacktest(a); }} onHire={(a) => { closeLink(); setSheet({ kind: 'agent', agent: a }); }} />}
       {sheet && <HireSheet target={sheet} vault={vault} onClose={() => setSheet(null)} onConfirm={confirmSheet} onReloadVault={reloadVault} />}
     </div>
   );

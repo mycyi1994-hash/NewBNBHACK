@@ -8,7 +8,8 @@ import { createPublicClient, createTestClient, createWalletClient, http, parseUn
 import { privateKeyToAccount } from 'viem/accounts';
 import { executeTrade, vaultStatus, createVault, vaultOf, forOwner, stopOut, TOKENS, USDT } from '../../server/executor.ts';
 
-const RPC = 'http://127.0.0.1:8546';
+const PORT = process.env.FORK_PORT || '8546';
+const RPC = `http://127.0.0.1:${PORT}`;
 const ROUTER = '0x2c16f75b95Cf1390c328aB70e2CEE7f4b80bD8F3';
 const POOLS = { HSK: '0x4ff515761864e7838b0adb8b5b2b8b7a068905dc', ETH: '0xb92b79ed6b370d5cfee2e14b1d0983c258304c16', BTC: '0xd9ea2ce468957ba49ccc38c4758ed6ecd561449a' };
 // Hardhat's well-known local test keys (public, never funded on any real chain)
@@ -27,7 +28,7 @@ let pass = 0, fail = 0;
 const check = (name, cond, detail = '') => { if (cond) pass++; else fail++; console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); };
 
 // Its own process group, so stopping it also stops the node that npx starts underneath (otherwise the port stays taken).
-const node = spawn('npx', ['hardhat', 'node', '--port', '8546'], { cwd: new URL('..', import.meta.url).pathname, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+const node = spawn('npx', ['hardhat', 'node', '--port', PORT], { cwd: new URL('..', import.meta.url).pathname, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
 let nodeLog = '';
 node.stdout.on('data', (d) => (nodeLog += d));
 node.stderr.on('data', (d) => (nodeLog += d));

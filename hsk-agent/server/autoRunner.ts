@@ -9,7 +9,7 @@ import { loadQuotes } from '../src/market.ts';
 import { agentSignal, book, chainNote, decide, newId, settle, type HiredAgent, type Order, type Signal } from '../src/runner.ts';
 import type { Asset } from '../src/intent.ts';
 import type { Address } from 'viem';
-import { executeTrade, forOwner, stopOut, vaultStatus, type ExecConfig, type TradeResult } from './executor.ts';
+import { executeTrade, forOwner, stopOut, vaultStatus, type CreatorRef, type ExecConfig, type TradeResult } from './executor.ts';
 import type { AutoStore } from './autoStore.ts';
 
 export const TICK_MS = 5 * 60_000;
@@ -20,7 +20,7 @@ const nameOf = (h: HiredAgent) => (h.source.type === 'market' ? `${h.source.base
 export interface Deps {
   status(owner: string): Promise<{ configured: boolean; paused?: boolean; maxTradeUsdt?: string; maxDailyUsdt?: string; holdings?: { symbol: string; amount: string; stopDue?: boolean }[] }>;
   signal(h: HiredAgent): Promise<Signal | undefined>;
-  trade(owner: string, req: { asset: Asset; side: 'buy' | 'sell'; amount: number; note: string }): Promise<TradeResult>;
+  trade(owner: string, req: { asset: Asset; side: 'buy' | 'sell'; amount: number; note: string; creator?: CreatorRef }): Promise<TradeResult>;
   stop(owner: string, asset: Asset): Promise<{ ok: true; txHash: string; explorerUrl: string; amountOut: string } | { ok: false; reason: string }>;
 }
 
@@ -74,7 +74,9 @@ export async function tick(store: AutoStore, deps: Deps, now = Date.now()): Prom
       const inVault = Number((v.holdings ?? []).find((x) => ASSET_OF[x.symbol] === h.asset)?.amount ?? 0);
       const amount = o.side === 'buy' ? o.usd ?? 0 : Math.min(o.qty ?? 0, inVault);
       const asked: HiredAgent = { ...h, log: [...h.log, { at: now, k: 'asked', order: o }] };
-      const r: TradeResult = amount > 0 ? await deps.trade(owner, { asset: h.asset, side: o.side, amount, note: chainNote(nameOf(h), o.why, 'auto') }) : { ok: false, reason: 'The vault holds none of this coin.' };
+      // A shared agent names its creator (set by the server from its own record when the agent was put on auto).
+      const creator = h.shared ? { address: h.shared.creator as Address, feeBps: h.shared.feeBps } : undefined;
+      const r: TradeResult = amount > 0 ? await deps.trade(owner, { asset: h.asset, side: o.side, amount, note: chainNote(nameOf(h), o.why, 'auto'), creator }) : { ok: false, reason: 'The vault holds none of this coin.' };
       store.put(owner, settle(asked, o, r, now));
       out.push(`${owner}/${h.id}: ${o.side} ${amount} ${h.asset}: ${r.ok ? r.txHash : r.reason}`);
     }

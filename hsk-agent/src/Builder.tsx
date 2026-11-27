@@ -20,6 +20,8 @@ import { CoinMark } from './CoinMark.tsx';
 import { Icon, type IconName } from './Icons.tsx';
 import { RollNum } from './motion.tsx';
 import { useToast } from './ui.tsx';
+import { ShareSheet } from './Shared.tsx';
+import { useMineShared } from './shareClient.ts';
 
 /** What the builder is asked to open with: a sentence already read, a coin, or a saved agent to change. */
 export interface BuildDraft { n: number; text?: string; coin?: string; editId?: string }
@@ -222,6 +224,12 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
     return { ...into, buy: p.buy, sell: p.sell, from: undefined, ...(p.interval ? { interval: p.interval } : {}) };
   };
   const reset = (symbol: string) => { setD(blank(symbol)); setWords(''); setRead(null); setStarted(false); setMode('classic'); setAdv(false); setStep(0); };
+  // Sharing a saved agent ("Share"): which one has its sheet open, and which are shared already.
+  const [sharing, setSharing] = useState<MadeSpec | null>(null);
+  const { mine: myShared, reload: reloadShared } = useMineShared();
+  const sharedNow = (id: string) => myShared && myShared !== 'fail' && myShared.agents.some((x) => x.sourceId === id && !x.removedAt);
+  const savedNow = d.id ? mine.find((s) => s.id === d.id) : undefined;
+
   // Opened from somewhere else: with a sentence Moa was given, on the coin on screen, or to change a saved agent.
   useEffect(() => {
     if (!draft) return;
@@ -300,6 +308,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
       {step < 3 && <button type="button" className="btn-primary" disabled={!canNext} onClick={() => go((step + 1) as Step)}>{t.wzNext}<Icon name="chevron" size={16} /></button>}
       {step === 3 && (
         <div className="bd-nav-save">
+          {savedNow && <button type="button" className="btn bd-share" onClick={() => setSharing(savedNow)}><Icon name="share" size={16} />{sharedNow(savedNow.id) ? t.shSharedTag : t.shShare}</button>}
           <button type="button" className="btn-text" disabled={!!issues.length} onClick={() => save(false)} data-tip={signedIn ? t.wzAccountIn : t.wzAccountGuest}>{t.bqSaveOnly}</button>
           <button type="button" className="btn-primary" disabled={!!issues.length} onClick={() => save(!!result)}>{d.id ? t.buUpdate : t.bqSave}</button>
         </div>
@@ -510,10 +519,11 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
               return (
                 <li key={s.id} className={d.id === s.id ? 'on' : ''}>
                   <Face rule={s.from ?? 'made'} size="sm" />
-                  <span className="bd-mine-name"><b>{s.name}</b><small>{m && <CoinMark base={m.base} />}{m?.base}{intervalOf(s) !== '1d' && ` · ${t.bqEveryOpt[intervalOf(s)]}`} · {s.buy.map((c) => condText(t, c)).join(` ${t.cuAnd} `)}</small></span>
+                  <span className="bd-mine-name"><b>{s.name}{sharedNow(s.id) && <em className="sh-tag">{t.shSharedTag}</em>}</b><small>{m && <CoinMark base={m.base} />}{m?.base}{intervalOf(s) !== '1d' && ` · ${t.bqEveryOpt[intervalOf(s)]}`} · {s.buy.map((c) => condText(t, c)).join(` ${t.cuAnd} `)}</small></span>
                   <span className="bd-mine-act">
                     <button type="button" className="btn" onClick={() => { setD({ ...s }); setWords(''); setRead(null); setStarted(true); setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>{t.buEdit}</button>
                     <button type="button" className="btn" onClick={async () => { if (!m) return; const a = await scoreMadeLive(s, m); if (a) onOpen(a); }}>{t.buOpen}</button>
+                    <button type="button" className="btn" onClick={() => setSharing(s)}><Icon name="share" size={16} />{t.shShare}</button>
                     <button type="button" className="icon-btn" onClick={() => { removeMade(s.id); if (d.id === s.id) setD({ ...d, id: undefined }); }} aria-label={t.buDelete} data-tip={t.buDelete}><Icon name="trash" size={18} /></button>
                   </span>
                 </li>
@@ -522,6 +532,7 @@ export default function Builder({ draft, onOpen }: { draft: BuildDraft | null; o
           </ul>
         )}
       </section>
+      {sharing && <ShareSheet spec={sharing} onClose={() => { setSharing(null); reloadShared(); }} />}
     </div>
     </IvCtx.Provider>
   );

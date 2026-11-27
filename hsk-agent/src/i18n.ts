@@ -16,6 +16,72 @@ const enSpan = (n: number, iv: '1d' | '4h' | '1h') => (iv === '1d' ? `${n}-day` 
 const enAgo = (n: number, iv: '1d' | '4h' | '1h') => (iv === '1d' ? `${n} days ago` : iv === '1h' ? `${n} hours ago` : `${n} 4-hour candles ago`);
 const koSpan = (n: number, iv: '1d' | '4h' | '1h') => (iv === '1d' ? `${n}일` : iv === '1h' ? `${n}시간` : `4시간봉 ${n}개`);
 
+/* ---------- sharing made agents, and the creator fee (kept together so they read as one) ---------- */
+const shEn = {
+  shTab: 'Made by people', shHead: 'Agents people made',
+  shSub: 'Rules other people wrote and shared. Each backtest is run here, on the same candles and with the same code as every agent.',
+  shLabel: 'Made by a person · not verified',
+  shBy: (who: string) => `by ${who}`,
+  shFee: (f: string) => `Creator fee ${f}`, shFeeNone: 'No creator fee',
+  shHires: (n: number) => (n === 0 ? 'No hires yet' : n === 1 ? 'Hired by 1 person' : `Hired by ${n} people`),
+  shEmpty: 'Nobody has shared an agent yet.', shMake: 'Make one and share it',
+  shFail: 'The shared agents could not be loaded.', shScoring: 'Running its backtest…', shNoScore: 'Its candles did not load.',
+  shShare: 'Share', shSharedTag: 'Shared', shSheetTitle: (n: string) => `Share ${n}`,
+  shSheetSub: 'Anyone with the link, and everyone in the market, can see its backtest and hire it.',
+  shPickFee: 'Your fee', shFeeHow: 'Paid in USDT by the hirer’s own vault on each trade, once they approve it. At most 1%. Moa takes nothing.', shHiresK: 'Hires',
+  shFeeEx: (usd: string) => `On a $100 trade you get $${usd}.`,
+  shAs: 'Shown as', shGo: 'Share it', shLogin: 'Log in to share: the fee goes to the wallet you log in with.',
+  shLink: 'Link to send', shDone: 'Shared. Send the link to anyone.',
+  shStop: 'Stop sharing', shStopped: 'Stopped sharing. People who hired it keep their copy.',
+  shWhy: { invalid: 'This rule cannot be shared: check its conditions.', fee: 'Pick a fee from the list.', tooMany: 'You already share 10 agents. Stop one first.', tooManyEver: 'This wallet has shared 50 agents in all, the most it can.', login: 'Log in first.', failed: 'The server could not be reached. Try again.' } as Record<'invalid' | 'fee' | 'tooMany' | 'tooManyEver' | 'login' | 'failed', string>,
+  shOnlyPool: 'Only agents on BTC, ETH or HSK can be shared: those are the coins a vault can trade.',
+  shLinkTitle: 'A shared agent', shGone: 'Its creator stopped sharing it. People who hired it keep it.', shMissing: 'There is no agent at this link.',
+  shWho: 'Made by', shFeeLine: (f: string) => `${f} of every trade goes to them in USDT`,
+  shFeeExample: (per: string, fee: string) => `A $${per} buy pays them $${fee}.`,
+  shFeeAsk: (f: string) => `Your wallet will ask once to approve up to ${f} for them on your vault.`,
+  shFeeHave: (f: string) => `Already approved on your vault (${f}).`,
+  shFeeOld: 'Your vault is an older version that cannot pay creator fees, so they get nothing. The agent works as usual.',
+  shFeeDemo: 'Demo: nothing is sent and no fee is paid.', shFeeChecking: 'Checking your vault…',
+  shFeeLimit: 'The fee is part of what the agent spends, so your limits cover it.',
+  shMineTitle: 'Agents I shared', shMineEmpty: 'Nothing shared yet. Save an agent in Make an agent, then share it.', shMineLogin: 'Log in to see the agents you shared.',
+  shEarned: 'Fees received', shEarnedSub: (n: number, v: number) => `Read from the chain · ${n} ${n === 1 ? 'payment' : 'payments'} from ${v} ${v === 1 ? 'vault' : 'vaults'}`,
+  shChecking: 'Checking…', shUnavail: { demo: 'Not available: this server is a demo with no vaults.', chain: 'Not available right now: the chain could not be read.' } as Record<'demo' | 'chain', string>,
+  shStoppedTag: 'Stopped', shCopyLink: 'Copy link',
+  shFrom: (who: string, f: string) => `A rule ${who} made in Moa and shared${f ? `, with a ${f} creator fee` : ''}.`,
+};
+const shKo: typeof shEn = {
+  shTab: '사람들이 만든 에이전트', shHead: '사람들이 만든 에이전트',
+  shSub: '다른 사람이 직접 쓰고 공유한 규칙이에요. 백테스트는 다른 에이전트와 같은 캔들, 같은 코드로 여기서 돌려요.',
+  shLabel: '사람이 만든 전략 · 검증 안 됨',
+  shBy: (who) => `${who} 님이 만듦`,
+  shFee: (f) => `만든 사람 수수료 ${f}`, shFeeNone: '수수료 없음',
+  shHires: (n) => (n === 0 ? '아직 맡긴 사람 없음' : `${n}명이 맡겼어요`),
+  shEmpty: '아직 공유된 에이전트가 없어요.', shMake: '만들어서 공유하기',
+  shFail: '공유된 에이전트를 불러오지 못했어요.', shScoring: '백테스트 돌리는 중…', shNoScore: '캔들을 불러오지 못했어요.',
+  shShare: '공유하기', shSharedTag: '공유 중', shSheetTitle: (n) => `${n} 공유하기`,
+  shSheetSub: '링크를 받은 사람, 그리고 마켓의 누구나 백테스트를 보고 맡길 수 있어요.',
+  shPickFee: '내 수수료', shFeeHow: '맡긴 사람이 승인하면, 거래할 때마다 그 사람의 금고가 USDT로 보내요. 최대 1%, Moa는 가져가지 않아요.', shHiresK: '맡긴 사람',
+  shFeeEx: (usd) => `$100 거래마다 $${usd}를 받아요.`,
+  shAs: '보이는 이름', shGo: '공유하기', shLogin: '로그인하면 공유할 수 있어요. 수수료는 로그인한 지갑으로 가요.',
+  shLink: '보낼 링크', shDone: '공유했어요. 링크를 누구에게나 보내 보세요.',
+  shStop: '공유 중단', shStopped: '공유를 멈췄어요. 이미 맡긴 사람은 계속 쓸 수 있어요.',
+  shWhy: { invalid: '이 규칙은 공유할 수 없어요. 조건을 확인해 주세요.', fee: '목록에서 수수료를 골라 주세요.', tooMany: '이미 에이전트 10개를 공유하고 있어요. 하나를 먼저 멈춰 주세요.', tooManyEver: '이 지갑은 지금까지 50개를 공유해서 더는 공유할 수 없어요.', login: '먼저 로그인해 주세요.', failed: '서버에 닿지 않았어요. 다시 해 보세요.' },
+  shOnlyPool: 'BTC, ETH, HSK 에이전트만 공유할 수 있어요. 금고가 거래할 수 있는 코인이에요.',
+  shLinkTitle: '공유받은 에이전트', shGone: '만든 사람이 공유를 멈췄어요. 이미 맡긴 사람은 계속 써요.', shMissing: '이 링크에는 에이전트가 없어요.',
+  shWho: '만든 사람', shFeeLine: (f) => `거래할 때마다 거래 금액의 ${f}를 USDT로 보내요`,
+  shFeeExample: (per, fee) => `$${per} 매수면 $${fee}예요.`,
+  shFeeAsk: (f) => `맡길 때 지갑에서 한 번, 내 금고에 최대 ${f} 승인을 확인해요.`,
+  shFeeHave: (f) => `내 금고에 이미 승인돼 있어요 (${f}).`,
+  shFeeOld: '내 금고는 예전 버전이라 수수료를 보낼 수 없어요. 만든 사람은 받지 않고, 에이전트는 똑같이 일해요.',
+  shFeeDemo: '데모라서 아무것도 보내지 않고 수수료도 나가지 않아요.', shFeeChecking: '금고 확인 중…',
+  shFeeLimit: '수수료도 에이전트가 쓰는 금액에 들어가서, 내 한도 안에서만 나가요.',
+  shMineTitle: '내가 공유한 에이전트', shMineEmpty: '아직 공유한 게 없어요. 에이전트 만들기에서 저장한 뒤 공유할 수 있어요.', shMineLogin: '로그인하면 공유한 에이전트가 보여요.',
+  shEarned: '받은 수수료', shEarnedSub: (n, v) => `체인에서 읽음 · 금고 ${v}개에서 ${n}번`,
+  shChecking: '확인 중', shUnavail: { demo: '확인할 수 없어요. 이 서버는 금고가 없는 데모예요.', chain: '지금은 확인할 수 없어요. 체인을 읽지 못했어요.' },
+  shStoppedTag: '중단됨', shCopyLink: '링크 복사',
+  shFrom: (who, f) => `${who} 님이 Moa에서 만들어 공유한 규칙이에요.${f ? ` 만든 사람 수수료 ${f}.` : ''}`,
+};
+
 const en = {
   navMarkets: 'MARKETS', navTrade: 'Trade', navAssistant: 'ASSISTANT', navAsk: 'Ask Moa', navAutomations: 'AUTOMATIONS', navBots: 'Bots',
   preview: 'Preview',
@@ -740,6 +806,7 @@ const en = {
     { k: 'mine', title: 'My agents', sub: 'What your hired agents are doing now' },
   ] as { k: 'pick' | 'collect' | 'trend' | 'revert' | 'chart' | 'mine'; title: string; sub: string }[],
   vsHold: (p: string) => `${p} vs. just holding`, vsMix: (p: string, e: number) => `${p} vs. a fixed ${e}% mix`, mixTip: (e: number, p: string) => `${e}% of the money in the coin at the start and left alone, the rest in USDT: ${p}. That is this agent’s average share.`, btAvgShare: 'Average share', acEdge: 'vs. just holding',
+  ...shEn,
 };
 
 /** Korean copula after a word: 비 → 예요, 구름 → 이에요. */
@@ -1469,6 +1536,7 @@ const ko: typeof en = {
     { k: 'mine', title: '내 에이전트', sub: '맡긴 에이전트가 지금 하는 일' },
   ],
   vsHold: (p) => `그냥 들고 있을 때보다 ${p}`, vsMix: (p, e) => `코인 ${e}%만 섞어 뒀을 때보다 ${p}`, mixTip: (e, p) => `처음에 돈의 ${e}%만 코인으로 사 두고 나머지는 USDT로 그대로 뒀다면 ${p}. 이 에이전트의 평균 비중과 같아요.`, btAvgShare: '평균 비중', acEdge: '그냥 들고 있을 때보다',
+  ...shKo,
 };
 
 export const STRINGS = { en, ko };

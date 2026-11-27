@@ -22,6 +22,8 @@ export interface ExecConfig {
   chainId: number;
   /** makes and lists the vaults; without it the app is a demo */
   factory?: Address;
+  /** earlier factories whose vaults are still in use: a wallet that has one keeps it (those vaults pay no creator fee) */
+  legacyFactories?: Address[];
   /** the vault this request is about (the signed-in wallet's), set per request by forOwner() */
   vault?: Address;
   owner?: Address;
@@ -31,6 +33,8 @@ export interface ExecConfig {
   explorer: string;
   /** server-side buffer under the quote for minOut; the vault's own floor is maxSlippageBps */
   minOutBufferBps: number;
+  /** where to start reading creator-fee events; without it, the block the factory was deployed in is looked up */
+  feesFromBlock?: bigint;
 }
 
 export function execConfigFromEnv(env: Record<string, string | undefined>): ExecConfig {
@@ -38,17 +42,23 @@ export function execConfigFromEnv(env: Record<string, string | undefined>): Exec
     rpcUrl: env.MOA_RPC_URL || 'https://mainnet.hsk.xyz',
     chainId: Number(env.MOA_CHAIN_ID || 177),
     factory: (env.MOA_FACTORY_ADDRESS as Address | undefined) || undefined,
+    legacyFactories: (env.MOA_LEGACY_FACTORY_ADDRESSES ?? '').split(',').map((x) => x.trim()).filter((x) => /^0x[0-9a-fA-F]{40}$/.test(x)) as Address[],
     maxVaultsPerDay: Number(env.MOA_MAX_VAULTS_PER_DAY || 20),
     agentKey: (env.MOA_AGENT_PRIVATE_KEY as Hex | undefined) || undefined,
     explorer: env.MOA_EXPLORER || 'https://hsk.blockscout.com',
     minOutBufferBps: Number(env.MOA_MIN_OUT_BUFFER_BPS || 100),
+    feesFromBlock: /^\d+$/.test(env.MOA_FEES_FROM_BLOCK ?? '') ? BigInt(env.MOA_FEES_FROM_BLOCK!) : undefined,
   };
 }
 
-export interface TradeRequest { asset: Asset; side: 'buy' | 'sell'; amount: number; note: string }
+/** The person who made a shared agent, and the fee they asked for (basis points; the vault pays at most what its owner approved). */
+export interface CreatorRef { address: Address; feeBps: number }
+export interface TradeRequest { asset: Asset; side: 'buy' | 'sell'; amount: number; note: string; creator?: CreatorRef }
 export type TradeResult =
-  | { ok: true; txHash: Hex; explorerUrl: string; amountIn: string; amountOut: string; tokenIn: string; tokenOut: string; block: string }
+  | { ok: true; txHash: Hex; explorerUrl: string; amountIn: string; amountOut: string; tokenIn: string; tokenOut: string; block: string; creatorFeeUsdt?: string; feeNote?: FeeNote }
   | { ok: false; reason: string };
+/** Why a shared agent's trade paid its creator nothing: the vault is older than creator fees, or its owner did not approve this creator. */
+export type FeeNote = 'oldVault' | 'notApproved';
 
 function chainOf(cfg: ExecConfig) {
   return {
@@ -86,12 +96,33 @@ export async function checkFactory(cfg: ExecConfig): Promise<FactoryCheck> {
   try { await pub.readContract({ address: cfg.factory, abi: factoryAbi, functionName: 'stopLossBps' }); return 'ok'; } catch { return 'old'; }
 }
 
-/** The vault the factory made for this wallet, or undefined when it has none yet. */
+/**
+ * The vault the factory made for this wallet, or undefined when it has none yet. A wallet whose vault an earlier
+ * factory made keeps that one, so nobody's funds are left behind in a vault the app no longer shows.
+ */
 export async function vaultOf(cfg: ExecConfig, owner: Address): Promise<Address | undefined> {
   if (!cfg.factory) return undefined;
-  const v = (await clientOf(cfg).readContract({ address: cfg.factory, abi: factoryAbi, functionName: 'vaultOf', args: [owner] })) as Address;
-  return v === zeroAddress ? undefined : v;
+  for (const f of [cfg.factory, ...(cfg.legacyFactories ?? [])]) {
+    const v = (await clientOf(cfg).readContract({ address: f, abi: factoryAbi, functionName: 'vaultOf', args: [owner] })) as Address;
+    if (v !== zeroAddress) return v;
+  }
+  return undefined;
 }
+
+/* ---------- vault versions: creator fees exist from version 3 ---------- */
+
+const versions = new Map<string, number>();
+/** 3 for a vault that can pay creator fees; 2 for an older one (no VERSION to read). Never changes, so it is kept. */
+export async function vaultVersion(cfg: ExecConfig, vault: Address): Promise<number> {
+  const key = `${cfg.rpcUrl}|${vault.toLowerCase()}`;
+  const had = versions.get(key);
+  if (had !== undefined) return had;
+  let v = 2;
+  try { v = Number(await clientOf(cfg).readContract({ address: vault, abi, functionName: 'VERSION' })); } catch { /* an older vault has no VERSION */ }
+  versions.set(key, v);
+  return v;
+}
+export const paysCreators = (version: number) => version >= 3;
 
 /** The same configuration, pointed at this wallet's vault. */
 export async function forOwner(cfg: ExecConfig, owner: Address | null | undefined): Promise<ExecConfig> {
@@ -147,8 +178,8 @@ export async function vaultStatus(cfg: ExecConfig) {
   const pub = clientOf(cfg);
   const read = (functionName: string, args: unknown[] = []) => pub.readContract({ address: cfg.vault!, abi, functionName, args }) as Promise<unknown>;
   const balance = (token: Address, who: Address) => pub.readContract({ address: token, abi: balanceAbi, functionName: 'balanceOf', args: [who] });
-  const [maxTrade, maxDaily, slippage, remaining, paused, stopLoss, usdtBal, walletUsdt, ...held] = await Promise.all([
-    read('maxTradeUsdt'), read('maxDailyUsdt'), read('maxSlippageBps'), read('remainingToday'), read('paused'), read('stopLossBps'),
+  const [version, maxTrade, maxDaily, slippage, remaining, paused, stopLoss, usdtBal, walletUsdt, ...held] = await Promise.all([
+    vaultVersion(cfg, cfg.vault), read('maxTradeUsdt'), read('maxDailyUsdt'), read('maxSlippageBps'), read('remainingToday'), read('paused'), read('stopLossBps'),
     balance(USDT, cfg.vault), cfg.owner ? balance(USDT, cfg.owner) : Promise.resolve(0n),
     // held, what it cost, what it is worth at the pool price now, and the value under which the stop-loss applies
     ...Object.values(TOKENS).map((t) => read('position', [t.address]) as Promise<readonly [bigint, bigint, bigint, bigint]>),
@@ -161,6 +192,7 @@ export async function vaultStatus(cfg: ExecConfig) {
       return { symbol: t.symbol, address: t.address, decimals: t.decimals, amount: formatUnits(qty, t.decimals), costUsdt: formatUnits(cost, 6), valueUsdt: formatUnits(value, 6), stopUsdt: stop > 0n ? formatUnits(stop, 6) : undefined, stopDue: stop > 0n && cost > 0n && value < stop };
     }).filter((h) => Number(h.amount) > 0),
     stopLossBps: Number(stopLoss),
+    version: version as number,
     walletUsdt: formatUnits(walletUsdt as bigint, 6),
     vault: cfg.vault,
     explorerUrl: `${cfg.explorer}/address/${cfg.vault}`,
@@ -202,6 +234,9 @@ export function stopOut(cfg: ExecConfig, asset: Asset): Promise<StopResult> {
   });
 }
 
+/** The contract's own cap on a creator fee (MAX_CREATOR_FEE_BPS): 1%. */
+export const MAX_FEE_BPS = 100;
+
 export function executeTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResult> {
   return inLine(() => sendTrade(cfg, req));
 }
@@ -226,7 +261,15 @@ async function sendTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResul
       const have = formatUnits(held, isBuy ? 6 : token.decimals), unit = isBuy ? 'USDT' : token.symbol;
       return { ok: false, reason: `The vault holds ${have} ${unit}, less than this order needs.${isBuy ? ' Deposit USDT first.' : ''}` };
     }
-    const quoted = (await pub.readContract({ address: cfg.vault, abi, functionName: 'quote', args: [token.address, isBuy, amountIn] })) as bigint;
+    // A shared agent names its creator. Only a vault of version 3 knows about creator fees: an older one is sent the
+    // plain trade, never the new call. The vault pays at most what its owner approved; the server asks for no more
+    // than the creator's published fee.
+    const fees = req.creator && req.creator.feeBps > 0 && paysCreators(await vaultVersion(cfg, cfg.vault));
+    const approved = fees ? Number(await pub.readContract({ address: cfg.vault, abi, functionName: 'creatorFeeBps', args: [req.creator!.address] })) : 0;
+    const feeBps = Math.max(0, Math.min(MAX_FEE_BPS, Math.floor(req.creator?.feeBps ?? 0), approved));
+    const fee = isBuy ? (amountIn * BigInt(feeBps)) / 10_000n : 0n;
+    // On a buy the fee comes out of the USDT going in, so the swap is for the rest and the price floor is for that.
+    const quoted = (await pub.readContract({ address: cfg.vault, abi, functionName: 'quote', args: [token.address, isBuy, amountIn - fee] })) as bigint;
     // 0.3% pool fee + buffer for price impact, but never looser than the floor the owner set on the vault:
     // an owner who tightens the slippage ceiling gets orders that ask for at least that price, not refused ones.
     const ceiling = BigInt((await pub.readContract({ address: cfg.vault, abi, functionName: 'maxSlippageBps' })) as number);
@@ -234,17 +277,21 @@ async function sendTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResul
     const floor = (quoted * (10_000n - ceiling)) / 10_000n;
     const minOut = wanted > floor ? wanted : floor;
     const note = req.note.slice(0, 120);
-    const { request } = await pub.simulateContract({ address: cfg.vault, abi, functionName: 'trade', args: [token.address, isBuy, amountIn, minOut, note], account });
+    const { request } = fees
+      ? await pub.simulateContract({ address: cfg.vault, abi, functionName: 'tradeFor', args: [token.address, isBuy, amountIn, minOut, note, req.creator!.address, feeBps], account })
+      : await pub.simulateContract({ address: cfg.vault, abi, functionName: 'trade', args: [token.address, isBuy, amountIn, minOut, note], account });
     const txHash = await wallet.writeContract(request);
     const receipt = await pub.waitForTransactionReceipt({ hash: txHash });
     if (receipt.status !== 'success') return { ok: false, reason: `Transaction ${txHash} reverted.` };
-    let amountOut = 0n;
+    let amountOut = 0n, paid = 0n;
     for (const log of receipt.logs) {
       try {
         const ev = decodeEventLog({ abi, data: log.data, topics: log.topics });
         if (ev.eventName === 'Traded') amountOut = (ev.args as unknown as { amountOut: bigint }).amountOut;
+        if (ev.eventName === 'CreatorPaid') paid = (ev.args as unknown as { feeUsdt: bigint }).feeUsdt;
       } catch { /* not a vault event */ }
     }
+    const shared = req.creator && req.creator.feeBps > 0;
     return {
       ok: true,
       txHash,
@@ -254,6 +301,7 @@ async function sendTrade(cfg: ExecConfig, req: TradeRequest): Promise<TradeResul
       tokenIn: isBuy ? 'USDT' : token.symbol,
       tokenOut: isBuy ? token.symbol : 'USDT',
       block: receipt.blockNumber.toString(),
+      ...(shared ? { creatorFeeUsdt: formatUnits(paid, 6), ...(paid > 0n ? {} : { feeNote: (fees ? 'notApproved' : 'oldVault') as FeeNote }) } : {}),
     };
   } catch (e) {
     return { ok: false, reason: `The vault refused or the transaction failed: ${explain(e)}` };
@@ -271,4 +319,73 @@ function explain(e: unknown): string {
     return e.shortMessage;
   }
   return e instanceof Error ? e.message : String(e);
+}
+
+/* ---------- fees a creator has received, read from the vaults' own events ---------- */
+
+export type FeesReceived =
+  | { state: 'ok'; totalUsdt: string; payments: number; vaults: number; fromBlock: string; toBlock: string }
+  | { state: 'unavailable'; reason: 'demo' | 'chain'; detail?: string };
+
+/** The block the current factory was deployed in: no vault that can pay a creator fee is older. Found by bisection. */
+let factoryBirth: { factory: string; block: bigint } | null = null;
+async function birthOf(cfg: ExecConfig): Promise<bigint> {
+  if (cfg.feesFromBlock !== undefined) return cfg.feesFromBlock;
+  const known = factoryBirth;
+  if (known && known.factory === cfg.factory) return known.block;
+  const pub = clientOf(cfg);
+  let lo = 0n, hi = await pub.getBlockNumber();
+  while (lo < hi) {
+    const mid = (lo + hi) / 2n;
+    const code = await pub.getCode({ address: cfg.factory!, blockNumber: mid }).catch(() => undefined);
+    if (code && code !== '0x') hi = mid; else lo = mid + 1n;
+  }
+  factoryBirth = { factory: cfg.factory!, block: lo };
+  return lo;
+}
+
+const genuine = new Map<string, boolean>();
+/** Is this address a vault one of Moa's factories made? Anyone can emit an event that looks like a fee; only these count. */
+async function isMoaVault(cfg: ExecConfig, address: Address): Promise<boolean> {
+  const key = address.toLowerCase();
+  const had = genuine.get(key);
+  if (had !== undefined) return had;
+  let ok = false;
+  try {
+    const owner = (await clientOf(cfg).readContract({ address, abi, functionName: 'owner' })) as Address;
+    ok = (await vaultOf(cfg, owner))?.toLowerCase() === key;
+  } catch { ok = false; }
+  genuine.set(key, ok);
+  return ok;
+}
+
+const scanned = new Map<string, { to: bigint; from: bigint; total: bigint; payments: number; vaults: Set<string> }>();
+const PAID = abi.find((x) => x.type === 'event' && x.name === 'CreatorPaid') as Extract<(typeof abi)[number], { type: 'event' }>;
+/**
+ * Everything Moa vaults have paid this creator, from the vaults' CreatorPaid events since the current factory was
+ * deployed. Read in steps and kept, so asking again only reads the new blocks. Without a factory there is nothing
+ * to read, and the answer says so.
+ */
+export async function feesReceived(cfg: ExecConfig, creator: Address, step = 20_000n): Promise<FeesReceived> {
+  if (!cfg.factory) return { state: 'unavailable', reason: 'demo' };
+  const key = `${cfg.factory.toLowerCase()}|${creator.toLowerCase()}`;
+  try {
+    const pub = clientOf(cfg);
+    const head = await pub.getBlockNumber();
+    const from = await birthOf(cfg);
+    const s = scanned.get(key) ?? { to: from - 1n, from, total: 0n, payments: 0, vaults: new Set<string>() };
+    for (let a = s.to + 1n; a <= head; a += step) {
+      const b = a + step - 1n > head ? head : a + step - 1n;
+      const logs = (await pub.getLogs({ event: PAID as never, args: { creator } as never, fromBlock: a, toBlock: b })) as unknown as { address: Address; args: { feeUsdt: bigint } }[];
+      for (const log of logs) {
+        if (!(await isMoaVault(cfg, log.address))) continue;
+        s.total += log.args.feeUsdt; s.payments++; s.vaults.add(log.address.toLowerCase());
+      }
+      s.to = b;
+      scanned.set(key, s);
+    }
+    return { state: 'ok', totalUsdt: formatUnits(s.total, 6), payments: s.payments, vaults: s.vaults.size, fromBlock: s.from.toString(), toBlock: s.to.toString() };
+  } catch (e) {
+    return { state: 'unavailable', reason: 'chain', detail: explain(e).slice(0, 160) };
+  }
 }

@@ -6,6 +6,8 @@
 // It shows; it does not run anything. "Hire" opens the hire sheet over this page, a row or a card title
 // hands the agent to Moa on the right. Every number comes from agents.ts; nothing is invented, so there are
 // no creators, followers or subscriber counts here.
+//  - Made by people: agents other people made and shared (src/Shared.tsx), with their creator, fee and the
+//    server's real hire count.
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
@@ -15,8 +17,9 @@ import { agentName, freshLine, pct, ruleLines, Face } from './AgentCard.tsx';
 import { CoinMark } from './CoinMark.tsx';
 import { markColor } from './Mark.tsx';
 import { Icon, Spark } from './Icons.tsx';
+import { SharedMarket } from './Shared.tsx';
 
-type Tab = 'top' | 'market';
+type Tab = 'top' | 'market' | 'people';
 type Rank = 'classic' | 'steady' | 'bold';
 type Sort = 'pick' | 'dd' | 'total' | 'sharpe';
 const LINE = ['#3b5bdb', '#12b886', '#15aabf', '#f08c00', '#e03131', '#9c36b5', '#868e96', '#f783ac', '#4dabf7', '#fab005'];
@@ -240,11 +243,12 @@ function Rail({ agents, coins, onOpen }: { agents: Agent[]; coins: string[]; onO
   );
 }
 
-export default function Agents({ agents, failed, onRetry, onHire, onOpen, onRecommend }: {
+export default function Agents({ agents, failed, onRetry, onHire, onOpen, onRecommend, onBuild, startTab }: {
   agents: Agent[] | null; failed: boolean; onRetry: () => void; onHire: (a: Agent) => void; onOpen: (a: Agent) => void; onRecommend: () => void;
+  onBuild: () => void; startTab?: Tab;
 }) {
   const { t } = useT();
-  const [tab, setTab] = useState<Tab>('top');
+  const [tab, setTab] = useState<Tab>(startTab ?? 'top');
   const [rank, setRank] = useState<Rank>('classic');
   const [coin, setCoin] = useState('BTC');
   const [hot, setHot] = useState<string | null>(null);
@@ -292,17 +296,18 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
     <div className="page market-page">
       <nav className="subnav has-line" aria-label={t.agTitle}>
         <SlidePill dep={tab} />
-        {(['top', 'market'] as Tab[]).map((k) => <button key={k} className={tab === k ? 'on' : ''} aria-current={tab === k ? 'page' : undefined} onClick={() => setTab(k)}>{k === 'top' ? t.mpTabTop : t.mpTabMarket}</button>)}
+        {(['top', 'market', 'people'] as Tab[]).map((k) => <button key={k} className={tab === k ? 'on' : ''} aria-current={tab === k ? 'page' : undefined} onClick={() => setTab(k)}>{k === 'top' ? t.mpTabTop : k === 'market' ? t.mpTabMarket : t.shTab}</button>)}
       </nav>
 
       <header className="mp-head">
         {tab === 'top'
           ? <h1>{t.topHead1} <span className="grad">{t.topHead2}</span></h1>
-          : <h1>{t.mpTitle}</h1>}
+          : <h1>{tab === 'people' ? t.shHead : t.mpTitle}</h1>}
         <button className="btn-dark" onClick={onRecommend}><Spark size={14} />{t.barRecommend}</button>
       </header>
 
-      {failed && <StateBox title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
+      {failed && tab !== 'people' && <StateBox title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
+      {tab === 'people' && <SharedMarket onOpen={onOpen} onHire={onHire} onBuild={onBuild} />}
       {/* Nothing to rank or list without the candles: the message above is the whole page. */}
 
       {!failed && tab === 'top' && (

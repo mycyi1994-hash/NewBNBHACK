@@ -10,6 +10,7 @@
 //   node scripts/vault.mjs stop 10 | stop off     stop-loss: sell a holding once it is worth 10% less than it cost
 //   node scripts/vault.mjs stopout WHSK           carry out a stop that is due (anyone's key works; the USDT stays in the vault)
 //   node scripts/vault.mjs agent 0x…              replace my vault's agent wallet (e.g. if its key may have leaked)
+//   node scripts/vault.mjs creator 0x… 0.5        approve the maker of a shared agent at up to 0.5% of each trade (version 3; "0" withdraws it)
 //
 // The factory address comes from --factory 0x…, else MOA_FACTORY_ADDRESS, else deployments/hsk-mainnet.json.
 // A vault made by an earlier factory still answers status, fund, withdraw, pause, limits and agent: add
@@ -64,7 +65,7 @@ if (cmd === 'status' && rest[0]) {
   await status(v);
   process.exit(0);
 }
-if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
+if (!['status', 'create', 'fund', 'withdraw', 'pause', 'unpause', 'limits', 'stop', 'agent', 'creator'].includes(cmd)) fail(`unknown command "${cmd}". See the top of this file.`);
 
 const key = await ownerKey('the vault owner\'s wallet');
 if (!key) fail(cmd === 'status' ? 'usage: status <owner address>' : 'the key is missing or is not a 64-hex private key.');
@@ -122,6 +123,12 @@ if (cmd === 'fund') {
   const bps = rest[0] === 'off' ? 0 : Math.round(Number(rest[0]) * 100);
   if (!(bps >= 0 && bps <= 9000)) fail('usage: stop <percent, up to 90> | stop off');
   await run(bps ? `Set the stop-loss: anyone may sell a holding once it is worth ${bps / 100}% less than it cost.` : 'Turn the stop-loss off.', 'stop', call('setStopLoss', [bps]));
+} else if (cmd === 'creator') {
+  const bps = Math.round(Number(rest[1]) * 100);
+  if (!isAddress(rest[0] ?? '') || !(bps >= 0 && bps <= 100)) fail('usage: creator <creator address> <percent, 0 to 1>');
+  const version = await pub.readContract({ address: vault, abi, functionName: 'VERSION' }).then(Number, () => 2);
+  if (version < 3) fail('this vault is an earlier version and cannot pay creator fees.');
+  await run(bps ? `Approve ${rest[0]} at up to ${bps / 100}% of each trade an agent they made makes for you, paid in USDT.` : `Withdraw the creator fee approval of ${rest[0]}.`, 'creator', call('setCreatorFee', [getAddress(rest[0]), bps]));
 } else if (cmd === 'agent') {
   if (!isAddress(rest[0] ?? '')) fail('usage: agent <new agent address>');
   if (same(rest[0], owner)) fail('the agent must be a different wallet from the owner.');

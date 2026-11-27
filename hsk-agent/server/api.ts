@@ -4,19 +4,29 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { checkFactory, createVault, execConfigFromEnv, executeTrade, forOwner, serviceOn, vaultStatus, type ExecConfig, type FactoryCheck } from './executor.ts';
+import { checkFactory, createVault, execConfigFromEnv, executeTrade, feesReceived, forOwner, serviceOn, vaultStatus, type CreatorRef, type ExecConfig, type FactoryCheck } from './executor.ts';
 import * as session from './session.ts';
 import { openStore, storeFile, type AutoStore } from './autoStore.ts';
 import { autoBlock, startRunner } from './autoRunner.ts';
 import { frameCheck } from './nanoFrame.ts';
 import type { HiredAgent } from '../src/runner.ts';
+import { openShares, sharesFile, type ShareStore } from './shareStore.ts';
+import { isRunnable, SIGNAL_MARKETS } from '../src/agents.ts';
+import type { Address } from 'viem';
+import type { SharedRef } from '../src/share.ts';
+
+/** Shared agents may read only the markets a vault can trade. */
+const SHARE_MARKETS = SIGNAL_MARKETS.filter((m) => isRunnable(m.base)).map((m) => m.symbol);
 
 type Env = Record<string, string | undefined>;
 type Next = () => void;
 const ASSETS = ['HSK', 'ETH', 'BTC'];
 
-/** Keep only what an auto agent needs, with sane numbers. The owner can only ever affect their own vault with it. */
-function cleanAgent(x: unknown): HiredAgent | null {
+/**
+ * Keep only what an auto agent needs, with sane numbers. The owner can only ever affect their own vault with it.
+ * A shared agent's creator and fee come from the server's own record, whatever the browser sent.
+ */
+export function cleanAgent(x: unknown, shares?: ShareStore): HiredAgent | null {
   const a = x as Partial<HiredAgent> | null;
   if (!a || typeof a.id !== 'string' || !a.source || !ASSETS.includes(String(a.asset))) return null;
   const per = Number(a.perBuyUsd), budget = Number(a.budgetUsd);
@@ -24,15 +34,24 @@ function cleanAgent(x: unknown): HiredAgent | null {
   if (a.source.type === 'market' ? typeof a.source.agentId !== 'string' : a.source.type !== 'custom') return null;
   return {
     id: a.id.slice(0, 40), createdAt: Number(a.createdAt) || Date.now(), source: a.source, asset: a.asset!, perBuyUsd: per, budgetUsd: budget,
-    mode: 'auto', spec: a.spec, paused: !!a.paused, lastRunAt: a.lastRunAt, declined: a.declined,
+    mode: 'auto', spec: a.spec, ...sharedOf(a.shared, shares), paused: !!a.paused, lastRunAt: a.lastRunAt, declined: a.declined,
     fired: Array.isArray(a.fired) ? a.fired.slice(0, 50) : [], fills: Array.isArray(a.fills) ? a.fills.slice(-500) : [], log: Array.isArray(a.log) ? a.log.slice(-500) : [],
   };
 }
 
-export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
+/** The record's own creator and fee for a shared agent the browser names; nothing when the server has no such agent. */
+function sharedOf(x: unknown, shares?: ShareStore): { shared?: SharedRef } {
+  const id = typeof (x as { id?: unknown } | null)?.id === 'string' ? (x as { id: string }).id : '';
+  const r = id && shares ? shares.get(id) : undefined;
+  return r ? { shared: { id: r.id, creator: r.creator, ...(r.nick ? { nick: r.nick } : {}), feeBps: r.feeBps } } : {};
+}
+const creatorOf = (s: SharedRef | undefined): CreatorRef | undefined => (s ? { address: s.creator as Address, feeBps: s.feeBps } : undefined);
+
+export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareStore } = {}) {
   const asSet = execConfigFromEnv(env);
   const secret = session.sessionSecret(env);
   const store = opts.store ?? openStore(storeFile(env));
+  const shares = opts.shares ?? openShares(sharesFile(env), SHARE_MARKETS);
   // A factory from an earlier version of the vault is not used: the server then runs as a demo and says why.
   let factory: FactoryCheck = asSet.factory ? 'unreachable' : 'none';
   let base: ExecConfig = { ...asSet, factory: undefined };
@@ -103,14 +122,48 @@ export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
         if (!body) return;
         if (!who) return send(401, { error: 'Log in first.' });
         if (body.op === 'remove') return send(200, { ok: true, agent: store.remove(who, String(body.id)) ?? null });
-        const agent = cleanAgent(body.agent);
+        const agent = cleanAgent(body.agent, shares);
         if (!agent) return send(400, { error: 'Invalid agent.' });
         const block = autoBlock(await vaultStatus(await forOwner(base, who)));
         if (block) return send(409, { ok: false, why: block });
         // Amounts, pause and the rule come from the owner; what the agent already did stays as the server has it.
         const had = store.list(who).find((a) => a.id === agent.id);
-        store.put(who, had ? { ...had, perBuyUsd: agent.perBuyUsd, budgetUsd: agent.budgetUsd, paused: agent.paused, spec: agent.spec, declined: agent.paused ? had.declined : undefined } : agent);
+        store.put(who, had ? { ...had, perBuyUsd: agent.perBuyUsd, budgetUsd: agent.budgetUsd, paused: agent.paused, spec: agent.spec, shared: agent.shared, declined: agent.paused ? had.declined : undefined } : agent);
         return send(200, { ok: true, agent: store.list(who).find((a) => a.id === agent.id) });
+      }
+
+      // Shared agents: anyone can list and open them; publishing, stopping and counting a hire need a login, and the
+      // creator is always the wallet of that login.
+      const path = req.url.split('?')[0];
+      if (path === '/api/shared' && req.method === 'GET') return send(200, { agents: shares.list() });
+      if (path === '/api/shared/mine' && req.method === 'GET') {
+        if (!who) return send(401, { error: 'Log in first.' });
+        return send(200, { agents: shares.mine(who) });
+      }
+      // What the vaults have paid this wallet as a creator, read from their events on-chain (can take a while the first time).
+      if (path === '/api/shared/fees' && req.method === 'GET') {
+        if (!who) return send(401, { error: 'Log in first.' });
+        return send(200, { fees: await feesReceived(base, who) });
+      }
+      if (path.startsWith('/api/shared/') && req.method === 'GET') {
+        const r = shares.get(decodeURIComponent(path.slice('/api/shared/'.length)));
+        return r ? send(200, { agent: r }) : send(404, { error: 'No such shared agent.' });
+      }
+      if (path === '/api/shared' && req.method === 'POST') {
+        const body = await posted();
+        if (!body) return;
+        if (!who) return send(401, { error: 'Log in first.' });
+        const r = shares.publish(who, { spec: body.spec, feeBps: body.feeBps, nick: body.nick });
+        if (r.ok) console.log(`[moa] ${who} shared ${r.agent.id}${r.again ? ' (again)' : ''} at ${r.agent.feeBps} bps`);
+        return send(r.ok ? 200 : 400, r);
+      }
+      if ((path === '/api/shared/unpublish' || path === '/api/shared/hire') && req.method === 'POST') {
+        const body = await posted();
+        if (!body) return;
+        if (!who) return send(401, { error: 'Log in first.' });
+        const id = String(body.id ?? '');
+        const r = path.endsWith('hire') ? shares.hire(id, who) : shares.unpublish(who, id);
+        return r ? send(200, { ok: true, agent: r }) : send(404, { error: 'No such shared agent of yours.' });
       }
 
       const cfg = await forOwner(base, who);
@@ -172,7 +225,9 @@ export function createApi(env: Env, opts: { store?: AutoStore } = {}) {
         if (!who) return send(401, { error: 'Log in first.' });
         const asset = String(body.asset), side = body.side, amount = Number(body.amount);
         if (!ASSETS.includes(asset) || (side !== 'buy' && side !== 'sell') || !Number.isFinite(amount) || amount <= 0) return send(400, { error: 'Invalid order.' });
-        const r = await executeTrade(cfg, { asset: asset as 'HSK' | 'ETH' | 'BTC', side, amount, note: String(body.note ?? '').slice(0, 120) });
+        // A shared agent's order names its creator, looked up here: the browser only says which shared agent it is.
+        const creator = creatorOf(sharedOf({ id: body.shared }, shares).shared);
+        const r = await executeTrade(cfg, { asset: asset as 'HSK' | 'ETH' | 'BTC', side, amount, note: String(body.note ?? '').slice(0, 120), creator });
         console.log(`[moa] agent order for ${who} ${side} ${amount} ${asset}: ${r.ok ? r.txHash : r.reason}`);
         return send(200, r);
       }

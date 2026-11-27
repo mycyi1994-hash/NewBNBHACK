@@ -22,6 +22,8 @@ import { useT } from './i18n.ts';
 import { Icon, Spark } from './Icons.tsx';
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
+import { feeText } from './share.ts';
+import { whoText } from './Shared.tsx';
 
 /** Price with sensible decimals for anything from BTC to DOGE. */
 export const px = (v: number) => (v >= 1000 ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
@@ -204,7 +206,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
         <div className="bt-badges">
           {at >= 0 && <span className={`hz-chip hz-${hz}`} data-tip={t.hzSub[hz]}>{t.btRankIn(t.hz[hz], at + 1, peers.length)}</span>}
           <span className={`badge ${pill.cls}`} data-tip={a.kind === 'collect' ? t.stCollect : year.live ? t.stHold : t.stWait}><i />{pill.text}</span>
-          <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span>
+          <span className={`origin tier-${a.tier}`}>{a.shared ? t.shLabel : t.agOrigin[a.rule]}</span>
         </div>
         {/* Its character in three words; each comes from a number in its own backtest, shown on hover and beside the curve. */}
         <div className="bt-tags">
@@ -277,8 +279,8 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
             </div>
             <dl className="ab2-facts">
               <div><dt>{t.abProofRow}</dt><dd><span className={`proof lv-${PROOF[a.rule]}`}>{t.agProofLv[PROOF[a.rule]]}</span>{t.agProof[a.rule]}</dd></div>
-              <div><dt>{t.abUsers}</dt><dd>{t.agUsers[a.rule]}</dd></div>
-              <div><dt>{t.abSourceShow}</dt><dd className="src">{t.agFrom[a.rule]}</dd></div>
+              <div><dt>{t.abUsers}</dt><dd>{a.shared ? (a.shared.hires !== undefined ? t.shHires(a.shared.hires) : t.shLabel) : t.agUsers[a.rule]}</dd></div>
+              <div><dt>{t.abSourceShow}</dt><dd className="src">{a.shared ? t.shFrom(whoText(lang, a.shared), a.shared.feeBps ? feeText(a.shared.feeBps) : '') : t.agFrom[a.rule]}</dd></div>
             </dl>
             {!a.runnable && <p className="bt-demo">{t.whyNot(a.base)}</p>}
           </div>

@@ -119,6 +119,70 @@ node scripts/compile.cjs
    node scripts/verify.mjs vault 0xYOUR_WALLET_ADDRESS
    ```
 
+## Version 3: creator fees for shared agents (not deployed)
+
+Nothing below has been sent to mainnet. Version 3 of the vault is compiled and checked on a local fork only.
+
+What it adds, and only this: someone who hires an agent another person made and shared can let that person earn a
+fee on it. The **owner** approves a creator on their own vault, `setCreatorFee(creator, bps)`, at most 100 bps (1%):
+the contract refuses more, refuses the agent key as a creator, and only the owner can call it (event `CreatorFeeSet`).
+The agent then trades with `tradeFor(token, isBuy, amountIn, minOut, note, creator, feeBps)`; the vault pays
+`min(feeBps, what the owner approved)` in USDT, from the USDT going in on a buy or coming out on a sell (event
+`CreatorPaid`). An unapproved creator gets nothing and the trade still goes through. `trade(...)` is unchanged and
+pays no one. Limits: on a buy the fee is part of `amountIn`, so the per-trade and per-day limits cover everything that
+leaves the vault. A sell's fee comes out of what the sale returns and, like every sell, is not held up by the limits.
+Stop-loss: a holding's cost is what went into the pool (the fee is not counted as a price fall), so a fee never brings
+a stop-loss forward; `stopOut` is unchanged. Withdrawals, pause and the owner's other controls are unchanged.
+`VERSION()` returns 3; earlier vaults have no `VERSION`, and the server reads that to send them only `trade`.
+
+Vaults cannot be upgraded. Vaults made by the current factory (`0xd6bF…6546`, version 2) keep working exactly as
+before and simply pay no creator fee; the app says so in the hire sheet. A new factory makes version-3 vaults for
+wallets that have none yet. Do not list the first factory (`0x4980…444c`) below: its vaults have no stop-loss and
+this server cannot read them, as before; they stay reachable with `vault.mjs --factory 0x4980…` to withdraw.
+
+Steps, when you decide to deploy (from `hsk-agent/contracts`):
+
+1. Compile and run both fork tests. Both start their own fork node.
+
+   ```bash
+   node scripts/compile.cjs
+   node --experimental-strip-types scripts/fork-test.mjs       # 42 checks, the vault as before
+   node --experimental-strip-types scripts/fee-fork-test.mjs   # 28 checks, creator fees and old vaults
+   ```
+
+2. Dry run, then deploy the new factory exactly as in **Steps** 2 to 4 above (`deploy-mainnet.mjs`, then
+   `verify.mjs`). One transaction; no funds move. `deployments/hsk-mainnet.json` is overwritten, so copy the old
+   one to `deployments/hsk-mainnet-v2.json` first.
+
+3. Point the server at it and keep the earlier factories, so every wallet that already has a vault keeps it
+   (`.env.local`, or the host's dashboard):
+
+   ```
+   MOA_FACTORY_ADDRESS=0x…new factory…
+   MOA_LEGACY_FACTORY_ADDRESSES=0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546
+   MOA_FEES_FROM_BLOCK=…the block of the deployment transaction…   # optional: where "fees received" starts reading
+   ```
+
+   Without `MOA_FEES_FROM_BLOCK` the server finds the factory's deployment block itself (about 25 reads, once).
+
+4. Restart the app. `/api/health` should say `factory: ok (0x…)`. A wallet logging in for the first time gets a
+   version-3 vault; one that already has a vault keeps it. In the app: share an agent from *Make an agent*, hire it
+   from another wallet with a fee, approve the fee in the wallet (one transaction), and check the creator's
+   *Agents I shared* shows the fee once the first trade fills.
+
+5. The same approval without the app: `node scripts/vault.mjs creator 0xCREATOR 0.5` (and `… 0` to withdraw it).
+
+`scripts/fee-fork-test.mjs`, 28 checks on a fork of mainnet: a wallet with a vault from the earlier factory keeps
+it; the server tells versions 3 and 2 apart; a stranger and the agent key cannot approve a fee; 101 bps and the agent
+key as creator are refused; the owner's approval and its event; a $20 buy pays exactly $0.10 at 0.5%, the vault spends
+exactly $20, the day's spending counts $20 and the holding's cost is $19.90; a sell pays 0.5% of what came out; the
+agent asking for 1% where 0.5% was approved gets 0.5%; an unapproved creator, the agent key naming itself and a
+withdrawn approval all pay nothing while the trade goes through; the agent key cannot withdraw; $10 per-trade and
+$25 daily limits hold with the fee inside them; after a buy that paid 1%, a 1% stop-loss is not set off; on a
+version-2 vault the server sends `trade` (checked by the transaction's function selector) and nothing is paid; the
+fees read back from the vaults' events equal what the creator's wallet received. `scripts/fork-test.mjs` (42 checks)
+passes unchanged on version 3.
+
 ## The same controls without the app
 
 Each asks for the vault owner's key (hidden) and for a typed word before sending.

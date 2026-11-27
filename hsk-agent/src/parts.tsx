@@ -14,6 +14,8 @@ export interface VaultInfo {
   stopLossBps?: number;
   /** The owner's limits on the agent. A missing value means the owner set no limit. */
   remainingTodayUsdt?: string; maxTradeUsdt?: string; maxDailyUsdt?: string; maxSlippageBps?: number;
+  /** 3 and up can pay the maker of a shared agent a fee the owner approved; 2 cannot. */
+  version?: number;
 }
 
 /** The vault's limits in one line: "$10 per trade · $30 per day", or that there are none. */

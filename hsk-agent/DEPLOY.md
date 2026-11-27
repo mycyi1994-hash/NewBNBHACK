@@ -24,6 +24,8 @@ Environment variables:
 | `NODE_VERSION` | `22` |
 | `ANTHROPIC_API_KEY` | the key Moa's conversation uses |
 | `MOA_FACTORY_ADDRESS` | the deployed MoaVaultFactory (see `contracts/MAINNET.md`) |
+| `MOA_LEGACY_FACTORY_ADDRESSES` | optional, comma-separated: earlier factories whose vaults their owners keep using (see `contracts/MAINNET.md`, Version 3) |
+| `MOA_FEES_FROM_BLOCK` | optional: the block from which creator fees received are read (default: the factory's deployment block) |
 | `MOA_AGENT_PRIVATE_KEY` | the agent key from `hsk-agent/.env.local` on the machine that made it |
 | `MOA_DATA_DIR` | `/var/data` |
 | `MOA_SESSION_SECRET` | any long random text (the dashboard can generate one) |

@@ -19,6 +19,7 @@ import { Portfolio, signedUsd } from './PortfolioRing.tsx';
 import { RollNum } from './motion.tsx';
 import { pct } from './AgentCard.tsx';
 import type { CSSProperties } from 'react';
+import { MyShared } from './Shared.tsx';
 
 const loc = () => (document.documentElement.lang === 'en' ? 'en-US' : 'ko-KR');
 const when = (t: number) => new Date(t).toLocaleString(loc(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -164,6 +165,9 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
       </ol>
 
       <Portfolio rows={rows} hired={hired} vault={vault} quotes={quotes} priceOf={priceOf} now={now} ready={ready} onStart={onStart} onOpen={onOpen} />
+
+      {/* The agents this wallet made and shared, with their real hires and the fees the vaults paid it. */}
+      <MyShared onBuild={onBuild} />
 
       <VaultCard vault={vault} />
       <p className="muted small">{t.mineStopNote}</p>

@@ -96,7 +96,8 @@ export type TradeResult =
   | { ok: false; reason: string };
 
 /** One approved order from a hired agent. buy: amount is USDT; sell: amount is the coin quantity. */
-export async function sendAgentTrade(req: { asset: string; side: 'buy' | 'sell'; amount: number; note: string }): Promise<TradeResult> {
+/** `shared` names the shared agent the order is for; the server looks up its creator and fee itself. */
+export async function sendAgentTrade(req: { asset: string; side: 'buy' | 'sell'; amount: number; note: string; shared?: string }): Promise<TradeResult> {
   try {
     const r = await fetch('/api/agent-trade', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify(req) });
     const j = (await r.json().catch(() => null)) as TradeResult | { error?: string } | null;

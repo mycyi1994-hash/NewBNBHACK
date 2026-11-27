@@ -18,6 +18,7 @@ import * as I from './indicators.ts';
 import type { Asset } from './intent.ts';
 import { INTERVAL_SECONDS, PER_DAY, WINDOW_DAYS, intervalOf, specLines, specNeed, specPane, specPositions, type MadeSpec, type SpecInterval } from './spec.ts';
 import { MADE_PREFIX, madeById, madeList } from './madeStore.ts';
+import type { SharedTag } from './share.ts';
 
 export type PositionRule =
   | 'tsmom' | 'multiTrend' | 'dualMom' | 'trend200' | 'golden' | 'break' | 'turtle2' | 'donchian' | 'ma520' | 'triple'
@@ -239,6 +240,8 @@ export interface Agent {
   seam?: number;
   /** A made agent's own rule. */
   made?: MadeSpec;
+  /** Someone else made it and shared it (see share.ts): who, their fee and the real number of hires. */
+  shared?: SharedTag;
   /** The candles it decides on, when they are not daily (a made agent on 4-hour or hourly candles). `days` stays in
    *  days either way; `trades`, `equity` and `marks` are per candle. */
   interval?: SpecInterval;
@@ -739,7 +742,8 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
 
 /** The same agent over another window (days, or `Infinity` for everything after its warm-up), for a closer look at one agent. */
 export async function rescore(a: Agent, window: number): Promise<Agent | null> {
-  if (a.made) return a.market ? scoreMadeLive(a.made, a.market, window) : null;
+  // A shared agent keeps its id and its creator over another window.
+  if (a.made) return a.market ? scoreMadeLive(a.made, a.market, window).then((x) => x && (a.shared ? { ...x, id: a.id, shared: a.shared } : x)) : null;
   if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), window) : null;
   const iv = ruleInterval(a.rule);
   return a.market ? scorePosition(a.rule as PositionRule, a.market, await madeHistory(a.market, iv), window, iv === '1d' ? await refBars(a.market) : undefined) : null;

@@ -8,7 +8,8 @@ export const qtyText = (q: number) => (q >= 1 ? Number(q.toFixed(4)).toString() 
 export const signedMoney = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}$${money(Math.abs(v))}`;
 
 export function hiredName(t: Strings, h: HiredAgent): string {
-  return h.source.type === 'market' ? agentName(t, h.source) : t.customName(h.asset);
+  // A made agent's name travels in its rule, so one someone else made and shared is named too.
+  return h.source.type === 'market' ? agentName(t, { ...h.source, made: h.spec }) : t.customName(h.asset);
 }
 
 export function whyText(t: Strings, w: Why): string {

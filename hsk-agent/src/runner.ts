@@ -6,6 +6,7 @@
 import type { Asset, Plan } from './intent.ts';
 import type { Agent, RuleId } from './agents.ts';
 import type { MadeSpec } from './spec.ts';
+import type { SharedRef } from './share.ts';
 
 export type Mode = 'ask' | 'auto';
 
@@ -52,6 +53,8 @@ export interface HiredAgent extends Amounts {
   mode: Mode;
   /** The rule of an agent the user made, carried along so the server can run it without the browser. */
   spec?: MadeSpec;
+  /** Someone else made it and shared it: who, and the fee they ask (paid by the vault only if its owner approved it). */
+  shared?: SharedRef;
   paused: boolean;
   pending?: Order;
   /** Last time a collect or plan buy was asked, filled, skipped or declined. */

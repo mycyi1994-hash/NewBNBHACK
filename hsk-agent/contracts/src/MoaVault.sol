@@ -9,6 +9,10 @@ pragma solidity 0.8.26;
 ///         The owner can also set a stop-loss: once a holding is worth that much less than it cost, anyone may
 ///         make the vault sell it, so the stop does not depend on Moa's server being up.
 ///         The agent can never move funds out of the vault.
+///         Version 3 adds a creator fee: the owner may approve the person who made an agent they hired, at a rate of
+///         at most 1%. Trades the agent makes for that agent then pay the creator that share in USDT, from the USDT
+///         going in on a buy or coming out on a sell. Nothing is ever paid to an address the owner did not approve,
+///         at more than the owner approved.
 
 interface IERC20 {
     function balanceOf(address) external view returns (uint256);
@@ -49,6 +53,10 @@ contract MoaVault {
     /// The stop-loss compares the pool price now with its average over this long, so that a price pushed around
     /// inside one block cannot set a stop off.
     uint32 public constant STOP_WINDOW = 10 minutes;
+    /// Version 1 had no stop-loss, version 2 no creator fee. Older vaults have no VERSION at all.
+    uint16 public constant VERSION = 3;
+    /// The highest creator fee an owner can approve: 100 basis points = 1% of a trade.
+    uint16 public constant MAX_CREATOR_FEE_BPS = 100;
 
     address public immutable owner;
     address public immutable usdt;
@@ -65,6 +73,8 @@ contract MoaVault {
     mapping(uint256 day => uint256 usdt) public spentOnDay;
     /// What the token the vault holds now cost, in USDT. Buys add to it; sells and withdrawals take their share out.
     mapping(address token => uint256 usdt) public costUsdt;
+    /// The most the owner lets the agent pay each creator, in basis points of a trade. 0 = not approved.
+    mapping(address creator => uint16 bps) public creatorFeeBps;
 
     event AgentSet(address agent);
     event LimitsSet(uint256 maxTradeUsdt, uint256 maxDailyUsdt, uint16 maxSlippageBps);
@@ -74,6 +84,8 @@ contract MoaVault {
     event Withdrawn(address token, uint256 amount);
     event Traded(address indexed token, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 notionalUsdt, string note);
     event StoppedOut(address indexed token, address indexed caller, uint256 amountIn, uint256 amountOut, uint256 costUsdt);
+    event CreatorFeeSet(address indexed creator, uint16 bps);
+    event CreatorPaid(address indexed creator, address indexed token, bool isBuy, uint256 feeUsdt, uint16 bps);
 
     error NotOwner();
     error NotAgent();
@@ -87,6 +99,8 @@ contract MoaVault {
     error NothingToSell();
     error StopNotReached(uint256 valueUsdt, uint256 stopUsdt);
     error PriceMoving(int24 tickNow, int24 tickAverage);
+    error FeeTooHigh(uint16 bps, uint16 cap);
+    error BadCreator();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -144,6 +158,15 @@ contract MoaVault {
         emit Paused(paused_);
     }
 
+    /// @notice Approve the maker of an agent you hired, at up to MAX_CREATOR_FEE_BPS of each trade the agent makes for
+    ///         it. 0 withdraws the approval. The agent key can neither call this nor be approved.
+    function setCreatorFee(address creator, uint16 bps) external onlyOwner {
+        if (creator == address(0) || creator == address(this) || creator == agent) revert BadCreator();
+        if (bps > MAX_CREATOR_FEE_BPS) revert FeeTooHigh(bps, MAX_CREATOR_FEE_BPS);
+        creatorFeeBps[creator] = bps;
+        emit CreatorFeeSet(creator, bps);
+    }
+
     /// @notice Only the owner can take funds out, and only to the owner.
     function withdraw(address token, uint256 amount) external onlyOwner {
         uint256 held = IERC20(token).balanceOf(address(this));
@@ -156,38 +179,23 @@ contract MoaVault {
 
     /// @param token     allow-listed token (e.g. WHSK, WETH, WBTC)
     /// @param isBuy     true: spend USDT for token; false: sell token for USDT
-    /// @param amountIn  input amount in the input token's base units
-    /// @param minOut    minimum output; must be within maxSlippageBps of the pool price
+    /// @param amountIn  input amount in the input token's base units (on a buy, any creator fee comes out of it)
+    /// @param minOut    minimum output of the swap; must be within maxSlippageBps of the pool price
     /// @param note      short human-readable reason, stored in the event
     function trade(address token, bool isBuy, uint256 amountIn, uint256 minOut, string calldata note)
         external
         returns (uint256 amountOut)
     {
-        if (msg.sender != agent) revert NotAgent();
-        if (paused) revert IsPaused();
-        Market memory m = markets[token];
-        if (!m.enabled) revert MarketDisabled();
+        return _trade(token, isBuy, amountIn, minOut, note, address(0), 0);
+    }
 
-        uint256 expectedOut = _quote(m, isBuy, amountIn);
-        uint256 floor = (expectedOut * (10_000 - maxSlippageBps)) / 10_000;
-        if (minOut < floor) revert SlippageTooLoose(minOut, floor);
-
-        uint256 notional = isBuy ? amountIn : expectedOut;
-        if (isBuy) {
-            // The limits are on what the agent may spend. Getting back out to USDT is never held up by them.
-            if (notional > maxTradeUsdt) revert TradeTooLarge(notional, maxTradeUsdt);
-            uint256 day = block.timestamp / 1 days;
-            uint256 wouldSpend = spentOnDay[day] + notional;
-            if (wouldSpend > maxDailyUsdt) revert DailyCapExceeded(wouldSpend, maxDailyUsdt);
-            spentOnDay[day] = wouldSpend;
-            amountOut = _swap(usdt, token, m.fee, amountIn, minOut);
-            costUsdt[token] += amountIn;
-        } else {
-            uint256 held = IERC20(token).balanceOf(address(this));
-            amountOut = _swap(token, usdt, m.fee, amountIn, minOut);
-            costUsdt[token] = amountIn >= held ? 0 : (costUsdt[token] * (held - amountIn)) / held;
-        }
-        emit Traded(token, isBuy, amountIn, amountOut, notional, note);
+    /// @notice The same trade, made for an agent that `creator` made. The creator is paid
+    ///         min(feeBps, creatorFeeBps[creator]) of the trade in USDT: nothing when the owner has not approved them.
+    function tradeFor(address token, bool isBuy, uint256 amountIn, uint256 minOut, string calldata note, address creator, uint16 feeBps)
+        external
+        returns (uint256 amountOut)
+    {
+        return _trade(token, isBuy, amountIn, minOut, note, creator, feeBps);
     }
 
     // ----- anyone -----
@@ -243,6 +251,63 @@ contract MoaVault {
     }
 
     // ----- internal -----
+
+    /// The rate actually paid: what the agent asks for, never above what the owner approved, never to the agent.
+    function _feeBps(address creator, uint16 feeBps) internal view returns (uint16) {
+        if (creator == address(0) || creator == agent) return 0;
+        uint16 approved = creatorFeeBps[creator];
+        return feeBps < approved ? feeBps : approved;
+    }
+
+    function _payCreator(address creator, uint16 bps, bool isBuy, uint256 fee) internal {
+        if (fee == 0) return;
+        require(IERC20(usdt).transfer(creator, fee), "fee transfer failed");
+        emit CreatorPaid(creator, usdt, isBuy, fee, bps);
+    }
+
+    function _trade(address token, bool isBuy, uint256 amountIn, uint256 minOut, string calldata note, address creator, uint16 feeBps)
+        internal
+        returns (uint256 amountOut)
+    {
+        if (msg.sender != agent) revert NotAgent();
+        if (paused) revert IsPaused();
+        Market memory m = markets[token];
+        if (!m.enabled) revert MarketDisabled();
+        uint16 bps = _feeBps(creator, feeBps);
+
+        uint256 notional;
+        if (isBuy) {
+            // The fee comes out of the USDT the agent spends, so the limits cover everything that leaves the vault.
+            uint256 fee = (amountIn * bps) / 10_000;
+            uint256 swapIn = amountIn - fee;
+            uint256 expectedOut = _quote(m, true, swapIn);
+            uint256 floor = (expectedOut * (10_000 - maxSlippageBps)) / 10_000;
+            if (minOut < floor) revert SlippageTooLoose(minOut, floor);
+            notional = amountIn;
+            // The limits are on what the agent may spend. Getting back out to USDT is never held up by them.
+            if (notional > maxTradeUsdt) revert TradeTooLarge(notional, maxTradeUsdt);
+            uint256 day = block.timestamp / 1 days;
+            uint256 wouldSpend = spentOnDay[day] + notional;
+            if (wouldSpend > maxDailyUsdt) revert DailyCapExceeded(wouldSpend, maxDailyUsdt);
+            spentOnDay[day] = wouldSpend;
+            amountOut = _swap(usdt, token, m.fee, swapIn, minOut);
+            // The holding cost what went into the pool; the fee is not a fall in price, so it never brings a stop-loss closer.
+            costUsdt[token] += swapIn;
+            _payCreator(creator, bps, true, fee);
+        } else {
+            uint256 expectedOut = _quote(m, false, amountIn);
+            uint256 floor = (expectedOut * (10_000 - maxSlippageBps)) / 10_000;
+            if (minOut < floor) revert SlippageTooLoose(minOut, floor);
+            notional = expectedOut;
+            uint256 held = IERC20(token).balanceOf(address(this));
+            uint256 gross = _swap(token, usdt, m.fee, amountIn, minOut);
+            costUsdt[token] = amountIn >= held ? 0 : (costUsdt[token] * (held - amountIn)) / held;
+            uint256 fee = (gross * bps) / 10_000;
+            amountOut = gross - fee;
+            _payCreator(creator, bps, false, fee);
+        }
+        emit Traded(token, isBuy, amountIn, amountOut, notional, note);
+    }
 
     function _setLimits(uint256 maxTrade_, uint256 maxDaily_, uint16 slippageBps_) internal {
         if (maxTrade_ == 0 || maxDaily_ < maxTrade_ || slippageBps_ == 0 || slippageBps_ > 1_000) revert BadLimits();
