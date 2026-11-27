@@ -26,8 +26,13 @@ export interface LpPlan {
   perSide: number;
   /** Shape 'custom': a weight 0–10 per step, lowest price first, `2 × perSide` long. */
   weights?: number[];
+  /** What the user wants, in their words: buy on the way down, sell on the way up, or both for the fees. Unset until chosen. */
+  goal?: Goal;
+  /** How far the plan was asked to reach, once chosen (the step width and count are then fitted to it). */
+  reachPct?: number;
 }
-export const defaultPlan = (asset: Asset): LpPlan => ({ asset, usdt: 0, coin: 0, shape: 'curve', step: 60, perSide: 10 });
+export type Goal = 'buy' | 'sell' | 'both';
+export const defaultPlan = (asset: Asset): LpPlan => ({ asset, usdt: 0, coin: 0, shape: 'spot', step: 60, perSide: 10 });
 
 export interface Bin { lower: number; upper: number; side: 'usdt' | 'coin'; /** distance from the price, 1 = next to it */ d: number; weight: number; amount: number }
 
@@ -178,4 +183,22 @@ export async function positionsOf(call: Call, owner: string, coinToken: string, 
     out.push({ id, lower: p[5], upper: p[6], liquidity: p[7], raw0, raw1, fee0: fees[0], fee1: fees[1] });
   }));
   return out.sort((a, b) => a.lower - b.lower);
+}
+
+/**
+ * What happens as the price moves through one side: by which price about half of it has changed hands, and by which
+ * price all of it has. Under the price, USDT buys the coin as the price falls (nearest step first); over it, the coin
+ * is sold as the price rises. Ticks, not prices: the caller turns them into prices.
+ */
+export function fillPoints(bins: Bin[], side: 'usdt' | 'coin'): { halfTick: number; halfAmount: number; fullTick: number; total: number } | null {
+  const mine = bins.filter((b) => b.side === side && b.amount > 0).sort((a, b) => a.d - b.d);
+  const total = mine.reduce((s, b) => s + b.amount, 0);
+  if (!mine.length || !(total > 0)) return null;
+  let acc = 0, half = mine[mine.length - 1];
+  for (const b of mine) { acc += b.amount; if (acc >= total / 2 - 1e-12) { half = b; break; } }
+  const halfAmount = mine.filter((b) => b.d <= half.d).reduce((s, b) => s + b.amount, 0);
+  const far = mine[mine.length - 1];
+  return side === 'usdt'
+    ? { halfTick: half.lower, halfAmount, fullTick: far.lower, total }
+    : { halfTick: half.upper, halfAmount, fullTick: far.upper, total };
 }

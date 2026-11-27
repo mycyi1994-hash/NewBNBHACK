@@ -23,7 +23,7 @@ import type { Execution } from './store.ts';
 import { CoinMark } from './CoinMark.tsx';
 import { loadWeather, skyOf, type Weather } from './weather.ts';
 import type { LpPlan } from './lp.ts';
-import { parseLp, reachOf, suggestShape, widthFor } from './lpTalk.ts';
+import { parseLp, reachOf, widthFor } from './lpTalk.ts';
 import { POOLS } from './dex.ts';
 import { isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
@@ -41,7 +41,9 @@ export type MoaAsk =
   | { kind: 'hired'; hiredId: string; changed?: { from: Amounts; to: Amounts } }
   | { kind: 'ask'; text: string }
   /** The liquidity studio opened: walk the user through the plan. */
-  | { kind: 'lp' };
+  | { kind: 'lp' }
+  /** Moa says this as it is (the liquidity studio explaining a choice). */
+  | { kind: 'note'; text: string };
 export type MoaInject = MoaAsk & { n: number };
 export type { Level };
 interface Choice { label: string; act: () => void; primary?: boolean }
@@ -418,7 +420,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     ];
     push({ role: 'you', text: q, follow: [] });
     // In the liquidity studio, amounts, shapes and widths are read here; anything else goes to the AI with the plan.
-    if (lpRef.current) { const ch = parseLp(q); if (ch) { const next = lpSet(ch); if (next) say({ text: t.lpChanged(lpSummary(next)), follow: [] }, 300); return; } }
+    if (lpRef.current) { const ch = parseLp(q); if (ch) { const next = lpSet(lpFill(ch)); if (next) say({ text: t.lpChanged(lpSummary(next)), follow: [] }, 300); return; } }
     if (!EXECUTE_WORDS.test(q) && local(q)) return;
     const ctrl = new AbortController();
     abort.current = ctrl;
@@ -426,7 +428,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     try {
       const res = await askMoa(history, (s) => setBusy((b) => (b && b[b.length - 1] !== s ? [...b, s] : b)), ctrl.signal, { level: levelRef.current, asset: ctxRef.current.asset });
       const plan = res.plan?.steps.length ? { steps: res.plan.steps.map(toStep), missing: res.plan.missing } : undefined;
-      if (res.lp && lpRef.current) lpSet({ ...(res.lp.usdt !== undefined ? { usdt: res.lp.usdt } : {}), ...(res.lp.coin !== undefined ? { coin: res.lp.coin } : {}), ...(res.lp.shape ? { shape: res.lp.shape } : {}), ...(res.lp.reachPct ? widthFor(res.lp.reachPct) : {}) });
+      if (res.lp && lpRef.current) lpSet(lpFill({ ...(res.lp.usdt !== undefined ? { usdt: res.lp.usdt } : {}), ...(res.lp.coin !== undefined ? { coin: res.lp.coin } : {}), ...(res.lp.shape ? { shape: res.lp.shape } : {}), ...(res.lp.reachPct ? { ...widthFor(res.lp.reachPct), reachPct: res.lp.reachPct } : {}) }));
       if (res.executions?.length) onExecuted(res.executions.map((x) => ({ at: Date.now(), ok: x.ok, asset: x.request.asset, side: x.request.side, amount: x.request.amount, reason: x.reason, txHash: x.txHash, explorerUrl: x.explorerUrl, amountIn: x.amountIn, amountOut: x.amountOut, tokenIn: x.tokenIn, tokenOut: x.tokenOut })));
       push({ role: 'moa', text: res.reply, plan, goal: q, execs: res.executions?.length ? res.executions : undefined, follow: [] });
       if (res.recommend) {
@@ -469,34 +471,16 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     onLp(next);
     return next;
   };
-  const lpSym = () => (lpRef.current ? POOLS[lpRef.current.asset].symbol : '');
+  /** A change said in words also answers the studio's questions: an amount picks what to do if nothing was picked, a width is the third answer. */
+  const lpFill = (ch: Partial<LpPlan>): Partial<LpPlan> => {
+    const cur = lpRef.current, out = { ...ch };
+    if (cur && !cur.goal && !out.goal) out.goal = (out.coin ?? 0) > 0 && !((out.usdt ?? 0) > 0) ? 'sell' : (out.coin ?? 0) > 0 ? 'both' : 'buy';
+    if (out.step && out.perSide && out.reachPct === undefined) out.reachPct = reachOf({ step: out.step, perSide: out.perSide });
+    return out;
+  };
   const lpSummary = (p: LpPlan) => t.lpSum(String(p.usdt), t.lpShapes[p.shape], `${reachOf(p).toFixed(1)}%`, String(p.coin), POOLS[p.asset].symbol);
-  const lpStart = () => {
-    const cur = lpRef.current;
-    if (!cur) return;
-    say({ text: t.lpHello(`${lpSym()}/USDT`), follow: [], choices: [
-      ...[100, 300, 1000].map((n) => ({ label: `${n.toLocaleString('en-US')} USDT`, act: () => lpAmount(n) })),
-      { label: t.lpOwn, act: () => say({ text: t.lpOwnSay, follow: [] }, 300) },
-    ] }, 300);
-  };
-  const lpAmount = (n: number) => {
-    lpSet({ usdt: n });
-    const rec = suggestShape(lpRef.current?.asset ?? 'BTC');
-    const order: ('curve' | 'spot' | 'bidask')[] = [rec, ...(['curve', 'spot', 'bidask'] as const).filter((x) => x !== rec)];
-    say({ text: `${t.lpAskShape(n.toLocaleString('en-US'))} ${t.lpWhy[rec]}`, follow: [], choices: order.map((x) => ({ label: x === rec ? `${t.lpShapes[x]} · ${t.stratRec}` : t.lpShapes[x], primary: x === rec, act: () => lpShape(x) })) }, 300);
-  };
-  const lpShape = (x: 'curve' | 'spot' | 'bidask') => {
-    lpSet({ shape: x });
-    say({ text: `${t.lpWhy[x]} ${t.lpAskRange}`, follow: [], choices: ([3, 6, 12, 24] as const).map((pct) => ({ label: `±${Math.round(reachOf(widthFor(pct)))}% ${t.lpWidth[pct]}`, primary: pct === 6, act: () => lpWidth(pct) })) }, 300);
-  };
-  const lpWidth = (pct: number) => {
-    const next = lpSet(widthFor(pct));
-    if (!next) return;
-    say({ text: t.lpReady(lpSummary(next)), follow: [], choices: [
-      { label: t.lpAddCoin(lpSym()), act: () => say({ text: t.lpAddCoinSay(lpSym()), follow: [] }, 300) },
-      { label: t.lpRedo, act: () => lpStart() },
-    ] }, 300);
-  };
+  // Opening it: a short hello. The studio asks its three questions itself and sends Moa a note on each choice.
+  const lpStart = () => { if (lpRef.current) say({ text: t.lpsHello, follow: [] }, 300); };
 
   // Something on another part of the screen handed Moa a job.
   useEffect(() => {
@@ -504,6 +488,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     if (inject.kind === 'ask') { void ask(inject.text); onAttention(); return; }
     interrupt();
     if (inject.kind === 'lp') lpStart();
+    else if (inject.kind === 'note') say({ text: inject.text, follow: [] }, 300);
     else if (inject.kind === 'agent') agentNote(inject.agent, explainAgent(t, inject.agent));
     else if (inject.kind === 'recommend') recommendNote(inject.coin);
     else if (inject.kind === 'status') statusNote(inject.hiredId);
@@ -514,7 +499,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
         statusNote(h.id, c ? t.changedSay(hiredName(t, h), `$${money(c.from.perBuyUsd)} · $${money(c.from.budgetUsd)}`, `$${money(c.to.perBuyUsd)} · $${money(c.to.budgetUsd)}`) : t.hiredSay(hiredName(t, h)));
       }
     }
-    onAttention();
+    // the liquidity screen shows its own result, so on a phone Moa's notes about it wait behind the Moa tab instead of covering it
+    if (inject.kind !== 'lp' && inject.kind !== 'note') onAttention();
   }, [inject]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const el = feed.current; if (el && (notes.length || busy)) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, [notes, typing, busy]);

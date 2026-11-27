@@ -87,7 +87,11 @@ export interface Badge { time: number; side: 'buy' | 'sell' | 'note'; text: stri
 /** What a backtest adds to the chart: the rule's own lines, its buys and sells, and the days it was holding. */
 export interface Study { rule: RuleId; made?: MadeSpec; badges: Badge[]; bands: { from: number; to: number }[] }
 
-function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until }: {
+/** A band of prices drawn across the chart (the liquidity studio's buy and sell zones). */
+export interface Zone { from: number; to: number; tone: 'buy' | 'sell'; label: string }
+
+export function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, range, study, until, zones }: {
+  zones?: Zone[];
   candles: cex.Candle[]; inds: Set<Ind>; onOlder?: () => void; priceLine?: { price: number; title: string }; markers?: SeriesMarker<Time>[]; resetKey: string;
   /** Show everything from this time to now (a backtest's window). `key` says when to apply it again. */
   range?: { from: number; key: string };
@@ -267,6 +271,37 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
   // The replay moved a day: show that much of every series. (Not on mount: the data was just drawn.)
   useEffect(() => { if (!drawn.current) { drawn.current = true; return; } if (chart.current && layers.current.length) draw(); }, [until]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Price bands across the whole chart, kept on their prices as the chart moves or rescales.
+  const zoneLayer = useRef<HTMLDivElement>(null);
+  const zoneKey = JSON.stringify(zones ?? []);
+  useEffect(() => {
+    const el = zoneLayer.current, m = main.current;
+    if (!el) return;
+    el.replaceChildren();
+    if (!zones?.length || !m) return;
+    const nodes = zones.map((z) => {
+      const n = document.createElement('div');
+      n.className = `chart-zone ${z.tone}`;
+      const tag = document.createElement('span');
+      tag.textContent = z.label;
+      n.appendChild(tag);
+      el.appendChild(n);
+      return n;
+    });
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      zones.forEach((z, i) => {
+        const a = m.priceToCoordinate(z.to), b = m.priceToCoordinate(z.from), n = nodes[i];
+        if (a === null || b === null) { n.style.display = 'none'; return; }
+        const top = Math.max(0, Math.min(a, b)), h = Math.max(2, Math.abs(b - a));
+        n.style.display = ''; n.style.top = `${top}px`; n.style.height = `${h}px`;
+      });
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [zoneKey, candles.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Buys and sells as filled labels over the chart, kept on their candles as the chart moves.
   useEffect(() => {
     const el = layer.current, c = chart.current, m = main.current;
@@ -315,7 +350,7 @@ function CandleChart({ candles, inds, onOlder, priceLine, markers, resetKey, ran
 
   return (
     <div className="chart-wrap">
-      <div className="chart-main"><div ref={box} className="chart" /><div ref={layer} className="chart-badges" aria-hidden /></div>
+      <div className="chart-main"><div ref={box} className="chart" /><div ref={zoneLayer} className="chart-zones" aria-hidden /><div ref={layer} className="chart-badges" aria-hidden /></div>
       {paneKind && <div className="chart-sub"><span className="chart-sub-tag">{paneSpec?.kind === 'mom' && study ? (study.made ? t.term('ret', paneSpec.days) : t.ovLabel[study.rule]) : `RSI(${paneSpec?.kind === 'rsi' ? paneSpec.period : 14})`}</span><div ref={subBox} className="chart" /></div>}
     </div>
   );
@@ -577,7 +612,7 @@ const save = (key: string, v: string) => { try { localStorage.setItem(key, v); }
 export interface MineTab { node: React.ReactNode; count: number; asks: number }
 interface PanelProps { venueTabs: React.ReactNode; selId: string | null; setSel: (a: Agent | null) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void; onBuild: (coin: string) => void; mine?: MineTab; lp?: LpLink }
 /** The liquidity studio's plan, held by the app so Moa can change it too. */
-export interface LpLink { plan: LpPlan | null; setPlan: (p: LpPlan | null) => void; vault: VaultInfo | null }
+export interface LpLink { plan: LpPlan | null; setPlan: (p: LpPlan | null) => void; vault: VaultInfo | null; say?: (text: string) => void }
 
 function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel, onHire, onAsk, onBuild, mine }: PanelProps & { market: cex.Market; setMarket: (m: cex.Market) => void; asset: Asset; dexPrice?: number }) {
   const { t: s } = useT();
@@ -706,7 +741,9 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
           <span className="mh-pool">Uniswap V3 · 0.3% · <a href={`${EXPLORER}/address/${p.pool}`} target="_blank" rel="noreferrer" data-tip={p.pool}>{p.pool.slice(0, 6)}…{p.pool.slice(-4)} ↗</a></span>
         </div>
       </div>
-      {lp?.plan ? <LpStudio plan={lp.plan} setPlan={lp.setPlan} vault={lp.vault} onClose={() => lp.setPlan(null)} onAsset={(a) => { setAsset(a); lp.setPlan({ ...lp.plan!, asset: a, coin: 0, weights: undefined, shape: lp.plan!.shape === 'custom' ? 'curve' : lp.plan!.shape }); }} /> : <>
+      {lp?.plan ? <LpStudio plan={lp.plan} setPlan={lp.setPlan} vault={lp.vault} onSay={lp.say}
+        chart={(zones) => (candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} zones={zones} resetKey={key} /> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>)}
+        onClose={() => lp.setPlan(null)} onAsset={(a) => { setAsset(a); lp.setPlan({ ...lp.plan!, asset: a, coin: 0, weights: undefined, shape: lp.plan!.shape === 'custom' ? 'curve' : lp.plan!.shape }); }} /> : <>
       <section className="chart-card">
         <div className="chart-toolbar">
           <IntervalBar list={DEX_IV} value={iv} set={pickIv} label={(v) => s.ivLabel[v === '7d' ? '1w' : v]} />

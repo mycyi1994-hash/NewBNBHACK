@@ -7,14 +7,16 @@ export const pctOf = (ticks: number) => (Math.pow(1.0001, ticks) - 1) * 100;
 /** How far the steps reach on one side, in percent. */
 export const reachOf = (plan: Pick<LpPlan, 'step' | 'perSide'>) => pctOf(plan.step * (plan.perSide + 1));
 
-/** The step width and count that come closest to reaching `pct` percent on each side. */
+/**
+ * The step width and count whose far edge lands closest to `pct` percent from the price: 0.6% steps up to about 12%,
+ * 1.2% up to about 24%, 2.4% beyond; between 3 and 20 steps a side.
+ */
 export function widthFor(pct: number): Pick<LpPlan, 'step' | 'perSide'> {
-  let best = { step: SPACING, perSide: 10 }, err = Infinity;
-  for (const step of [SPACING, SPACING * 2, SPACING * 4]) for (const perSide of [5, 10, 15]) {
-    const e = Math.abs(reachOf({ step, perSide }) - pct) + (perSide === 10 ? 0 : 0.01);   // ten steps a side when it is a tie
-    if (e < err) { err = e; best = { step, perSide }; }
-  }
-  return best;
+  // measured as a fall, the longer of the two ways: a 10% fall spans more ticks than a 10% rise
+  const ticks = -Math.log(1 - Math.min(90, Math.max(0.5, pct)) / 100) / Math.log(1.0001);
+  const step = pct <= 12 ? SPACING : pct <= 24 ? SPACING * 2 : SPACING * 4;
+  // the far edge sits perSide steps past the edge of the step holding the price, about half a step away from it
+  return { step, perSide: Math.max(3, Math.min(20, Math.round((ticks - step / 2) / step))) };
 }
 
 const COIN = /(\d+(?:\.\d+)?|\.\d+)\s*(w?btc|w?eth|w?hsk|비트코인|비트|이더리움|이더)/i;
@@ -46,5 +48,3 @@ export function parseLp(q: string): Partial<LpPlan> | null {
   return Object.keys(out).length ? out : null;
 }
 
-/** Moa's suggested shape for a coin, and why (words in i18n: lpWhy[shape]). */
-export const suggestShape = (asset: string): Exclude<Shape, 'custom'> => (asset === 'HSK' ? 'spot' : 'curve');

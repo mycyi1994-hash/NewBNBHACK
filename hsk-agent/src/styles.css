@@ -590,6 +590,8 @@ select { padding-right: 8px; }
 /* agents for this market: "Featured" rows */
 /* the panel under the chart: agents for this market, the backtest of the one picked, recent swaps */
 .tdock { flex: none; height: clamp(250px, 36vh, 384px); display: flex; flex-direction: column; min-height: 0; }
+/* the exchange tab: a shorter chart, more room for the strategies under it */
+.tdock.venue-cex { height: clamp(300px, 46vh, 480px); }
 .tdock-head { flex: none; height: 42px; display: flex; align-items: center; gap: 16px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); }
 .tdock-tabs { display: flex; gap: 22px; align-self: stretch; }
 .tdock-tabs button { border: 0; background: none; padding: 0; font-size: 14px; font-weight: 600; color: var(--ink-3); white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
@@ -1031,7 +1033,7 @@ select { padding-right: 8px; }
   .chart-card { display: block; }
   .chart-wrap, .chart-empty { height: clamp(300px, 52vh, 460px); flex: none; }
   .nano-wrap { height: clamp(380px, 68vh, 620px); flex: none; }
-  .tdock, .trade-page .trade-main:has(.nano-wrap) .tdock { height: auto; }
+  .tdock, .tdock.venue-cex, .trade-page .trade-main:has(.nano-wrap) .tdock { height: auto; }
   .tdock-body { overflow: visible; }
   .tdock-note { display: none; }
   .tdock-tabs { overflow-x: auto; scrollbar-width: none; }
@@ -1718,71 +1720,90 @@ select { padding-right: 8px; }
   .pr-head .pr-right { grid-column: 1 / -1; justify-self: start; }
 }
 
-/* ---------- HSKSwap: the liquidity studio, in place of the chart and the agent list ---------- */
+/* ---------- HSKSwap: the liquidity studio — the chart with its zones on top, three questions, then the result ---------- */
 .pr-right { justify-self: end; display: inline-flex; align-items: center; gap: 12px; min-width: 0; }
 .pr-lp { flex: none; }
-.lps { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); animation: fade-in var(--d3) linear backwards; }
+.btn.danger { border-color: #f3c6c2; color: var(--neg); }
+.lps { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); overflow-y: auto; animation: fade-in var(--d3) linear backwards; }
 .lps-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 16px; border-bottom: 1px solid var(--line); }
 .lps-title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .lps-title > b { font-size: 16px; font-weight: 700; color: var(--ink-title); }
 .lps-pool { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
-.lps-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); }
-.lps-chart { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 16px; }
-.lps-key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); }
-.lps-key > span { display: inline-flex; align-items: center; gap: 6px; }
-.lps-key i { width: 10px; height: 10px; border-radius: 3px; }
-.lps-key i.pr-usdt, .lps-say i.pr-usdt { background: #e09b3d; } .lps-key i.pr-coin, .lps-say i.pr-coin { background: #7c5cff; }
-.lps-cols { flex: none; height: clamp(220px, 42vh, 400px); margin-top: 14px; display: grid; grid-template-columns: repeat(var(--side, 10), minmax(0, 1fr)) 64px repeat(var(--side, 10), minmax(0, 1fr)); align-items: end; gap: 0 5px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--rail); }
-.lps-col { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; min-width: 0; padding: 0; border: 0; background: none; cursor: pointer; }
-.lps-col i { display: block; flex: 1 1 0; min-height: 4px; border-radius: 4px; transition: background-color var(--d1) linear; }
+.lps-chartbox { flex: none; height: clamp(200px, 30vh, 300px); display: flex; flex-direction: column; padding: 6px 12px 0; }
+.lps-chartbox .chart-wrap, .lps-chartbox .chart-empty { flex: 1; height: auto; }
+/* zones drawn across the chart */
+.chart-zones { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+.chart-zone { position: absolute; left: 0; right: 0; border-top: 1px dashed; border-bottom: 1px dashed; }
+.chart-zone.buy { background: rgba(224, 155, 61, .16); border-color: rgba(224, 155, 61, .8); }
+.chart-zone.sell { background: rgba(124, 92, 255, .14); border-color: rgba(124, 92, 255, .75); }
+.chart-zone span { position: absolute; left: 8px; top: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: #fff; }
+.chart-zone.buy span { background: #c97f22; } .chart-zone.sell span { background: #6a49f0; }
+
+.lps-body { flex: none; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); border-top: 1px solid var(--line); }
+.lps-steps { margin: 0; padding: 14px 16px; list-style: none; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lps-step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; animation: rise var(--d3) var(--ease-in) backwards; }
+.lps-n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--fill); color: var(--ink-2); font-size: 12.5px; font-weight: 700; }
+.lps-step.now .lps-n { background: var(--accent); color: #fff; }
+.lps-step.done .lps-n { background: #e3f4e8; color: #137333; }
+.lps-q { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.lps-q > b { font-size: 14.5px; line-height: 24px; color: var(--ink-title); }
+.lps-goals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.lps-goal { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border: 1px solid var(--line-btn); border-radius: 12px; background: var(--bg); text-align: left; }
+.lps-goal b { font-size: 14px; color: var(--ink-title); }
+.lps-goal small { font-size: 12px; line-height: 17px; color: var(--ink-3); }
+.lps-goal:hover { background: var(--hover); }
+.lps-goal.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.lps-goal.g-buy b::before, .lps-goal.g-sell b::before, .lps-goal.g-both b::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 3px; vertical-align: 1px; }
+.lps-goal.g-buy b::before { background: #e09b3d; } .lps-goal.g-sell b::before { background: #7c5cff; } .lps-goal.g-both b::before { background: linear-gradient(90deg, #e09b3d 50%, #7c5cff 50%); }
+.lps-amount { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lps-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lps-chips button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--line-btn); border-radius: 999px; background: var(--bg); font-size: 13px; font-weight: 600; color: var(--ink); }
+.lps-chips button em { font-style: normal; font-weight: 500; color: var(--ink-3); }
+.lps-chips button:hover { background: var(--hover); }
+.lps-chips button.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-ink); }
+.lps-usd, .lps-own { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px 0 10px; border: 1px solid var(--line-btn); border-radius: 999px; background: var(--bg); }
+.lps-usd span, .lps-own > span { font-size: 13px; color: var(--ink-3); }
+.lps-usd input, .lps-own input { width: 96px; border: 0; outline: 0; background: none; font-size: 14px; font-weight: 600; color: var(--ink-title); }
+.lps-own button { height: 24px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--fill); font-size: 12px; font-weight: 600; }
+.lps-usd:focus-within, .lps-own:focus-within { border-color: var(--accent); }
+.lps-hint { font-size: 12px; color: var(--ink-3); }
+
+.lps-result { min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-left: 1px solid var(--line); background: var(--rail); }
+.lps-wait-say { margin: 0; padding: 18px 0; font-size: 13px; line-height: 19px; color: var(--ink-3); text-align: center; }
+.lps-cols { display: grid; grid-template-columns: repeat(var(--side, 10), minmax(0, 1fr)) 14px repeat(var(--side, 10), minmax(0, 1fr)); align-items: end; gap: 0 3px; height: 96px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.lps-col { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; min-width: 0; padding: 0; border: 0; background: none; cursor: pointer; }
+.lps-col i { display: block; flex: 1 1 0; min-height: 3px; border-radius: 3px; }
 .lps-col.pr-usdt i { background: #fbf0e2; } .lps-col.pr-usdt i.on { background: #e09b3d; }
 .lps-col.pr-coin i { background: #ece9ff; } .lps-col.pr-coin i.on { background: #7c5cff; }
-.lps-col.ghost i.on { opacity: .45; }
 .lps-col:hover i.on { filter: brightness(.9); }
-.lps-col:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.lps-mid { align-self: stretch; position: relative; justify-self: center; width: 0; border-left: 2px dotted #5f6368; }
-.lps-mid em { position: absolute; top: -2px; left: 50%; transform: translate(-50%, -100%); padding: 2px 8px; border-radius: 999px; background: #1f1f1f; color: #fff; font-style: normal; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
-.lps-wait { grid-column: 1 / -1; display: grid; place-items: center; height: 100%; }
-.lps-axis { display: flex; justify-content: space-between; padding: 0 10px; font-size: 11.5px; color: var(--ink-3); }
-.lps-side { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-left: 1px solid var(--line); overflow-y: auto; }
-.lps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.lps-label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.lps-seg button { height: 28px; padding: 0 10px; font-size: 12.5px; }
-.lps-amt { display: flex; flex-direction: column; gap: 4px; }
-.lps-amt > span { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.lps-amt small { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--ink-3); }
-.lps-amt small button { height: 20px; padding: 0 7px; border: 1px solid var(--line-btn); border-radius: 6px; background: var(--bg); font-size: 11px; font-weight: 600; color: var(--accent-ink); }
-.lps-amt input { height: 38px; padding: 0 12px; border: 1px solid var(--line-btn); border-radius: 10px; background: var(--bg); font-size: 15px; font-weight: 600; color: var(--ink-title); outline: 0; }
-.lps-amt input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
-.lps-say { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 19px; color: var(--ink); }
+.lps-mid { align-self: stretch; justify-self: center; width: 0; border-left: 2px dotted #5f6368; }
+.lps-say { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 20px; color: var(--ink); }
 .lps-say li { display: flex; gap: 8px; align-items: baseline; }
 .lps-say li i { flex: none; width: 9px; height: 9px; border-radius: 3px; transform: translateY(1px); }
-.lps-say li.muted { color: var(--ink-3); font-size: 12.5px; }
+.lps-say li i.pr-usdt { background: #e09b3d; } .lps-say li i.pr-coin { background: #7c5cff; }
+.lps-say li.muted { color: var(--ink-3); font-size: 12.5px; line-height: 18px; }
 .lps-go { display: flex; flex-direction: column; gap: 6px; }
-.lps-supply { height: 42px; justify-content: center; gap: 8px; font-size: 14px; }
+.lps-supply { height: 44px; justify-content: center; gap: 8px; font-size: 14.5px; }
 .lps-note { margin: 0; font-size: 12.5px; line-height: 18px; color: var(--ink-2); }
 .lps-note.warn { color: var(--warn); } .lps-note.ok { color: var(--pos); }
+.lps-adv { border-top: 1px solid var(--line); padding-top: 10px; }
+.lps-adv summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.lps-adv[open] summary { margin-bottom: 8px; }
+.lps-adv .lps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
+.lps-label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.lps-seg button { height: 28px; padding: 0 10px; font-size: 12.5px; }
 .lps-mine { display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }
 .lps-mine b { font-size: 13px; color: var(--ink-title); }
 .lps-range { font-size: 12px; color: var(--ink-3); }
 .lps-mine-act { display: flex; gap: 6px; margin-top: 4px; }
-.btn.danger { border-color: #f3c6c2; color: var(--neg); }
 @container trade (max-width: 1180px) {
-  .lps-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .lps-chart { padding: 12px 14px 8px; gap: 8px; }
-  .lps-cols { flex: none; height: clamp(170px, 26vh, 240px); }
-  /* the controls in two columns under the blocks: settings and amounts on the left, what happens and the button on the right */
-  .lps-side { border-left: 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-content: start; gap: 10px 20px; padding: 12px 14px; }
-  .lps-side > .lps-row, .lps-side > .lps-amt { grid-column: 1; }
-  .lps-side > .lps-say, .lps-side > .lps-go, .lps-side > .lps-mine { grid-column: 2; }
-  .lps-side > .lps-say { grid-row: 1 / span 3; }
-  .lps-cols { min-height: 0; grid-template-columns: repeat(var(--side, 10), minmax(0, 1fr)) 44px repeat(var(--side, 10), minmax(0, 1fr)); gap: 0 3px; padding: 8px 6px; }
-  .lps-mid em { font-size: 10.5px; padding: 1px 6px; }
+  .lps-body { grid-template-columns: minmax(0, 1fr); }
+  .lps-result { border-left: 0; border-top: 1px solid var(--line); }
   .pr-right .lp-impact { display: none; }
 }
 @media (max-width: 720px) {
-  .lps-side { grid-template-columns: minmax(0, 1fr); }
-  .lps-side > .lps-row, .lps-side > .lps-amt, .lps-side > .lps-say, .lps-side > .lps-go, .lps-side > .lps-mine { grid-column: 1; grid-row: auto; }
+  .lps-goals { grid-template-columns: minmax(0, 1fr); }
   .lps-title .coin-switch button { padding: 0 8px; font-size: 12.5px; }
   .lps-pool { display: none; }
+  .lps-chartbox { height: 220px; }
 }

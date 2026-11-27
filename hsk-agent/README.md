@@ -107,7 +107,8 @@ stranger once the price has held, with the stranger getting nothing.
 - **Long term, swing, short term.** Every strategy is placed by how much history its rule looks at (`HORIZON` in
   `src/agents.ts`): months to a year, a few weeks, or days. Under the chart they stand as three columns side by side, each
   a ranked list with Moa's pick on top; a row shows the strategy's one-year return and its worst drop, and the column's
-  header says what just holding returned. The HSKSwap tab lists the same strategies as the exchange tab (signals come
+  header says what just holding returned. On the exchange tab the chart is kept shorter so the three columns have
+  room. The HSKSwap tab lists the same strategies as the exchange tab (signals come
   from the exchange's daily candles, trades happen on HSKSwap) plus the agents that buy on a schedule.
 - **Several agents, each with its own budget.** "My agents" is a tab under the same chart (`src/MineDock.tsx`): one row
   per hired agent with how much of its budget it has spent, what it holds now and what it has made or lost, a total
@@ -119,12 +120,17 @@ stranger once the price has held, with the stranger getting nothing.
   its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three pools held one full-range
   position (the HSK pool three small ranges more), so every column is the same height; liquidity added to one
   stretch would raise that column alone.
-- **Liquidity strategy: liquidity in blocks on HSKSwap, planned with Moa.** The "Liquidity strategy" button next to
-  the pool's liquidity turns the HSKSwap screen into a block editor (`src/LpStudio.tsx`): USDT in steps under the price
-  (each buys the coin as the price comes down into it) and optionally the coin in steps over it (each sells it as the
-  price goes up), spread even, near the price, at the ends, or step by step by clicking; steps from 0.6% wide (the pool's
-  tick spacing), 5 to 15 a side. Moa on the right walks through it (amount, shape with its suggestion and why, how far it
-  reaches) and every tap or sentence changes the plan on screen; other questions go to the AI, whose `set_lp_plan` tool
+- **Liquidity strategy: liquidity in blocks on HSKSwap, three questions for a beginner.** The "Liquidity strategy"
+  button next to the pool's liquidity opens a screen with the coin's chart on top and three questions under it
+  (`src/LpStudio.tsx`), each shown once the one before is answered: what to do (buy as it falls: USDT in steps under
+  the price; sell as it rises: the coin in steps over it; or both, earning the fee each way), how much (quick amounts
+  or a dollar figure), and down or up to which price (close by, last week's or last month's low or high from the
+  exchange's daily candles, or a price of your own). The zone it covers is drawn on the chart, and the answer reads in
+  plain words, e.g. "If the price comes down to $57,117, about 50 USDT has bought WBTC. At $54,114, all 100 USDT has",
+  with what happens if the price never gets there or turns back (`fillPoints` in `src/lp.ts`). Moa on the right says
+  what each choice means as it is made; the shape (even, near the price, at the ends) and the step width (from 0.6%,
+  the pool's tick spacing, 5 to 20 a side) sit under "Advanced". Typed sentences ("100 USDT down to 10%, near the
+  price") change the plan the same way, and other questions go to the AI, whose `set_lp_plan` tool
   fills the same plan. Supplying is the user's own wallet: exact approvals, then every step as one Uniswap V3 position
   through HSKSwap's own position manager (`0xDF0A9b83…0cad5`, whose factory is the router's) in one transaction
   (`src/lp.ts`). Positions already in the pool are listed with their fees, to collect or take out. The step holding the

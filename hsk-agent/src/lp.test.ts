@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeFunctionData, parseAbi } from 'viem';
-import { amountsOf, binsOf, defaultPlan, liquidityOf, mintCall, priceAt, rawOf, tickAt, withPlan, USDT, FEE, type LpPlan } from './lp.ts';
+import { amountsOf, binsOf, defaultPlan, fillPoints, liquidityOf, mintCall, priceAt, rawOf, tickAt, withPlan, USDT, FEE, type LpPlan } from './lp.ts';
 import { poolDepth, type PoolState } from './depth.ts';
 
 const WBTC = '0x6119ca49a79f5825c8b345f8d7ac36b272565b14';
@@ -87,4 +87,17 @@ test('a position holds what was put in, and adding the plan to the pool deepens 
   const before = poolDepth(pool).bands.find((x) => x.pct === -2)!.usdt, after = poolDepth(withPlan(pool, plan, 8)).bands.find((x) => x.pct === -2)!.usdt;
   assert.ok(after > before + 500, `${before} -> ${after}`);
   assert.equal(poolDepth(withPlan(pool, plan, 8)).bands.find((x) => x.pct === 1)!.usdt, poolDepth(pool).bands.find((x) => x.pct === 1)!.usdt, 'nothing above the price');
+});
+
+test('fill points: by which price half and all of a side has changed hands', () => {
+  const bins = binsOf({ ...defaultPlan('BTC'), usdt: 100, coin: 1, shape: 'spot', perSide: 4 }, TICK);
+  const buy = fillPoints(bins, 'usdt')!;
+  // four even steps of 25 under the price: half is spent once the second nearest step is passed
+  assert.equal(buy.halfAmount, 50);
+  assert.equal(buy.halfTick, bins[2].lower);
+  assert.equal(buy.fullTick, bins[0].lower);
+  const sell = fillPoints(bins, 'coin')!;
+  assert.equal(sell.halfTick, bins[5].upper);
+  assert.equal(sell.fullTick, bins[7].upper);
+  assert.equal(fillPoints(binsOf({ ...defaultPlan('BTC'), usdt: 0 }, TICK), 'usdt'), null);
 });

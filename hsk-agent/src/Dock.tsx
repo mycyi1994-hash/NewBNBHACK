@@ -349,7 +349,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days)}` : tab === 'list' ? hint : '';
 
   return (
-    <section className="tdock" aria-label={t.mkTitle}>
+    <section className={`tdock venue-${venue}`} aria-label={t.mkTitle}>
       <header className="tdock-head">
         <div className="tdock-tabs has-line" role="tablist">
           <SlidePill dep={`${tab}-${sel?.id ?? ''}-${mineCount}`} />
