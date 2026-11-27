@@ -16,7 +16,10 @@ import * as cex from './cex.ts';
 import { gateDailyRange } from './gate.ts';
 import * as I from './indicators.ts';
 import type { Asset } from './intent.ts';
-import { INTERVAL_SECONDS, PER_DAY, WINDOW_DAYS, intervalOf, specLines, specNeed, specPane, specPositions, type MadeSpec, type SpecInterval } from './spec.ts';
+import { INTERVAL_SECONDS, PER_DAY, WINDOW_DAYS, intervalOf, series, specLines, specNeed, specPane, specPositions, type MadeSpec, type SpecInterval } from './spec.ts';
+import { exchangeModel, haircutModel, impact, measureBasis, poolModel, sideCost, type FillModel } from './fills.ts';
+import type { Decision } from './journal.ts';
+import { poolDetail, poolState } from './dex.ts';
 import { MADE_PREFIX, madeById, madeList } from './madeStore.ts';
 import type { SharedTag } from './share.ts';
 
@@ -225,6 +228,20 @@ export interface Agent {
   /** A weight agent: today's target share of its budget (before the band) and the band it rebalances on. */
   target?: number;
   band?: number;
+  /**
+   * How its trades were filled in the backtest (see fills.ts): on the HSKSwap pool with the measured gap and the
+   * pool's depth, with a stated haircut when the gap could not be measured, or on the exchange for a coin with no pool.
+   * `cost` is one side of a trade of `amountUsd`, everything included.
+   */
+  fill?: { source: FillModel['source']; fee: number; slip: number; basis?: number; samples: number; impactPct: number; amountUsd: number; cost: number };
+  /**
+   * The same backtest cut in two at a fixed point: the first two thirds of the window (two years of three) and the
+   * last third. No rule's numbers were tuned on this data (published or standard settings), so the last third is a
+   * test it had not seen. Ranking and recommendation use the last third (`beatsHold`).
+   */
+  split?: { at: number; is: { total: number; hold: number }; oos: { total: number; hold: number; exposure: number } };
+  /** What the rule saw on its last candle: the inputs the runner journals with each order (journal.ts). */
+  decision?: Decision;
   equity: { time: number; value: number }[];
   /** Buying once at the start and holding, on the same days as `equity` (the line the agent is compared with). */
   bench: { time: number; value: number }[];
@@ -320,6 +337,33 @@ export const closedOnly = (bars: Bar[], interval: SpecInterval, now = Date.now()
 /** Gate daily candles for a coin with an HSKSwap pool (the collect agents and the HSKSwap chart). */
 export const collectHistory = (a: Asset) => cached(`gate:${a}`, () => { const now = Math.floor(Date.now() / 1000); return gateDailyRange(a, now - DEPTH * DAY, now + DAY); });
 const gateDaily = collectHistory;
+
+/* ---------- fills: the pool a runnable coin trades on (fills.ts) ---------- */
+
+const models = new Map<string, { at: number; p: Promise<FillModel> }>();
+const modelsReady = new Map<string, FillModel>();
+/** The fill model of a market already read, else the stated one (exchange for a coin with no pool, the haircut for a pool). */
+export const fillModel = (m: cex.Market): FillModel => modelsReady.get(m.symbol) ?? (isRunnable(m.base) ? haircutModel() : exchangeModel());
+/**
+ * Read the pool a runnable coin trades on: its depth, and a day of its swaps against the exchange's hourly candles
+ * for the gap. Kept 30 minutes. Anything that cannot be read falls back to the haircut, never to a better fill.
+ */
+export function fillModelFor(m: cex.Market): Promise<FillModel> {
+  if (!isRunnable(m.base)) return Promise.resolve(exchangeModel());
+  const hit = models.get(m.symbol);
+  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.p;
+  const asset = m.base as Asset;
+  const read = (async () => {
+    const [depth, detail, hours] = await Promise.all([poolState(asset).catch(() => undefined), poolDetail(asset, 1).catch(() => null), madeHistory(m, '1h').catch(() => [] as Bar[])]);
+    return poolModel(depth, detail && hours.length ? measureBasis(detail.swaps, hours) : null);
+  })();
+  // A slow chain read does not hold the agents back: they use the haircut now, and the measured model once it arrives.
+  void read.then((x) => modelsReady.set(m.symbol, x), () => undefined);
+  const timeout = new Promise<FillModel>((ok) => setTimeout(() => ok(modelsReady.get(m.symbol) ?? haircutModel()), 25_000));
+  const p = Promise.race([read.catch(() => haircutModel()), timeout]).then((x) => { if (!modelsReady.has(m.symbol)) modelsReady.set(m.symbol, x); return x; });
+  models.set(m.symbol, { at: Date.now(), p });
+  return p;
+}
 
 /* ---------- position agents ---------- */
 
@@ -613,28 +657,56 @@ function stats(rets: number[], perDay = 1) {
 export function exposure(rule: PositionRule, bars: Bar[], ref?: Bar[]): Exposure[] {
   return isWeightRule(rule) ? banded(targets(rule, bars), BAND[rule]) : positions(rule, bars, ref);
 }
-export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window?: number, ref?: Bar[]): Agent | null {
+export function scorePosition(rule: PositionRule, market: cex.Market, bars: Bar[], window?: number, ref?: Bar[], model = fillModel(market)): Agent | null {
   const def = POSITION_RULES.find((r) => r.id === rule)!;
   // `bars` are candles of the rule's interval (madeHistory for a short-term rule); the window is in days.
   const iv = ruleInterval(rule);
-  const a = run({ id: `${rule}-${market.symbol}`, rule, style: def.style, risk: def.risk }, exposure(rule, bars, ref), NEED[rule] ?? WARMUP, market, bars, window ?? WINDOW_DAYS[iv], PER_DAY[iv]);
+  const a = run({ id: `${rule}-${market.symbol}`, rule, style: def.style, risk: def.risk }, exposure(rule, bars, ref), NEED[rule] ?? WARMUP, market, bars, window ?? WINDOW_DAYS[iv], PER_DAY[iv], model);
   if (!a) return null;
   // A weight agent's live signal: today's target share (before the band) and its band; the runner rebalances on it.
   const sized = isWeightRule(rule) && bars.length ? { target: clamp01(targets(rule, bars)[bars.length - 1]), band: BAND[rule] } : {};
-  return { ...a, ...sized, ...(iv !== '1d' ? { interval: iv } : {}) };
+  const out: Agent = { ...a, ...sized, ...(iv !== '1d' ? { interval: iv } : {}) };
+  return { ...out, decision: decisionOf(out, bars, iv) };
+}
+/** The values a rule compared on its last candle, for the decision journal: its chart lines, its RSI or return, its sizing. */
+export function decisionOf(a: Agent, bars: Bar[], iv: SpecInterval = '1d'): Decision {
+  const last = bars.length - 1, c = bars.map((b) => b.close), values: Record<string, number> = {};
+  const put = (k: string, v: number) => { if (Number.isFinite(v)) values[k] = v; };
+  if (a.made) {
+    a.made.buy.forEach((x, i) => { put(`buy${i + 1}.a`, series(x.a, bars)[last]); put(`buy${i + 1}.b`, series(x.b, bars)[last]); });
+    a.made.sell.forEach((x, i) => { put(`sell${i + 1}.a`, series(x.a, bars)[last]); put(`sell${i + 1}.b`, series(x.b, bars)[last]); });
+  } else {
+    overlays(a.rule, bars).forEach((o, k) => put(`line${k + 1}.${o.tone}`, o.values[last]));
+    const pane = paneOf(a.rule);
+    if (pane?.kind === 'rsi') put(`rsi${pane.period}`, I.rsi(c, pane.period)[last]);
+    if (pane?.kind === 'mom' && last >= pane.days) put(`ret${pane.days}`, c[last] / c[last - pane.days] - 1);
+    if (isWeightRule(a.rule)) {
+      put('target', targets(a.rule, bars)[last]);
+      if (a.rule === 'volTarget' || a.rule === 'coreTrend') put('vol', ewmaVol(c, 20)[last]);
+      if (a.rule === 'tsmom3' || a.rule === 'coreTrend') put('momScore', momScore(bars)[last]);
+      if (a.rule === 'donchEns') { put('votes', donchianVotes(c, [10, 20, 30, 60, 90, 150])[last]); put('vol90', rollVol(c, 90)[last]); }
+    }
+  }
+  return {
+    agentId: a.id, rule: a.rule, market: a.market?.symbol ?? '', interval: iv, candle: bars[last].time, close: c[last], values,
+    out: { live: a.live, mult: a.mult, ...(a.target !== undefined ? { target: a.target, band: a.band } : {}) },
+  };
 }
 /**
  * A made agent, scored exactly like the built-in ones: same fees, same decision code, same numbers. `bars` are
  * candles of the agent's interval (see madeHistory); `window` is in days, by default the interval's own window.
  */
-export function scoreMade(spec: MadeSpec, market: cex.Market, bars: Bar[], window?: number): Agent | null {
+export function scoreMade(spec: MadeSpec, market: cex.Market, bars: Bar[], window?: number, model = fillModel(market)): Agent | null {
   const iv = intervalOf(spec);
-  const a = run({ id: MADE_PREFIX + spec.id, rule: 'made', style: 'trend', risk: 3 }, specPositions(spec, bars), specNeed(spec), market, bars, window ?? WINDOW_DAYS[iv], PER_DAY[iv]);
-  return a && { ...a, made: spec, ...(iv === '1d' ? {} : { interval: iv }) };
+  const a = run({ id: MADE_PREFIX + spec.id, rule: 'made', style: 'trend', risk: 3 }, specPositions(spec, bars), specNeed(spec), market, bars, window ?? WINDOW_DAYS[iv], PER_DAY[iv], model);
+  if (!a) return null;
+  const out: Agent = { ...a, made: spec, ...(iv === '1d' ? {} : { interval: iv }) };
+  return { ...out, decision: decisionOf(out, bars, iv) };
 }
 /** A made agent on its own candles: what the app's runner, the server's runner and its card all read. */
 export async function scoreMadeLive(spec: MadeSpec, market: cex.Market, window?: number): Promise<Agent | null> {
-  return scoreMade(spec, market, await madeHistory(market, intervalOf(spec)), window);
+  const [bars, model] = await Promise.all([madeHistory(market, intervalOf(spec)), fillModelFor(market)]);
+  return scoreMade(spec, market, bars, window, model);
 }
 /** An intraday agent needs at least this many days of its candles after its look-back to be scored at all. */
 const MIN_INTRADAY_DAYS = 30;
@@ -645,15 +717,20 @@ const MIN_INTRADAY_DAYS = 30;
  */
 export type Exposure = boolean | number;
 const share = (x: Exposure | undefined) => (typeof x === 'number' ? Math.min(1, Math.max(0, Number.isFinite(x) ? x : 0)) : x ? 1 : 0);
-function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: Exposure[], need: number, market: cex.Market, bars: Bar[], window: number, perDay = 1): Agent | null {
+function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: Exposure[], need: number, market: cex.Market, bars: Bar[], window: number, perDay = 1, model: FillModel = fillModel(market)): Agent | null {
   const { rule } = who, def = who;
   // The window is in days; on intraday candles it covers that many days' worth of candles.
   const span = window === Infinity ? Infinity : Math.round(window * perDay);
   const start = Math.max(need, bars.length - 1 - span);
   if (bars.length - 1 - start < Math.min(perDay === 1 ? MIN_DAYS : MIN_INTRADAY_DAYS * perDay, span)) return null;
   const runnable = isRunnable(market.base);
-  const fee = runnable ? FEE_HSKSWAP : FEE_HASHKEY;
-  let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0, held = 0, moves = 0;
+  const fee = model.fee;
+  // One side of a trade: the fee, the pool's moving gap (or the haircut) and the price impact of the size traded.
+  const cost = (frac: number, side: 'buy' | 'sell') => sideCost(model, model.amountUsd * eq * frac, side);
+  // The fixed in-sample / out-of-sample cut: two thirds of the window, then the last third.
+  const cut = start + Math.floor(((bars.length - 1 - start) * 2) / 3);
+  let eqCut = 1, benchCut = 1, heldOos = 0;
+  let eq = 1, peak = 1, maxDd = 0, trades = 0, inDays = 0, held = 0, moves = 0, entryCost = 0;
   const rets: number[] = [];
   const equity: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
   const bench: { time: number; value: number }[] = [{ time: bars[start].time, value: 1 }];
@@ -662,13 +739,15 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: E
   for (let i = start; i < bars.length - 1; i++) {
     const was = i > start ? share(pos[i - 1]) : 0, now = share(pos[i]);
     let day = 1;
-    if (now > 0 && was === 0) { trades++; entry = bars[i].close; marks.push({ time: bars[i].time, side: 'buy', price: entry }); }
-    if (now === 0 && was > 0) marks.push({ time: bars[i].time, side: 'sell', price: bars[i].close, ret: (bars[i].close / entry) * (1 - fee) ** 2 - 1, ...(was < 1 ? { mult: 0 } : {}) });
+    const side = now > was ? 'buy' : 'sell', c = now !== was ? cost(Math.abs(now - was), side) : 0;
+    if (now > 0 && was === 0) { trades++; entry = bars[i].close; entryCost = c; marks.push({ time: bars[i].time, side: 'buy', price: entry }); }
+    if (now === 0 && was > 0) marks.push({ time: bars[i].time, side: 'sell', price: bars[i].close, ret: (bars[i].close / entry) * (1 - entryCost) * (1 - c) - 1, ...(was < 1 ? { mult: 0 } : {}) });
     // A weight agent also resizes while it holds: each change is a trade, marked with the new share.
     if (now > 0 && was > 0 && now !== was) marks.push({ time: bars[i].time, side: now > was ? 'buy' : 'sell', price: bars[i].close, mult: Math.round(now * 100) / 100, resize: true });
     if (now > 0 && was === 0 && now < 1) marks[marks.length - 1].mult = Math.round(now * 100) / 100;
-    if (now !== was) { day *= 1 - fee * Math.abs(now - was); moves++; }
+    if (now !== was) { day *= 1 - c * Math.abs(now - was); moves++; }
     held += now;
+    if (i >= cut) heldOos += now;
     if (now > 0) { const r = bars[i + 1].close / bars[i].close; day *= now === 1 ? r : 1 + now * (r - 1); inDays++; }
     eq *= day;
     rets.push(day - 1);
@@ -676,8 +755,13 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: E
     maxDd = Math.max(maxDd, 1 - eq / peak);
     equity.push({ time: bars[i + 1].time, value: eq });
     bench.push({ time: bars[i + 1].time, value: bars[i + 1].close / bars[start].close });
+    if (i + 1 === cut) { eqCut = eq; benchCut = bars[i + 1].close / bars[start].close; }
   }
   const steps = bars.length - 1 - start;
+  const benchEnd = bars[bars.length - 1].close / bars[start].close;
+  const split = { at: bars[cut].time, is: { total: eqCut - 1, hold: benchCut - 1 }, oos: { total: eq / eqCut - 1, hold: benchEnd / benchCut - 1, exposure: heldOos / Math.max(1, bars.length - 1 - cut) } };
+  const impactPct = model.source === 'exchange' ? 0 : impact(model.depth, model.amountUsd, 'buy');
+  const fill = { source: model.source, fee: model.fee, slip: model.slip, basis: model.basis, samples: model.samples, impactPct, amountUsd: model.amountUsd, cost: model.fee + model.slip + impactPct };
   const days = perDay === 1 ? steps : Math.round(steps / perDay);
   const size = share(pos[bars.length - 1]), live = size > 0;
   return {
@@ -685,7 +769,7 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: E
     runnable, source: 'hashkey', market, fee,
     days, from: bars[start].time, to: bars[bars.length - 1].time,
     total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets, perDay),
-    trades, inMarket: inDays / steps, exposure: held / steps, moves, equity, bench, marks, live, mult: size, price: bars[bars.length - 1].close,
+    trades, inMarket: inDays / steps, exposure: held / steps, moves, fill, split, equity, bench, marks, live, mult: size, price: bars[bars.length - 1].close,
     seam: (seams.get(market.symbol) ?? 0) > bars[start].time ? seams.get(market.symbol) : undefined,
   };
 }
@@ -740,13 +824,21 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
 
 /* ---------- loading ---------- */
 
+/** The same agent with its trades sized at `usd` (the hire's budget, or the detail view's $1,000 and $10,000): only price impact changes. */
+export async function rescoreAt(a: Agent, usd: number): Promise<Agent | null> {
+  if (a.kind === 'collect' || !a.market) return null;
+  const model = { ...(await fillModelFor(a.market)), amountUsd: usd };
+  if (a.made) { const x = scoreMade(a.made, a.market, await madeHistory(a.market, intervalOf(a.made)), undefined, model); return x && (a.shared ? { ...x, id: a.id, shared: a.shared } : x); }
+  const iv = ruleInterval(a.rule);
+  return scorePosition(a.rule as PositionRule, a.market, await madeHistory(a.market, iv), undefined, iv === '1d' ? await refBars(a.market) : undefined, model);
+}
 /** The same agent over another window (days, or `Infinity` for everything after its warm-up), for a closer look at one agent. */
 export async function rescore(a: Agent, window: number): Promise<Agent | null> {
   // A shared agent keeps its id and its creator over another window.
   if (a.made) return a.market ? scoreMadeLive(a.made, a.market, window).then((x) => x && (a.shared ? { ...x, id: a.id, shared: a.shared } : x)) : null;
   if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), window) : null;
   const iv = ruleInterval(a.rule);
-  return a.market ? scorePosition(a.rule as PositionRule, a.market, await madeHistory(a.market, iv), window, iv === '1d' ? await refBars(a.market) : undefined) : null;
+  return a.market ? scorePosition(a.rule as PositionRule, a.market, await madeHistory(a.market, iv), window, iv === '1d' ? await refBars(a.market) : undefined, await fillModelFor(a.market)) : null;
 }
 
 /** An agent that never traded in the window has no worst drop to judge, so it does not outrank one that did. */
@@ -764,8 +856,19 @@ export const ACTIVE_DAYS = 30;
  * months has a small worst drop because it did nothing; it should not lead a list of agents to hire today.
  */
 export const active = (a: Agent, now = Date.now() / 1000) => a.live || (lastTradeDays(a, now) ?? Infinity) <= ACTIVE_DAYS;
-/** It made more than buying the coin at the start of the same window and holding it. */
-export const beatsHold = (a: Pick<Agent, 'total' | 'hold'>) => a.total > a.hold;
+/**
+ * It made more than buying the coin and holding it, over the last third of its window (the part no setting was chosen
+ * on, see `split`), or over the whole window when there is no split. This is what ranking and recommendation use.
+ */
+export const beatsHold = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.oos.total > a.split.oos.hold && a.split.oos.exposure >= MIN_OOS_EXPOSURE : a.total > a.hold);
+/**
+ * The guard on the last-year test: in a falling year, sitting in cash beats holding by doing nothing. To count as
+ * beating holding an agent must also have held the coin, on average, at least a quarter of that year (its average
+ * share of the money in the coin, so a weight agent holding 50% all year counts as 0.5).
+ */
+export const MIN_OOS_EXPOSURE = 0.25;
+/** The number rankings sort by: return against holding over the out-of-sample third. */
+export const oosEdge = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.oos.total - a.split.oos.hold : a.total - a.hold);
 /**
  * The default order everywhere: agents working now first; among them, the ones that beat just holding; then
  * published classics, then the smaller worst drop, then the better return. Agents that never traded come last.
@@ -774,8 +877,8 @@ export const byMerit = (a: Agent, b: Agent) => Number(!active(a)) - Number(!acti
 
 /** The position agents for any HashKey market (the chart's market may not be in the listing). */
 export async function positionAgents(m: cex.Market, withRetired = false): Promise<Agent[]> {
-  const [bars, ref] = await Promise.all([hashkeyDaily(m), refBars(m)]);
-  const daily = POSITION_RULES.filter((r) => ruleInterval(r.id) === '1d' && (withRetired || !isRetired({ rule: r.id, base: m.base }))).map((r) => scorePosition(r.id, m, bars, WINDOW, ref));
+  const [bars, ref, model] = await Promise.all([hashkeyDaily(m), refBars(m), fillModelFor(m)]);
+  const daily = POSITION_RULES.filter((r) => ruleInterval(r.id) === '1d' && (withRetired || !isRetired({ rule: r.id, base: m.base }))).map((r) => scorePosition(r.id, m, bars, WINDOW, ref, model));
   return [...daily, ...await shortAgents(m)].filter((a): a is Agent => a !== null);
 }
 /**

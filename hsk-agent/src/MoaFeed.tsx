@@ -6,6 +6,7 @@
 // Requests that are clearly about agents (pick one, stop, how is it doing) are answered here without the AI;
 // everything else goes to the server brain, which may also call the recommend tool.
 // Numbers come from live data or from the hired agent record; Moa keeps no copy of either.
+import { JournalBox } from './Journal.tsx';
 import { useEffect, useRef, useState } from 'react';
 import type { Quote } from './market.ts';
 import { useT } from './i18n.ts';
@@ -668,6 +669,7 @@ function OrderCard({ h, orderId, sending, vault, onApprove, onDecline }: {
       </header>
       <p className="order-q">{o.side === 'buy' ? t.ocBuy(money(usd), h.asset) : t.ocSell(qtyText(o.qty ?? 0), h.asset)}</p>
       <p className="order-why"><span>{t.ocWhy}</span>{whyText(t, o.why)}</p>
+      {o.journal && <JournalBox j={o.journal} link={outcome?.k === 'filled' ? outcome.fill.explorerUrl : undefined} />}
       {open && (on ? (
         // What the contract will check, shown before the user says yes.
         <ul className="oc-checks">

@@ -12,7 +12,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from '
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import { useT } from './i18n.ts';
-import { ACTIVE_DAYS, active, byMerit, idle, type Agent, type Tier, DEMOTED } from './agents.ts';
+import { ACTIVE_DAYS, active, byMerit, idle, type Agent, type Tier, DEMOTED, oosEdge } from './agents.ts';
 import { agentName, freshLine, pct, ruleLines, Face } from './AgentCard.tsx';
 import { CoinMark } from './CoinMark.tsx';
 import { markColor } from './Mark.tsx';
@@ -265,7 +265,7 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
   const board = coins.includes(coin) ? coin : coins[0] ?? coin;
   // "Published classics" is the first tab: only strategies with a public record, best risk-adjusted result first.
   const ranked = useMemo(() => runnable.filter((a) => a.base === board && a.kind === 'position' && (rank === 'classic' ? a.tier === 1 : !DEMOTED.has(a.rule)))
-    .sort((p, r) => Number(!active(p)) - Number(!active(r)) || Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? r.total - p.total : r.sharpe - p.sharpe)), [runnable, rank, board]);
+    .sort((p, r) => Number(!active(p)) - Number(!active(r)) || Number(idle(p)) - Number(idle(r)) || (rank === 'bold' ? oosEdge(r) - oosEdge(p) : r.sharpe - p.sharpe)), [runnable, rank, board]);
   // The chart draws curves over one shared stretch of time, so it holds agents scored over the same window as the
   // leader (three years of daily candles, or the short-term agents' hourly / 4-hour windows); the list keeps them all.
   const top = ranked.filter((a) => (a.interval ?? '1d') === (ranked[0]?.interval ?? '1d')).slice(0, 6);

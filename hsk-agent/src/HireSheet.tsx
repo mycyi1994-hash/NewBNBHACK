@@ -5,7 +5,8 @@
 // An agent someone else made shows who made it and their fee. On a vault that can pay creator fees (version 3)
 // the owner approves that fee here, one confirmation in the wallet; an older vault pays nothing and says so.
 import { useEffect, useMemo, useState } from 'react';
-import { isWeightRule, type Agent } from './agents.ts';
+import { isWeightRule, rescoreAt, type Agent } from './agents.ts';
+import { pct } from './AgentCard.tsx';
 import { describe, scheduleOf, type Plan } from './intent.ts';
 import { useT } from './i18n.ts';
 import { limitsText, vaultWhy, type VaultInfo } from './parts.tsx';
@@ -110,6 +111,15 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
   const rule = target.kind === 'agent' ? target.agent.rule : target.kind === 'edit' && target.hired.source.type === 'market' ? target.hired.source.rule : undefined;
   // A weight agent holds a share of its budget and rebalances: there is no per-buy amount, only the budget.
   const weighted = !!rule && isWeightRule(rule);
+  // The agent's past results rescored at the budget chosen (price impact grows with size on a thin pool).
+  const [atSize, setAtSize] = useState<{ usd: number; edge: number } | null>(null);
+  useEffect(() => {
+    if (target.kind !== 'agent' || target.agent.kind !== 'position') return;
+    let alive = true;
+    const usd = budget;
+    const id = setTimeout(() => { void rescoreAt(target.agent, usd).then((x) => alive && x && setAtSize({ usd, edge: x.total - x.hold }), () => undefined); }, 300);
+    return () => { alive = false; clearTimeout(id); };
+  }, [budget, target]); // eslint-disable-line react-hooks/exhaustive-deps
   const base = target.kind === 'agent' ? target.agent.base : target.kind === 'edit' && target.hired.source.type === 'market' ? target.hired.source.base : undefined;
   const doubles = rule === 'smart' || rule === 'rsiDca';
   // How many buys the budget covers at this size: the plain version of "per buy" and "budget".
@@ -195,6 +205,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
             <Stepper id="hire-budget" label={t.hsBudget} value={budget} options={BUDGET} onChange={setBudget} />
           </label>
         </div>
+        {atSize && atSize.usd === budget && <p className="hire-sub">{t.hsAtSize(`$${money(budget)}`, t.vsHold(pct(atSize.edge)))}</p>}
         {weighted ? <p className="hire-times">{t.hsWeight}</p> : budget < per ? <p className="hire-sub warn">{t.hsBudgetLow}</p> : <p className="hire-times">{t.hsTimes(times)}</p>}
         {!weighted && !auto && per > maxTrade && <p className="hire-sub warn">{t.hsOverLimit(money(maxTrade))}</p>}
         {doubles && <p className="hire-sub">{t.hsDouble(money(Math.min(per * 2, maxTrade)))}</p>}

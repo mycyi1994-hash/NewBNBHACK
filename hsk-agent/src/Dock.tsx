@@ -10,7 +10,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
-import { byMerit, DEMOTED, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
+import { SENSITIVITY_USD } from './fills.ts';
+import { byMerit, DEMOTED, rescoreAt, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
 import { TEMPLATES } from './spec.ts';
 import { useMade } from './madeStore.ts';
 import { AgentCard, agentName, condText, drop, freshLine, pct, ruleLines, sourceLine, statePill, Face } from './AgentCard.tsx';
@@ -161,6 +162,58 @@ function Curves({ a, peers, upto, label, onPick }: { a: Agent; peers: Agent[]; u
   );
 }
 
+/**
+ * The two things a backtest has to say out loud: how its trades were filled (fills.ts) and how it did on the part of
+ * its history no setting was chosen on (the out-of-sample split in agents.ts).
+ */
+function Honesty({ a }: { a: Agent }) {
+  const { t } = useT();
+  const f = a.fill, s = a.split;
+  // The same backtest with bigger trades: only price impact changes, so a thin pool's cost at size shows.
+  const [big, setBig] = useState<{ usd: number; a: Agent }[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setBig(null);
+    if (!f || f.source === 'exchange') return;
+    Promise.all(SENSITIVITY_USD.map((usd: number) => rescoreAt(a, usd).then((x) => (x ? { usd, a: x } : null)))).then((xs) => alive && setBig(xs.filter((x): x is { usd: number; a: Agent } => !!x)), () => undefined);
+    return () => { alive = false; };
+  }, [a.id, a.days]); // eslint-disable-line react-hooks/exhaustive-deps
+  const p1 = (v: number) => `${(v * 100).toFixed(v < 0.01 ? 2 : 1)}%`;
+  const day = 86_400;
+  const isDays = s ? Math.round((s.at - a.from) / day) : 0, oosDays = s ? Math.round((a.to - s.at) / day) : 0;
+  const sign = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
+  return (
+    <div className="bt-honest">
+      {s && (
+        <div className="bh-oos">
+          <b>{t.oosHead}</b>
+          <dl>
+            <div><dt>{t.oosIs(t.oosSpan(isDays))}</dt><dd className={sign(s.is.total - s.is.hold)}>{t.vsHold(pct(s.is.total - s.is.hold))}</dd></div>
+            <div className="oos"><dt>{t.oosOut(t.oosSpan(oosDays))}</dt><dd className={sign(s.oos.total - s.oos.hold)}>{t.vsHold(pct(s.oos.total - s.oos.hold))}</dd></div>
+          </dl>
+          <p>{a.made ? t.oosMade : t.oosPublished}</p>
+        </div>
+      )}
+      {f && (
+        <div className="bh-fill">
+          <b>{t.fillHead}</b>
+          <p>{f.source === 'exchange' ? t.fillExchange(p1(f.fee)) : f.source === 'haircut' ? t.fillHaircut(p1(f.fee), p1(f.slip)) : t.fillPool(p1(f.fee), p1(f.slip), p1(f.impactPct), `$${f.amountUsd.toLocaleString('en-US')}`)}</p>
+          {f.source === 'haircut' && f.impactPct > 0 && <p>{t.fillImpact(p1(f.impactPct), `$${f.amountUsd.toLocaleString('en-US')}`)}</p>}
+          {f.source === 'pool' && f.basis !== undefined && <p className="muted">{t.fillBasis(p1(Math.abs(f.basis)), f.basis < 0, f.samples)}</p>}
+          {big && big.length > 0 && (
+            <dl className="bh-size">
+              {[{ usd: f.amountUsd, a }, ...big].map((x) => {
+                const imp = x.a.fill?.impactPct ?? 0, edge = x.a.total - x.a.hold;
+                return <div key={x.usd} className={imp > 0.01 ? 'thin' : ''}><dt>{t.fillAt(`$${x.usd.toLocaleString('en-US')}`)}</dt><dd><span className={sign(edge)}>{t.vsHold(pct(edge))}</span><small>{t.fillImpactAt(p1(imp))}{imp > 0.01 ? ` · ${t.fillThin}` : ''}</small></dd></div>;
+              })}
+            </dl>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: {
   a: Agent; year: Agent; ranked: Agent[]; period: Period; cursor: number | null;
   onSelect: (a: Agent) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void;
@@ -257,6 +310,7 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
           <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.target !== undefined ? a.moves ?? a.trades : a.trades)}</dd></div>
           {a.target !== undefined ? <div><dt>{t.btAvgShare}</dt><dd>{Math.round((a.exposure ?? 0) * 100)}%</dd></div> : <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>}
         </dl>
+        {!live && <Honesty a={a} />}
         <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id).slice(0, 5) : []} upto={cursor} label={(v) => m(v, true)} onPick={onSelect} />
         <div className="bt-legend">
           <span><i className="lg-agent" />{t.btAgent}</span><span><i className="lg-hold" />{t.acHold}</span>

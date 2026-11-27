@@ -76,7 +76,7 @@ export async function tick(store: AutoStore, deps: Deps, now = Date.now()): Prom
       const asked: HiredAgent = { ...h, log: [...h.log, { at: now, k: 'asked', order: o }] };
       // A shared agent names its creator (set by the server from its own record when the agent was put on auto).
       const creator = h.shared ? { address: h.shared.creator as Address, feeBps: h.shared.feeBps } : undefined;
-      const r: TradeResult = amount > 0 ? await deps.trade(owner, { asset: h.asset, side: o.side, amount, note: chainNote(nameOf(h), o.why, 'auto'), creator }) : { ok: false, reason: 'The vault holds none of this coin.' };
+      const r: TradeResult = amount > 0 ? await deps.trade(owner, { asset: h.asset, side: o.side, amount, note: chainNote(nameOf(h), o.why, 'auto', o.journal?.hash), creator }) : { ok: false, reason: 'The vault holds none of this coin.' };
       store.put(owner, settle(asked, o, r, now));
       out.push(`${owner}/${h.id}: ${o.side} ${amount} ${h.asset}: ${r.ok ? r.txHash : r.reason}`);
     }

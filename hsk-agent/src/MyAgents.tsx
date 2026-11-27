@@ -1,6 +1,7 @@
 // My agents: one place per agent. Each hired agent shows what it is doing, the money it was given and what it
 // holds, with its controls; someone with none gets one ready to start, and the empty places invite another.
 // The agents trade; the vault under them is the wallet they trade from, with the limits it enforces.
+import { JournalBox, journalOf } from './Journal.tsx';
 import { useMemo, useState } from 'react';
 import { VaultCard } from './VaultCard.tsx';
 import { useT } from './i18n.ts';
@@ -109,12 +110,15 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
                   {!log.length && <li className="muted">{t.mineNoLog}</li>}
                   {log.slice(0, 40).map((e, i) => {
                     const x = eventLine(t, h, e);
+                    // The order an event is about, with the inputs it was decided on (journal.ts).
+                    const jr = journalOf(h, e);
                     return (
                       <li key={i}>
                         <time>{when(e.at)}</time>
                         <b>{x.label}</b>
                         <span>{x.detail}</span>
                         {x.link ? <a href={x.link} target="_blank" rel="noreferrer">{t.viewTx} ↗</a> : <span />}
+                        {jr && <JournalBox j={jr} link={x.link} />}
                       </li>
                     );
                   })}

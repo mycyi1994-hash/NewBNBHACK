@@ -268,7 +268,7 @@ function Shell() {
     const enName = h.source.type === 'market' ? agentName(STRINGS.en, h.source) : STRINGS.en.customName(h.asset);
     // Demo (no vault: not logged in, or this server has no vault service): the answer is recorded, nothing is sent.
     const demo = !vaultRef.current?.configured;
-    const r = demo ? { ok: false as const, reason: 'No vault is connected (demo).' } : await sendAgentTrade({ asset: h.asset, side: o.side, amount, note: chainNote(enName, o.why), shared: h.shared?.id });
+    const r = demo ? { ok: false as const, reason: 'No vault is connected (demo).' } : await sendAgentTrade({ asset: h.asset, side: o.side, amount, note: chainNote(enName, o.why, 'ask', o.journal?.hash), shared: h.shared?.id });
     const at = Date.now();
     const position = h.source.type === 'market' && h.source.kind === 'position';
     const key = 'key' in o.why ? o.why.key : undefined;

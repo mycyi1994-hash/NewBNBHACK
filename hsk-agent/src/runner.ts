@@ -6,6 +6,7 @@
 import type { Asset, Plan } from './intent.ts';
 import type { Agent, RuleId } from './agents.ts';
 import type { MadeSpec } from './spec.ts';
+import { makeJournal, noteWithHash, type Decision as RuleDecision, type Journal } from './journal.ts';
 import type { SharedRef } from './share.ts';
 
 export type Mode = 'ask' | 'auto';
@@ -24,7 +25,8 @@ export type Why =
   | { k: 'stop'; pct: number; key: string }
   | { k: 'take'; pct: number; key: string };
 export type SkipWhy = { k: 'belowMa' } | { k: 'tooSmall' } | { k: 'overMax'; max: number };
-export interface Order { id: string; at: number; side: Side; usd?: number; qty?: number; why: Why }
+/** `journal`: the inputs the order was decided on and their keccak256 hash, which goes in the trade's on-chain note. */
+export interface Order { id: string; at: number; side: Side; usd?: number; qty?: number; why: Why; journal?: Journal }
 export interface Fill { at: number; side: Side; usd: number; qty: number; txHash?: string; explorerUrl?: string }
 export interface Amounts { perBuyUsd: number; budgetUsd: number }
 /** What the hire sheet hands back: the amounts and how the agent should work. */
@@ -67,12 +69,13 @@ export interface HiredAgent extends Amounts {
   log: LogEvent[];
 }
 
-export type Signal =
+export type Signal = (
   | { kind: 'position'; live: boolean }
   /** A weight agent: the share of its budget it wants in the coin now, the band it rebalances on, and the coin's price. */
   | { kind: 'weight'; target: number; band: number; price: number }
   | { kind: 'collect'; mult: number }
-  | { kind: 'custom'; price?: number };
+  | { kind: 'custom'; price?: number }
+) & { decision?: RuleDecision; price?: number };
 export type Decision =
   | { type: 'order'; order: Omit<Order, 'id' | 'at'> }
   | { type: 'skip'; why: SkipWhy }
@@ -108,6 +111,14 @@ const accumulateStep = (h: HiredAgent) =>
 
 /** The next thing the agent wants. Idempotent: calling it again on the updated agent returns idle. */
 export function decide(h: HiredAgent, s: Signal, now: number, opts: { maxTradeUsd?: number } = {}): Decision {
+  const d = decideOnly(h, s, now, opts);
+  // An order the rule's inputs are known for carries its journal: those inputs, the order and what the agent held.
+  if (d.type !== 'order' || !s.decision) return d;
+  const b = book(h);
+  const journal = makeJournal({ v: 1, decision: s.decision, order: { side: d.order.side, usd: d.order.usd, qty: d.order.qty, why: chainWhy(d.order.why) }, held: { qty: b.qty, budgetUsd: h.budgetUsd, price: s.price }, at: now });
+  return { type: 'order', order: { ...d.order, journal } };
+}
+function decideOnly(h: HiredAgent, s: Signal, now: number, opts: { maxTradeUsd?: number }): Decision {
   if (h.paused) return { type: 'idle' };
   const b = book(h);
   const left = Math.max(0, h.budgetUsd - b.spent);
@@ -183,9 +194,10 @@ function decideWeight(h: HiredAgent, s: Extract<Signal, { kind: 'weight' }>, b: 
 }
 
 /** What an agent's backtest says to do now, as the runner reads it: a weight, in or out, or today's collect multiple. */
-export function agentSignal(a: Pick<Agent, 'kind' | 'live' | 'mult' | 'target' | 'band' | 'price'>): Signal {
+export function agentSignal(a: Pick<Agent, 'kind' | 'live' | 'mult' | 'target' | 'band' | 'price' | 'decision'>): Signal {
   if (a.kind === 'collect') return { kind: 'collect', mult: a.mult };
-  return a.target !== undefined ? { kind: 'weight', target: a.target, band: a.band ?? 0.1, price: a.price } : { kind: 'position', live: a.live };
+  const journaled = a.decision ? { decision: a.decision, price: a.price } : {};
+  return a.target !== undefined ? { kind: 'weight', target: a.target, band: a.band ?? 0.1, price: a.price, ...journaled } : { kind: 'position', live: a.live, ...journaled };
 }
 
 export type Status = 'paused' | 'confirm' | 'done' | 'working' | 'waiting';
@@ -215,10 +227,15 @@ export function lastEvent<K extends LogEvent['k']>(h: HiredAgent, ...kinds: K[])
 }
 
 /** The note stored on-chain with the trade (the vault keeps 120 characters). */
-export function chainNote(name: string, why: Why, mode: Mode = 'ask'): string {
-  const w = why.k === 'signalOn' ? 'signal on' : why.k === 'signalOff' ? 'signal off' : why.k === 'weight' ? `rebalance to ${why.pct}%` : why.k === 'daily' ? `daily buy x${why.mult}`
-    : why.k === 'plan' ? 'plan buy' : why.k === 'stop' ? `stop-loss -${why.pct}%` : `take-profit +${why.pct}%`;
-  return `Moa agent ${name}: ${w}, ${mode === 'auto' ? 'standing order from the owner' : 'approved by the owner'}`.slice(0, 120);
+const chainWhy = (why: Why) => (why.k === 'signalOn' ? 'signal on' : why.k === 'signalOff' ? 'signal off' : why.k === 'weight' ? `rebalance to ${why.pct}%` : why.k === 'daily' ? `daily buy x${why.mult}`
+  : why.k === 'plan' ? 'plan buy' : why.k === 'stop' ? `stop-loss -${why.pct}%` : `take-profit +${why.pct}%`);
+/**
+ * The note stored on chain with the trade (the executor keeps 120 characters). With a journal, its keccak256 hash
+ * comes first, whole (66 characters), then as much of the reason as fits.
+ */
+export function chainNote(name: string, why: Why, mode: Mode = 'ask', journalHash?: string): string {
+  const reason = `Moa agent ${name}: ${chainWhy(why)}, ${mode === 'auto' ? 'standing order from the owner' : 'approved by the owner'}`;
+  return journalHash ? noteWithHash(journalHash, `${name}: ${chainWhy(why)}, ${mode === 'auto' ? 'auto' : 'approved'}`) : reason.slice(0, 120);
 }
 
 export const newId = () => Math.random().toString(36).slice(2, 10);

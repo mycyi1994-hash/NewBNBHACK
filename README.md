@@ -74,13 +74,21 @@ no creator fee; the server tells versions apart and sends version-2 vaults only 
 
 ## Honest numbers
 
-- Backtests are past results on daily candles over 3 years (90 days or 1 year for hourly and 4-hour agents), with
-  a 0.3% fee per trade and no slippage. Past results do not promise future ones.
-- Over the last 3 years, simply holding BTC returned about +59–62%. **Most agents did not beat that on BTC.** Of the
-  research-based agents, four did (a moving-average ensemble and three breakout rules with a trailing stop, +12% to
-  +19%); on ETH and HSK, whose prices fell, most beat holding. Every card states its number against holding, and the
-  detail view also compares it with a fixed coin/USDT mix of the same average share.
-- Short-term agents (1h/4h) mostly lost money after the 0.3% fee; the app says so where they are listed.
+- Backtests are past results on daily candles over 3 years (90 days or 1 year for hourly and 4-hour agents). Every
+  trade pays HSKSwap's 0.3% fee, the moving gap between the pool and the exchange price (measured from the pool's
+  recent swaps, or a stated 0.5% when there are too few), and price impact from the pool's real depth at the
+  hire-default size of a $100 budget. The detail view shows the same backtest at $1,000 and $10,000 and warns where
+  the pools are too thin. Past results do not promise future ones.
+- Each backtest is also split into its first two years and its last year. Rankings and Moa's pick use the last year
+  against just holding, and count an agent as ahead only if it held the coin for at least a quarter of that year,
+  so sitting in cash through a falling year does not win. The published strategies use their published parameters,
+  not ones tuned on this data.
+- With these fills, over the full 3 years only a few agents beat simply holding BTC (+60%): dual momentum and the
+  multi-horizon trend blend. Over the last year, when BTC fell 34%, several more did. Every card states its number
+  against holding, and the detail view also compares it with a fixed coin/USDT mix of the same average share.
+- Short-term agents (1h/4h) mostly lost money after costs; the app says so where they are listed.
+- Each live order carries a keccak256 hash of the inputs it was decided on in the vault's trade note; the app shows
+  those inputs and recomputes the hash.
 - Rankings are ordered by these backtests and by recent activity. Moa has no usage or popularity data and does not
   claim any.
 

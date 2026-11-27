@@ -376,11 +376,13 @@ test('a weight agent is scored on its share, carries its live target, and report
   assert.equal(a.mult, (A.exposure('volTarget', b) as number[])[b.length - 1], 'what it holds today, after the band');
   assert.ok((a.moves ?? 0) >= a.trades, 'every resize is a trade');
   assert.ok(a.marks.filter((x) => x.resize).every((x) => (x.mult ?? 0) > 0 && (x.mult ?? 0) <= 1));
-  // Fees on the share that changes hands: a flat price and a share that moves 0 → 0.5 → 1 → 0 pays 0.5 + 0.5 + 1 of the fee.
+  // Costs on the share that changes hands: a flat price and a share that moves 0 → 0.5 → 1 → 0 pays 0.5 + 0.5 + 1 of
+  // one side's cost. BTC has a pool; with its gap not read in this test, a side costs the 0.3% fee plus the 0.5% haircut.
   const flat = bars(Array.from({ length: 300 }, () => 100));
   const path = flat.map((_, i) => (i < 100 ? 0 : i < 150 ? 0.5 : i < 200 ? 1 : 0));
   const t = A.backtest('x', 'volTarget', path, 60, market('BTCUSDT-PERPETUAL'), flat, 1095)!;
-  assert.ok(Math.abs(t.total - ((1 - 0.003 * 0.5) ** 2 * (1 - 0.003) - 1)) < 1e-12);
+  assert.ok(Math.abs(t.total - ((1 - 0.008 * 0.5) ** 2 * (1 - 0.008) - 1)) < 1e-12);
+  assert.equal(t.fill?.source, 'haircut');
   assert.equal(t.trades, 1, 'one entry');
   assert.equal(t.moves, 3, 'three trades');
   // An on/off agent has no target: the runner treats it as in or out.
@@ -400,4 +402,44 @@ test('retired and demoted per the research; a retired agent can still be found b
   // agentById looks the rule up with the retired ones included (positionAgents(m, true)); the market lists without them.
   const src = (await import('node:fs')).readFileSync(new URL('./agents.ts', import.meta.url), 'utf8');
   assert.match(src, /positionAgents\(m, true\)\)\.find\(\(a\) => a\.id === id\)/);
+});
+
+/* ---------- out-of-sample split and the decision inputs ---------- */
+
+test('every backtest is cut at a fixed point: two thirds in sample, the last third out of sample, ranked on the latter', async () => {
+  const A = await import('./agents.ts');
+  const b = bars(Array.from({ length: 1400 }, (_, i) => 100 * (1 + 0.3 * Math.sin(i / 40)) * 1.001 ** i));
+  for (const r of ['trend', 'maEns', 'volTarget', 'breakC'] as const) {
+    const a = A.scorePosition(r, market('BTCUSDT-PERPETUAL'), b)!;
+    const s = a.split!;
+    assert.ok(Math.abs((1 + s.is.total) * (1 + s.oos.total) - (1 + a.total)) < 1e-9, `${r}: the two parts make the whole`);
+    assert.ok(Math.abs((1 + s.is.hold) * (1 + s.oos.hold) - (1 + a.hold)) < 1e-9);
+    assert.equal(Math.round((a.to - s.at) / DAY), 365, 'the last year of three is the test');
+    assert.equal(A.beatsHold(a), s.oos.total > s.oos.hold && s.oos.exposure >= 0.25, 'judged on the out-of-sample year, holding the coin at least a quarter of it');
+    assert.ok(s.oos.exposure >= 0 && s.oos.exposure <= 1);
+    assert.equal(A.oosEdge(a), s.oos.total - s.oos.hold);
+  }
+});
+
+test('each scored agent keeps the inputs its last decision compared, for the journal', async () => {
+  const A = await import('./agents.ts');
+  const b = bars(Array.from({ length: 1400 }, (_, i) => 100 * (1 + 0.3 * Math.sin(i / 40)) * 1.001 ** i));
+  const t = A.scorePosition('trend', market('ETHUSDT-PERPETUAL'), b)!;
+  assert.equal(t.decision!.candle, b[b.length - 1].time);
+  assert.equal(t.decision!.close, b[b.length - 1].close);
+  assert.ok(Math.abs(t.decision!.values['line1.main'] - b.slice(-50).reduce((s, x) => s + x.close, 0) / 50) < 1e-9, 'the 50-day average it compared');
+  assert.deepEqual(t.decision!.out, { live: t.live, mult: t.mult });
+  const v = A.scorePosition('volTarget', market('ETHUSDT-PERPETUAL'), b)!;
+  assert.equal(v.decision!.values.target, v.target);
+  assert.ok(v.decision!.values.vol > 0);
+  assert.deepEqual(v.decision!.out, { live: v.live, mult: v.mult, target: v.target, band: 0.15 });
+  const made = scoreMade({ id: 'm', name: 'M', market: 'ETHUSDT-PERPETUAL', createdAt: 0, ...fromTemplate('rsi')! }, market('ETHUSDT-PERPETUAL'), b)!;
+  assert.ok(Number.isFinite(made.decision!.values['buy1.a']) && made.decision!.values['buy1.b'] === 30, 'a made rule: each condition’s two sides');
+});
+
+test('sitting in cash through a falling year does not count as beating holding', async () => {
+  const A = await import('./agents.ts');
+  const a = { total: 0, hold: -0.3, split: { at: 0, is: { total: 0, hold: 0 }, oos: { total: 0, hold: -0.4, exposure: 0.05 } } };
+  assert.equal(A.beatsHold(a), false, 'ahead only by holding nothing');
+  assert.equal(A.beatsHold({ ...a, split: { ...a.split, oos: { ...a.split.oos, total: -0.1, exposure: 0.5 } } }), true, 'held half the year and lost less');
 });
