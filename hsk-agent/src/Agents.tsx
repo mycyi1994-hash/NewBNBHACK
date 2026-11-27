@@ -284,8 +284,8 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
   const plain = !q.trim() && asset === 'all' && origin === 'all' && sort === 'pick';
   // The research's demoted classics sit in their own group at the end, out of the default order.
   const lead = shown.filter((a) => !DEMOTED.has(a.rule)), classic = shown.filter((a) => DEMOTED.has(a.rule));
-  const feat = plain ? lead.slice(0, 2) : [];
-  const rest = plain ? lead.slice(2) : lead;
+  const feat = plain ? lead.filter((a) => a.total - a.hold > 0).slice(0, 2) : [];
+  const rest = plain ? lead.filter((a) => !feat.includes(a)) : lead;
   const star = (id: string) => setStars((cur) => {
     const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id);
     try { localStorage.setItem('moa.stars', JSON.stringify([...next])); } catch { /* storage unavailable */ }

@@ -152,6 +152,10 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
             <button className="btn-primary" disabled={!on} onClick={() => { setOpen(false); setDialog('deposit'); }}>{t.acDeposit}</button>
             <button className="btn" disabled={!on} onClick={() => { setOpen(false); setDialog('withdraw'); }}>{t.acWithdraw}</button>
           </div>
+          <nav className="acct-links">
+            {on && <a href={`?vault=${vault!.vault}`}><Icon name="search" size={14} />{t.vcPublic}</a>}
+            <a href="?trust"><Icon name="info" size={14} />{t.navTrust}</a>
+          </nav>
           <button className="acct-out" onClick={() => { setOpen(false); logOut(); }}>{t.acLogout}</button>
         </div>
       )}

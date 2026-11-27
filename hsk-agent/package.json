@@ -9,7 +9,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4180 --strictPort",
     "start": "node --experimental-strip-types server/main.ts",
-    "test": "node --experimental-strip-types --test src/*.test.ts server/*.test.ts"
+    "test": "node --experimental-strip-types --test src/*.test.ts server/*.test.ts",
+    "test:ui": "node tests/ui/run.mjs",
+    "lint:css": "node scripts/css-unused.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

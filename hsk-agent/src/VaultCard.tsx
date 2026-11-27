@@ -75,7 +75,7 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
         <span className="vc-title"><b>{t.vcCardTitle}</b><small>{t.vcCardSub}</small></span>
         <span className={`vm-state${on ? ' on' : ''}`}><i />{stateText(t, vaultWhy(vault))}</span>
         {on && vault?.localFork && <span className="fork-badge">{t.localFork}</span>}
-        {on && vault!.vault && <span className="vc-addr"><CopyAddress value={vault!.vault} label={t.copyAddress} done={t.addressCopied} />{vault!.explorerUrl && <a href={vault!.explorerUrl} target="_blank" rel="noreferrer">{t.vcExplorer} ↗</a>}</span>}
+        {on && vault!.vault && <span className="vc-addr"><CopyAddress value={vault!.vault} label={t.copyAddress} done={t.addressCopied} /><a href={`?vault=${vault!.vault}`}>{t.vcPublic}</a>{vault!.explorerUrl && <a href={vault!.explorerUrl} target="_blank" rel="noreferrer">{t.vcExplorer} ↗</a>}</span>}
       </header>
       {u ? (
         <dl className="vc-nums">
@@ -88,7 +88,14 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
           <div><dt>{t.lmTrade}</dt><dd>{vault!.maxTradeUsdt !== undefined ? `$${vault!.maxTradeUsdt}` : t.lmNoLimit}</dd></div>
         </dl>
       ) : <p className="vc-demo">{stateLine(t, vaultWhy(vault))}</p>}
-      <ul className="vc-safe">{t.vcSafe.map((s) => <li key={s}><Icon name="check" size={14} />{s}</li>)}</ul>
+      <ul className="vc-safe">
+        <li><Icon name="check" size={14} />{t.vcSafe[0]}</li>
+        {/* "the vault enforces your limits" is only said when there are limits to enforce */}
+        {!on ? <li><Icon name="check" size={14} />{t.vcSafeNoVault}</li>
+          : vault!.maxTradeUsdt !== undefined || vault!.maxDailyUsdt !== undefined ? <li><Icon name="check" size={14} />{t.vcSafeLimits(limitsText(t, vault!))}</li>
+            : <li className="vc-warn"><Icon name="shield" size={14} />{t.vcSafeNoLimit}</li>}
+        <li><Icon name="check" size={14} />{t.vcSafe[1]}</li>
+      </ul>
     </section>
   );
 }

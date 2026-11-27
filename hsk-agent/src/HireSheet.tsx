@@ -252,6 +252,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
         )}
         {error && <p className="hire-sub warn">{error}</p>}
         <ul className="hire-checks">{t.hsChecks.map((c) => <li key={c}><Icon name="check" size={16} />{c}</li>)}</ul>
+        <p className="hire-trust"><a href="?trust" target="_blank" rel="noreferrer">{t.navTrust} ↗</a></p>
         {(why === 'login' || why === 'off') && <p className="hire-note demo">{why === 'login' ? t.hsLogin : t.hsDemo}</p>}
       </div>
     </Modal>

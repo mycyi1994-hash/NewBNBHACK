@@ -10,7 +10,8 @@ Moa lets people who have never traded do three things:
 Every agent follows one fixed rule on one coin. It trades on HSKSwap from **the user's own vault**: a contract on
 HSK Chain that only the user can withdraw from, with the user's limits and stop-loss enforced on-chain.
 
-**Live app:** https://grabitmoa.onrender.com
+**Live app:** https://grabitmoa.onrender.com · any vault, read-only, no login: `https://grabitmoa.onrender.com/?vault=<address>`
+(`?vault` alone lists every vault the factories made) · how Moa earns and its risks: `?trust`
 
 Log in with a wallet on HSK Chain. Without one, the whole app works as a demo that sends nothing.
 
@@ -28,7 +29,7 @@ Log in with a wallet on HSK Chain. Without one, the whole app works as a demo th
 | What | Address / transaction |
 | --- | --- |
 | MoaVaultFactory, source published | [`0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546`](https://hsk.blockscout.com/address/0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546) |
-| A user's vault, made by the factory when that wallet logged in | [`0x6A355aE335f06971C337c900783C2e016410b33C`](https://hsk.blockscout.com/address/0x6A355aE335f06971C337c900783C2e016410b33C) · [creation tx](https://hsk.blockscout.com/tx/0x3b69260d046140866ca1b5429c625c69e9a5f1cf93efd3c54c5d84f60f1afb0b) |
+| A user's vault, made by the factory when that wallet logged in | [`0x6A355aE335f06971C337c900783C2e016410b33C`](https://hsk.blockscout.com/address/0x6A355aE335f06971C337c900783C2e016410b33C) · [creation tx](https://hsk.blockscout.com/tx/0x3b69260d046140866ca1b5429c625c69e9a5f1cf93efd3c54c5d84f60f1afb0b) · [in the app, read-only](https://grabitmoa.onrender.com/?vault=0x6A355aE335f06971C337c900783C2e016410b33C) |
 | First trade through a vault ($1 of WBTC on HSKSwap; an earlier vault version) | [tx](https://hsk.blockscout.com/tx/0x955cd89b5e89200d606300df1afeca3c3adb337c200e6743af7b64595c2441ee) |
 | Agent wallet (may call `trade` and `stopOut` only; cannot withdraw) | [`0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE`](https://hsk.blockscout.com/address/0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE) |
 
@@ -104,6 +105,7 @@ hsk-agent/            the whole app (Render root directory)
   src/                React 19 + TypeScript app: screens, agents, rules, LP math
   server/             Node server: API, Moa chat (Anthropic), sessions, auto runner, executor
   contracts/          MoaVault + MoaVaultFactory (Solidity), fork tests, mainnet scripts
+  tests/ui/           screen checks (Playwright): every screen at 1440 and 390, key flows
 docs/                 demo script, mainnet checklist
 ```
 

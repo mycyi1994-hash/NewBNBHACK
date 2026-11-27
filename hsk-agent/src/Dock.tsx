@@ -442,7 +442,9 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const hint = isRunnable(coin) ? t.mkSignalTrade : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
   // "Doing well now": the same order as everywhere (working first, then beating just holding), the first few.
-  const best = all.filter((a) => !DEMOTED.has(a.rule)).slice(0, 6);
+  const ranked0 = all.filter((a) => !DEMOTED.has(a.rule));
+  const beat = ranked0.filter((a) => a.total - a.hold > 0);
+  const best = beat.slice(0, 6);
   const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days, shown.interval)}` : tab === 'list' ? hint : '';
 
   return (
@@ -499,11 +501,12 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
               </section>
             )}
             <section className="tk-agents" aria-label={t.dkTopTitle}>
-              <header className="tk-head"><b>{t.dkTopTitle}</b><small>{t.dkTopSub}</small>{all.length > best.length && <button className="btn-text sm tk-all" onClick={() => setTab('list')}>{t.dkSeeAll(all.length)}<Icon name="chevron" size={14} /></button>}</header>
+              <header className="tk-head"><b>{t.dkTopTitle}</b>{list && <small>{t.dkTopSub(beat.length, ranked0.length)}</small>}{all.length > 0 && <button className="btn-text sm tk-all" onClick={() => setTab('list')}>{t.dkSeeAll(all.length)}<Icon name="chevron" size={14} /></button>}</header>
               {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
               <ol className="tk-list">
                 {!list && !failed && [0, 1, 2, 3].map((i) => <li key={i} className="tk-skel skel-block" />)}
                 {best.map((a, i) => <TopPick key={a.id} a={a} n={i + 1} onOpen={() => { onSelect(a); setTab('bt'); }} onHire={() => onHire(a)} />)}
+                {list && !failed && ranked0.length > 0 && !best.length && <li className="tk-none">{t.dkTopNone(ranked0.length)}</li>}
               </ol>
             </section>
           </div>

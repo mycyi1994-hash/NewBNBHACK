@@ -18,7 +18,9 @@ MOA_RPC_URL=https://mainnet.hsk.xyz
 ```bash
 npm install
 npm run dev        # http://127.0.0.1:5180
-npm test           # rules, backtests, recommendation, runner, sessions, auto runner, LP math
+npm test           # rules, backtests, fills, journal, spread, recommendation, runner, sessions, auto runner, sharing, LP math
+npm run test:ui    # screen checks: starts the built server in demo mode and runs Playwright (needs Playwright installed)
+npm run lint:css   # reports CSS selectors no source file uses
 npm run build      # typecheck + production build
 npm start          # production server (after build); see DEPLOY.md
 ```
@@ -41,6 +43,7 @@ Without a factory address, or before a wallet logs in, the app is a **demo**: ag
 | Spread | `src/spread.ts`, `src/SpreadPanel.tsx`, `server/spreadStore.ts` | Pool price vs HashKey Global (Gate as fallback): gross gap, net after the pool fee, an assumed 0.1% exchange fee and price impact, break-even size. The server records the gap every 5 minutes for 14 days (`/api/spread`); Moa has a `get_spread` tool. The spread hunter agent trades on HSKSwap only. |
 | Pool depth | `src/depth.ts`, `src/dex.ts` | Read from the pool's price, in-range liquidity and initialized ticks on HSK Chain (chain 177). |
 | Heatmap | `src/ChartExtras.tsx`, `server/nanoFrame.ts` | The "Heatmap" switch shows the fire chart of nanotradingclub, a separate project by the same author, in a frame from its development site. The server reads that site's frame headers and links out instead when framing is not allowed. |
+| Vault view and trust page | `src/VaultView.tsx`, `src/vaultRead.ts`, `src/Trust.tsx` | `?vault=0x…` shows any vault's holdings, limits, stop-loss and history (HSK Chain RPC + Blockscout, read in the browser) without login. `?trust` explains who earns what (no platform fee), custody, and the risks, with live pool depth. |
 | Account | `src/account.ts`, `server/session.ts` | Login is one wallet signature (no transaction). The server pays the gas to make the user's vault. |
 
 ## Contracts on a local fork of mainnet (no real funds)

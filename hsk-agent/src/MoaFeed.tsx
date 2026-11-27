@@ -32,10 +32,10 @@ import { beatsHold, isRunnable, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
 import { AgentCard, agentName, drop, explainAgent, Face } from './AgentCard.tsx';
 import type { HireTarget } from './HireSheet.tsx';
-import { lastEvent, statusOf, type Amounts, type HiredAgent } from './runner.ts';
-import { hiredName, money, qtyText, skipText, whyText } from './hiredText.ts';
+import { book, lastEvent, statusOf, type Amounts, type HiredAgent } from './runner.ts';
+import { hiredName, money, qtyText, signedMoney, skipText, whyText } from './hiredText.ts';
 import { HireCard, StatusCard } from './AgentLive.tsx';
-import { agentColors, OTHER_COLOR } from './portfolio.ts';
+import { agentColors, agentRows, OTHER_COLOR, totalPnl } from './portfolio.ts';
 
 export interface MoaContext { venue?: 'cex' | 'dex'; label: string; asset?: string; perp?: boolean }
 /** A job another part of the screen hands to Moa. */
@@ -68,6 +68,8 @@ const VAULT_WORDS = /(포지션|보유|잔고|잔액|볼트|금고|들고 있|wh
 /** The price gap between the exchange and HSKSwap, and whether it is worth anything. */
 const SPREAD_WORDS = /(스프레드|차익|가격 ?차이|괴리|arbitrage|spread|price gap)/i;
 const STATUS_WORDS = /(얼마 벌|수익|손익|현황|잘 하고|어떻게 하고|how (?:are|is) my|status|p&l|pnl|profit)/i;
+/** A question about a coin or the market ("비트코인 어때?"): answered from the briefing's own data when the AI is away. */
+const MARKET_WORDS = /(어때|어떄|어떻|어떤가|시장|시세|가격|요즘|살까|사도 돼|팔까|오를까|내릴까|전망|how(?:'s| is| about)|price|market|outlook|should i buy)/i;
 const readLevel = (): Level | null => { try { const v = localStorage.getItem('moa.level'); return v === 'new' || v === 'some' || v === 'pro' ? v : null; } catch { return null; } };
 const saveLevel = (l: Level) => { try { localStorage.setItem('moa.level', l); } catch { /* storage unavailable */ } };
 /** Typing time grows with the length of the line, like a person writing it. */
@@ -364,6 +366,35 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     }
   }, [hired]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** All hired agents' profit or loss in one sentence, from their own fills at the pool price now. */
+  const pnlLine = (): string => {
+    const rows = agentRows(hiredRef.current, (a) => quotesRef.current.find((x) => x.asset === a)?.pool, Date.now());
+    const tp = totalPnl(rows);
+    const spent = rows.reduce((s, r) => s + book(r.h).spent, 0);
+    if (!tp) return t.pnlNone(rows.length);
+    return t.pnlSum(rows.length, signedMoney(tp.usd), tp.pct !== undefined ? `${tp.pct >= 0 ? '+' : '−'}${Math.abs(tp.pct * 100).toFixed(1)}%` : '', money(spent));
+  };
+  /**
+   * Without the AI, a question about a coin gets the same conclusion the briefing gives (weather, 30-day move, pool
+   * vs exchange), and a coin without weather gets its pool price. Returns false when there is nothing to say from data.
+   */
+  const marketOffline = (q: string): boolean => {
+    const coin = coinIn(q) ?? (MARKET_WORDS.test(q) ? mainCoin() : undefined);
+    if (!coin) return false;
+    if ((sky.current ?? []).some((w) => w.base === coin)) {
+      focus.current = coin;
+      const lines = briefing(levelRef.current ?? 'some');
+      script(lines.map((x, i) => (i === 0 ? { ...x, offline: true } : x)));
+      return true;
+    }
+    const qt = quotesRef.current.find((x) => x.asset === coin);
+    if (qt?.pool === undefined) return false;
+    const g = qt.gap === undefined ? '' : qt.gap >= 0 ? t.gapPricey((qt.gap * 100).toFixed(1)) : t.gapCheap((-qt.gap * 100).toFixed(1));
+    const gap = g ? ` ${g[0].toUpperCase()}${g.slice(1)}.` : '';
+    say({ text: `${t.poolNow(coin, fmtPrice(qt.pool))}${gap}`, follow: [], offline: true }, 300);
+    return true;
+  };
+
   /** Agent requests Moa answers itself, without the AI. Returns true when handled. */
   const local = (q: string): boolean => {
     const list = hiredRef.current;
@@ -405,7 +436,8 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       return true;
     }
     if (STATUS_WORDS.test(q) && list.length) {
-      list.slice(0, 3).forEach((h, i) => setTimeout(() => statusNote(h.id), i * 250));
+      say({ text: pnlLine(), follow: [] }, 300);
+      list.slice(0, 3).forEach((h, i) => setTimeout(() => statusNote(h.id), 500 + i * 250));
       return true;
     }
     if (BUILD_WORDS.test(q)) {
@@ -456,8 +488,10 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       }
     } catch {
       if (ctrl.signal.aborted) { setBusy(null); return; }
-      // No server or the AI is unreachable: answer with the on-device parser, clearly marked.
+      // No server or the AI is unreachable: answer with the on-device parser, clearly marked. A question about a
+      // coin is answered from the market data the briefing uses rather than with a request for a goal.
       const p = parseIntent(q);
+      if (!p.steps.length && marketOffline(q)) { setBusy(null); lastNoteAt.current = Date.now(); return; }
       push({ role: 'moa', text: offlineReply(p, quotes, lang), plan: p.steps.length ? p : undefined, goal: q, offline: true, follow: [] });
     }
     setBusy(null);

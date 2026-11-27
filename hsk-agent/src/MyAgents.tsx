@@ -174,7 +174,7 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
       <MyShared onBuild={onBuild} />
 
       <VaultCard vault={vault} />
-      <p className="muted small">{t.mineStopNote}</p>
+      <p className="muted small">{t.mineStopNote} <a href="?trust">{t.navTrust}</a></p>
 
       {execs.length > 0 && (
         <section>

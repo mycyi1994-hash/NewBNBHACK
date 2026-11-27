@@ -33,8 +33,12 @@ import { ToastProvider, useToast } from './ui.tsx';
 import { SharedLink } from './Shared.tsx';
 import { countHire, scoreHired } from './shareClient.ts';
 import { linkedId } from './share.ts';
+import VaultView from './VaultView.tsx';
+import Trust from './Trust.tsx';
 
-type View = 'trade' | 'agents' | 'build' | 'mine';
+type View = 'trade' | 'agents' | 'build' | 'mine' | 'vault' | 'trust';
+/** Pages opened by address: ?vault=0x… (any vault, read only; ?vault alone lists them) and ?trust (fees and risks). */
+const urlView = (): View | null => { const q = new URLSearchParams(window.location.search); return q.has('vault') ? 'vault' : q.has('trust') ? 'trust' : null; };
 const NARROW = '(max-width: 1180px)';
 
 function useQuotes() {
@@ -116,6 +120,10 @@ function Sidebar({ view, go, hired, vault, onOpenHired }: { view: View; go: (v: 
         </div>
       )}
       <div className="sidebar-foot">
+        <button className={`nav-item${view === 'trust' ? ' active' : ''}`} onClick={() => go('trust')} data-tip={t.navTrust}>
+          <span className="nav-icon"><Icon name="info" size={18} /></span>
+          <span className="nav-text">{t.navTrust}</span>
+        </button>
         <VaultMini vault={vault} />
         <button className="nav-item" onClick={() => setLang(lang === 'en' ? 'ko' : 'en')} data-tip={t.langLabel}>
           <span className="nav-icon"><Icon name="globe" size={18} /></span>
@@ -163,7 +171,7 @@ function Topbar({ title, vault, onMenu, onReload, onRetryVault }: { title: strin
 function Shell() {
   const { t } = useT();
   const toast = useToast();
-  const [view, setView] = useState<View>('trade');
+  const [view, setView] = useState<View>(() => urlView() ?? 'trade');
   const quotes = useQuotes();
   const { vault, reloadVault, retryVault } = useVault();
   const { hired, add, update, remove } = useHired();
@@ -195,7 +203,12 @@ function Shell() {
   const vaultRef = useRef(vault); vaultRef.current = vault;
 
   // Leaving the trade screen forgets its market, so coming back never reports the one from the visit before.
-  const go = (v: View) => { if (v !== 'trade') setTradeCtx({ label: '' }); setView(v); window.scrollTo(0, 0); };
+  const go = (v: View) => {
+    if (v !== 'trade') setTradeCtx({ label: '' });
+    // Leaving a page opened by address drops the address, so a reload lands where the user is.
+    if (urlView() && v !== urlView()) { try { window.history.replaceState(null, '', window.location.pathname); } catch { /* the address stays */ } }
+    setView(v); window.scrollTo(0, 0);
+  };
   const tell = (x: MoaAsk) => setInject({ ...x, n: ++injectN.current });
   const attention = () => { if (window.matchMedia(NARROW).matches) setMoaOpen(true); };
   /** Opening the liquidity studio also starts Moa's walk-through; closing it ends the plan. */
@@ -376,7 +389,7 @@ function Shell() {
 
   const ctx: MoaContext = view === 'trade' ? tradeCtx : view === 'agents' ? { label: t.ctxMarket } : view === 'build' ? { label: t.ctxBuild } : { label: t.ctxMine };
   const asks = hired.filter((h) => h.pending).length;
-  const title = { trade: t.navTrade, agents: t.agTitle, build: t.navBuild, mine: t.mineTitle }[view];
+  const title = { trade: t.navTrade, agents: t.agTitle, build: t.navBuild, mine: t.mineTitle, vault: t.vvTitle, trust: t.trTitle }[view];
   const askMoaAbout = (a: Agent) => tell({ kind: 'agent', agent: a });
   // "See the backtest" from Moa's card or the agent market: the trade screen opens that agent on its own chart.
   const openBacktest = (a: Agent) => { setShow({ agent: a, n: ++showN.current }); go('trade'); if (window.matchMedia(NARROW).matches) setMoaOpen(false); };
@@ -393,6 +406,8 @@ function Shell() {
           mine={{ count: hired.length, asks, node: <MineDock hired={hired} quotes={quotes} vault={vault} now={now} sending={sending} onOpen={(id) => tell({ kind: 'status', hiredId: id })} onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }} onPause={pause} onResume={resume} /> }} onContext={setTradeCtx} onAsk={askMoaAbout} onBuild={(coin) => openBuilder({ coin })} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
         {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} onBuild={() => openBuilder({})} />}
         {view === 'build' && <Builder draft={build} onOpen={openBacktest} />}
+        {view === 'vault' && <VaultView address={new URLSearchParams(window.location.search).get('vault')} quotes={quotes} />}
+        {view === 'trust' && <Trust quotes={quotes} />}
         {view === 'mine' && (
           <MyAgents hired={hired} quotes={quotes} vault={vault} execs={execs} now={now} agents={agents} agentsFailed={agentsFailed}
             onStart={(a) => setSheet({ kind: 'agent', agent: a })} onMarket={() => go('agents')} onBuild={() => openBuilder({})}
