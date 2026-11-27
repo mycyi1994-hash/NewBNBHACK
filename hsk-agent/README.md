@@ -113,19 +113,21 @@ stranger once the price has held, with the stranger getting nothing.
   per hired agent with how much of its budget it has spent, what it holds now and what it has made or lost, a total
   across all of them, and a warning when the agents may still spend more USDT than the vault holds. It opens first
   for anyone who has hired an agent.
-- **The pool's depth, read from the chain.** Above the HSKSwap chart: how many USDT move the pool's price 1, 2 and 5
-  percent either way, and how far a $100 and a $1,000 buy would move it (`src/depth.ts`, from the pool's price,
-  its liquidity in range and its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three
-  pools held one full-range position (the HSK pool three small ranges more), so the blocks are even; liquidity
-  added to one stretch would show in that block alone.
+- **The pool's liquidity, read from the chain.** Above the HSKSwap chart: what the pool holds at each price, as
+  columns of blocks, twenty steps of 0.5% around the price now; USDT under the price, the coin over it, and how far
+  a $100 and a $1,000 buy would move the price (`src/depth.ts`, from the pool's price, its liquidity in range and
+  its initialized ticks; `poolState` in `src/dex.ts`). On 27 Nov 2026 each of the three pools held one full-range
+  position (the HSK pool three small ranges more), so every column is the same height; liquidity added to one
+  stretch would raise that column alone.
 - **Heatmap and liquidations on the exchange chart.** The "Heatmap" button next to Indicators lays three layers over
   the candles: the order book of nine exchanges by price (under the candles), forced liquidations as circles
   (over them), and a liquidation map at the right edge: where positions would be liquidated, estimated from open
   interest, the volume traded at each price and a fixed mix of leverage, the way nanotradingclub's own map does
   it (`liqMap` in `src/nano.ts`; an estimate, half long and half short by assumption). The data is nanotradingclub's public files (`src/nano.ts`): exchange data, not HSK Chain data, and
   for coins it collects (BTC and ETH among them, not HSK). Nothing is fetched until a layer is switched on, then
-  every three minutes while the tab is in front; the book's history is about an hour, so switching it on moves the
-  chart to one-minute candles.
+  every three minutes while the tab is in front. The order book comes with nanotradingclub's whole history (about
+  160 days, coarser the older it is; 12 MB once, in the browser), so it lies under the candles on every interval
+  from one minute to one day. The liquidation map takes entry prices from the last week of candles.
 - **Moa is given the same numbers.** Its market tool now also returns each pool's depth, and for BTC and ETH the
   thickest stacks of resting orders within 8% of the price and the liquidations of the last hour and day
   (`marketSnapshot` in `server/moaAgent.ts`, about 2.6 KB, fetched at most once every three minutes).

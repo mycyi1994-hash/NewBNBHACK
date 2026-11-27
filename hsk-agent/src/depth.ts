@@ -7,7 +7,12 @@ export interface PoolTick { tick: number; net: number }
 export interface PoolState { sqrtPrice: number; tick: number; liquidity: number; ticks: PoolTick[] }
 /** USDT that moves the price this far: paid in for a move up, paid out for a move down. */
 export interface DepthBand { pct: number; usdt: number }
-export interface PoolDepth { bands: DepthBand[]; impact: { usd: number; pct: number }[] }
+/**
+ * What the pool holds in one stretch of prices (`from` and `to` are multiples of the price now). Under the price
+ * that is USDT waiting to buy; over it, the coin waiting to be sold, given at what a buyer pays for it in USDT.
+ */
+export interface RangeBin { from: number; to: number; usd: number; side: 'usdt' | 'coin' }
+export interface PoolDepth { bands: DepthBand[]; impact: { usd: number; pct: number }[]; range: RangeBin[] }
 
 const FEE = 0.003;
 export const DEPTH_STEPS = [1, 2, 5] as const;
@@ -48,5 +53,13 @@ export function poolDepth(p: PoolState): PoolDepth {
   for (const s of [...DEPTH_STEPS].reverse()) bands.push({ pct: -s, usdt: usdtToMove(p, 1 - s / 100) });
   // A move up is paid for by the buyer, fee included.
   for (const s of DEPTH_STEPS) bands.push({ pct: s, usdt: usdtToMove(p, 1 + s / 100) / (1 - FEE) });
-  return { bands, impact: IMPACT_SIZES.map((usd) => ({ usd, pct: buyImpact(p, usd) })) };
+  return { bands, impact: IMPACT_SIZES.map((usd) => ({ usd, pct: buyImpact(p, usd) })), range: rangeBins(p) };
+}
+
+/** The pool's holdings in equal steps of price, `perSide` steps under the price and as many over it, out to `reachPct` percent. */
+export function rangeBins(p: PoolState, reachPct = 5, perSide = 10): RangeBin[] {
+  const step = reachPct / 100 / perSide, out: RangeBin[] = [];
+  for (let i = perSide; i >= 1; i--) out.push({ from: 1 - i * step, to: 1 - (i - 1) * step, usd: usdtToMove(p, 1 - i * step) - usdtToMove(p, 1 - (i - 1) * step), side: 'usdt' });
+  for (let i = 1; i <= perSide; i++) out.push({ from: 1 + (i - 1) * step, to: 1 + i * step, usd: usdtToMove(p, 1 + i * step) - usdtToMove(p, 1 + (i - 1) * step), side: 'coin' });
+  return out;
 }

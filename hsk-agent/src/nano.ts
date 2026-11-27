@@ -43,20 +43,20 @@ export async function heatNow(base: string): Promise<HeatColumn> {
   if (!c) throw new Error('unreadable heatmap column');
   return c;
 }
-/** The last hour or so of the book, oldest first, ending with the book right now. */
+/** The book over the months nanotradingclub has kept (coarser the older it is), oldest first, ending with the book right now. */
 export async function heatHistory(base: string): Promise<HeatColumn[]> {
-  const [tail, now] = await Promise.all([
-    get<{ cols: RawColumn[] }>(`fire_long_tail_${symbolOf(base)}.json`).catch((e) => { if (e instanceof NoData) throw e; return { cols: [] as RawColumn[] }; }),
-    heatNow(base),
-  ]);
-  const cols = tail.cols.map(column).filter((c): c is HeatColumn => c !== null && c.t < now.t - 20).sort((a, b) => a.t - b.t);
-  return [...cols, now];
+  const file = (name: string) => get<{ cols: RawColumn[] }>(`${name}_${symbolOf(base)}.json`).catch((e) => { if (e instanceof NoData) throw e; return { cols: [] as RawColumn[] }; });
+  // Three files, coarse to fine: months of history (about 12 MB on the wire, read once), the last hour, and now.
+  const [long, tail, now] = await Promise.all([file('fire_long'), file('fire_long_tail'), heatNow(base)]);
+  const tidy = (cols: RawColumn[], before: number) => cols.map(column).filter((c): c is HeatColumn => c !== null && c.t < before - 20).sort((a, b) => a.t - b.t);
+  const recent = tidy(tail.cols, now.t);
+  return [...tidy(long.cols, recent[0]?.t ?? now.t), ...recent, now];
 }
 /** Adds the book right now to what is already on screen. */
 export async function heatRefresh(base: string, have: HeatColumn[]): Promise<HeatColumn[]> {
   const now = await heatNow(base);
   const last = have[have.length - 1];
-  return last && now.t - last.t < 20 ? have : [...have, now].slice(-400);
+  return last && now.t - last.t < 20 ? have : [...have, now];
 }
 
 export async function liquidations(base: string): Promise<Liq[]> {

@@ -8,7 +8,7 @@ import { ASSETS, type Asset } from './intent.ts';
 import { fmtPrice, type Quote } from './market.ts';
 import { mountHeat, type HeatInput } from './heatLayer.ts';
 import type { HeatColumn, Liq } from './nano.ts';
-import { DepthStrip, HeatLegend, HeatMenu, useHeat, type HeatKind } from './ChartExtras.tsx';
+import { HeatLegend, HeatMenu, PoolRange, useHeat, type HeatKind } from './ChartExtras.tsx';
 import { useT } from './i18n.ts';
 import { RollNum, SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
@@ -617,8 +617,6 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
     const next = new Set(want);
     if (next.has(k)) next.delete(k); else next.add(k);
     setWant(next);
-    // The book's history is about an hour long: it only shows on short candles.
-    if (k === 'book' && next.has('book') && !sel && interval !== '1m') setIv('1m');
   };
   const layers = useHeat(market.base, want);
 
@@ -732,7 +730,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
           {sel ? <BacktestChip a={sel} replay={replay} onClose={() => setSel(null)} />
             : <span className="live chart-legend"><i className="lg-candle" />{s.dexCandles}<i className="lg-pool" />{s.dexPoolLine}<i className="lg-swap" />{s.dexSwapMarks}</span>}
         </div>
-        <DepthStrip asset={asset} />
+        <PoolRange asset={asset} symbol={p.symbol} price={detail?.price} />
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
       <Dock venue="dex" coin={asset} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(

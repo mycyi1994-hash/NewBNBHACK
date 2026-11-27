@@ -121,25 +121,42 @@ export function usePoolDepth(asset: Asset): PoolDepth | 'error' | null {
   return got?.asset === asset ? got.d : null;
 }
 
-/** Blocks above the HSKSwap chart: how many USDT move the pool's price 1, 2 and 5 percent down and up. */
-export function DepthStrip({ asset }: { asset: Asset }) {
+const ROWS = 6;
+const priceText = (v: number) => (v >= 1000 ? `$${Math.round(v).toLocaleString('en-US')}` : v >= 1 ? `$${v.toFixed(2)}` : `$${v.toPrecision(4)}`);
+
+/**
+ * Above the HSKSwap chart: what the pool holds at each price, as columns of blocks. Under the price now it is USDT,
+ * over it the coin. A column is as tall as its share of the thickest one.
+ */
+export function PoolRange({ asset, symbol, price }: { asset: Asset; symbol: string; price?: number }) {
   const { t } = useT();
   const d = usePoolDepth(asset);
-  if (d === 'error') return <div className="lp-strip bad">{t.lpErr}</div>;
-  const max = d ? Math.max(...d.bands.map((b) => b.usdt)) : 1;
-  const mid = d ? d.bands.length / 2 : 3;
+  if (d === 'error') return <div className="pr bad">{t.lpErr}</div>;
+  const bins = d?.range ?? [], max = bins.reduce((m, b) => Math.max(m, b.usd), 0);
+  const half = bins.length / 2;
+  const column = (b: (typeof bins)[number], i: number) => {
+    const filled = b.usd > 0 && max > 0 ? Math.max(1, Math.round((b.usd / max) * ROWS)) : 0;
+    const tip = price !== undefined ? `${priceText(price * b.from)} – ${priceText(price * b.to)} · ${money(b.usd)}` : money(b.usd);
+    return <span key={i} className={`pr-col pr-${b.side}`} data-tip={tip}>{Array.from({ length: ROWS }, (_, r) => <i key={r} className={r >= ROWS - filled ? 'on' : ''} />)}</span>;
+  };
   const hundred = d?.impact.find((x) => x.usd === 100), thousand = d?.impact.find((x) => x.usd === 1000);
+  const reach = bins.length ? 1 - bins[0].from : 0.05;
   return (
-    <div className="lp-strip" role="group" aria-label={t.lpTitle}>
-      <span className="lp-title"><b>{t.lpTitle}</b><small>{t.lpSub}</small></span>
-      <div className="lp-blocks">
-        {d ? d.bands.map((b, i) => (
-          <span key={b.pct} className={`lp-block ${b.pct < 0 ? 'down' : 'up'}${i === mid ? ' first-up' : ''}`} style={{ '--fill': `${Math.round(18 + 82 * (b.usdt / max))}%` } as React.CSSProperties}>
-            <small>{b.pct > 0 ? '+' : '−'}{Math.abs(b.pct)}%</small><b>{money(b.usdt)}</b>
-          </span>
-        )) : [0, 1, 2, 3, 4, 5].map((i) => <span key={i} className={`lp-block skel-block${i === 3 ? ' first-up' : ''}`} aria-hidden />)}
+    <div className="pr" role="group" aria-label={t.lpTitle}>
+      <div className="pr-head">
+        <span className="pr-title"><b data-tip={t.prTip}>{t.lpTitle}</b><span className="pr-key"><span><i className="pr-usdt" aria-hidden />USDT</span><span><i className="pr-coin" aria-hidden />{symbol}</span></span></span>
+        <span className="pr-now">{price !== undefined ? t.prNow(priceText(price)) : '—'}</span>
+        <span className="lp-impact">{hundred && <span>{t.lpImpact('100', movePct(hundred.pct))}</span>}{thousand && <span className="more"><i aria-hidden>·</i>{t.lpImpact('1,000', movePct(thousand.pct))}</span>}</span>
       </div>
-      {hundred && thousand && <span className="lp-impact">{t.lpImpact('100', movePct(hundred.pct))}<i aria-hidden>·</i>{t.lpImpact('1,000', movePct(thousand.pct))}</span>}
+      <div className={`pr-cols${d ? '' : ' wait'}`} style={{ '--side': half || 10 } as React.CSSProperties}>
+        {d ? <>{bins.slice(0, half).map(column)}<span className="pr-mid" aria-hidden />{bins.slice(half).map((b, i) => column(b, half + i))}</>
+          : <>{Array.from({ length: 10 }, (_, i) => <span key={i} className="pr-col pr-usdt">{Array.from({ length: ROWS }, (_, r) => <i key={r} />)}</span>)}<span className="pr-mid" aria-hidden />{Array.from({ length: 10 }, (_, i) => <span key={i} className="pr-col pr-coin">{Array.from({ length: ROWS }, (_, r) => <i key={r} />)}</span>)}</>}
+      </div>
+      {price !== undefined && (
+        <div className="pr-axis" aria-hidden>
+          {[1 - reach, 1 - reach / 2, 1, 1 + reach / 2, 1 + reach].map((m) => <span key={m}>{priceText(price * m)}</span>)}
+        </div>
+      )}
     </div>
   );
 }

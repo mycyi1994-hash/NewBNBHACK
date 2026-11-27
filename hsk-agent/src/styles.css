@@ -1694,3 +1694,32 @@ select { padding-right: 8px; }
   .mh-pool { margin-left: 0; }
   .mh-dex b, .mh-main .pair-name .tag { display: none; }
 }
+
+/* ---------- HSKSwap: what the pool holds at each price, as columns of blocks ---------- */
+.pr { flex: none; margin-bottom: 6px; padding: 8px 12px 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); min-width: 0; }
+.pr.bad { font-size: 12.5px; color: var(--warn); }
+.pr-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 7px; }
+.pr-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pr-title b { font-size: 13px; font-weight: 700; color: var(--ink-title); white-space: nowrap; }
+.pr-key { display: inline-flex; gap: 10px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.pr-key > span { display: inline-flex; align-items: center; gap: 5px; }
+.pr-key i { width: 9px; height: 9px; border-radius: 3px; }
+.pr-key i.pr-usdt { background: #e09b3d; } .pr-key i.pr-coin { background: #7c5cff; }
+.pr-now { justify-self: center; display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 999px; background: #1f1f1f; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pr-head .lp-impact { justify-self: end; min-width: 0; overflow: hidden; }
+.pr-cols { display: grid; grid-template-columns: repeat(var(--side, 10), minmax(0, 1fr)) 9px repeat(var(--side, 10), minmax(0, 1fr)); gap: 0 4px; }
+.pr-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pr-col i { display: block; height: 8px; border-radius: 3px; }
+.pr-col.pr-usdt i { background: #fbf0e2; } .pr-col.pr-usdt i.on { background: #e09b3d; }
+.pr-col.pr-coin i { background: #ece9ff; } .pr-col.pr-coin i.on { background: #7c5cff; }
+.pr-col:hover i.on { filter: brightness(.92); }
+.pr-cols.wait .pr-col i { animation: breathe 1.6s ease-in-out infinite; }
+.pr-mid { justify-self: center; width: 0; border-left: 2px dotted #5f6368; }
+.pr-axis { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; line-height: 15px; color: var(--ink-3); }
+@container trade (max-width: 1180px) {
+  .pr-head .lp-impact .more { display: none; }
+}
+@media (max-width: 720px) {
+  .pr-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .pr-head .lp-impact { grid-column: 1 / -1; justify-self: start; }
+}

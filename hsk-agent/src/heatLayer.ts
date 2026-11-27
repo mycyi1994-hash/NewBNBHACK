@@ -65,11 +65,18 @@ export function mountHeat(under: HTMLCanvasElement, over: HTMLCanvasElement, cha
       if (strip.width !== 1 || strip.height !== H) { strip.width = 1; strip.height = H; }
       const sx = strip.getContext('2d')!;
       u.imageSmoothingEnabled = false;
+      let painted = -1;   // the last pixel column already filled
       for (let k = 0; k < cols.length; k++) {
         const c = cols[k], x0 = xOf(c.t);
         // The book right now runs on to the right edge: that is where the price is heading into.
         const x1 = k < cols.length - 1 ? xOf(cols[k + 1].t) : W;
-        if (x0 === null || x1 === null || x1 <= 0 || x0 >= W || x1 - x0 < 0.5) continue;
+        if (x0 === null || x1 === null || x1 <= 0 || x0 >= W) continue;
+        // Zoomed out, many moments share one pixel: the first of them gets it.
+        let a = Math.max(0, Math.round(x0)), b = Math.min(W, Math.round(x1));
+        if (b <= a) b = a + 1;
+        if (a <= painted) a = painted + 1;
+        if (b <= a || a >= W) continue;
+        painted = b - 1;
         const img = sx.createImageData(1, H), px = img.data;
         const from = Math.max(0, Math.floor((Math.min(top, bottom) - c.lo) / c.step)), to = Math.min(c.bins.length - 1, Math.ceil((Math.max(top, bottom) - c.lo) / c.step));
         const rows = new Float32Array(H);
@@ -86,20 +93,21 @@ export function mountHeat(under: HTMLCanvasElement, over: HTMLCanvasElement, cha
           px[r * 4] = LUT[li]; px[r * 4 + 1] = LUT[li + 1]; px[r * 4 + 2] = LUT[li + 2]; px[r * 4 + 3] = LUT[li + 3];
         }
         sx.putImageData(img, 0, 0);
-        u.drawImage(strip, 0, 0, 1, H, Math.max(0, x0), 0, Math.min(W, x1) - Math.max(0, x0), H);
+        u.drawImage(strip, 0, 0, 1, H, a, 0, b - a, H);
       }
     }
 
     // The liquidation map: bars from the right edge, one per price step, longer where more would be liquidated.
-    // Entry prices come from the candles on screen (all of them when only a few are).
+    // Entry prices come from the last week of candles whatever the zoom: positions opened months ago are mostly
+    // closed, and counting them would fill prices far away with liquidations that will not happen.
     if (d.oi && n) {
-      const from = Math.max(0, Math.floor(range.from)), to = Math.min(n - 1, Math.ceil(range.to));
-      const seenBars = to - from >= 5 ? bars.slice(from, to + 1) : bars;
+      const week = bars.filter((x) => x.time >= bars[n - 1].time - 7 * 86_400);
+      const seenBars = week.length >= 5 ? week : bars.slice(-30);
       const m = liqMap(seenBars, d.oi * bars[n - 1].close, Math.min(top, bottom), Math.max(top, bottom), Math.max(20, Math.round(h / 4)));
       if (m) {
         let max = 0;
         for (let i = 0; i < m.n; i++) max = Math.max(max, m.lowLev[i] + m.midLev[i] + m.highLev[i]);
-        const reach = W * 0.24, groups: [Float64Array, string][] = [[m.highLev, 'rgba(94,234,212,.8)'], [m.midLev, 'rgba(20,184,166,.8)'], [m.lowLev, 'rgba(15,118,110,.8)']];
+        const reach = W * 0.16, groups: [Float64Array, string][] = [[m.highLev, 'rgba(94,234,212,.7)'], [m.midLev, 'rgba(20,184,166,.7)'], [m.lowLev, 'rgba(15,118,110,.7)']];
         for (let i = 0; max > 0 && i < m.n; i++) {
           const a = yOf(m.low + (i + 1) * m.step), b = yOf(m.low + i * m.step), y = Math.min(a, b), tall = Math.max(1, Math.abs(b - a) - dpr);
           let x = W;
