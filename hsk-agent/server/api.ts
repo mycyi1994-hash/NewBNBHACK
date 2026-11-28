@@ -324,7 +324,10 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           console.error('[moa] Anthropic call failed:', msg);
-          write({ type: 'error', error: 'The AI could not answer.' });
+          // The kind of failure (HTTP status and the API's error type, never the request or a key), so a failing AI can be
+          // told apart from outside: a bad request, a refused key, no credit and a busy API need different fixes.
+          const st = (e as { status?: unknown }).status, ty = ((e as { error?: { error?: { type?: unknown } } }).error?.error?.type);
+          write({ type: 'error', error: 'The AI could not answer.', kind: `${typeof st === 'number' ? st : 'no-status'} ${typeof ty === 'string' ? ty : (e instanceof Error ? e.name : 'error')}`, detail: msg.replace(/sk-ant-[A-Za-z0-9_-]+/g, '[key]').slice(0, 300) });
         } finally {
           clearInterval(beat);
         }
