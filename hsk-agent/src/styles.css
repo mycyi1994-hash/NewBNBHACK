@@ -257,6 +257,29 @@ select { padding-right: 8px; }
 .vc-safe { list-style: none; margin: 0; padding: 12px 16px 14px; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--ink-2); }
 .vc-safe li { display: inline-flex; align-items: center; gap: 6px; }
 .vc-safe .ic { color: #1e8e3e; }
+/* moving to a new vault: one calm card with three steps (the list is .pf-steps), and the line about what the old vault still holds */
+.move { margin: 14px 16px 2px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--accent-tint); border-radius: 12px; background: #f6f9fe; }
+.move-head { display: flex; align-items: center; gap: 10px; }
+.move-head .vc-ic { flex: none; }
+.move-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.move-title b { font-size: 16px; font-weight: 700; color: var(--ink-title); }
+.move-title small { font-size: 13px; line-height: 18px; color: var(--ink-2); }
+.move .pf-steps { margin: 0; }
+.move-step { display: flex; flex-direction: column; min-width: 0; }
+.move-step b { font-size: 14px; font-weight: 600; }
+.move-step small { font-size: 12.5px; line-height: 17px; font-weight: 400; color: var(--ink-3); }
+.pf-steps li.done { color: var(--ink-3); }
+.pf-steps li.done span { border-color: var(--accent-tint); background: var(--accent-tint); color: var(--accent-ink); }
+.move-note { margin: 0; padding: 9px 12px; border-radius: 10px; background: var(--warn-bg); color: #8a4b00; font-size: 13px; line-height: 19px; }
+.move-act { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.move-go { height: 40px; padding: 0 18px; gap: 8px; font-weight: 700; }
+.move.compact { margin: 0; padding: 12px; background: var(--bg); }
+.move.compact .move-go { flex: 1; }
+.move-left { margin: 12px 16px 0; display: flex; flex-direction: column; gap: 4px; }
+.move-left p { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-radius: 10px; background: var(--warn-bg); color: #8a4b00; font-size: 13px; font-weight: 600; }
+.move-left small { font-size: 12.5px; line-height: 18px; color: var(--ink-3); }
+.move-left small.warn { color: var(--neg); }
+.acct-vault .move-left { margin: 0; }
 .nav-item.static { height: auto; min-height: 36px; padding: 8px 10px; cursor: default; align-items: flex-start; }
 .nav-item.static:hover { background: none; }
 .nav-item.static .nav-text { white-space: normal; font-size: 12.5px; line-height: 17px; color: var(--ink-2); }
@@ -2623,7 +2646,6 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .aip-sec .mp-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .aip-sec .mp-h2 small { flex: 1 1 260px; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink-3); }
 .aip-card .mp-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-.aip-honest { margin: -4px 0 0; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--ink-title); text-wrap: pretty; }
 .aip-result { align-items: center; min-height: 86px; }
 .aip-now { flex: none; display: flex; flex-direction: column; min-width: 0; }
 .aip-now small { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink-2); }
@@ -2695,11 +2717,9 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .pf-hero { display: flex; flex-direction: column; min-width: 0; }
 .pf-hero small { font-size: 12.5px; line-height: 17px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pf-hero > b { display: inline-flex; align-items: baseline; gap: 6px; font-size: 30px; line-height: 38px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink-title); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pf-hero > b i { font-style: normal; font-size: 15px; }
-.pf-hero > b.up i { color: var(--pos); } .pf-hero > b.down i { color: var(--neg); }
 .pf-hero > b.pf-none { color: var(--ink-3); }
 .pf-hero.sm > b { font-size: 22px; line-height: 28px; }
-.pf-hold { font-size: 13.5px; line-height: 19px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pf-hold { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13.5px; line-height: 19px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* three marks: did it beat holding over 3달, 1년, 3년 */
 .pf-marks { display: inline-flex; flex-wrap: wrap; gap: 6px; }
@@ -2721,8 +2741,7 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .ar-main b { display: flex; align-items: center; gap: 7px; font-size: 15px; line-height: 21px; font-weight: 700; color: var(--ink-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ar-main small { font-size: 13px; line-height: 18px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ar-live { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pos) 18%, transparent); }
-.ar-num { flex: none; min-width: 84px; display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 4px; font-size: 18px; font-weight: 800; color: var(--ink-title); font-variant-numeric: tabular-nums; }
-.ar-num i { font-style: normal; font-size: 11px; } .ar-num.up i { color: var(--pos); } .ar-num.down i { color: var(--neg); }
+.ar-num { flex: none; min-width: 84px; display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 18px; line-height: 22px; font-weight: 800; color: var(--ink-title); font-variant-numeric: tabular-nums; }
 .ar-skel { display: inline-block; width: 72px; height: 18px; border-radius: 6px; }
 
 /* market: tiers, the card */
@@ -2850,3 +2869,9 @@ details.tk-tier > summary svg { margin-left: auto; color: var(--ink-3); }
 .mp-live i { width: 7px; height: 7px; border-radius: 50%; background: #b5b9be; }
 .mp-live.on { color: var(--pos); }
 .mp-live.on i { background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, var(--pos) 18%, transparent); }
+
+/* against just holding: the one coloured thing on a card or row (green = did better than holding, even while down) */
+.pf-vs { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 12px; line-height: 1; font-weight: 700; letter-spacing: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pf-vs.ahead { background: color-mix(in srgb, var(--pos) 12%, transparent); color: var(--pos); }
+.pf-vs.behind { background: color-mix(in srgb, var(--neg) 10%, transparent); color: var(--neg); }
+.pf-vs.even { background: #f1f2f4; color: var(--ink-2); }

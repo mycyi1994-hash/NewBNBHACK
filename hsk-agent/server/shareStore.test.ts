@@ -131,7 +131,10 @@ test('over HTTP: login needed to share, creator from the session, hires counted,
   const { call, close } = await serve();
   try {
     assert.equal((await call('/api/shared', undefined, { spec: spec(), feeBps: 10 })).status, 401);
-    const pub = await call('/api/shared', ANN, { spec: spec(), feeBps: 10, nick: 'Ann', creator: CAROL });
+    // a demo server makes no vault that could pay a creator fee, so a share that asks one is refused; a free one is taken
+    const withFee = await call('/api/shared', ANN, { spec: spec(), feeBps: 10, nick: 'Ann' });
+    assert.deepEqual([withFee.status, withFee.json.why], [400, 'fee']);
+    const pub = await call('/api/shared', ANN, { spec: spec(), feeBps: 0, nick: 'Ann', creator: CAROL });
     assert.equal(pub.status, 200);
     const agent = pub.json.agent as { id: string; creator: string };
     assert.equal(agent.creator, ANN, 'the creator is the logged-in wallet, not what the body says');

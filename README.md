@@ -46,8 +46,10 @@ Moa AI decision yet.
 They have been run on a local fork of mainnet only (scripts in `hsk-agent/contracts/scripts/`). The contracts are
 **unaudited**.
 
-**Vault version 3 is not deployed.** It is compiled and tested only, on 27 Nov 2026:
+**Vault version 3 is not deployed.** It is compiled and tested only, last on 28 Nov 2026:
 - fork tests: `fork-test.mjs` 69/69 and `fee-fork-test.mjs` 51/51;
+- moving a wallet from a version-2 vault to a version-3 one, walked on a fork through the calls the app sends:
+  `upgrade-fork-test.mjs` 53/53 (the app's card: make the new vault, take everything out of the old one, put USDT in);
 - a randomized fork fuzz test: over 3,400 invariant checks, 0 failed;
 - Foundry: 20 tests, 5 of them invariants (256 runs × 80 calls); MoaVault line coverage 99% (`contracts/audit/coverage.txt`);
 - Slither: 0 high findings; 12 rated medium, each reviewed and kept with reasons in `contracts/MAINNET.md`

@@ -2,7 +2,8 @@
 // wallet address; opening it shows the wallet's own vault (what it holds, its limits) with Deposit and Withdraw.
 // Deposits and withdrawals are transactions from the user's own wallet: the server cannot move funds in or out.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { limitsText, type VaultInfo } from './parts.tsx';
+import { limitsText, sendNote, type VaultInfo } from './parts.tsx';
+import MoveVault from './MoveVault.tsx';
 import { deposit, logIn, logOut, nickOf, saveNick, setLimits, setPaused, setStopLoss, shortAddress, useSession, wallets, withdraw, type SendResult, type WalletChoice } from './account.ts';
 import { vaultUse } from './VaultCard.tsx';
 import { useT } from './i18n.ts';
@@ -128,6 +129,7 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
               {on && <span className={`vm-state on${vault!.paused ? ' paused' : ''}`}><i />{vault!.paused ? t.acPaused : t.vcLive}</span>}
               {vault?.localFork && <span className="fork-badge">{t.localFork}</span>}
             </div>
+            <MoveVault vault={vault} onReload={onReload} compact />
             {on ? (
               <>
                 <div className="acct-bal"><b>${money(vault!.usdtBalance)}</b><span>USDT</span></div>
@@ -169,7 +171,7 @@ export default function AccountButton({ vault, onReload, onRetryVault }: { vault
 /** What the wallet said, in words. */
 function useSendNote() {
   const { t } = useT();
-  return (r: SendResult): string => (r.ok ? '' : r.why === 'rejected' ? t.txRejected : r.why === 'reverted' ? t.txReverted : r.why === 'slow' ? t.txSlow : r.why === 'nowallet' ? t.acNoWallet : t.txFailed(r.detail ?? ''));
+  return (r: SendResult): string => sendNote(t, r);
 }
 
 function Deposit({ vault, onClose, onDone }: { vault: VaultInfo; onClose: () => void; onDone: () => void }) {

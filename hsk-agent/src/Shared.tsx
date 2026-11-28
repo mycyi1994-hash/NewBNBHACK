@@ -12,8 +12,8 @@ import { Modal, StateBox, useToast } from './ui.tsx';
 import { useT, type Lang, type Strings } from './i18n.ts';
 import { nickOf, shortAddress, useSession } from './account.ts';
 import * as cex from './cex.ts';
-import { FEE_CHOICES, FEES_LIVE, feeOn, feeText, shareLink, type SharedAgent, type SharedRef } from './share.ts';
-import { getShared, publishShared, scoreShared, unpublishShared, useFeesShared, useMineShared, useShared, type PublishWhy, type Scored } from './shareClient.ts';
+import { FEE_CHOICES, feeOn, feeText, shareLink, type SharedAgent, type SharedRef } from './share.ts';
+import { getShared, publishShared, scoreShared, unpublishShared, useFeesLive, useFeesShared, useMineShared, useShared, type PublishWhy, type Scored } from './shareClient.ts';
 import { money } from './hiredText.ts';
 import type { MadeSpec } from './spec.ts';
 
@@ -165,7 +165,10 @@ export function ShareSheet({ spec, onClose }: { spec: MadeSpec; onClose: () => v
   const session = useSession();
   const { mine, reload } = useMineShared();
   const had = mine && mine !== 'fail' ? mine.agents.find((x) => x.sourceId === spec.id && !x.removedAt) : undefined;
-  const [fee, setFee] = useState<number>(FEES_LIVE ? 50 : 0);
+  // A fee can be picked only where a vault can pay it: the server says so (version-3 vaults). Unknown means no picker.
+  const feesLive = useFeesLive();
+  const [picked, setFee] = useState<number | null>(null);
+  const fee = feesLive ? picked ?? 50 : 0;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState<SharedAgent | null>(null);
@@ -209,7 +212,7 @@ export function ShareSheet({ spec, onClose }: { spec: MadeSpec; onClose: () => v
         ) : (
           <>
             <p className="sh-lead">{t.shSheetSub}</p>
-            {FEES_LIVE ? (
+            {feesLive ? (
               <div className="field">
                 <span>{t.shPickFee}</span>
                 <div className="sh-fees" role="radiogroup" aria-label={t.shPickFee}>

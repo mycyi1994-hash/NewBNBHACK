@@ -30,13 +30,15 @@ const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 /** How many places the page shows: your agents first, then empty places to add more, never fewer than this. */
 const SLOTS = 3;
 
-export default function MyAgents({ hired, quotes, vault, execs, now, agents, agentsFailed, onEdit, onPause, onResume, onRemove, onOpen, onRecommend, onStart, onMarket, onBuild }: {
+export default function MyAgents({ hired, quotes, vault, execs, now, agents, agentsFailed, onEdit, onPause, onResume, onRemove, onOpen, onRecommend, onStart, onMarket, onBuild, onReloadVault }: {
   hired: HiredAgent[]; quotes: Quote[]; vault: VaultInfo | null; execs: Execution[]; now: number;
   agents: Agent[] | null; agentsFailed: boolean;
   onEdit: (id: string) => void; onPause: (id: string) => void; onResume: (id: string) => void; onRemove: (id: string) => void;
   onOpen: (id: string) => void; onRecommend: () => void;
   /** Opens the hire sheet for the agent that is ready: it asks how much to give it, then the agent starts. */
   onStart: (a: Agent) => void; onMarket: () => void; onBuild: () => void;
+  /** After a step of the move to a new vault: read the vault again. */
+  onReloadVault: () => void;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -177,7 +179,7 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
       <MyShared onBuild={onBuild} />
 
       {(signedIn || hired.some((h) => h.mode === 'auto')) && <RunnerPanel hired={hired} />}
-      <VaultCard vault={vault} />
+      <VaultCard vault={vault} onReload={onReloadVault} />
       <p className="muted small">{t.mineStopNote} <a href="?trust">{t.navTrust}</a></p>
 
       {execs.length > 0 && (

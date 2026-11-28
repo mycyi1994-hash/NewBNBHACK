@@ -1,7 +1,7 @@
 // Sends a trade to a user's MoaVault with the agent key. Every limit is enforced again by the contract.
 // Each signed-in wallet has its own vault, made by the MoaVaultFactory; the server looks it up per request.
 // Configuration comes from the server environment; with no factory or no agent key, execution is refused.
-import { BaseError, ContractFunctionRevertedError, keccak256, stringToHex, zeroHash, createPublicClient, createWalletClient, decodeEventLog, http, parseUnits, formatUnits, zeroAddress, type Address, type Hex } from 'viem';
+import { BaseError, ContractFunctionRevertedError, ContractFunctionZeroDataError, keccak256, stringToHex, zeroHash, createPublicClient, createWalletClient, decodeEventLog, http, parseUnits, formatUnits, zeroAddress, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import vaultArtifact from '../contracts/out/MoaVault.json' with { type: 'json' };
 import factoryArtifact from '../contracts/out/MoaVaultFactory.json' with { type: 'json' };
@@ -105,32 +105,77 @@ export async function checkFactory(cfg: ExecConfig): Promise<FactoryCheck> {
   try { await pub.readContract({ address: cfg.factory, abi: factoryAbi, functionName: 'stopLossBps' }); return 'ok'; } catch { return 'old'; }
 }
 
+/** The vault one factory made for this wallet, or undefined when it made none. */
+async function vaultAt(cfg: ExecConfig, factory: Address, owner: Address): Promise<Address | undefined> {
+  const v = (await clientOf(cfg).readContract({ address: factory, abi: factoryAbi, functionName: 'vaultOf', args: [owner] })) as Address;
+  return v === zeroAddress ? undefined : v;
+}
+
 /**
  * The vault the factory made for this wallet, or undefined when it has none yet. A wallet whose vault an earlier
- * factory made keeps that one, so nobody's funds are left behind in a vault the app no longer shows.
+ * factory made keeps that one until it has a vault on the current factory (see upgradeVault), so nobody's funds are
+ * left behind in a vault the app no longer shows.
  */
 export async function vaultOf(cfg: ExecConfig, owner: Address): Promise<Address | undefined> {
   if (!cfg.factory) return undefined;
   for (const f of [cfg.factory, ...(cfg.legacyFactories ?? [])]) {
-    const v = (await clientOf(cfg).readContract({ address: f, abi: factoryAbi, functionName: 'vaultOf', args: [owner] })) as Address;
-    if (v !== zeroAddress) return v;
+    const v = await vaultAt(cfg, f, owner);
+    if (v) return v;
   }
   return undefined;
 }
 
+/** Every vault Moa's factories made for this wallet: the current factory's first, then the earlier ones in their order. */
+export async function vaultsOf(cfg: ExecConfig, owner: Address): Promise<{ vault: Address; current: boolean }[]> {
+  if (!cfg.factory) return [];
+  const all = await Promise.all([cfg.factory, ...(cfg.legacyFactories ?? [])].map((f) => vaultAt(cfg, f, owner)));
+  return all.flatMap((vault, i) => (vault ? [{ vault, current: i === 0 }] : []));
+}
+
 /* ---------- vault versions: creator fees exist from version 3 ---------- */
 
+/** Did the contract itself answer "no such thing" (a revert, or no data), as opposed to the chain not answering at all? */
+const refused = (e: unknown) => e instanceof BaseError && !!e.walk((x) => x instanceof ContractFunctionRevertedError || x instanceof ContractFunctionZeroDataError);
+
 const versions = new Map<string, number>();
-/** 3 for a vault that can pay creator fees; 2 for an older one (no VERSION to read). Never changes, so it is kept. */
+/**
+ * 3 for a vault that can pay creator fees; 2 for an older one (no VERSION to read). Never changes, so it is kept;
+ * an answer the chain did not give (a timeout, a failed request) reads as 2 for this once and is not kept.
+ */
 export async function vaultVersion(cfg: ExecConfig, vault: Address): Promise<number> {
   const key = `${cfg.rpcUrl}|${vault.toLowerCase()}`;
   const had = versions.get(key);
   if (had !== undefined) return had;
-  let v = 2;
-  try { v = Number(await clientOf(cfg).readContract({ address: vault, abi, functionName: 'VERSION' })); } catch { /* an older vault has no VERSION */ }
-  versions.set(key, v);
+  try {
+    const v = Number(await clientOf(cfg).readContract({ address: vault, abi, functionName: 'VERSION' }));
+    versions.set(key, v);
+    return v;
+  } catch (e) {
+    if (refused(e)) versions.set(key, 2);   // an older vault has no VERSION
+    return 2;
+  }
+}
+
+const made = new Map<string, number>();
+/**
+ * The version of the vaults a factory makes: 3 when it holds the terms every version-3 vault reads on a trade (the
+ * halt and the platform fee), 2 when it has none. Undefined when the chain did not answer: unknown is never "old".
+ */
+export async function factoryVersion(cfg: ExecConfig, factory: Address | undefined = cfg.factory): Promise<number | undefined> {
+  if (!factory) return undefined;
+  const key = `${cfg.rpcUrl}|${factory.toLowerCase()}`;
+  const had = made.get(key);
+  if (had !== undefined) return had;
+  let v: number;
+  try { await clientOf(cfg).readContract({ address: factory, abi: factoryAbi, functionName: 'tradeTerms' }); v = 3; } catch (e) {
+    if (!refused(e)) return undefined;
+    v = 2;
+  }
+  made.set(key, v);
   return v;
 }
+/** May a newly shared agent ask for a creator fee? Only when the vaults this server makes now can pay one. */
+export const feesLive = async (cfg: ExecConfig): Promise<boolean> => paysCreators((await factoryVersion(cfg)) ?? 0);
 export const paysCreators = (version: number) => version >= 3;
 
 /** The same configuration, pointed at this wallet's vault. */
@@ -140,33 +185,137 @@ export async function forOwner(cfg: ExecConfig, owner: Address | null | undefine
 }
 
 const madeOn = { day: -1, count: 0 };
+/** One more vault on the current factory, paid for by the agent key. At most maxVaultsPerDay a day, counted for creating and moving together. */
+async function makeVault(cfg: ExecConfig, owner: Address, agentKey: Hex): Promise<{ ok: true; vault: Address; txHash: Hex } | { ok: false; reason: string }> {
+  const account = privateKeyToAccount(agentKey);
+  const day = Math.floor(Date.now() / 86_400_000);
+  if (madeOn.day !== day) { madeOn.day = day; madeOn.count = 0; }
+  if (madeOn.count >= cfg.maxVaultsPerDay) return { ok: false, reason: 'No more vaults can be made today. Try again tomorrow.' };
+  const pub = clientOf(cfg);
+  const wallet = createWalletClient({ account, chain: chainOf(cfg), transport: http(cfg.rpcUrl) });
+  const { request } = await pub.simulateContract({ address: cfg.factory!, abi: factoryAbi, functionName: 'createVault', args: [owner], account });
+  madeOn.count++;
+  const txHash = await wallet.writeContract(request);
+  const receipt = await pub.waitForTransactionReceipt({ hash: txHash });
+  if (receipt.status !== 'success') return { ok: false, reason: `Transaction ${txHash} reverted.` };
+  const vault = await vaultAt(cfg, cfg.factory!, owner);
+  return vault ? { ok: true, vault, txHash } : { ok: false, reason: 'The vault was not found after it was made.' };
+}
+
 export type CreateResult = { ok: true; vault: Address; txHash?: Hex } | { ok: false; reason: string };
 /** Make this wallet's vault, paid for by the agent key. The wallet is the vault's owner. At most maxVaultsPerDay a day. */
 export function createVault(cfg: ExecConfig, owner: Address): Promise<CreateResult> {
   return inLine(async () => {
     if (!cfg.factory || !cfg.agentKey) return { ok: false, reason: 'This server cannot make vaults: no factory contract or agent key.' };
-    const account = privateKeyToAccount(cfg.agentKey);
-    if (account.address.toLowerCase() === owner.toLowerCase()) return { ok: false, reason: 'The agent wallet cannot own a vault.' };
+    if (privateKeyToAccount(cfg.agentKey).address.toLowerCase() === owner.toLowerCase()) return { ok: false, reason: 'The agent wallet cannot own a vault.' };
     try {
       const had = await vaultOf(cfg, owner);
       if (had) return { ok: true, vault: had };
-      const day = Math.floor(Date.now() / 86_400_000);
-      if (madeOn.day !== day) { madeOn.day = day; madeOn.count = 0; }
-      if (madeOn.count >= cfg.maxVaultsPerDay) return { ok: false, reason: 'No more vaults can be made today. Try again tomorrow.' };
-      const chain = chainOf(cfg);
-      const pub = clientOf(cfg);
-      const wallet = createWalletClient({ account, chain, transport: http(cfg.rpcUrl) });
-      const { request } = await pub.simulateContract({ address: cfg.factory, abi: factoryAbi, functionName: 'createVault', args: [owner], account });
-      madeOn.count++;
-      const txHash = await wallet.writeContract(request);
-      const receipt = await pub.waitForTransactionReceipt({ hash: txHash });
-      if (receipt.status !== 'success') return { ok: false, reason: `Transaction ${txHash} reverted.` };
-      const vault = await vaultOf(cfg, owner);
-      return vault ? { ok: true, vault, txHash } : { ok: false, reason: 'The vault was not found after it was made.' };
+      return await makeVault(cfg, owner, cfg.agentKey);
     } catch (e) {
       return { ok: false, reason: `The vault could not be made: ${explain(e)}` };
     }
   });
+}
+
+/**
+ * `made` is true only for the call that made the new vault; asking again returns the same vault and sends nothing.
+ * `from` is the earlier vault the wallet is moving out of. `why` on a refusal: 'off' (this server makes no vaults),
+ * 'nothing' (the wallet has no earlier vault to move from), 'same' (the current factory makes nothing newer),
+ * 'failed' (the daily cap, or the chain).
+ */
+export type UpgradeResult =
+  | { ok: true; vault: Address; made: boolean; from?: Address; txHash?: Hex }
+  | { ok: false; reason: string; why: 'off' | 'nothing' | 'same' | 'failed' };
+/**
+ * Move to a new vault, step one: make this wallet's vault on the current factory although an earlier factory already
+ * made it one. Paid for by the agent key, inside the same daily cap as createVault. No funds move here: the owner
+ * takes them out of the earlier vault and puts them into the new one from their own wallet. The earlier vault stays
+ * theirs and stays visible (moveStatus) for as long as it holds anything.
+ */
+export function upgradeVault(cfg: ExecConfig, owner: Address): Promise<UpgradeResult> {
+  return inLine(async () => {
+    if (!cfg.factory || !cfg.agentKey) return { ok: false, why: 'off', reason: 'This server cannot make vaults: no factory contract or agent key.' };
+    if (privateKeyToAccount(cfg.agentKey).address.toLowerCase() === owner.toLowerCase()) return { ok: false, why: 'off', reason: 'The agent wallet cannot own a vault.' };
+    try {
+      const all = await vaultsOf(cfg, owner);
+      const from = all.find((v) => !v.current)?.vault;
+      const now = all.find((v) => v.current)?.vault;
+      if (now) return { ok: true, vault: now, made: false, ...(from ? { from } : {}) };
+      if (!from) return { ok: false, why: 'nothing', reason: 'This wallet has no earlier vault to move from.' };
+      const makes = await factoryVersion(cfg);
+      if (makes === undefined) return { ok: false, why: 'failed', reason: 'The chain did not answer. Try again.' };
+      if (makes <= (await vaultVersion(cfg, from))) return { ok: false, why: 'same', reason: 'There is no newer vault to move to.' };
+      const r = await makeVault(cfg, owner, cfg.agentKey);
+      return r.ok ? { ok: true, vault: r.vault, made: true, from, txHash: r.txHash } : { ok: false, why: 'failed', reason: r.reason };
+    } catch (e) {
+      return { ok: false, why: 'failed', reason: `The vault could not be made: ${explain(e)}` };
+    }
+  });
+}
+
+/** An earlier vault of this wallet that still holds something: where it is, and what is in it. */
+export interface OldVault {
+  vault: Address; version: number; explorerUrl: string;
+  usdtBalance: string;
+  /** WHSK, WETH, WBTC it holds (only those above zero); the value at the pool price now when the vault can say it. */
+  holdings: { symbol: string; address: Address; decimals: number; amount: string; valueUsdt?: string }[];
+  /** USDT plus the coins' value, for "$X is still in your old vault". */
+  totalUsdt: string;
+}
+export interface MoveStatus {
+  /** The active vault is from an earlier factory and the current factory makes a newer version (`to`). */
+  upgrade: { available: boolean; to?: number };
+  /** The wallet has a vault on the current factory and one on an earlier factory: it has moved, or is moving. */
+  moved: boolean;
+  /** The earlier vault, for as long as it holds anything. Never reported once it is empty. */
+  old?: OldVault;
+}
+const NO_MOVE: MoveStatus = { upgrade: { available: false }, moved: false };
+
+/** What an earlier vault still holds, or undefined when it holds nothing. Balances are read from the tokens themselves. */
+async function heldIn(cfg: ExecConfig, vault: Address): Promise<OldVault | undefined> {
+  const pub = clientOf(cfg);
+  const bal = (token: Address) => pub.readContract({ address: token, abi: balanceAbi, functionName: 'balanceOf', args: [vault] });
+  const coins = Object.values(TOKENS);
+  const [usdt, ...amounts] = await Promise.all([bal(USDT), ...coins.map((t) => bal(t.address))]);
+  if (usdt === 0n && amounts.every((a) => a === 0n)) return undefined;
+  let total = usdt;
+  const holdings: OldVault['holdings'] = [];
+  for (const [i, t] of coins.entries()) {
+    if (amounts[i] === 0n) continue;
+    // what the vault says the holding is worth at the pool price; a vault that cannot say is still listed, with no value
+    const value = await pub.readContract({ address: vault, abi, functionName: 'position', args: [t.address] }).then((p) => (p as readonly bigint[])[2], () => undefined);
+    if (value !== undefined) total += value;
+    holdings.push({ symbol: t.symbol, address: t.address, decimals: t.decimals, amount: formatUnits(amounts[i], t.decimals), ...(value !== undefined ? { valueUsdt: formatUnits(value, 6) } : {}) });
+  }
+  return { vault, version: await vaultVersion(cfg, vault), explorerUrl: `${cfg.explorer}/address/${vault}`, usdtBalance: formatUnits(usdt, 6), holdings, totalUsdt: formatUnits(total, 6) };
+}
+
+/**
+ * Where this wallet stands between an earlier vault and the current one, read from the chain each time (nothing is
+ * remembered): whether a newer vault can be made for it, whether it already has both, and what an earlier vault
+ * still holds. Costs nothing on a server with no earlier factory.
+ */
+export async function moveStatus(cfg: ExecConfig): Promise<MoveStatus> {
+  if (!cfg.factory || !cfg.owner || !cfg.legacyFactories?.length) return NO_MOVE;
+  const all = await vaultsOf(cfg, cfg.owner);
+  const active = all[0];
+  if (!active) return NO_MOVE;
+  const makes = active.current ? undefined : await factoryVersion(cfg);
+  const to = makes !== undefined && makes > (await vaultVersion(cfg, active.vault)) ? makes : undefined;
+  let old: OldVault | undefined;
+  for (const v of all.slice(1)) { old = await heldIn(cfg, v.vault); if (old) break; }
+  return { upgrade: to ? { available: true, to } : { available: false }, moved: active.current && all.length > 1, ...(old ? { old } : {}) };
+}
+
+/**
+ * Everything /api/vault says: the active vault, the move to a newer one, and whether new shares may carry a creator fee.
+ * If the earlier vaults could not be read this once, the move fields are left out (unknown), never reported as "none".
+ */
+export async function vaultView(cfg: ExecConfig) {
+  const [status, move, creatorFees] = await Promise.all([vaultStatus(cfg), moveStatus(cfg).catch((): Partial<MoveStatus> => ({})), feesLive(cfg)]);
+  return { ...status, ...move, creatorFees };
 }
 
 /** What the browser needs to know about the network to deposit and withdraw from the user's own wallet. */

@@ -2,13 +2,13 @@
 // The Anthropic key and the agent key live here and never reach the browser.
 // Every vault action is for the vault of the wallet that logged in: the session token on the request says whose.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { checkFactory, platformFee, createVault, execConfigFromEnv, executeTrade, feesReceived, forOwner, serviceOn, vaultStatus, type CreatorRef, type ExecConfig, type FactoryCheck } from './executor.ts';
+import { checkFactory, platformFee, createVault, execConfigFromEnv, executeTrade, feesLive, feesReceived, forOwner, moveStatus, serviceOn, upgradeVault, vaultStatus, vaultView, type CreatorRef, type ExecConfig, type FactoryCheck } from './executor.ts';
 import * as session from './session.ts';
 import { openStore, storeFile, type AutoStore } from './autoStore.ts';
 import { gzipSync } from 'node:zlib';
 import { agentCacheFile, DEFAULT_KEYS, isKey, openAgentCache, type AgentCache, type SetKey } from './agentCache.ts';
 import { RUNNABLE } from '../src/agents.ts';
-import { autoBlock, newRunnerState, runnerEvery, startRunner, type RunnerState } from './autoRunner.ts';
+import { autoBlock, newRunnerState, pauseForMove, runnerEvery, startRunner, undoMovePause, type RunnerState } from './autoRunner.ts';
 import { frameCheck } from './nanoFrame.ts';
 import { cleanHistory, cleanOrder, issueTicket, MOA_LIMITS, rateLimiter, ticketBook } from './guard.ts';
 import type { HiredAgent } from '../src/runner.ts';
@@ -138,7 +138,24 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       }
       if (req.url === '/api/vault' && req.method === 'GET') {
         if (who && serviceOn(base)) store.seen(who);
-        return send(200, { ...(await vaultStatus(await forOwner(base, who))), signedIn: !!who });
+        // The active vault, plus the move to a newer one: whether one can be made, and what an earlier vault still holds.
+        return send(200, { ...(await vaultView(await forOwner(base, who))), signedIn: !!who });
+      }
+      // Move to a new vault, step one: make the logged-in wallet's vault on the current factory although an earlier
+      // factory made it one. The server pays the gas; nothing moves. The wallet's agents on auto are paused first
+      // (the new vault starts empty) and say why; if no vault is made they go back as they were.
+      if (req.url === '/api/vault/upgrade' && req.method === 'POST') {
+        if (!(await posted())) return;
+        if (!who) return send(401, { error: 'Log in first.' });
+        if (!serviceOn(base)) return send(503, { error: 'This server cannot make vaults.' });
+        const due = (await moveStatus(await forOwner(base, who))).upgrade.available;
+        const paused = due ? pauseForMove(store, who) : [];
+        let r: Awaited<ReturnType<typeof upgradeVault>>;
+        try { r = await upgradeVault(base, who); } catch (e) { undoMovePause(store, who, paused); throw e; }
+        const made = r.ok && r.made;
+        if (!made) undoMovePause(store, who, paused);
+        console.log(`[moa] new vault for ${who}: ${r.ok ? `${r.vault}${r.made ? ` (moving from ${r.from}; ${paused.length} auto agents paused)` : ' (already there)'}` : r.reason}`);
+        return send(r.ok ? 200 : 409, { ...r, paused: made ? paused.length : 0 });
       }
       // Make the logged-in wallet's vault. The server pays the gas; the wallet is the owner.
       if (req.url === '/api/vault/create' && req.method === 'POST') {
@@ -163,7 +180,7 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         const mine = !!who && (!q || q.toLowerCase() === who.toLowerCase());
         if (!mine) return send(200, { runner: run, now: Date.now() });
         const look = runner?.owners.get(who!.toLowerCase());
-        const agents = store.list(who!).filter((a) => a.mode === 'auto').map((a) => ({ id: a.id, paused: a.paused, check: runner?.agents.get(a.id) ?? null }));
+        const agents = store.list(who!).filter((a) => a.mode === 'auto').map((a) => ({ id: a.id, paused: a.paused, ...(a.paused && a.pausedWhy ? { why: a.pausedWhy } : {}), check: runner?.agents.get(a.id) ?? null }));
         return send(200, { runner: run, now: Date.now(), owner: { lastLookAt: look?.at ?? null, error: look?.error ?? null }, agents });
       }
       if (req.url === '/api/auto' && req.method === 'POST') {
@@ -180,7 +197,8 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         if (block) return send(409, { ok: false, why: block });
         // Amounts, pause and the rule come from the owner; what the agent already did stays as the server has it.
         const had = store.list(who).find((a) => a.id === agent.id);
-        store.put(who, had ? { ...had, perBuyUsd: agent.perBuyUsd, budgetUsd: agent.budgetUsd, paused: agent.paused, spec: agent.spec, shared: agent.shared, declined: agent.paused ? had.declined : undefined } : agent);
+        // Resuming it clears the reason the server paused it for.
+        store.put(who, had ? { ...had, perBuyUsd: agent.perBuyUsd, budgetUsd: agent.budgetUsd, paused: agent.paused, pausedWhy: agent.paused ? had.pausedWhy : undefined, spec: agent.spec, shared: agent.shared, declined: agent.paused ? had.declined : undefined } : agent);
         return send(200, { ok: true, agent: store.list(who).find((a) => a.id === agent.id) });
       }
 
@@ -226,6 +244,8 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         const body = await posted();
         if (!body) return;
         if (!who) return send(401, { error: 'Log in first.' });
+        // A creator fee only where a vault can pay it: while this server's factory makes older vaults, a share asks none.
+        if (Number(body.feeBps) > 0 && !(await feesLive(base))) return send(400, { ok: false, why: 'fee' });
         const r = shares.publish(who, { spec: body.spec, feeBps: body.feeBps, nick: body.nick });
         if (r.ok) console.log(`[moa] ${who} shared ${r.agent.id}${r.again ? ' (again)' : ''} at ${r.agent.feeBps} bps`);
         return send(r.ok ? 200 : 400, r);
@@ -246,9 +266,10 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         const proto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http');
         return send(200, await frameCheck(`${proto}://${host}`));
       }
-      // The factory's platform fee (0 unless its guardian set one), for the trust page. Version-2 factories have none.
+      // The factory's platform fee (0 unless its guardian set one), for the trust page; version-2 factories have none.
+      // And whether a new share may ask a creator fee: only when the vaults this server makes now are version 3 or newer.
       if (path === '/api/terms' && req.method === 'GET') {
-        return send(200, { platformFeeBps: await platformFee(base) });
+        return send(200, { platformFeeBps: await platformFee(base), creatorFees: await feesLive(base) });
       }
       // Public health: what works, in words, and nothing about keys, paths or files. It never calls the model.
       // The details are in the server's own log at start.

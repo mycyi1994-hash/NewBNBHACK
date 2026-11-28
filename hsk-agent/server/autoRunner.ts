@@ -30,7 +30,8 @@ export interface Deps {
  * error in plain words. Nothing here is secret and none of it is stored.
  */
 export type AgentCheck =
-  | { at: number; k: 'paused' | 'vaultPaused' | 'noRule' }
+  | { at: number; k: 'paused'; why?: 'moved' }
+  | { at: number; k: 'vaultPaused' | 'noRule' }
   | { at: number; k: 'noSignal'; error: string }
   | { at: number; k: 'idle'; signal: Signal }
   | { at: number; k: 'skip'; signal: Signal; why: SkipWhy }
@@ -47,6 +48,27 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Why an agent cannot be put on auto for this vault, or nothing when it can. */
 export function autoBlock(v: { configured: boolean }): 'noVault' | undefined {
   return v.configured ? undefined : 'noVault';
+}
+
+/**
+ * A wallet moving to a new vault: every agent of its that works on its own is paused before the new vault is made,
+ * and says why. The new vault starts empty, and a buy refused there would leave a signal agent waiting for its signal
+ * to flip; the agents' books are about the earlier vault. The owner resumes each one once the money is in. Agents the
+ * owner had already paused are left alone. Returns the ids it paused.
+ */
+export function pauseForMove(store: AutoStore, owner: string, now = Date.now()): string[] {
+  const mine = store.list(owner).filter((h) => h.mode === 'auto' && !h.paused);
+  for (const h of mine) store.put(owner, { ...h, paused: true, pausedWhy: 'moved', log: [...h.log, { at: now, k: 'paused' }] });
+  return mine.map((h) => h.id);
+}
+/** The new vault was not made after all: the agents pauseForMove paused go back to work as they were. */
+export function undoMovePause(store: AutoStore, owner: string, ids: string[]): void {
+  for (const h of store.list(owner)) {
+    if (!ids.includes(h.id) || h.pausedWhy !== 'moved') continue;
+    const back: HiredAgent = { ...h, paused: false, log: h.log.at(-1)?.k === 'paused' ? h.log.slice(0, -1) : h.log };
+    delete back.pausedWhy;
+    store.put(owner, back);
+  }
 }
 
 /** One pass over every owner. Returns what happened, for the log. */
@@ -83,7 +105,7 @@ export async function tick(store: AutoStore, deps: Deps, now = Date.now(), state
 
     for (const h of store.list(owner)) {
       if (h.mode !== 'auto') continue;
-      if (h.paused) { seen(h.id, { at: now, k: 'paused' }); continue; }
+      if (h.paused) { seen(h.id, { at: now, k: 'paused', ...(h.pausedWhy ? { why: h.pausedWhy } : {}) }); continue; }
       if (v.paused) { seen(h.id, { at: now, k: 'vaultPaused' }); continue; }
       let s: Signal | undefined;
       try { s = await deps.signal(h); } catch (e) { out.push(`${owner}/${h.id}: no signal (${msg(e)})`); seen(h.id, { at: now, k: 'noSignal', error: msg(e) }); continue; }

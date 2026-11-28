@@ -1,6 +1,6 @@
 // The logged-in wallet's vault as the server reports it (/api/vault).
 
-import type { Net } from './account.ts';
+import type { Net, SendResult } from './account.ts';
 
 /**
  * `configured` is "orders are real": the logged-in wallet has its own vault. Otherwise the app is a demo, for one of
@@ -24,6 +24,23 @@ export interface VaultInfo {
   session?: { agent: string; until: number; maxTradeUsdt?: string; assets: string[]; ours: boolean };
   /** Version 3: the factory guardian stopped agent trading on every vault (funds and the stop-loss are untouched). */
   halted?: boolean;
+  /** This vault is from an earlier factory and a newer one can be made for the wallet (`to` is its version). */
+  upgrade?: { available: boolean; to?: number };
+  /** The wallet has this vault and an earlier one: it has moved, or is moving. */
+  moved?: boolean;
+  /** The wallet's earlier vault, for as long as it holds anything: its address, version and balances. */
+  old?: OldVault;
+  /** Whether a newly shared agent may ask a creator fee: only when the vaults this server makes can pay one. */
+  creatorFees?: boolean;
+}
+export interface OldVault {
+  vault: string; version: number; explorerUrl?: string; usdtBalance: string; totalUsdt: string;
+  holdings: { symbol: string; address: string; decimals: number; amount: string; valueUsdt?: string }[];
+}
+
+/** What the wallet said about a transaction, in words. Empty when it went through. */
+export function sendNote(t: { txRejected: string; txReverted: string; txSlow: string; acNoWallet: string; txFailed: (d: string) => string }, r: SendResult): string {
+  return r.ok ? '' : r.why === 'rejected' ? t.txRejected : r.why === 'reverted' ? t.txReverted : r.why === 'slow' ? t.txSlow : r.why === 'nowallet' ? t.acNoWallet : t.txFailed(r.detail ?? '');
 }
 
 /** The vault's limits in one line: "$10 per trade · $30 per day", or that there are none. */

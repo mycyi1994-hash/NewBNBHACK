@@ -72,7 +72,6 @@ export function AiCard({ f, onHire, onLog, open }: { f: AiFeed; onHire: (a: Agen
           </span>
         </div>
       </header>
-      <p className="aip-honest">{t.aiHonest}</p>
       <div className="mp-result aip-result">
         {decided && last ? (
           <div className="aip-now">

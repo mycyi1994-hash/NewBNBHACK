@@ -53,7 +53,7 @@ vault with pause or by replacing the agent; a new factory with a new agent key i
 
 ## What you need first
 
-- HSK in the deploying wallet: the dry run prints the estimate (about 1 HSK for version 2 at the gas price seen on 26 Nov 2026; the version-3 dry run on 27 Nov 2026 estimated 3.9M gas, about 1.95 HSK).
+- HSK in the deploying wallet: the dry run prints the estimate (about 1 HSK for version 2 at the gas price seen on 26 Nov 2026; the version-3 dry run on 28 Nov 2026, with sessions and the platform-fee opt-in, estimated 4.77M gas, about 2.39 HSK).
 - HSK in the agent wallet: making one user's vault costs it about 0.63 HSK (version 3: about 0.90 HSK) and each trade about 0.15 HSK at that
   gas price. The server makes at most `MOA_MAX_VAULTS_PER_DAY` vaults a day (default 20).
 - USDT on HSK Chain in whichever wallet will log in and deposit: `0xf1b50ed67a9e2cc94ad3c477779e2d4cbfff9029`.
@@ -182,6 +182,13 @@ Tests on a fork of mainnet (each starts its own Hardhat node):
   and the platform fee (0 at first; only the guardian sets it; never above 0.2% or without a treasury; at 0.2% a $10
   buy pays exactly $0.02 to the treasury and $0.05 to the creator while the vault spends exactly $10 and the day counts
   $10; a sell pays floor(0.2%) and floor(0.5%) of what came out; back at 0 nothing is paid).
+- `scripts/upgrade-fork-test.mjs`, 53 checks: the move from a version-2 vault to a version-3 vault, walked with the
+  app's own code (the server's API over HTTP, the browser's functions signing through a stand-in wallet): the move is
+  offered; the new vault is made by the agent key with no signature; the old vault stays reported with its balances;
+  withdrawals and the deposit; an agent trade from the new vault inside its session; the hire sheet's session renewal
+  after the session has ended; a second call changes nothing; wallets with no version-2 vault are unaffected; the daily
+  cap; the agents on auto paused with the reason; creator fees only on a server whose factory makes version 3; and how
+  a version-3 vault treats a coin sent in by plain transfer (below).
 - `scripts/fuzz-fork-test.mjs`, randomized: 400 random steps (owner limits, budgets, creator approvals, agent buys and
   sells for random agents asking random fees, strangers calling owner functions, jumps in time), each checked against
   a model of what the vault must allow and an exact account of every unit of USDT; invariants I1–I8 are at the top of
@@ -214,7 +221,8 @@ Tests on a fork of mainnet (each starts its own Hardhat node):
    `--max-daily`, `--slippage-bps`, `--stop-loss-bps`) and the gas. Then `--send` as in **Steps** 3, and
    `node scripts/verify.mjs` as in **Steps** 4.
 
-3. Point the server at it and keep the version-2 factory, so the two wallets that have a vault there keep it:
+3. Point the server at it and keep the version-2 factory, so the two wallets that have a vault there keep it until
+   they move (see **Moving an existing wallet to a new vault**):
 
    ```
    MOA_FACTORY_ADDRESS=0x…new factory…
@@ -250,6 +258,49 @@ Tests on a fork of mainnet (each starts its own Hardhat node):
 8. Owners who want on-chain per-agent budgets: `node scripts/vault.mjs budgets on` (the app's hire sheet then sets
    each agent's budget), or per agent `node scripts/vault.mjs budget <hired agent id> 100`. Creator fees without the
    app: `node scripts/vault.mjs creator <hired agent id> 0xCREATOR 0.5`.
+
+## Moving an existing wallet to a new vault
+
+Vaults cannot be upgraded, so a wallet that has a version-2 vault moves to a version-3 vault of its own. Nothing in
+this section has happened on mainnet; it is rehearsed on a fork (`scripts/upgrade-fork-test.mjs`) and in a browser
+against a fork.
+
+Once the server points at the version-3 factory with the version-2 factory listed in
+`MOA_LEGACY_FACTORY_ADDRESSES`, a wallet with a version-2 vault keeps it as its active vault, and the app shows one
+card, **Move to a new vault**, in the vault card on *My agents* and in the account menu. Three steps:
+
+1. **Make the new vault.** One button. Moa's agent key pays (`POST /api/vault/upgrade`, inside the same daily cap as
+   new vaults); the wallet signs nothing. The new vault is the active one from then on.
+2. **Take everything out of the old vault.** The owner's wallet confirms one `withdraw(token, amount)` per token the
+   old vault holds: one confirmation when it holds only USDT.
+3. **Put it into the new vault.** The owner's wallet confirms one USDT transfer to the new vault.
+
+**Wallet confirmations: two in the usual case** (a vault that holds only USDT: one withdrawal, one deposit), plus one
+for each coin the old vault also holds. None for a vault that is empty.
+
+- The step that is waiting is read from the chain each time (`GET /api/vault`: the old vault's balances, the new
+  vault's, the wallet's), not from anything the browser remembers. Closing the tab after step 2 comes back to step 3.
+  Step 3 can be put off ("Not now"); that, and a finished step 3, is the one thing the browser keeps, so the deposit
+  is not offered again to someone who later withdraws everything.
+- The old vault is never hidden while it holds anything: `/api/vault` reports it (`old`: address, version, USDT, WHSK,
+  WETH, WBTC) and the app keeps a line, "$X is still in your old vault · Take it out", after the move too. It stays
+  the owner's; `node scripts/vault.mjs withdraw … --factory 0xd6bF…` works as before.
+- **Only USDT goes into the new vault.** A coin sent into a version-3 vault by plain transfer has no cost on the
+  vault's books (`costUsdt` stays 0): `stopOut` refuses it (`NothingToSell`), so the stop-loss never covers it, and it
+  dilutes the stop-loss of whatever the agent later buys of the same coin (on the fork: $20 sent in plus a $20 buy
+  needed a 57% fall, not 15%, before the stop applied). The stop compares what the whole holding is worth with what
+  the vault paid, so the vault still sells once the holding is worth 15% less than its cost: a coin someone sends in
+  is extra cushion, and the owner ends with no less USDT at the stop than without it. The agent key can sell such a
+  coin and the owner can always withdraw it. So the card asks the owner to sell coins to USDT first (while the old vault is still the active one:
+  "sell all BTC" in the chat); a coin left in the old vault at step 2 goes to the owner's wallet and stays there.
+- The new vault starts with $50 per trade, $100 a day, a 15% stop-loss and a 30-day agent session, whatever the old
+  vault's settings were; the card says so. The hire sheet renews the session (one confirmation, 90 days).
+- The wallet's agents on auto are paused when the new vault is made (it starts empty) and say why in the runner
+  status; the owner resumes each one once the money is in. Their books still describe what they bought on the old
+  vault: an agent that held a coin there should be let go and hired again.
+- A wallet with no version-2 vault is not affected: it gets a version-3 vault at its first login, as before.
+- Creator fees on new shares are offered only by a server whose current factory makes version-3 vaults
+  (`creatorFees` in `/api/terms` and `/api/vault`); such a server refuses a share that asks a fee otherwise.
 
 ## The same controls without the app
 

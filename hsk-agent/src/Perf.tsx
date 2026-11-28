@@ -75,17 +75,23 @@ export function PeriodMarks({ a, active }: { a: Agent; active?: PeriodDays }) {
   );
 }
 
+/** "보유보다 +9만원": the agent's money against just holding, as the one coloured thing on a card or row. */
+export function VsHold({ r }: { r: { total: number; hold: number } }) {
+  const { t, lang } = useT();
+  const v = verdictOf(r), diff = stakeOf(lang) * (r.total - r.hold);
+  return <span className={`pf-vs ${v}`}>{v === 'even' ? t.pfVsEven : t.pfVs(`${diff > 0 ? '+' : '−'}${won(lang, Math.abs(diff))}`)}</span>;
+}
+
 /** The hero: "1년 · 100만원 맡겼다면", the agent's money, then "그냥 보유 …". Same slot and size up or down. */
 export function MoneyHero({ a, period, size = 'md' }: { a: Agent; period: PeriodDays; size?: 'md' | 'lg' | 'sm' }) {
   const { t, lang } = useT();
   const r = periodResult(a, period), stake = stakeOf(lang);
   if (!r) return <div className={`pf-hero ${size}`}><small>{t.pfIf(t.pfName[period], won(lang, stake))}</small><b className="pf-none">—</b><span className="pf-hold">{t.pfShort}</span></div>;
-  const dir = r.total > 0.0005 ? 'up' : r.total < -0.0005 ? 'down' : 'flat';
   return (
     <div className={`pf-hero ${size}`}>
       <small>{t.pfIf(t.pfName[period], won(lang, stake))}</small>
-      <b className={dir}>{won(lang, stake * (1 + r.total))}<i aria-hidden>{dir === 'up' ? '▲' : dir === 'down' ? '▼' : ''}</i></b>
-      <span className="pf-hold">{t.pfHold(won(lang, stake * (1 + r.hold)))}</span>
+      <b>{won(lang, stake * (1 + r.total))}</b>
+      <span className="pf-hold">{t.pfHold(won(lang, stake * (1 + r.hold)))}<VsHold r={r} /></span>
     </div>
   );
 }
@@ -127,14 +133,13 @@ export function AsOf({ at, t }: { at?: number | null; t: Strings }) {
 }
 
 /**
- * One agent as a list row: mark, name with a live dot, its one line, and ONE number (its own money for the period);
- * the list ends with just holding as a row, so the comparison is in the list itself. No rank. `pending` shows the
+ * One agent as a list row: mark, name with a live dot, its one line, its own money for the period and how that
+ * compares with just holding; the list ends with just holding as a row. No rank. `pending` shows the
  * row before its number is worked out, with only the number shimmering.
  */
 export function AgentRow({ a, period, onOpen, hire, pending }: { a: Pick<Agent, 'rule' | 'base' | 'made' | 'live' | 'kind'> & Partial<Agent>; period: PeriodDays; onOpen?: () => void; hire?: ReactNode; pending?: boolean }) {
   const { t, lang } = useT();
   const r = !pending && a.equity && a.bench ? periodResult(a as Agent, period) : undefined;
-  const dir = r ? (r.total > 0.0005 ? 'up' : r.total < -0.0005 ? 'down' : 'flat') : '';
   return (
     <li className="ar-row" style={{ '--fam': markColor(a.rule) } as CSSProperties}>
       <button className="ar-open" onClick={onOpen} disabled={!onOpen}>
@@ -143,7 +148,7 @@ export function AgentRow({ a, period, onOpen, hire, pending }: { a: Pick<Agent, 
           <b>{a.made?.name ?? `${a.base} ${t.agNick[a.rule]}`}{a.live && a.kind === 'position' && <i className="ar-live" aria-label={t.frHolding} />}</b>
           <small>{a.made ? '' : t.agPlain[a.rule]}</small>
         </span>
-        <span className={`ar-num ${dir}`}>{pending ? <span className="skel ar-skel" /> : r ? <>{won(lang, stakeOf(lang) * (1 + r.total))}<i aria-hidden>{dir === 'up' ? '▲' : dir === 'down' ? '▼' : ''}</i></> : '—'}</span>
+        <span className="ar-num">{pending ? <span className="skel ar-skel" /> : r ? <>{won(lang, stakeOf(lang) * (1 + r.total))}<VsHold r={r} /></> : '—'}</span>
       </button>
       {hire}
     </li>

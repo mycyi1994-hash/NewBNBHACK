@@ -214,7 +214,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
       </button>
     </>}>
       <div className="hire">
-        {rule && (
+        {rule && !isAiRule && (
           <div className="hire-who">
             <Face rule={rule} base={base} size="lg" />
             <p>{target.kind === 'agent' && target.agent.made ? ruleLines(t, target.agent)[0] : t.agPlain[rule]}</p>
@@ -223,7 +223,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
         {isAiRule && (
           <section className="hire-ai" role="note">
             <AiBadge />
-            <p>{t.aiHireWarn}<small>{t.aiHonest}</small></p>
+            <p>{t.aiHireWarn}<small>{t.aiHireLimits}</small></p>
           </section>
         )}
         {sh && (

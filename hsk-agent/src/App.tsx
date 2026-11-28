@@ -320,7 +320,7 @@ function Shell() {
     const drop = x.pending && !sendingRef.current.has(x.pending.id) ? x.pending : undefined;
     return { ...x, paused: true, pending: drop ? undefined : x.pending, log: [...x.log, ...(drop ? [{ at, k: 'expired' as const, orderId: drop.id }] : []), { at, k: 'paused' }] };
   });
-  const resumeLocal = (id: string) => update(id, (x) => (x.paused ? { ...x, paused: false, declined: undefined, log: [...x.log, { at: Date.now(), k: 'resumed' }] } : x));
+  const resumeLocal = (id: string) => update(id, (x) => (x.paused ? { ...x, paused: false, pausedWhy: undefined, declined: undefined, log: [...x.log, { at: Date.now(), k: 'resumed' }] } : x));
 
   /* ----- agents that work on their own: the server holds them, this browser shows them ----- */
   const session = useSession();
@@ -418,7 +418,7 @@ function Shell() {
             onStart={(a) => setSheet({ kind: 'agent', agent: a })} onMarket={() => go('agents')} onBuild={() => openBuilder({})}
             onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }}
             onPause={pause} onResume={resume} onRemove={removeHired} onOpen={(id) => tell({ kind: 'status', hiredId: id })}
-            onRecommend={() => tell({ kind: 'recommend' })} />
+            onRecommend={() => tell({ kind: 'recommend' })} onReloadVault={reloadVault} />
         )}
       </main>
       <div className="moa-col">

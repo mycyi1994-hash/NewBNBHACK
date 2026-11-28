@@ -5,6 +5,7 @@ import { limitsText, vaultWhy, type VaultInfo, type VaultWhy } from './parts.tsx
 import { useT } from './i18n.ts';
 import { Icon } from './Icons.tsx';
 import { CopyAddress } from './ui.tsx';
+import MoveVault from './MoveVault.tsx';
 
 const num = (s?: string) => { const v = Number(s); return Number.isFinite(v) ? v : 0; };
 const usd = (v: number) => (Math.round(v * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -64,7 +65,7 @@ export function VaultLine({ vault }: { vault: VaultInfo | null }) {
 }
 
 /** "My agents": the whole picture. */
-export function VaultCard({ vault }: { vault: VaultInfo | null }) {
+export function VaultCard({ vault, onReload }: { vault: VaultInfo | null; onReload: () => void }) {
   const { t } = useT();
   const on = !!vault?.configured;
   const u = on ? vaultUse(vault!) : null;
@@ -77,6 +78,8 @@ export function VaultCard({ vault }: { vault: VaultInfo | null }) {
         {on && vault?.localFork && <span className="fork-badge">{t.localFork}</span>}
         {on && vault!.vault && <span className="vc-addr"><CopyAddress value={vault!.vault} label={t.copyAddress} done={t.addressCopied} /><a href={`?vault=${vault!.vault}`}>{t.vcPublic}</a>{vault!.explorerUrl && <a href={vault!.explorerUrl} target="_blank" rel="noreferrer">{t.vcExplorer} ↗</a>}</span>}
       </header>
+      {/* Moving to a new vault: the three steps, or the line about what is still in the old one. Nothing otherwise. */}
+      <MoveVault vault={vault} onReload={onReload} />
       {u ? (
         <dl className="vc-nums">
           <div><dt>{t.balance}</dt><dd>${usd(num(vault!.usdtBalance))}</dd></div>

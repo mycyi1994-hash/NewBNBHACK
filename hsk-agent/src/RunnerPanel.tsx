@@ -10,7 +10,8 @@ import { hiredName, money, skipText } from './hiredText.ts';
 import { EXPLORER } from './vaultRead.ts';
 
 type Check =
-  | { at: number; k: 'paused' | 'vaultPaused' | 'noRule' }
+  | { at: number; k: 'paused'; why?: 'moved' }
+  | { at: number; k: 'vaultPaused' | 'noRule' }
   | { at: number; k: 'noSignal'; error: string }
   | { at: number; k: 'idle'; signal: Signal }
   | { at: number; k: 'skip'; signal: Signal; why: SkipWhy }
@@ -19,7 +20,8 @@ export interface RunnerStatus {
   now: number;
   runner: { on: true; every: number; startedAt: number; passes: number; lastPassAt: number | null; nextAt: number | null; error: string | null } | { on: false; why: 'demo' | 'starting' };
   owner?: { lastLookAt: number | null; error: string | null };
-  agents?: { id: string; paused: boolean; check: Check | null }[];
+  /** `why`: the server paused it and says why ('moved' = the wallet moved to a new vault). */
+  agents?: { id: string; paused: boolean; why?: 'moved'; check: Check | null }[];
 }
 
 export async function loadRunnerStatus(owner?: string): Promise<RunnerStatus> {
@@ -41,7 +43,7 @@ export function plainError(t: Strings, e: string): string {
 const signalText = (t: Strings, s: Signal) => (s.kind === 'position' ? (s.live ? t.rnSigOn : t.rnSigOff) : s.kind === 'collect' ? (s.mult > 0 ? t.rnSigBuyDay(String(Math.round(s.mult * 100) / 100)) : t.rnSigRest) : s.price !== undefined ? t.rnSigPrice(money(s.price)) : t.rnSigNone);
 export function checkText(t: Strings, c: Check): { text: string; bad?: boolean; tx?: string } {
   switch (c.k) {
-    case 'paused': return { text: t.rnPaused };
+    case 'paused': return { text: c.why === 'moved' ? t.rnMoved : t.rnPaused };
     case 'vaultPaused': return { text: t.rnVaultPaused };
     case 'noRule': return { text: t.rnNoRule, bad: true };
     case 'noSignal': return { text: t.rnNoSignal(plainError(t, c.error)), bad: true };
@@ -88,7 +90,8 @@ export default function RunnerPanel({ hired, owner, compact }: { hired: HiredAge
       {s?.agents && (s.agents.length ? (
         <ul className="rnr-agents">
           {s.agents.map((a) => {
-            const c = a.check ? checkText(t, a.check) : null;
+            // Paused for the move to a new vault: that is the line, whatever its last look was.
+            const c = a.paused && a.why === 'moved' ? { text: t.rnMoved } as ReturnType<typeof checkText> : a.check ? checkText(t, a.check) : null;
             return (
               <li key={a.id} className={c?.bad ? 'bad' : ''}>
                 <b>{name(a.id)}</b>

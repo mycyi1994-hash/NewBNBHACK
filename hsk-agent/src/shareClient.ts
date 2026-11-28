@@ -54,6 +54,17 @@ export async function countHire(id: string): Promise<void> {
   try { await fetch('/api/shared/hire', json({ id })); } catch { /* the count is the server's; nothing to do here */ }
 }
 
+let feesAnswer: Promise<boolean> | null = null;
+/** Does this server let a new share ask a creator fee? Asked once per visit; false when it does not answer. */
+export const feesLive = (): Promise<boolean> =>
+  (feesAnswer ??= fetch('/api/terms').then((r) => (r.ok ? r.json() : null)).then((j: { creatorFees?: unknown } | null) => j?.creatorFees === true, () => { feesAnswer = null; return false; }));
+/** The same as a hook: false until the server says yes, so no fee picker shows while it is unknown. */
+export function useFeesLive(): boolean {
+  const [live, setLive] = useState(false);
+  useEffect(() => { let alive = true; void feesLive().then((v) => { if (alive) setLive(v); }); return () => { alive = false; }; }, []);
+  return live;
+}
+
 export const tagOf = (s: SharedAgent): SharedTag => ({ id: s.id, creator: s.creator, ...(s.nick ? { nick: s.nick } : {}), feeBps: s.feeBps, hires: s.hires, ...(s.removedAt ? { removedAt: s.removedAt } : {}) });
 /** A shared agent with its backtest, run in this browser exactly as for any made agent. Null when its candles do not load. */
 export async function scoreShared(s: SharedAgent): Promise<Agent | null> {

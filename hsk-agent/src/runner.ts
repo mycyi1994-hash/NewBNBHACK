@@ -59,6 +59,8 @@ export interface HiredAgent extends Amounts {
   /** Someone else made it and shared it: who, and the fee they ask (paid by the vault only if its owner approved it). */
   shared?: SharedRef;
   paused: boolean;
+  /** Why the server paused it, when it was not the owner: 'moved' = the wallet moved to a new vault. Gone once resumed. */
+  pausedWhy?: 'moved';
   pending?: Order;
   /** Last time a collect or plan buy was asked, filled, skipped or declined. */
   lastRunAt?: number;
