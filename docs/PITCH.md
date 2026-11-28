@@ -35,7 +35,7 @@ Say only what the app and the chain show. Facts and links are in the [README](..
 
 ## 4. Future plans
 
-1. **Vault version 3** (written and tested, not deployed): a 10-minute average price floor, agent sessions with an
+1. **Vault version 3** (factory on mainnet since 28 Nov 2026; moving every wallet to it): a 10-minute average price floor, agent sessions with an
    expiry, per-agent budgets on-chain, a guardian halt, creator fees.
 2. **A track record for Moa AI:** its paper result and its real trades accumulate from the first decision; publish
    them monthly, next to holding.

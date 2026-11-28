@@ -16,8 +16,12 @@ import type * as cex from './cex.ts';
 export const AI_RULE = 'aiPilot' as const;
 export const AI_INTERVAL = '4h' as const;
 export const AI_EVERY_MS = 4 * 3_600_000;
-/** A decision less than this after the last one waits (the interval, less a little for the runner's ticks). */
-export const COOLDOWN_MS = AI_EVERY_MS - 10 * 60_000;
+/**
+ * A decision less than this after the last one waits. One decision per closed candle is the rule (isDue); this only
+ * stops two calls close together. It was the whole interval less ten minutes, which pushed every later decision hours
+ * past its candle's close whenever one decision was made off the clock (the first one after a deploy).
+ */
+export const COOLDOWN_MS = 60 * 60_000;
 /** The last closed 4-hour candle must be this recent, or the data is too old to decide on. */
 export const STALE_MS = AI_EVERY_MS + 30 * 60_000;
 export const ROUND = 0.05;

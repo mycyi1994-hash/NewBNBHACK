@@ -19,6 +19,8 @@ import { MODEL } from './moaAgent.ts';
 import type { AiStore } from './aiStore.ts';
 
 type Env = Record<string, string | undefined>;
+/** The longest a snapshot may take to build before the decision is held for lack of data. */
+const SNAPSHOT_MS = 60_000;
 /** On, unless switched off (MOA_AI_TRADER=off) or there is no key to call the model with. */
 export const aiState = (env: Env): AiState => (String(env.MOA_AI_TRADER ?? '').toLowerCase() === 'off' ? 'off' : env.ANTHROPIC_API_KEY ? 'on' : 'noKey');
 
@@ -53,7 +55,11 @@ export async function decideOnce(asset: Asset, store: AiStore, deps: AiDeps, now
     return d;
   };
   let snap: Awaited<ReturnType<AiDeps['snapshot']>>;
-  try { snap = await deps.snapshot(asset, prev, now); } catch { return noCall('noData'); }
+  // The snapshot reads the exchange and the chain; a read that never comes back must not hold every later look.
+  let late: ReturnType<typeof setTimeout> | undefined;
+  try {
+    snap = await Promise.race([deps.snapshot(asset, prev, now), new Promise<never>((_, no) => { late = setTimeout(() => no(new Error('snapshot timed out')), SNAPSHOT_MS); })]);
+  } catch { return noCall('noData'); } finally { clearTimeout(late); }
   if (!snap.ok) return noCall(snap.why);
   // The exchange publishes a closed candle a little late: wait for it rather than decide on the one before.
   if (snap.snap.candle < candle && now - (candle * 1000 + AI_EVERY_MS) < 30 * 60_000) return null;

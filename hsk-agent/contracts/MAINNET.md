@@ -125,11 +125,16 @@ node scripts/compile.cjs
    node scripts/verify.mjs vault 0xYOUR_WALLET_ADDRESS
    ```
 
-## Version 3 hardening (not deployed)
+## Version 3 hardening (factory deployed 28 Nov 2026)
 
-Nothing in this section has been sent to mainnet. Version 3 of the vault and factory is compiled and checked on a
-local fork of mainnet only. Vaults cannot be upgraded: the two version-2 vaults above keep working exactly as they
-are (no creator fee, no budgets, the spot price floor) until their owners move to a new vault.
+The version-3 factory is on mainnet: [`0x57669b1ff8e4c8ee9770b857eee35c6c3080eade`](https://hsk.blockscout.com/address/0x57669b1ff8e4c8ee9770b857eee35c6c3080eade)
+([deployment](https://hsk.blockscout.com/tx/0xb1db645e719cf5697485411857cdc70a56619aaf2313605c0ffe33ef02bccd7e), block
+30745942, 4,732,804 gas). Read back from the chain after the deployment: 20,762 bytes of code, the agent
+`0x8C35…1bAE`, $50 per trade, $100 a day, 1.5% slippage, a 15% stop-loss, the deploying wallet `0x9E5f…214c` as
+guardian, not halted, platform fee 0, the three markets. Vaults cannot be upgraded: the version-2 vaults keep
+working exactly as they are (no creator fee, no budgets, the spot price floor) until their owners move to a new vault
+(below). A second version-2 factory, `0xa3a50f5095d712ffc11ce959f88611614502c0f3`, was deployed the same day by
+mistake from an old checkout (a `git pull` had failed); it has no vaults and is not used anywhere.
 
 What version 3 changes, against what the panel of judges found:
 
@@ -197,7 +202,10 @@ Tests on a fork of mainnet (each starts its own Hardhat node):
   against version 3 with sessions and the platform fee: seed 1, 400 steps, 2,009 checks, 148 buys carried out (37%);
   seed 7, 300 steps, 1,420 checks, 99 buys (33%); none failed.
 
-### Owner steps, when you decide to deploy (from `hsk-agent/contracts`)
+### Owner steps to deploy (from `hsk-agent/contracts`; done on 28 Nov 2026, kept for the next deployment)
+
+First check the checkout is current: `node scripts/compile.cjs` must print a deployed size of 15650 bytes for MoaVault
+and 20762 for MoaVaultFactory, and the dry run must show the starting limits and the guardian line.
 
 1. Compile and run the three fork tests:
 

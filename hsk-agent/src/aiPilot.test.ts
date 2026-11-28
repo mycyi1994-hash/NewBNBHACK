@@ -46,6 +46,9 @@ test('cool-down: one decision per closed 4-hour candle, never sooner than the in
   assert.equal(isDue({ at: NOW - 60_000, candle }, candle, NOW), false, 'that candle is decided');
   assert.equal(isDue({ at: NOW - 60_000, candle: candle - H4 }, candle, NOW), false, 'a new candle, but the last decision was a minute ago');
   assert.equal(isDue({ at: NOW - COOLDOWN_MS, candle: candle - H4 }, candle, NOW), true);
+  // a first decision made mid-candle (after a deploy) does not push the next one past the next close
+  assert.equal(isDue({ at: NOW - 78 * 60_000, candle: candle - H4 }, candle, NOW), true, 'decided 1h18m ago on the candle before: due now');
+  assert.equal(COOLDOWN_MS, 60 * 60_000);
   assert.equal(isDue({ at: NOW - AI_EVERY_MS, candle: candle - H4 }, candle, NOW), true);
 });
 
