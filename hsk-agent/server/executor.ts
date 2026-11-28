@@ -78,7 +78,17 @@ function chainOf(cfg: ExecConfig) {
   } as const;
 }
 
-const clientOf = (cfg: ExecConfig) => createPublicClient({ chain: chainOf(cfg), transport: http(cfg.rpcUrl) });
+const clients = new Map<string, ReturnType<typeof createPublicClient>>();
+/**
+ * One reading client per node. A read gives up after 8 seconds and is tried once more: the default (10 seconds, four
+ * tries) left a page waiting 40 seconds whenever the node was slow to answer.
+ */
+const clientOf = (cfg: ExecConfig) => {
+  const key = `${cfg.rpcUrl}|${cfg.chainId}`;
+  let c = clients.get(key);
+  if (!c) { c = createPublicClient({ chain: chainOf(cfg), transport: http(cfg.rpcUrl, { timeout: 8_000, retryCount: 1 }) }); clients.set(key, c); }
+  return c;
+};
 /** Can this server make vaults and trade for them? */
 export const serviceOn = (cfg: ExecConfig) => !!cfg.factory && !!cfg.agentKey;
 

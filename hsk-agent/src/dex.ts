@@ -15,11 +15,24 @@ export const POOLS: Record<Asset, { pool: string; token: string; decimals: numbe
 };
 
 let id = 1;
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+async function send<T>(method: string, params: unknown[]): Promise<T> {
   const r = await fetch(RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: id++, method, params }), signal: AbortSignal.timeout(15_000) });
   const j = (await r.json()) as { result?: T; error?: { message: string } };
   if (j.error || j.result === undefined) throw new Error(j.error?.message ?? 'empty RPC result');
   return j.result;
+}
+/**
+ * At most this many calls to the node at once, from everything in this process. A day of one pool's swaps is 44 log
+ * reads and three pools were read side by side, 8 each: a starting server sent its first 200 calls in a few seconds
+ * and the node then stopped answering it for minutes, vault reads included.
+ */
+const MAX_IN_FLIGHT = 4;
+let inFlight = 0;
+const waiting: (() => void)[] = [];
+async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+  if (inFlight >= MAX_IN_FLIGHT) await new Promise<void>((go) => waiting.push(go));
+  inFlight++;
+  try { return await send<T>(method, params); } finally { inFlight--; waiting.shift()?.(); }
 }
 const pad = (a: string) => a.toLowerCase().replace('0x', '').padStart(64, '0');
 const s256 = (h: string) => { let v = BigInt('0x' + h); if (v >= 2n ** 255n) v -= 2n ** 256n; return v; };
