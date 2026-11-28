@@ -28,7 +28,8 @@ Log in with a wallet on HSK Chain. Without one, the whole app works as a demo th
 
 | What | Address / transaction |
 | --- | --- |
-| MoaVaultFactory, source published | [`0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546`](https://hsk.blockscout.com/address/0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546) |
+| MoaVaultFactory version 2, source published | [`0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546`](https://hsk.blockscout.com/address/0xd6bF84aF1a81EB88EF2fD0c5B254b955E8256546) |
+| MoaVaultFactory **version 3**, deployed 28 Nov 2026 (new vaults start with $50 per trade, $100 a day, a 15% stop-loss; guardian halt; agent sessions) | [`0x57669b1ff8e4c8ee9770b857eee35c6c3080eade`](https://hsk.blockscout.com/address/0x57669b1ff8e4c8ee9770b857eee35c6c3080eade) · [deployment tx](https://hsk.blockscout.com/tx/0xb1db645e719cf5697485411857cdc70a56619aaf2313605c0ffe33ef02bccd7e) |
 | A user's vault, made by the factory when that wallet logged in | [`0x6A355aE335f06971C337c900783C2e016410b33C`](https://hsk.blockscout.com/address/0x6A355aE335f06971C337c900783C2e016410b33C) · [creation tx](https://hsk.blockscout.com/tx/0x3b69260d046140866ca1b5429c625c69e9a5f1cf93efd3c54c5d84f60f1afb0b) · [in the app, read-only](https://grabitmoa.onrender.com/?vault=0x6A355aE335f06971C337c900783C2e016410b33C) |
 | First trade through a vault ($1 of WBTC on HSKSwap; an earlier vault version) | [tx](https://hsk.blockscout.com/tx/0x955cd89b5e89200d606300df1afeca3c3adb337c200e6743af7b64595c2441ee) |
 | Agent wallet (may call `trade` and `stopOut` only; cannot withdraw) | [`0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE`](https://hsk.blockscout.com/address/0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE) |
@@ -46,7 +47,9 @@ Moa AI decision yet.
 They have been run on a local fork of mainnet only (scripts in `hsk-agent/contracts/scripts/`). The contracts are
 **unaudited**.
 
-**Vault version 3 is not deployed.** It is compiled and tested only, last on 28 Nov 2026:
+**Vault version 3: the factory is deployed** (28 Nov 2026, checked on-chain: 20,762 bytes of code, the starting
+limits above, the deploying wallet as guardian, platform fee 0, no vault made yet). No vault of version 3 has traded.
+Its tests, last run on 28 Nov 2026:
 - fork tests: `fork-test.mjs` 69/69 and `fee-fork-test.mjs` 51/51;
 - moving a wallet from a version-2 vault to a version-3 one, walked on a fork through the calls the app sends:
   `upgrade-fork-test.mjs` 53/53 (the app's card: make the new vault, take everything out of the old one, put USDT in);
@@ -65,8 +68,8 @@ Version 3 adds:
 - a platform-fee switch that is 0 and capped at 0.2% in the contract, and charged to a vault only up to the rate its owner
   accepted (`acceptPlatformFee`).
 
-Until the owner deploys it, new vaults are version 2; the server tells versions apart and sends version-2 vaults only
-the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) lists what will be run and recorded here.
+The server tells versions apart and sends version-2 vaults only the calls they have; a wallet with a version-2 vault
+moves to a new one from the app (three steps, two wallet confirmations). [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) lists what will be run and recorded here.
 
 ## What a user sees
 
@@ -91,8 +94,8 @@ the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) li
 - **Make an agent.** Four short steps (coin, starting point, when to buy and sell, name), with the past result
   redrawn on every change. You can choose to check the price daily, every 4 hours or every hour.
 - **Share an agent.** A made agent can be shared with a link. Others can hire it; the market shows the maker and a
-  real hire count, and labels it "made by a person, not verified". New shares carry no creator fee for now: the fee
-  path exists only in vault version 3, which is not deployed (see above).
+  real hire count, and labels it "made by a person, not verified". A share may carry a creator fee (at most 1%) only
+  when the server makes version-3 vaults, the only ones that can pay it, and only to a creator the hirer approved.
 - **My agents.** Each agent's money, holdings and profit or loss, a portfolio ring, and a running indicator.
 - **Moa** sits on the right of every screen. It explains, recommends an agent, asks before each trade (or lets the
   agent run on its own), and reports.
