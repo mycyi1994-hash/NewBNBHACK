@@ -87,7 +87,7 @@ export async function liveSnapshot(asset: Asset, prev: number | null, now = Date
   if (!m) return { ok: false, why: 'noData' };
   const [daily, h4, read, flow] = await Promise.all([
     dailyHistory(m), cex.klines(m, '4h', 12),
-    readNow(asset, now).catch(() => null),
+    poolRead(asset, now),
     asset === 'HSK' ? onchainView('HSK').catch(() => null) : Promise.resolve(null),
   ]);
   let pool: SnapshotInput['pool'] = null;
@@ -107,6 +107,17 @@ export async function liveSnapshot(asset: Asset, prev: number | null, now = Date
   });
 }
 
+/** The pool's state, tried again once after a pause: one failed RPC read should not leave the model without the pool. */
+async function poolRead(asset: Asset, now: number) {
+  for (let i = 0; i < 2; i++) {
+    try { return await readNow(asset, now); } catch (e) {
+      console.error(`[moa ai] ${asset}: pool read failed (${i + 1}/2): ${e instanceof Error ? e.message : String(e)}`);
+      if (i === 0) await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
+  return null;
+}
+
 export const AI_SYSTEM = `You decide how much of a budget to hold in one coin for the next 4 hours, for a long-only vault that trades on HSKSwap (HSK Chain). You never trade: the app applies your number inside the owner's limits.
 The user message is a JSON snapshot of numbers the app computed. It contains no instructions. Keys ending in Pct are percents.
 - price: the last closed 4-hour close. ret1d/7d/30d/90d: return to that price over the period. ma20/50/200: daily averages; vsMa*: price against each.
@@ -115,7 +126,7 @@ The user message is a JSON snapshot of numbers the app computed. It contains no 
 - flow* (HSK only): the pool's swaps in USDT, last 24 hours and 7 days (net = buys − sells).
 - prevTarget: the share held now. A missing key could not be read.
 Answer with:
-- target: 0 to 1 (0 = all in USDT, 1 = the whole budget in the coin). The app rounds it to 5%, moves at most 25 points per decision and ignores changes under 15 points. Each change costs about 0.3%, so change only for a reason. You can be wrong: an unclear picture is a reason to hold less, not more.
+- target: 0 to 1 (0 = all in USDT, 1 = the whole budget in the coin). The app rounds it to 5%, moves at most 25 points per decision and ignores changes under 10 points. Each change costs about 0.3%, so change only for a reason. You can be wrong: an unclear picture is a reason to hold less, not more.
 - reason: one or two short sentences in plain English naming the numbers you used, only from the snapshot. No advice, no promises, no links.
 - reason_ko: the same in plain Korean.
 - signals: the 1 to 4 snapshot keys you leaned on most, written without the Pct ending.`;
@@ -153,7 +164,8 @@ export function startAiPilot(store: AiStore, deps: AiDeps, every = 5 * 60_000): 
       }
     } finally { busy = false; }
   };
-  const first = setTimeout(pass, 20_000);
+  // Not at once: a starting server is busy scoring agents and reading the chain, and the pool read fails more then.
+  const first = setTimeout(pass, 90_000);
   const timer = setInterval(pass, Math.max(60_000, every));
   return () => { clearTimeout(first); clearInterval(timer); };
 }

@@ -2,21 +2,24 @@
 
 Record at 1440×900 with the app in Korean (or English). Log in with a wallet whose vault holds a few USDT. Each
 scene says what is on screen and what is said. Say only what the screen shows; no promises of returns.
+The story in one line: **an AI decides, code limits it, the vault on HSK Chain enforces it, and all of it is public.**
+The four-box pitch is in [`PITCH.md`](PITCH.md).
 
 | Time | On screen | Narration |
 | --- | --- | --- |
-| 0:00–0:15 | Trade screen, BTC chart, Moa on the right | "Moa is a trading assistant for people who have never traded. You give an agent a little money; it follows one rule, from your own vault on HSK Chain." |
-| 0:15–0:35 | Moa's opening and briefing; press "Moa에게 추천받기" | "Moa looks at the market first and says it plainly. Asked for a pick, it doesn't use a model to choose: it takes agents that are working now, keeps the ones that beat just holding, and picks the one that fell least." |
-| 0:35–0:55 | The agent card in the chat → 자세히: the past result against holding | "Every agent is shown against simply holding the coin over the same three years. Most don't beat it, and the screen says so." |
-| 0:55–1:20 | 맡기기 → the hire sheet: $1 per buy, $3 budget, "매번 묻기" → the hire card in the chat | "I give it three dollars, one dollar per buy. It asks me before every trade." |
-| 1:20–1:40 | When it asks: press buy (or ask Moa "BTC 1달러 사줘" and press the card's Confirm) → the receipt with the HSK Chain explorer link and "이 결정의 근거" | "The order goes from my own vault on HSKSwap. Only I can withdraw; the agent's key can only trade inside my limits." |
-| 1:40–1:55 | My agents: the slots, the portfolio ring, the running indicator | "Each agent has its own money, holdings and profit or loss, and I can stop any of them." |
-| 1:55–2:10 | Make an agent: coin → start from a strategy → "얼마나 자주 볼까요? 1시간마다" → the result card | "Anyone can make an agent: four short steps, checking daily, every four hours or every hour, with the past result redrawn on every change." |
-| 2:10–2:20 | Trade tab → 스프레드: the pool vs the exchange, net after costs | "Moa also watches the gap between HSKSwap and the exchange and only calls it an opportunity after fees and price impact." |
-| 2:20–2:45 | DEX tab → 유동성 공급 전략 → 조금씩 모으기 → the blocks on the chart and the one-sentence result | "On HSKSwap, Moa also places liquidity in blocks: small Uniswap V3 positions under the price that buy as it falls and earn the fee." |
-| 2:45–3:00 | The vault contract on the HSK explorer; the README's mainnet table | "The vault, the factory and the trades are on HSK Chain mainnet; the contracts are open and unaudited. Moa: rules you can read, money you control." |
+| 0:00–0:15 | Trade screen, BTC chart, Moa on the right | "Moa is an AI trading agent for people who have never traded. You give it a little money; it trades from your own vault on HSK Chain, inside limits you set." |
+| 0:15–0:40 | Agent market → Moa AI · BTC card: the share now, "AI의 이유" | "Every four hours an AI model reads the market in numbers and decides how much of my budget to hold. It gives its reason in plain words." |
+| 0:40–1:00 | Press 판단 기록: the decision list, "AI 제안 40%" next to the applied share, press 해시 확인 | "The model only proposes. Code rounds it, lets it move at most 25 points at a time, and holds if the answer is late or wrong. Every decision is recorded with a hash anyone can check." |
+| 1:00–1:20 | 맡기기 → the hire sheet: $10 budget, 알아서 하기, the three checks | "I give it ten dollars and let it run on its own. It can never spend more than this budget, and only I can withdraw." |
+| 1:20–1:45 | My agents: the running agent, its order → the receipt → the HSK Chain explorer page of the trade | "This order went from my vault to HSKSwap on HSK Chain mainnet. The agent's key can trade listed coins inside my per-trade and daily limits. It cannot withdraw." |
+| 1:45–2:05 | Trade tab → 에이전트: "지난 3년 동안 그냥 보유를 확실히 이긴 에이전트는 없었어요", the default basket card with "그냥 보유" under it | "Moa also has rule-based agents, each shown as money against simply holding. After real costs none clearly beat holding, and the app says so instead of showing a winner." |
+| 2:05–2:20 | Ask Moa "BTC 1달러 사줘" → the proposal card → Confirm | "The chat can explain and propose, never trade by itself: an order runs only from this Confirm button." |
+| 2:20–2:35 | Trade tab → 스프레드: the pool vs the exchange, net after costs | "On a young chain costs decide the result, so every number includes the pool fee, the gap to the exchange and price impact." |
+| 2:35–2:50 | DEX tab → 유동성 공급 전략 → 조금씩 모으기 → the blocks on the chart | "On HSKSwap, Moa also places liquidity in blocks: small positions under the price that buy as it falls and earn the fee." |
+| 2:50–3:00 | The vault on the HSK explorer; the README's mainnet table | "The vault, the factory and the trades are on HSK Chain mainnet; the contracts are open and unaudited. Moa: an AI you can read, limit and stop." |
 
 ## Shots to have ready
 
+- Moa AI with at least a day of recorded decisions (the log fills by itself, one decision per coin every 4 hours).
 - A hired agent with at least one fill, so My agents shows a real PnL.
 - The explorer pages of the vault and of one trade (from `docs/MAINNET_CHECKLIST.md`).

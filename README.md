@@ -33,6 +33,11 @@ Log in with a wallet on HSK Chain. Without one, the whole app works as a demo th
 | First trade through a vault ($1 of WBTC on HSKSwap; an earlier vault version) | [tx](https://hsk.blockscout.com/tx/0x955cd89b5e89200d606300df1afeca3c3adb337c200e6743af7b64595c2441ee) |
 | Agent wallet (may call `trade` and `stopOut` only; cannot withdraw) | [`0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE`](https://hsk.blockscout.com/address/0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE) |
 
+**Moa AI is live** on the deployed server: its first decisions were recorded on 28 Nov 2026 (BTC, ETH and HSK; for
+example the HSK decision with hash `0x9be4247b…79b9c884`). Anyone can read them at
+[`/api/ai/decisions?asset=HSK`](https://grabitmoa.onrender.com/api/ai/decisions?asset=HSK). No vault has traded on a
+Moa AI decision yet.
+
 **Not yet done on mainnet** with the current version:
 - an agent trade;
 - a stop-loss;
@@ -97,7 +102,7 @@ the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) li
   it leaned on). The model never trades and never sees an instruction from outside: its input is numbers the server
   computed. **Code sets the limits** (`src/aiPilot.ts`, `server/aiPilot.ts`):
   - the target is clamped to 0–100% and rounded to 5%;
-  - it moves at most 25 points per decision, and a change under 15 points is no change;
+  - it moves at most 25 points per decision, and a change under 10 points is no change;
   - old data, a failed or late call, a refusal, or an answer that does not fit the form all mean "hold the last
     target", and are recorded as such;
   - orders go through the same path as every other agent: inside the agent's budget, the vault's per-trade and daily

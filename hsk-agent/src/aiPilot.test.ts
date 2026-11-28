@@ -29,13 +29,14 @@ test('guard: at most 25 points a decision, from nothing held at the start', () =
   assert.equal(guard(1, 0).target, 0.75);
   assert.equal(guard(0.6, 0).target, 0.35);
 });
-test('guard: a move under 15 points is no move', () => {
-  assert.deepEqual(guard(0.5, 0.6), { target: 0.5, guard: { banded: true } });
-  assert.deepEqual(guard(0.5, 0.4), { target: 0.5, guard: { banded: true } });
-  assert.equal(guard(0.5, 0.65).target, 0.65, 'exactly the band moves');
-  assert.equal(guard(null, 0.1).target, 0, 'a first 10% stays at nothing');
+test('guard: a move under 10 points is no move', () => {
+  assert.deepEqual(guard(0.5, 0.55), { target: 0.5, guard: { banded: true } });
+  assert.deepEqual(guard(0.5, 0.45), { target: 0.5, guard: { banded: true } });
+  assert.equal(guard(0.5, 0.6).target, 0.6, 'exactly the band moves');
+  assert.equal(guard(null, 0.1).target, 0.1, 'a first 10% is held: a small share is not nothing');
+  assert.equal(guard(null, 0.05).target, 0, 'a first 5% stays at nothing');
   assert.deepEqual(guard(0.5, 0.5), { target: 0.5, guard: {} });
-  assert.equal(BAND, 0.15);
+  assert.equal(BAND, 0.10);
 });
 
 test('cool-down: one decision per closed 4-hour candle, never sooner than the interval', () => {

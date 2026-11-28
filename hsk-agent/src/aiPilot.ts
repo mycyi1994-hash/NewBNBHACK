@@ -2,7 +2,7 @@
 // The server asks the model once per coin when each 4-hour candle closes, with a snapshot of numbers that this code
 // builds itself (no text from outside goes in), and every vault that hired it follows that one shared target.
 // Code, not the model, keeps the limits: the target is clamped to 0..1 and rounded to 5%, moves at most 25 points a
-// decision, a change under 15 points is no change, at most one decision per interval, and anything wrong (old or
+// decision, a change under 10 points is no change, at most one decision per interval, and anything wrong (old or
 // missing data, a failed or late call, an answer that does not fit) keeps the previous target and records why.
 // This file is pure (no clock, no network, no storage) apart from where the decisions are read from: the server's
 // own store in the server, its public API in the browser.
@@ -22,7 +22,7 @@ export const COOLDOWN_MS = AI_EVERY_MS - 10 * 60_000;
 export const STALE_MS = AI_EVERY_MS + 30 * 60_000;
 export const ROUND = 0.05;
 export const STEP = 0.25;
-export const BAND = 0.15;
+export const BAND = 0.10;
 /** How long one model call may take before it counts as failed. */
 export const CALL_MS = 90_000;
 export const COINS: Asset[] = ['BTC', 'ETH', 'HSK'];

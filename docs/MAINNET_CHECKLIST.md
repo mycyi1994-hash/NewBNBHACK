@@ -35,6 +35,15 @@ your wallet and that order, valid for 5 minutes).
 
 Record the limit transaction and the first auto trade.
 
+## 3b. Moa AI on its own
+
+1. Agent market → Moa AI · BTC → 맡기기, "알아서 하기", a "$10" budget.
+2. Moa AI decides once per closed 4-hour candle (00:00, 04:00 … UTC). It trades only when its target share is at
+   least 10 points away from what the agent holds, so the first order may take a decision or two.
+3. Open 판단 기록 on the card and press 해시 확인 on the decision the order came from.
+
+Record the first Moa AI trade and the hash of its decision.
+
 ## 4. Stop-loss
 
 In the account menu, set a stop-loss (e.g. 5%) on the vault (one owner transaction). A stop-out happens only if a
@@ -62,6 +71,7 @@ Record it.
 | Approved agent trade | | |
 | Daily limit (owner) | | |
 | Auto trade | | |
+| Moa AI trade (and its decision hash) | | |
 | Stop-loss setting (owner) | | |
 | Liquidity: approval / mint / removal | | |
 | Withdraw | | |
