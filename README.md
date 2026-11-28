@@ -8,7 +8,9 @@ Moa lets people who have never traded do three things:
 - stop it or take the money out at any time.
 
 Every agent follows one fixed rule on one coin. It trades on HSKSwap from **the user's own vault**: a contract on
-HSK Chain that only the user can withdraw from, with the user's limits and stop-loss enforced on-chain.
+HSK Chain that only the user can withdraw from, with the limits and stop-loss its owner sets enforced on-chain. (A new
+vault starts with $50 per trade, $100 a day and a 15% stop-loss; the first vaults, version 2, have none until their
+owner sets them, and the one funded vault today is one of those.)
 
 **Live app:** https://grabitmoa.onrender.com · any vault, read-only, no login: `https://grabitmoa.onrender.com/?vault=<address>`
 (`?vault` alone lists every vault the factories made) · how Moa earns and its risks: `?trust`
@@ -17,14 +19,15 @@ Log in with a wallet on HSK Chain. Without one, the whole app works as a demo th
 
 ## Where this code comes from
 
-- **Built for this hackathon, from scratch.** Everything in `hsk-agent/` was written between 21 and 27 November 2026.
+- **Built for this hackathon, from scratch.** Everything in `hsk-agent/` was written from 21 November 2026 on, and is
+  still being worked on (see the commit dates).
 - **The repository is reused.** This repository and branch first held an unrelated project (an entry for BNB Hack,
   "Ijaro/Yieldvest"). That code was deleted on 27 November 2026. Commits before 21 November 2026 in the history
   belong to that project and are not part of Moa.
 - **AI-assisted.** Moa was built with an AI coding agent (Claude Code) working from the author's instructions and
   reviews.
 
-## On HSK Chain mainnet (checked on-chain, 27 Nov 2026)
+## On HSK Chain mainnet (checked on-chain, 28 Nov 2026)
 
 | What | Address / transaction |
 | --- | --- |
@@ -53,9 +56,11 @@ Its tests, last run on 28 Nov 2026:
 - fork tests: `fork-test.mjs` 69/69 and `fee-fork-test.mjs` 51/51;
 - moving a wallet from a version-2 vault to a version-3 one, walked on a fork through the calls the app sends:
   `upgrade-fork-test.mjs` 53/53 (the app's card: make the new vault, take everything out of the old one, put USDT in);
-- a randomized fork fuzz test: over 3,400 invariant checks, 0 failed;
-- Foundry: 20 tests, 5 of them invariants (256 runs × 80 calls); MoaVault line coverage 99% (`contracts/audit/coverage.txt`);
-- Slither: 0 high findings; 12 rated medium, each reviewed and kept with reasons in `contracts/MAINNET.md`
+- a randomized fork fuzz test: 1,503 checks in the last run (300 steps), 0 failed;
+- Foundry: 20 tests, 5 of them invariants (256 runs × 80 calls); line coverage of MoaVault 99.2%, branches 67.1%
+  (`contracts/audit/coverage.txt`, re-run 28 Nov on the deployed source).
+- Slither, from 27 Nov and not re-run since the owner's opt-in to the platform fee (`acceptPlatformFee`) was added:
+  0 high findings and 12 rated medium, each reviewed and kept with reasons in `contracts/MAINNET.md`
   (`contracts/audit/slither.txt`).
 
 Version 3 adds:
@@ -82,7 +87,8 @@ moves to a new one from the app (three steps, two wallet confirmations). [`docs/
   modelled and is said so. A "spread hunter" agent buys on HSKSwap when the pool is cheaper than the exchange by
   more than a round trip costs and sells when the gap closes; it shows no past result until a day of records exists.
 - **Moa AI.** One agent per coin (BTC, ETH, HSK) whose decision is made by an AI model: every 4 hours it reads a
-  snapshot of numbers (returns, averages, volatility, the HSKSwap pool against the exchange, HSK's on-chain flow) and
+  snapshot of numbers (returns, averages, volatility and, when the server could read them, the HSKSwap pool against the
+  exchange and HSK's on-chain flow; the decisions recorded so far had neither, because those reads were failing) and
   answers with the share of the budget to hold and a reason. Code, not the model, sets the limits (see below). Every
   decision is recorded with a hash and is public: `/api/ai/decisions?asset=BTC`. It has no backtest and says so; its
   result is counted from its first recorded decision.
@@ -120,7 +126,8 @@ moves to a new one from the app (three steps, two wallet confirmations). [`docs/
 - **The chat uses Claude through the Anthropic API.** It answers questions and fills forms. It never places an
   order on its own: it can only propose one, and the order runs from the card's Confirm button, which carries a
   one-time signed ticket for that wallet and that exact order (5 minutes). Agents the user set to run on their own
-  trade inside their budget and the vault's limits. The chat endpoint is same-origin only and rate-limited.
+  trade inside their budget and the vault's limits. The chat endpoint refuses a request sent from another site's page (it checks the Origin
+  header a browser sends) and is rate-limited.
 
 ## Honest numbers
 
@@ -134,8 +141,11 @@ moves to a new one from the app (three steps, two wallet confirmations). [`docs/
   skill would show), it beat holding in at least 2 of the 3 twelve-month blocks, and it held the coin at least a
   quarter of the time. **Today no agent on any coin earns it, and the app says so** instead of showing a winner.
 - A walk-forward check of fourteen ways to pick an agent (pick with data before a date, score the next 90 days,
-  monthly) found none that reliably beat holding. That is why Moa's default is fixed in advance and not picked from
-  these backtests. The published strategies use their published parameters, not ones tuned on this data.
+  monthly; `hsk-agent/research/rank-sim.ts`, results in `rank-sim.md`) found no way to call a winner: across the three
+  coins the best rules averaged +0.8 to +1.5 points per 90 days against holding and the worst −2.1, over 44
+  overlapping windows. That, and the literature read in `hsk-agent/research/strategy-selection.md`, is why Moa's
+  default is fixed in advance and not picked from these backtests. The published strategies use their published
+  parameters, not ones tuned on this data.
 - Each backtest still shows its last three months separately in the detail view.
 - Short-term agents (1h/4h) mostly lost money after costs. They sit in the lab, are never recommended, and can be
   hired only after ticking "it's experimental, hire it anyway".

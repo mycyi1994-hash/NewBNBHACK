@@ -148,7 +148,8 @@ What version 3 changes, against what the panel of judges found:
 | Creator fee | (none) | approved per hired agent, not per creator: `setCreatorFee(agentId, creator, bps)`, at most 1%. `tradeFor` cannot name a creator at all; the vault pays the creator the owner approved for that agent. The agent key can only choose which agent a trade is for, so with budgets on, a creator can be credited with no more than that agent's own budget |
 | Reentrancy | swaps and stop-outs updated the books after the swap | books before the swap, and `trade`, `tradeFor`, `stopOut` and `withdraw` refuse to be entered twice |
 
-Static analysis: Slither 0.11.6 (`audit/slither.txt`), 31 findings: none rated high; 12 rated medium, from three
+Static analysis: Slither 0.11.6 (`audit/slither.txt`, run 27 Nov 2026, before `acceptPlatformFee` was added and not
+re-run since), 31 findings: none rated high; 12 rated medium, from three
 detectors, each reviewed and kept: `divide-before-multiply` (3: `_quoteAt` keeps its intermediate under 2^256, losing
 under one unit of the output token at the pools' prices; `_sqrtAtTick` is Uniswap's own code), `incorrect-equality` (3:
 `== 0` checks on amounts and holdings) and `unused-return` (6: the unused fields of `slot0` and `observe`). The low and
@@ -164,7 +165,8 @@ guardian and strangers against mock pool and router (`test/Mocks.sol`): every US
 agent key and strangers end with nothing and never pass an owner-only or guardian-only call; creator and platform fees
 exact and capped; no buy outside the limits, session or budget; budgets add up per agent. Two deliberate bugs (paying
 the approved creator rate instead of the asked one; a budget off by one unit) were each caught. Coverage
-(`forge coverage --ir-minimum`, `audit/coverage.txt`): MoaVault 99.1% of lines, 66.2% of branches; factory 94.7% of lines.
+(`forge coverage --ir-minimum`, `audit/coverage.txt`, re-run 28 Nov 2026 on the deployed source): MoaVault 99.2% of
+lines, 67.1% of branches; factory 94.7% of lines.
 
 Tests on a fork of mainnet (each starts its own Hardhat node):
 
@@ -351,7 +353,7 @@ Checked on 26 Nov 2026:
   liquidity, and comes from that same factory. The deploy script repeats these checks every time and stops on any mismatch.
 - The explorer accepts compiler `v0.8.26+commit.8a97fa7a`, EVM version `cancun` and standard-JSON-input verification.
 - On a local fork of mainnet, with Hardhat's public test keys:
-  - `scripts/fork-test.mjs`, 42 checks: the server makes a vault for a wallet that signs nothing; it starts with the
+  - `scripts/fork-test.mjs`, 69 checks: the server makes a vault for a wallet that signs nothing; it starts with the
     three markets listed; asking twice gives the same vault; a second user gets a different vault and cannot withdraw
     from the first; the daily cap on vault creation; an order on an empty vault is refused; every trading guard
     (per-trade cap, daily cap, slippage floor, owner-only withdrawal, pause); and the owner's own limits (the agent
@@ -377,4 +379,5 @@ Not checked:
 - A real wallet extension (MetaMask): the browser run used a stand-in that signs with a fork test account.
 - Wallets that are contracts (multisigs, smart accounts) cannot log in yet: the login checks an ordinary signature.
 - On mainnet: two version-2 vaults exist (above); no trade, stop-loss or creator fee has happened on version 2,
-  and nothing of version 3 is deployed. The one mainnet trade is the $1 chat order on a first-version vault.
+  and of version 3 only the factory is deployed: it has made no vault yet. The one mainnet trade is the $1 chat
+  order on a first-version vault.

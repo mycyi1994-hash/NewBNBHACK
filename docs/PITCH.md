@@ -17,7 +17,7 @@ Say only what the app and the chain show. Facts and links are in the [README](..
 | --- | --- | --- |
 | An AI makes the trading decision | Every 4 hours a model reads a snapshot of numbers and answers with a target share and a reason, in a fixed form | Agent market → Moa AI → decision log; `/api/ai/decisions?asset=BTC` |
 | Code sets the limits, not the model | Clamp, 5% steps, at most 25 points per decision, a 10-point band; any bad or missing answer holds the last target | `src/aiPilot.ts` (`guard`), tests in `src/aiPilot.test.ts` |
-| The chain enforces the rest | Each user has their own vault: only the owner withdraws; the agent key can only trade listed coins on HSKSwap inside per-trade and daily limits; stop-loss on-chain | `contracts/src/MoaVault.sol`, the vault on the explorer |
+| The chain enforces the rest | Each user has their own vault: only the owner withdraws; the agent key can only trade listed coins on HSKSwap inside the vault's per-trade and daily limits and its stop-loss (new vaults start with $50, $100 a day and 15%; a version-2 vault has none until its owner sets them) | `contracts/src/MoaVault.sol`; any vault in the app's public view, `?vault=0x…` |
 | Every decision can be checked | Each decision and each order carries a keccak256 hash of its inputs; the app recomputes it | "해시 확인" in the decision log; the trade note on the explorer |
 | Costs are in every number | 0.3% pool fee, the pool's gap to the exchange, price impact from real depth | `src/fills.ts`, the Spread tab |
 
@@ -31,7 +31,8 @@ Say only what the app and the chain show. Facts and links are in the [README](..
 - **Moa is on every screen:** it explains, proposes, and waits for the Confirm button. It never moves money by itself.
 - **Risky things are behind a door:** short-term agents sit in a lab and need an explicit tick.
 
-**One line:** a first-timer can hire an agent in under a minute and can always see what it did and why.
+**One line:** a first-timer can try hiring an agent in under a minute in the demo (with a wallet: a login and a
+deposit first) and can always see what it did and why.
 
 ## 4. Future plans
 
