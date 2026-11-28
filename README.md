@@ -37,8 +37,10 @@ Log in with a wallet on HSK Chain. Without one, the whole app works as a demo th
 | First trade through a vault ($1 of WBTC on HSKSwap; an earlier vault version) | [tx](https://hsk.blockscout.com/tx/0x955cd89b5e89200d606300df1afeca3c3adb337c200e6743af7b64595c2441ee) |
 | Agent wallet (may call `trade` and `stopOut` only; cannot withdraw) | [`0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE`](https://hsk.blockscout.com/address/0x8C35f99f3c0D210EA54fe4AF68d5f548cCCC1bAE) |
 
-**Moa AI is live** on the deployed server: its first decisions were recorded on 28 Nov 2026 (BTC, ETH and HSK; for
-example the HSK decision with hash `0x9be4247b…79b9c884`). Anyone can read them at
+**Moa AI has run on the deployed server**: the model answered twice per coin on 28 Nov 2026 (02:42 and 04:34 UTC;
+all six answers were "hold 0%"; for example the HSK decision with hash `0x9be4247b…79b9c884`). From 08:03 UTC the
+calls failed because the API key ran out of credit; each failure is recorded as a held decision and the app shows
+"AI connection problem" until a call succeeds again. Anyone can read the record at
 [`/api/ai/decisions?asset=HSK`](https://grabitmoa.onrender.com/api/ai/decisions?asset=HSK). No vault has traded on a
 Moa AI decision yet.
 
@@ -143,7 +145,8 @@ moves to a new one from the app (three steps, two wallet confirmations). [`docs/
 - A walk-forward check of fourteen ways to pick an agent (pick with data before a date, score the next 90 days,
   monthly; `hsk-agent/research/rank-sim.ts`, results in `rank-sim.md`) found no way to call a winner: across the three
   coins the best rules averaged +0.8 to +1.5 points per 90 days against holding and the worst −2.1, over 44
-  overlapping windows. That, and the literature read in `hsk-agent/research/strategy-selection.md`, is why Moa's
+  overlapping windows. The default Moa ships (the basket, on BTC and ETH) averaged −1.6 and was ahead in 24 of 44:
+  it is there for a smaller fall, not to beat holding, and the app does not claim it does. That, and the literature read in `hsk-agent/research/strategy-selection.md`, is why Moa's
   default is fixed in advance and not picked from these backtests. The published strategies use their published
   parameters, not ones tuned on this data.
 - Each backtest still shows its last three months separately in the detail view.

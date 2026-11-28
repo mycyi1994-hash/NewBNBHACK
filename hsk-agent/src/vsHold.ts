@@ -22,11 +22,13 @@ export interface VsHold {
   diff: number;
   /** The agent ended under what was put in. */
   down: boolean;
+  /** The amount shown is above what was put in: the only case a badge is green. */
+  up: boolean;
 }
 /** The agent against holding for one period, from the two amounts the card shows. */
 export function vsHold(lang: Lang, r: { total: number; hold: number }): VsHold {
   const stake = stakeOf(lang), mine = shownMoney(lang, stake * (1 + r.total)), diff = mine - shownMoney(lang, stake * (1 + r.hold));
-  return { verdict: diff === 0 || verdictOf(r) === 'even' ? 'even' : diff > 0 ? 'ahead' : 'behind', diff, down: mine < stake };
+  return { verdict: diff === 0 || verdictOf(r) === 'even' ? 'even' : diff > 0 ? 'ahead' : 'behind', diff, down: mine < stake, up: mine > stake };
 }
 
 /**

@@ -49,8 +49,8 @@ describe('the list under the chart', () => {
             if (/\beven\b/.test(r.cls)) continue;
             assert.equal(digits(r.badge), Math.abs(mine - hold), `${r.name}: ${r.amount} against ${l.hold} reads "${r.badge}"`);
             assert.equal(/\bahead\b/.test(r.cls), mine > hold, `${r.name}: ahead only when its amount is the larger`);
-            // Green is for an agent that also made money; ahead of holding but still down is grey and worded as a smaller loss.
-            assert.equal(/\bdown\b/.test(r.cls), mine > hold && mine < stake, `${r.name}: grey when ahead but under what was put in`);
+            // Green is for an agent whose amount on screen is above what was put in; ahead of holding at or under it is grey.
+            assert.equal(/\bdown\b/.test(r.cls), mine > hold && mine <= stake, `${r.name}: grey when ahead but not above what was put in`);
           }
         }
         // The line over the list: present while no agent earned "ahead", and in step with the badges under it.

@@ -27,7 +27,7 @@ export function AiRow({ coin, onHire }: { coin: string; onHire: (a: Agent) => vo
           <Face rule="aiPilot" base={coin} size="md" />
           <span className="ar-main">
             <b>{t.agNick.aiPilot}<AiBadge sm /></b>
-            <small>{f?.state === 'noKey' ? t.aiNoKey : f?.state === 'off' ? t.aiOff : `${t.tkAiSub} · ${t.tkAiNoPast}`}</small>
+            <small className={f?.trouble ? 'warn' : undefined}>{f?.state === 'noKey' ? t.aiNoKey : f?.state === 'off' ? t.aiOff : f?.trouble ? t.aiTrouble : `${t.tkAiSub} · ${t.tkAiNoPast}`}</small>
           </span>
           <span className="ar-num">{!f ? <span className="skel ar-skel" /> : now !== undefined && <>{Math.round(now * 100)}%<span className="pf-vs even">{t.aiNow}</span></>}</span>
         </button>

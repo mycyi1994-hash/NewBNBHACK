@@ -41,6 +41,8 @@ const rules: Rule[] = [
   { name: 'fixed: dual momentum', pick: (xs) => xs.filter((s) => s.a.rule === 'dualMom') },
   { name: 'fixed: 1/3/12-month trend blend (multiTrend)', pick: (xs) => xs.filter((s) => s.a.rule === 'multiTrend') },
   { name: 'fixed: volatility-targeted holding', pick: (xs) => xs.filter((s) => s.a.rule === 'volTarget') },
+  // What the app ships as its default on BTC and ETH (there is no basket on HSK: its record is too short).
+  { name: 'fixed: the default basket (Moa\'s default)', pick: (xs) => xs.filter((s) => s.a.rule === 'basket') },
 ];
 
 let md = '# Ranking-rule experiment (walk-forward, research only)\n\nEach rule picks with data before a cut date; the score is the next 90 days. Monthly cut dates. "vs hold" = pick return minus holding the coin. Costs are in the curves.\n';

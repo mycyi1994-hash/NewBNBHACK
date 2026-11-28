@@ -92,7 +92,8 @@ export default function SpreadPanel({ asset, onHire }: { asset: Asset; onHire: (
               </span>
             ))}
           </div>
-          <p className="sx-verdict">{s.breakEven === undefined ? t.sxNoDepth : s.breakEven > 0 ? t.sxBreak(usd(s.breakEven)) : t.sxNoBreak}</p>
+          {/* A break-even under the smallest size on screen is no opportunity anyone can use: say so, not "worth it up to $2". */}
+          <p className="sx-verdict">{s.breakEven === undefined ? t.sxNoDepth : s.breakEven >= (s.sizes[0]?.usd ?? 0) ? t.sxBreak(usd(s.breakEven)) : s.breakEven > 0 ? t.sxTiny(usd(s.breakEven)) : t.sxNoBreak}</p>
         </>}
         <p className="sx-costs tip-tap" tabIndex={0} data-tip={t.sxNotCounted}>{t.sxCosts(`${(POOL_FEE * 100).toFixed(1)}%`, `${(TAKER_FEE * 100).toFixed(1)}%`)}<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M8 7.2v3.6M8 5.2v.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></p>
       </section>
@@ -119,7 +120,9 @@ export default function SpreadPanel({ asset, onHire }: { asset: Asset; onHire: (
         </div>
         {hs.building
           ? <p className="sx-building"><i aria-hidden />{t.sxBuilding(span(hs.spanMs))}</p>
-          : <p className="sx-result"><small>{t.mpVsHold} · {t.sxRecorded(span(hunter.days * 86_400_000))}</small><b className={hunter.total - hunter.hold >= 0 ? 'pos' : 'neg'}>{pc(hunter.total - hunter.hold, 1)}</b><span>{t.sxTrades(hunter.trades)}</span></p>}
+          : hunter.trades === 0
+            ? <p className="sx-building"><i aria-hidden />{t.sxNoBuys(span(hunter.days * 86_400_000))}</p>
+            : <p className="sx-result"><small>{t.mpVsHold} · {t.sxRecorded(span(hunter.days * 86_400_000))}</small><b className={hunter.total - hunter.hold >= 0 ? 'pos' : 'neg'}>{pc(hunter.total - hunter.hold, 1)}</b><span>{t.sxTrades(hunter.trades)}</span></p>}
         {!hs.building && <p className="sx-state">{hunter.live ? t.frHolding : run.reverted ? t.sxWaiting : t.sxNoRevert}</p>}
         <p className="sx-rules">{t.sxExit}</p>
         {/* Hireable only once there is a past result to judge it by. */}

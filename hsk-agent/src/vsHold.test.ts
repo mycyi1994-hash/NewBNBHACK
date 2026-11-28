@@ -64,3 +64,11 @@ test('the line says the period on screen, then the whole record, with its real l
   // The owner says 금고 for the vault, everywhere in Korean.
   assert.doesNotMatch(JSON.stringify(ko, (_k, v) => (typeof v === 'function' ? String(v) : v)), /볼트/);
 });
+
+test('a badge is green only when the amount shown is above what was put in', () => {
+  // Ahead of holding by 35만원 while the card shows exactly 100만원: true, not a gain.
+  const flat = vsHold('ko', { total: 0.002, hold: -0.35 });
+  assert.deepEqual({ verdict: flat.verdict, down: flat.down, up: flat.up }, { verdict: 'ahead', down: false, up: false });
+  assert.equal(vsHold('ko', { total: 0.2, hold: -0.1 }).up, true);
+  assert.equal(vsHold('ko', { total: -0.2, hold: -0.4 }).up, false);
+});

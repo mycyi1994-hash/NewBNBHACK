@@ -2814,3 +2814,5 @@ details.tk-tier > summary svg { margin-left: auto; color: var(--ink-3); }
 .pf-vs.ahead.down { background: #eef0f2; color: var(--ink); }
 .pf-vs.behind { background: color-mix(in srgb, var(--neg) 10%, transparent); color: var(--neg); }
 .pf-vs.even { background: #f1f2f4; color: var(--ink-2); }
+/* the Moa AI row when the last model call failed */
+.ar-row.ai .ar-main small.warn { color: var(--warn); font-weight: 600; }

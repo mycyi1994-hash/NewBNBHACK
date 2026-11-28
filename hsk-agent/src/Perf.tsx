@@ -73,10 +73,11 @@ export function PeriodMarks({ a, active }: { a: Agent; active?: PeriodDays }) {
  */
 export function VsHold({ r }: { r: { total: number; hold: number } }) {
   const { t, lang } = useT();
-  const { verdict: v, diff, down } = vsHold(lang, r), amt = won(lang, Math.abs(diff));
+  const { verdict: v, diff, down, up } = vsHold(lang, r), amt = won(lang, Math.abs(diff));
   if (v === 'even') return <span className="pf-vs even">{t.pfVsEven}</span>;
   if (v === 'ahead' && down) return <span className="pf-vs ahead down">{t.pfVsLess(amt)}</span>;
-  return <span className={`pf-vs ${v}`}>{t.pfVs(`${diff > 0 ? '+' : '−'}${amt}`)}</span>;
+  // Ahead of holding with the amount shown at what was put in ("100만원"): true, but not a gain, so not green.
+  return <span className={`pf-vs ${v}${v === 'ahead' && !up ? ' down' : ''}`}>{t.pfVs(`${diff > 0 ? '+' : '−'}${amt}`)}</span>;
 }
 
 /** The hero: "1년 · 100만원 맡겼다면", the agent's money, then "그냥 보유 …". Same slot and size up or down. */

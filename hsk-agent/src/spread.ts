@@ -202,6 +202,7 @@ export function hunterState(xs: GapPoint[]): HunterState {
  * The hunter as a market agent, so it is hired, asked and run like every other agent (position: in or out).
  * Its in/out comes from the records; with too little history its result numbers are zero, it is not hireable
  * (runnable false), and `hunterState` says it is still recording, which the screen shows instead of a result.
+ * With a record but no buy in it there is no result to judge it by either: not hireable until it has bought once.
  */
 export function hunterAgent(asset: Asset, xs: GapPoint[]): Agent {
   const r = hunterRun(xs);
@@ -209,7 +210,7 @@ export function hunterAgent(asset: Asset, xs: GapPoint[]): Agent {
   const building = hunterState(xs).building;
   const endV = r.equity[r.equity.length - 1]?.value ?? 1, endB = r.bench[r.bench.length - 1]?.value ?? 1;
   return {
-    id: `spread-${asset}`, kind: 'position', rule: 'spread', style: 'revert', risk: 2, tier: 3, base: asset, runnable: !building, source: 'hashkey',
+    id: `spread-${asset}`, kind: 'position', rule: 'spread', style: 'revert', risk: 2, tier: 3, base: asset, runnable: !building && r.trades > 0, source: 'hashkey',
     fee: POOL_FEE, days: Math.max(1, Math.round(r.span / 86_400_000)), from: Math.floor((r.pts[0]?.t ?? Date.now()) / 1000), to: Math.floor((last?.t ?? Date.now()) / 1000),
     total: building ? 0 : endV - 1, hold: building ? 0 : endB - 1, maxDd: building ? 0 : r.maxDd, sharpe: 0, trades: r.trades, inMarket: r.inMarket,
     equity: building ? [] : r.equity, bench: building ? [] : r.bench, marks: r.marks, live: r.holding, mult: r.holding ? 1 : 0, price: last?.pool ?? 0,

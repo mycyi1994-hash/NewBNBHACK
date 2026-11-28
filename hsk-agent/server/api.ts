@@ -338,7 +338,7 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
           // told apart from outside: a bad request, a refused key, no credit and a busy API need different fixes.
           // A question the user stopped (or a closed tab) is not a failure of the AI.
           const kind = gone.signal.aborted ? 'stopped' : aiHealth.fail('chat', e);
-          write({ type: 'error', error: 'The AI could not answer.', kind, detail: msg.replace(/sk-ant-[A-Za-z0-9_-]+/g, '[key]').slice(0, 300) });
+          write({ type: 'error', error: 'The AI could not answer.', kind });
         } finally {
           clearInterval(beat);
         }
