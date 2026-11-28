@@ -1,7 +1,7 @@
 // Sends a trade to a user's MoaVault with the agent key. Every limit is enforced again by the contract.
 // Each signed-in wallet has its own vault, made by the MoaVaultFactory; the server looks it up per request.
 // Configuration comes from the server environment; with no factory or no agent key, execution is refused.
-import { BaseError, ContractFunctionRevertedError, ContractFunctionZeroDataError, keccak256, stringToHex, zeroHash, createPublicClient, createWalletClient, decodeEventLog, http, parseUnits, formatUnits, zeroAddress, type Address, type Hex } from 'viem';
+import { BaseError, ContractFunctionRevertedError, keccak256, toFunctionSelector, stringToHex, zeroHash, createPublicClient, createWalletClient, decodeEventLog, http, parseUnits, formatUnits, zeroAddress, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import vaultArtifact from '../contracts/out/MoaVault.json' with { type: 'json' };
 import factoryArtifact from '../contracts/out/MoaVaultFactory.json' with { type: 'json' };
@@ -134,45 +134,43 @@ export async function vaultsOf(cfg: ExecConfig, owner: Address): Promise<{ vault
 
 /* ---------- vault versions: creator fees exist from version 3 ---------- */
 
-/** Did the contract itself answer "no such thing" (a revert, or no data), as opposed to the chain not answering at all? */
-const refused = (e: unknown) => e instanceof BaseError && !!e.walk((x) => x instanceof ContractFunctionRevertedError || x instanceof ContractFunctionZeroDataError);
-
-const versions = new Map<string, number>();
+const carries = new Map<string, boolean>();
 /**
- * 3 for a vault that can pay creator fees; 2 for an older one (no VERSION to read). Never changes, so it is kept;
- * an answer the chain did not give (a timeout, a failed request) reads as 2 for this once and is not kept.
+ * Does the contract at this address have this function? Read from its code (every function's selector sits in the
+ * code's dispatcher), never by calling it: some nodes take half a minute to answer a call that reverts, which made
+ * every version check on an older contract that slow. Undefined when the chain did not answer or nothing is deployed
+ * there; a yes or a no never changes, so it is kept.
  */
-export async function vaultVersion(cfg: ExecConfig, vault: Address): Promise<number> {
-  const key = `${cfg.rpcUrl}|${vault.toLowerCase()}`;
-  const had = versions.get(key);
+async function hasFunction(cfg: ExecConfig, address: Address, signature: string): Promise<boolean | undefined> {
+  const key = `${cfg.rpcUrl}|${address.toLowerCase()}|${signature}`;
+  const had = carries.get(key);
   if (had !== undefined) return had;
-  try {
-    const v = Number(await clientOf(cfg).readContract({ address: vault, abi, functionName: 'VERSION' }));
-    versions.set(key, v);
-    return v;
-  } catch (e) {
-    if (refused(e)) versions.set(key, 2);   // an older vault has no VERSION
-    return 2;
-  }
+  let code: Hex | undefined;
+  try { code = await clientOf(cfg).getCode({ address }); } catch { return undefined; }
+  if (!code || code === '0x') return undefined;
+  const has = code.toLowerCase().includes(toFunctionSelector(signature).slice(2));
+  carries.set(key, has);
+  return has;
 }
 
-const made = new Map<string, number>();
+/**
+ * 3 for a vault that can pay creator fees; 2 for an older one (no VERSION in its code). An answer the chain did not
+ * give reads as 2 for this once and is not kept.
+ */
+export async function vaultVersion(cfg: ExecConfig, vault: Address): Promise<number> {
+  const has = await hasFunction(cfg, vault, 'function VERSION()');
+  if (!has) return 2;
+  try { return Number(await clientOf(cfg).readContract({ address: vault, abi, functionName: 'VERSION' })); } catch { return 2; }
+}
+
 /**
  * The version of the vaults a factory makes: 3 when it holds the terms every version-3 vault reads on a trade (the
  * halt and the platform fee), 2 when it has none. Undefined when the chain did not answer: unknown is never "old".
  */
 export async function factoryVersion(cfg: ExecConfig, factory: Address | undefined = cfg.factory): Promise<number | undefined> {
   if (!factory) return undefined;
-  const key = `${cfg.rpcUrl}|${factory.toLowerCase()}`;
-  const had = made.get(key);
-  if (had !== undefined) return had;
-  let v: number;
-  try { await clientOf(cfg).readContract({ address: factory, abi: factoryAbi, functionName: 'tradeTerms' }); v = 3; } catch (e) {
-    if (!refused(e)) return undefined;
-    v = 2;
-  }
-  made.set(key, v);
-  return v;
+  const has = await hasFunction(cfg, factory, 'function tradeTerms()');
+  return has === undefined ? undefined : has ? 3 : 2;
 }
 /** May a newly shared agent ask for a creator fee? Only when the vaults this server makes now can pay one. */
 export const feesLive = async (cfg: ExecConfig): Promise<boolean> => paysCreators((await factoryVersion(cfg)) ?? 0);
@@ -439,7 +437,7 @@ async function termsOf(cfg: ExecConfig, vault: Address): Promise<{ halted: boole
 
 /** The current factory's platform fee in basis points; 0 for a factory without one, or when it cannot be read. */
 export async function platformFee(cfg: ExecConfig): Promise<number> {
-  if (!cfg.factory) return 0;
+  if (!cfg.factory || (await factoryVersion(cfg)) !== 3) return 0;   // an older factory has no terms to read
   try {
     const [, bps, treasury] = (await clientOf(cfg).readContract({ address: cfg.factory, abi: factoryAbi, functionName: 'tradeTerms' })) as readonly [boolean, number, Address];
     return treasury === zeroAddress || bps > 20 ? 0 : Number(bps);

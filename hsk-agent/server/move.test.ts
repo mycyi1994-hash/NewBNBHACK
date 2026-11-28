@@ -96,7 +96,11 @@ async function chain(w: World) {
       w.calls++;
       const reply = (body: object) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ jsonrpc: '2.0', id, ...body })); };
       if (method === 'eth_chainId') return reply({ result: '0xb1' });
-      if (method === 'eth_getCode') return reply({ result: w.factories[low(params[0] as unknown as string)] ? '0x60' : '0x' });
+      if (method === 'eth_getCode') {
+        // code as the server reads it: a contract's functions show as their selectors (VERSION() and tradeTerms() from version 3)
+        const at = low(params[0] as unknown as string), f = w.factories[at], v = w.vaults[at];
+        return reply({ result: f ? `0x60${f.makes >= 3 ? 'bba21f1b' : ''}` : v ? `0x60${v.version >= 3 ? 'ffa1ad74' : ''}` : '0x' });
+      }
       if (method === 'eth_blockNumber') return reply({ result: '0x10' });
       if (method !== 'eth_call') return reply({ error: { code: -32601, message: `no ${method} here` } });
       const result = answer(w, params[0].to, params[0].data);
