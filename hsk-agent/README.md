@@ -7,7 +7,8 @@ See the [root README](../README.md) for what Moa is, what is on mainnet, and whe
 Server-side secrets go in `.env.local` (git-ignored):
 
 ```
-ANTHROPIC_API_KEY=...            # Moa's chat; without it the chat falls back to the on-device parser
+ANTHROPIC_API_KEY=...            # Moa AI's decisions and Moa's chat; without it Moa AI is off and the chat uses the on-device parser
+# optional: MOA_AI_TRADER=off      # switch Moa AI off (it holds its last target; nothing follows it)
 # optional: real vaults. The factory makes one vault per logged-in wallet; the agent key trades for them.
 MOA_FACTORY_ADDRESS=0x...
 MOA_AGENT_PRIVATE_KEY=0x...
@@ -32,7 +33,9 @@ Without a factory address, or before a wallet logs in, the app is a **demo**: ag
 | Part | Files | Notes |
 | --- | --- | --- |
 | Agents and backtests | `src/agents.ts`, `src/spec.ts`, `src/ruleText.ts` | Each agent is one rule on one coin, scored on 3 years of daily candles (HashKey Global; Gate spot joined in front where HashKey's history is shorter, marked on the chart). Made agents may use 4-hour or hourly candles (1 year / 90 days). 0.3% fee per trade on HSKSwap, no slippage modelled. |
-| Recommendation | `src/recommend.ts` | A fixed order, no model. 1. Agents that can trade on HSKSwap, for the coin asked about. 2. Risk the user's level allows. 3. Working now. 4. Beat just holding. 5. Published classics first. 6. Smallest worst fall. Agents the user already hired are skipped when another fits. |
+| Moa AI | `src/aiPilot.ts`, `server/aiPilot.ts`, `server/aiStore.ts`, `src/AiPanel.tsx` | One agent per coin (BTC, ETH, HSK). Once per closed 4-hour candle the server builds a snapshot of numbers and asks Claude for a target share (structured output: target, reason in two languages, signals). Limits in code: clamp 0–1, round to 5%, at most 25 points per decision, a 15-point band, a cool-down; stale data, a failed or late call, a refusal, a cut-off or malformed answer all hold the last target. Decisions are stored with a keccak256 hash in `MOA_DATA_DIR/ai-decisions.json` and served at `GET /api/ai/decisions?asset=`; the chat has a `get_ai_decision` tool. Orders use the weight path every research agent uses (budget, band, the vault's limits). No backtest: a paper result from the first decision. |
+| Recommendation | `src/recommend.ts` | A fixed rule, no model. 1. Agents that can trade on HSKSwap, for the coin asked about. 2. The coin's default, chosen in advance from the literature: the basket (half held, half × the share of positive 3/6/12-month returns, read monthly) on BTC and ETH, daily buying on HSK. 3. If already hired, the next in list order within the user's risk level. Lab agents are never recommended. |
+| Agent list cache | `server/agentCache.ts`, `src/agentWire.ts`, `src/agentsClient.ts` | The server scores every agent every 5 minutes and serves the lists at `GET /api/agents` with the time they were scored; the browser shows "as of N min ago" and scores the list itself only if the server does not answer in 8 seconds. A user's own made agents are always scored in the browser. |
 | Making an agent | `src/Builder.tsx`, `src/madeStore.ts` | The rule is data ("this is above/below that"), read by one interpreter that decides on past candles only, long only. A sentence reader with fixed patterns (no model) can start one. |
 | Research-based agents | `src/agents.ts`, `src/quantText.ts`, `src/shortText.ts` | Volatility-targeted holding, a Donchian ensemble, multi-horizon momentum, core plus trend, a moving-average ensemble, a breakout with a 3×ATR trailing stop, and that stop added to Turtle/Donchian, with published parameters and the paper cited on each. These hold a share of their budget and rebalance when the target moves past a band (10–15 points); a buy never goes past the agent's budget or the vault's per-trade limit. Short-term versions run on 1h/4h candles and are labelled as Moa's versions with no published test. |
 | Sharing | `src/share.ts`, `src/Shared.tsx`, `server/shareStore.ts` | A made agent can be published with a link and a creator fee (0–1%). The server stores the rule (checked with the same validator), the name, the creator's wallet from the login session, the fee and a real hire count, in `MOA_DATA_DIR/shared.json`. Limits: 40-character names, 10 live and 50 total shares per wallet. |
@@ -54,15 +57,20 @@ Without a factory address, or before a wallet logs in, the app is a **demo**: ag
 - **Fills** (`src/fills.ts`): each trade pays, per side, the 0.3% HSKSwap fee, the pool's moving gap to the exchange
   (measured from the pool's own swaps, or a stated 0.5% when there are too few), and price impact from the pool's real
   depth at a $100 budget. The detail view repeats the backtest at $1,000 and $10,000 and flags where impact passes 1%.
-- **Three parts of every backtest** (`run` in `src/agents.ts`): the early part; the **ranking year** (the third of the
-  window that ends three months ago); and a **holdout**, the last twelfth (about three months of three years).
-- **One definition of "beats holding"** (`beatsHold`): more than just holding over the ranking year, while holding
-  the coin at least 25% of that year on average. The pick, Moa's sentence, the rankings, the rail, the market cards
-  and the list under the chart all use it, and all show that number with its period, plus the whole window's number.
-- **The holdout is never read by ranking or picking**: `beatsHold`, the sort numbers and the tie-breaks (worst drop,
-  steadiness, entries) are all computed up to the holdout's start; a test checks that changing the last three months
-  changes none of them. The only present-day input is whether an agent is working now (holding, or a trade in 30 days).
-  The detail view shows the holdout as "the result after the choice", and says the ranked number is the best of N.
+- **Three parts of every backtest** (`run` in `src/agents.ts`): the early part; the year that ends three months ago;
+  and the last twelfth (about three months of three years), shown on its own in the detail view.
+- **One definition of "beats holding"** (`beatsHold`, `holdTest`): over the full window, net of costs, the excess
+  over holding clears the luck hurdle (annualised excess Sharpe ≥ √(2·ln 30 / years)), the agent beat holding in at
+  least 2 of the 3 twelve-month blocks, and it held the coin at least 25% of the time on average. No agent passes
+  today; the lists then show one line saying so.
+- **Tiers, not ranks** (`tierOf`): default, ahead (passes the rule above), calmer (a smaller worst drop than holding
+  while holding the coin at least a quarter of the time), classic, lab (hourly and 4-hour agents and the 7/28/91-day
+  momentum agent; hired only after an explicit confirmation). Inside a tier: working now first, then the smaller
+  worst drop.
+- **Cards show money for a period** (`src/Perf.tsx`, `periodResult`): what a stake would be now over 3 months, 1 year
+  or 3 years, with holding under it.
+- **Nothing is picked from these backtests.** The label rule reads the whole window; Moa's default was fixed in
+  advance, so no data is held back for it.
 - No rule's numbers were tuned on this data (published or standard settings); agents users build are flagged as
   possibly tuned by hand.
 

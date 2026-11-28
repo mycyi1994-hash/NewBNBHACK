@@ -8,7 +8,7 @@
 import { useId, type ReactNode } from 'react';
 import type { RuleId } from './agents.ts';
 
-export type Family = 'mom' | 'avg' | 'cross' | 'brk' | 'dip' | 'col' | 'arb' | 'made';
+export type Family = 'mom' | 'avg' | 'cross' | 'brk' | 'dip' | 'col' | 'arb' | 'ai' | 'made';
 
 export const FAMILY: Record<RuleId, Family> = {
   tsmom: 'mom', multiTrend: 'mom', dualMom: 'mom', cryptoMom: 'mom',
@@ -24,7 +24,9 @@ export const FAMILY: Record<RuleId, Family> = {
   // The research set: holding a share (teal), voting breakouts and stops (green), momentum (blue), averages (violet).
   // The spread hunter: its own family (between two venues).
   spread: 'arb',
-  volTarget: 'col', coreTrend: 'col', donchEns: 'brk', brkAtr: 'brk', breakC: 'brk', turtle2C: 'brk', donchianC: 'brk', tsmom3: 'mom', maEns: 'avg',
+  // Moa AI: its own family, the only agent an AI model decides for.
+  aiPilot: 'ai',
+  volTarget: 'col', coreTrend: 'col', basket: 'col', donchEns: 'brk', brkAtr: 'brk', breakC: 'brk', turtle2C: 'brk', donchianC: 'brk', tsmom3: 'mom', maEns: 'avg',
 };
 /** A Turtle/Donchian rule with the chandelier stop added wears its parent's symbol with a small shield in the corner. */
 const GUARDED: Partial<Record<RuleId, RuleId>> = { breakC: 'break', turtle2C: 'turtle2', donchianC: 'donchian' };
@@ -47,6 +49,7 @@ const TONE: Record<Family, [string, string, string]> = {
   dip: ['#ffa48f', '#ff5f7a', '#d42f68'],
   col: ['#6be6e0', '#1cb2c7', '#0b7a9a'],
   arb: ['#7ee3ff', '#3f8cff', '#4b3fd9'],
+  ai: ['#ffb3e6', '#c04cf0', '#3a2fd6'],
   made: ['#5b6474', '#262c38', '#0d1118'],
 };
 /** The family's mid colour, for washes and accents around a mark. */
@@ -253,6 +256,7 @@ function glyph(rule: RuleId, ink: string, cut: string): ReactNode {
         <path d="M18 47.5h28" {...s} strokeWidth={4} opacity=".55" />
       </>;
     case 'coreTrend': // Anchor: half always held
+    case 'basket': // the default basket shares the anchor until it has its own mark
       return <>
         <circle cx="32" cy="17.5" r="4.5" fill="none" stroke={ink} strokeWidth={4} />
         <path d="M32 22v25M24 29h16" {...s} strokeWidth={4.5} />
@@ -286,6 +290,13 @@ function glyph(rule: RuleId, ink: string, cut: string): ReactNode {
         <rect x="39" y="26" width="11" height="20" rx="3.5" {...f} />
         <path d="M27 22h11M33.5 17.5L38 22l-4.5 4.5" {...s} strokeWidth={4} />
         <path d="M14.5 50h35" {...s} strokeWidth={4} opacity=".55" />
+      </>;
+    case 'aiPilot': // Moa AI: a chip with a dial set between empty and full (a share, not in or out)
+      return <>
+        <rect x="17" y="17" width="30" height="30" rx="7" {...f} />
+        <path d="M23 11v6M32 11v6M41 11v6M23 47v6M32 47v6M41 47v6M11 23h6M11 32h6M11 41h6M47 23h6M47 32h6M47 41h6" {...s} strokeWidth={3.5} opacity=".7" />
+        <path d="M24.5 37a8 8 0 0 1 15 0" fill="none" stroke={cut} strokeWidth={3.6} strokeLinecap="round" />
+        <path d="M32 37l4.5-6" stroke={cut} strokeWidth={3.6} strokeLinecap="round" />
       </>;
     default: // made: a sparkle, someone's own idea
       return <>

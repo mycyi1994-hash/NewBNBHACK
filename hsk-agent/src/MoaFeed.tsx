@@ -7,6 +7,8 @@
 // everything else goes to the server brain, which may also call the recommend tool.
 // Numbers come from live data or from the hired agent record; Moa keeps no copy of either.
 import { JournalBox } from './Journal.tsx';
+import type { Journal } from './journal.ts';
+import { AiBadge } from './AiPanel.tsx';
 import { useEffect, useRef, useState } from 'react';
 import type { Quote } from './market.ts';
 import { useT } from './i18n.ts';
@@ -30,7 +32,7 @@ import { parseLp, reachOf, widthFor } from './lpTalk.ts';
 import { POOLS } from './dex.ts';
 import { spreadRead, spreadBrief } from './spread.ts';
 import { ASSETS } from './intent.ts';
-import { beatsHold, holdNumbers, isRunnable, type Agent } from './agents.ts';
+import { beatsHold, holdNumbers, holdTest, isRunnable, tierOf, type Agent } from './agents.ts';
 import { othersFor, rankedFor, recommend, type Level } from './recommend.ts';
 import { AgentCard, agentName, drop, explainAgent, Face, pct } from './AgentCard.tsx';
 import type { HireTarget } from './HireSheet.tsx';
@@ -205,7 +207,10 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
     // The whole period leads; the ranking year follows, and a mixed result is said in words.
     const per = t.pickOver(t.oosSpan(h.days), t.oosSpan(h.ago)), full = t.fullOver(t.oosSpan(h.fullDays), pct(h.full));
     const mixed = h.mixed ? t.mixedNote(per, t.oosSpan(h.fullDays)) : '';
-    const text = coin && r.scope === 'all' ? t.recNoCoin(coin) : r.scope === 'coin' ? t.recCoin(r.pick.base, beat, per, pct(h.edge), full, mixed) : t.recAll(beat, per, pct(h.edge), full, mixed);
+    // The default is not a backtest winner: the sentence says why it is the pick and gives its three yearly results.
+    const ht = holdTest(r.pick);
+    const def = tierOf(r.pick) === 'default' ? (r.pick.kind === 'collect' ? t.recDefaultDca(r.pick.base) : t.recDefault(r.pick.base, pct(h.full), ht.won, ht.blocks.length)) : '';
+    const text = coin && r.scope === 'all' ? t.recNoCoin(coin) : def || (r.scope === 'coin' ? t.recCoin(r.pick.base, beat, per, pct(h.edge), full, mixed) : t.recAll(beat, per, pct(h.edge), full, mixed));
     agentNote(r.pick, text, { pool: r.pool });
   };
   const othersNote = (a: Agent) => {
@@ -715,6 +720,17 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
 }
 
 /** One order a hired agent wants: the question while it is open, then what happened. */
+/** Under an order Moa AI asked for: the AI's own reason for the share it set, and which inputs it named. */
+function AiReason({ ai }: { ai: NonNullable<Journal['entry']['decision']['ai']> }) {
+  const { t, lang } = useT();
+  return (
+    <div className="order-ai">
+      <AiBadge sm />
+      <p><span>{t.aiReason}</span>{lang === 'ko' && ai.reasonKo ? ai.reasonKo : ai.reason}{ai.signals.length > 0 && <small>{t.aiSignals}: {ai.signals.map((s) => t.aiSig[s] ?? s).join(' · ')}</small>}</p>
+    </div>
+  );
+}
+
 function OrderCard({ h, orderId, sending, vault, onApprove, onDecline }: {
   h: HiredAgent; orderId: string; sending: boolean; vault: VaultInfo | null; onApprove: () => void; onDecline: () => void;
 }) {
@@ -736,6 +752,7 @@ function OrderCard({ h, orderId, sending, vault, onApprove, onDecline }: {
       </header>
       <p className="order-q">{o.side === 'buy' ? t.ocBuy(money(usd), h.asset) : t.ocSell(qtyText(o.qty ?? 0), h.asset)}</p>
       <p className="order-why"><span>{t.ocWhy}</span>{whyText(t, o.why)}</p>
+      {o.journal?.entry.decision.ai && <AiReason ai={o.journal.entry.decision.ai} />}
       {o.journal && <JournalBox j={o.journal} link={outcome?.k === 'filled' ? outcome.fill.explorerUrl : undefined} />}
       {open && (on ? (
         // What the contract will check, shown before the user says yes.

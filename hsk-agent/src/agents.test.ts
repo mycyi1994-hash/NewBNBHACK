@@ -72,12 +72,11 @@ test('an agent that never traded in the window does not outrank one that did', (
   assert.equal(recommend(agents, { coin: 'HSK', level: 'pro' })!.pick.id, 'break-HSK');
 });
 
-test('recommend puts a published classic before an indicator rule, even with a larger worst drop', () => {
+test('without the default in the list, the pick follows the list order: working now, then the smaller worst drop', () => {
   const agents = [fake({ id: 'boll-ETH', rule: 'boll', base: 'ETH', maxDd: 0.05, tier: 2, risk: 1 }), fake({ id: 'maEns-ETH', rule: 'maEns', base: 'ETH', maxDd: 0.2, tier: 1 })];
-  assert.equal(recommend(agents, { coin: 'ETH', level: 'new' })!.pick.id, 'maEns-ETH');
-  // A demoted classic is only picked when nothing else fits.
-  assert.equal(recommend([...agents, fake({ id: 'trend200-ETH', rule: 'trend200', base: 'ETH', maxDd: 0.01, tier: 1 })], { coin: 'ETH', level: 'new' })!.pick.id, 'maEns-ETH');
-  assert.equal(recommend([fake({ id: 'trend200-ETH', rule: 'trend200', base: 'ETH', maxDd: 0.2, tier: 1 })], { coin: 'ETH' })!.pick.id, 'trend200-ETH');
+  assert.equal(recommend(agents, { coin: 'ETH', level: 'new' })!.pick.id, 'boll-ETH', 'no rank by origin or return: the smaller drop');
+  // The default for the coin always comes first.
+  assert.equal(recommend([...agents, fake({ id: 'basket-ETH', rule: 'basket', base: 'ETH', maxDd: 0.4, tier: 3 })], { coin: 'ETH', level: 'new' })!.pick.id, 'basket-ETH');
 });
 
 test('a replay covers the lead-in and every day of the backtest, one daily candle at a time', () => {
@@ -95,7 +94,8 @@ test('every rule decides on past days only and comes with its origin, proof leve
   for (const r of POSITION_RULES) {
     const all = positions(r.id, b), cut = positions(r.id, b.slice(0, 700));
     assert.deepEqual(all.slice(0, 700), cut, `${r.id} must not change its past when later days arrive`);
-    assert.ok(all.some(Boolean) && !all.every(Boolean), `${r.id} should be in and out on a wave`);
+    // the default basket always holds at least half: never out
+    if (r.id !== 'basket') assert.ok(all.some(Boolean) && !all.every(Boolean), `${r.id} should be in and out on a wave`);
     assert.ok(TIER[r.id] >= 1 && PROOF[r.id], `${r.id} has a tier and a proof level`);
     for (const o of overlays(r.id, b)) assert.equal(o.values.length, b.length);
   }
@@ -182,11 +182,11 @@ test('recommend skips agents already hired when another fits', () => {
   assert.equal(recommend([a], { coin: 'BTC', exclude: ['break-BTC'] })!.pick.id, 'break-BTC', 'nothing else fits, so the hired one is still shown');
 });
 
-test('among agents working now, one that beat just holding comes before a steadier one that did not', () => {
+test('a bigger total alone does not put an agent ahead: the label rule decides, then the order', () => {
   const now = Date.now() / 1000;
-  const steadyLoser = fake({ id: 'trend200-BTC', rule: 'trend200', tier: 1, maxDd: 0.1, total: 0.2, hold: 0.6, live: true });
-  const winner = fake({ id: 'break-BTC', rule: 'break', tier: 1, maxDd: 0.35, total: 0.9, hold: 0.6, marks: [{ time: now - 3 * DAY, side: 'buy', price: 1 }] });
-  assert.equal(recommend([steadyLoser, winner], { coin: 'BTC', level: 'pro' })!.pick.id, 'break-BTC');
+  const steady = fake({ id: 'trend200-BTC', rule: 'trend200', tier: 1, maxDd: 0.1, total: 0.2, hold: 0.6, live: true });
+  const bigger = fake({ id: 'break-BTC', rule: 'break', tier: 1, maxDd: 0.35, total: 0.9, hold: 0.6, marks: [{ time: now - 3 * DAY, side: 'buy', price: 1 }] });
+  assert.equal(recommend([steady, bigger], { coin: 'BTC', level: 'pro' })!.pick.id, 'trend200-BTC');
 });
 
 /* ---------- a made agent on its own candle interval ---------- */
@@ -397,8 +397,9 @@ test('retired and demoted per the research; a retired agent can still be found b
   }
   assert.ok(A.isRetired({ rule: 'macd', base: 'HSK' }), 'standalone MACD retired everywhere');
   assert.ok(!A.isRetired({ rule: 'rsi2h', base: 'BTC' }) && !A.isRetired({ rule: 'macd4h', base: 'BTC' }), 'the short-term set stays, labelled');
-  for (const r of ['golden', 'ichimoku', 'trend200', 'tsmom', 'break', 'psar', 'adx', 'aroon', 'keltner'] as const) assert.ok(A.DEMOTED.has(r), `${r} demoted`);
+  for (const r of ['golden', 'ichimoku', 'trend200', 'break', 'psar', 'adx', 'aroon', 'keltner'] as const) assert.ok(A.DEMOTED.has(r), `${r} demoted`);
   assert.ok(!A.DEMOTED.has('breakC') && !A.DEMOTED.has('volTarget'));
+  for (const r of ['tsmom', 'multiTrend', 'dualMom'] as const) assert.ok(!A.DEMOTED.has(r), `${r} promoted out of the classics`);
   // agentById looks the rule up with the retired ones included (positionAgents(m, true)); the market lists without them.
   const src = (await import('node:fs')).readFileSync(new URL('./agents.ts', import.meta.url), 'utf8');
   assert.match(src, /positionAgents\(m, true\)\)\.find\(\(a\) => a\.id === id\)/);
@@ -416,30 +417,23 @@ test('every backtest is cut in three: early, the ranking year, and a holdout tha
     assert.ok(Math.abs((1 + s.early.hold) * (1 + s.pick.hold) * (1 + s.holdout.hold) - (1 + a.hold)) < 1e-9);
     assert.equal(A.holdoutDays(a), 91, 'the last twelfth of three years: about three months');
     assert.equal(A.pickDays(a), 365, 'the ranking year ends where the holdout starts');
-    assert.equal(A.beatsHold(a), s.pick.total > s.pick.hold && s.pick.exposure >= 0.25);
+    const ht = A.holdTest(a);
+    assert.equal(A.beatsHold(a), a.total > a.hold && ht.excessSharpe >= ht.hurdle && ht.blocks.length === 3 && ht.won >= 2 && ht.exposure >= 0.25, 'the label reads the whole window');
     assert.equal(A.oosEdge(a), s.pick.total - s.pick.hold);
     assert.deepEqual(A.holdNumbers(a), { full: a.total - a.hold, fullDays: a.days, edge: s.pick.total - s.pick.hold, days: 365, ago: 91, holdout: s.holdout.total - s.holdout.hold, mixed: s.pick.total - s.pick.hold > 0 && a.total - a.hold < 0 });
   }
 });
 
-test('nothing that ranks or picks reads the holdout: changing the last three months changes no ranking input', async () => {
+test('the last three months alone never make an agent "ahead"', async () => {
   const A = await import('./agents.ts');
-  const { recommend } = await import('./recommend.ts');
   const base = Array.from({ length: 1400 }, (_, i) => 100 * (1 + 0.3 * Math.sin(i / 40)) * 1.001 ** i);
-  const crash = base.map((v, i) => (i >= 1400 - 80 ? v * 0.4 : v));   // only the holdout differs
-  const score = (closes: number[]) => ['trend', 'maEns', 'volTarget', 'breakC', 'ema'].map((r) => A.scorePosition(r as 'trend', market('BTCUSDT-PERPETUAL'), bars(closes))!);
-  const x = score(base), y = score(crash);
-  x.forEach((a, k) => {
-    const c = y[k];
-    assert.deepEqual(c.split!.pick, a.split!.pick, `${a.rule}: the ranking year is the same`);
-    assert.deepEqual(c.split!.rank, a.split!.rank, `${a.rule}: the tie-breaks are the same`);
-    assert.equal(A.beatsHold(c), A.beatsHold(a));
-    assert.notEqual(c.hold, a.hold, 'the whole window does see the crash');
-  });
-  // Same "working now" state, so the order and the pick can only differ through the holdout, and they do not.
-  const live = (a: (typeof x)[number]) => ({ ...a, live: true, runnable: true });
-  assert.deepEqual([...x.map(live)].sort(A.byMerit).map((a) => a.rule), [...y.map(live)].sort(A.byMerit).map((a) => a.rule));
-  assert.equal(recommend(x.map(live), { coin: 'BTC' })!.pick.rule, recommend(y.map(live), { coin: 'BTC' })!.pick.rule);
+  const crash = base.map((v, i) => (i >= 1400 - 80 ? v * 0.4 : v));   // only the last months differ
+  for (const r of ['trend', 'maEns', 'volTarget', 'breakC', 'ema'] as const) {
+    const a = A.scorePosition(r, market('BTCUSDT-PERPETUAL'), bars(crash))!;
+    // sitting out a crash in the last three months is not a three-year edge: the label needs 2 of 3 yearly blocks
+    if (A.beatsHold(a)) assert.ok(A.holdTest(a).won >= 2 && A.holdTest(a).excessSharpe >= A.luckHurdle(a.days));
+    assert.ok(a.split!.holdout, 'the holdout is still reported');
+  }
 });
 
 test('each scored agent keeps the inputs its last decision compared, for the journal', async () => {
@@ -458,12 +452,76 @@ test('each scored agent keeps the inputs its last decision compared, for the jou
   assert.ok(Number.isFinite(made.decision!.values['buy1.a']) && made.decision!.values['buy1.b'] === 30, 'a made rule: each condition’s two sides');
 });
 
-test('sitting in cash through a falling year does not count as beating holding', async () => {
+test('the label rule: luck hurdle, 2 of 3 yearly blocks and the exposure guard', async () => {
   const A = await import('./agents.ts');
-  const a = { total: 0, hold: -0.3, split: { at: 0, holdoutAt: 0, early: { total: 0, hold: 0 }, pick: { total: 0, hold: -0.4, exposure: 0.05 }, holdout: { total: 0, hold: 0, exposure: 0 }, rank: { maxDd: 0, sharpe: 0, trades: 0, total: 0 } } };
-  assert.equal(A.beatsHold(a), false, 'ahead only by holding nothing');
-  assert.equal(A.beatsHold({ ...a, split: { ...a.split, pick: { ...a.split.pick, total: -0.1, exposure: 0.5 } } }), true, 'held half the year and lost less');
-  assert.equal(A.beatsHold({ ...a, split: { ...a.split, pick: { total: -0.5, hold: -0.4, exposure: 1 }, holdout: { total: 9, hold: 0, exposure: 1 } } }), false, 'a great holdout does not count');
+  const D = 86_400, days = 1095;
+  // daily curves: holding drifts, the agent adds a steady extra each day (a clean, high excess Sharpe)
+  const curve = (f: (i: number) => number) => Array.from({ length: days + 1 }, (_, i) => ({ time: i * D, value: f(i) }));
+  const noise = (i: number) => 1 + 0.002 * Math.sin(i * 1.7);
+  const bench = curve((i) => 1.0003 ** i * noise(i));
+  const steady = { kind: 'position' as const, days, inMarket: 1, exposure: 0.8, bench, equity: curve((i) => 1.0003 ** i * noise(i) * 1.002 ** i) };
+  const s1 = { ...steady, total: steady.equity[days].value - 1, hold: bench[days].value - 1 };
+  assert.equal(A.yearly(s1).length, 3);
+  assert.ok(A.holdTest(s1).excessSharpe >= A.luckHurdle(days), 'clears √(2·ln 30 / 3) ≈ 1.5');
+  assert.equal(A.beatsHold(s1), true);
+  assert.ok(Math.abs(A.luckHurdle(1095) - Math.sqrt((2 * Math.log(30)) / 3)) < 1e-9);
+  // ahead only in one year: fails the 2-of-3 rule however big the total
+  const lucky = curve((i) => 1.0003 ** i * noise(i) * (i > 730 ? 1.004 ** (i - 730) : 1));
+  const s2 = { ...steady, equity: lucky, total: lucky[days].value - 1, hold: bench[days].value - 1 };
+  assert.equal(A.holdTest(s2).won, 1);
+  assert.equal(A.beatsHold(s2), false);
+  // held almost nothing: the exposure guard
+  assert.equal(A.beatsHold({ ...s1, exposure: 0.1 }), false);
+  // a short history (one year) has no three blocks: never ahead
+  const short = { ...s1, days: 365, equity: s1.equity.slice(-366), bench: bench.slice(-366) };
+  assert.equal(A.beatsHold(short), false);
+  // periodResult: the last 365 days against holding
+  const p = A.periodResult(s1, 365)!;
+  assert.ok(Math.abs(p.total - (s1.equity[days].value / s1.equity[days - 365].value - 1)) < 1e-9);
+  assert.equal(A.periodResult(s1, 5000), undefined, 'longer than the backtest');
+});
+
+test('tiers: the default basket first, lab agents last and never recommended, then working now and the smaller drop', async () => {
+  const A = await import('./agents.ts');
+  const { recommend } = await import('./recommend.ts');
+  const b = bars(Array.from({ length: 1400 }, (_, i) => 100 * (1 + 0.3 * Math.sin(i / 40)) * 1.001 ** i));
+  const m = market('BTCUSDT-PERPETUAL');
+  const xs = (['basket', 'tsmom', 'tsmom3', 'volTarget', 'trend', 'golden'] as const).map((r) => ({ ...A.scorePosition(r, m, b)!, runnable: true }));
+  const by = (r: string) => xs.find((a) => a.rule === r)!;
+  assert.equal(A.tierOf(by('basket')), 'default');
+  assert.equal(A.tierOf(by('tsmom3')), 'lab', 'the 7/28/91-day momentum agent is lab');
+  assert.equal(A.needsLabConfirm(by('tsmom3')), true);
+  assert.equal(A.needsLabConfirm(by('basket')), false);
+  for (const a of xs) assert.ok(A.LIST_TIERS.includes(A.tierOf(a)));
+  const order = [...xs].sort(A.byMerit).map((a) => A.tierOf(a));
+  assert.equal(order[0], 'default');
+  assert.equal(order[order.length - 1], 'lab');
+  assert.deepEqual(order, [...order].sort((p, q) => A.LIST_TIERS.indexOf(p) - A.LIST_TIERS.indexOf(q)), 'tiers never interleave');
+  const r = recommend(xs, { coin: 'BTC' })!;
+  assert.equal(r.pick.rule, 'basket', 'the default is the pick');
+  assert.ok(!r.others.some((a) => A.tierOf(a) === 'lab'));
+  assert.equal(recommend(xs, { coin: 'BTC', exclude: [by('basket').id] })!.pick.rule === 'tsmom3', false, 'a lab agent is never the pick');
+  // a calmer agent: smaller worst drop than holding over the same days, not ahead
+  for (const a of xs) if (A.tierOf(a) === 'calmer') assert.ok(a.maxDd < A.holdDrop(a) && !A.beatsHold(a));
+});
+
+test('the basket holds half always, checks monthly, and trades only on a 25-point move', async () => {
+  const A = await import('./agents.ts');
+  // a year of rise, a year of fall, a year of rise
+  const closes = Array.from({ length: 1500 }, (_, i) => 100 * (i < 500 ? 1.002 ** i : i < 1000 ? 1.002 ** 500 * 0.998 ** (i - 500) : 1.002 ** 500 * 0.998 ** 500 * 1.002 ** (i - 1000)));
+  const b = bars(closes);
+  const t = A.basketTarget(b);
+  assert.ok(t.every((x) => [0.5, 0.5 + 0.5 / 3, 0.5 + 1 / 3, 1].some((v) => Math.abs(x - v) < 1e-9)), 'targets are 50/67/83/100%');
+  // the target only changes on the first candle of a month
+  for (let i = 1; i < b.length; i++) if (t[i] !== t[i - 1]) assert.notEqual(new Date(b[i].time * 1000).getUTCMonth(), new Date(b[i - 1].time * 1000).getUTCMonth());
+  const held = A.exposure('basket', b);
+  const shares = held.map((x) => Number(x));
+  assert.ok(shares.slice(400).every((x) => x >= 0.5 - 1e-9), 'never under half once started');
+  for (let i = 401; i < shares.length; i++) if (shares[i] !== shares[i - 1]) assert.ok(Math.abs(shares[i] - shares[i - 1]) >= 0.25 - 1e-9, 'a trade only on a 25-point move');
+  const a = A.scorePosition('basket', market('BTCUSDT-PERPETUAL'), b)!;
+  assert.equal(a.band, 0.25);
+  assert.ok(a.moves! <= 12, `few trades over three years (${a.moves})`);
+  assert.equal(a.yearly!.length, 3);
 });
 
 test('the headline is the whole period; a better ranking year over a worse whole period is flagged to be said in words', async () => {

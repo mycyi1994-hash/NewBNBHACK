@@ -4,8 +4,10 @@
 // per-trade limit on their own vault, the sheet says so when an amount goes above it.
 // An agent someone else made shows who made it and their fee. On a vault that can pay creator fees (version 3)
 // the owner approves that fee here, one confirmation in the wallet; an older vault pays nothing and says so.
+// A lab agent asks for an explicit "hire it anyway" first (the logic team adds it as .hire-lab, .hire-lab-warn and
+// .hire-lab-ok; styled in styles.css).
 import { useEffect, useMemo, useState } from 'react';
-import { isWeightRule, rescoreAt, type Agent } from './agents.ts';
+import { isWeightRule, needsLabConfirm, rescoreAt, type Agent } from './agents.ts';
 import { pct } from './AgentCard.tsx';
 import { describe, scheduleOf, type Plan } from './intent.ts';
 import { useT } from './i18n.ts';
@@ -17,6 +19,7 @@ import { approvedFee, setChainBudget, setCreatorFee } from './shareClient.ts';
 import { newId } from './runner.ts';
 import { whoText } from './Shared.tsx';
 import { Icon } from './Icons.tsx';
+import { AiBadge } from './AiPanel.tsx';
 import { book, type Amounts, type HireChoice, type HiredAgent, type Mode } from './runner.ts';
 import { hiredName, money } from './hiredText.ts';
 import { setLimits, setSession, setStopLoss, type SendResult } from './account.ts';
@@ -128,17 +131,24 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
   const [sesUntil] = useState(() => Math.floor(Date.now() / 1000) + 90 * 86_400);
   const pfee = vault?.platformFeeBps ?? 0;
   const steps = Number(saveSession) + Number(saveLimits) + Number(saveStop) + Number(saveFee) + Number(saveBudget);
-  const valid = per > 0 && budget >= per && (!auto || (real && dayOk && stopOk)) && !feeLoading;
+  // Moa AI goes on auto only while this server's AI is deciding (the server refuses it otherwise too).
+  const autoOff = target.kind === 'agent' && !!target.agent.ai && target.agent.ai.state !== 'on';
+  // A lab agent (hourly/4-hour or too fast for the costs) is hired only after the user says so in words.
+  const lab = target.kind === 'agent' && needsLabConfirm(target.agent);
+  const [labOk, setLabOk] = useState(false);
+  const valid = per > 0 && budget >= per && (!auto || (real && dayOk && stopOk && !autoOff)) && !feeLoading && (!lab || labOk);
 
   const name = target.kind === 'agent' ? agentName(t, target.agent) : target.kind === 'custom'
     ? t.customName((target.plan.steps.find((s) => 'asset' in s) as { asset?: string } | undefined)?.asset ?? 'HSK') : hiredName(t, target.hired);
   const rule = target.kind === 'agent' ? target.agent.rule : target.kind === 'edit' && target.hired.source.type === 'market' ? target.hired.source.rule : undefined;
   // A weight agent holds a share of its budget and rebalances: there is no per-buy amount, only the budget.
-  const weighted = !!rule && isWeightRule(rule);
+  // Moa AI is a weight agent too, sized by the share its AI sets; on auto only while the server's AI is on.
+  const isAiRule = rule === 'aiPilot';
+  const weighted = !!rule && (isWeightRule(rule) || isAiRule);
   // The agent's past results rescored at the budget chosen (price impact grows with size on a thin pool).
   const [atSize, setAtSize] = useState<{ usd: number; edge: number } | null>(null);
   useEffect(() => {
-    if (target.kind !== 'agent' || target.agent.kind !== 'position') return;
+    if (target.kind !== 'agent' || target.agent.kind !== 'position' || target.agent.ai) return;
     let alive = true;
     const usd = budget;
     const id = setTimeout(() => { void rescoreAt(target.agent, usd).then((x) => alive && x && setAtSize({ usd, edge: x.total - x.hold }), () => undefined); }, 300);
@@ -210,6 +220,12 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
             <p>{target.kind === 'agent' && target.agent.made ? ruleLines(t, target.agent)[0] : t.agPlain[rule]}</p>
           </div>
         )}
+        {isAiRule && (
+          <section className="hire-ai" role="note">
+            <AiBadge />
+            <p>{t.aiHireWarn}<small>{t.aiHonest}</small></p>
+          </section>
+        )}
         {sh && (
           <section className="hire-maker" aria-label={t.shWho}>
             <div className="hire-maker-top">
@@ -240,7 +256,7 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
           </label>
         </div>
         {atSize && atSize.usd === budget && <p className="hire-sub">{t.hsAtSize(`$${money(budget)}`, t.vsHold(pct(atSize.edge)))}</p>}
-        {weighted ? <p className="hire-times">{t.hsWeight}</p> : budget < per ? <p className="hire-sub warn">{t.hsBudgetLow}</p> : <p className="hire-times">{t.hsTimes(times)}</p>}
+        {weighted ? <p className="hire-times">{isAiRule ? t.aiHsWeight : t.hsWeight}</p> : budget < per ? <p className="hire-sub warn">{t.hsBudgetLow}</p> : <p className="hire-times">{t.hsTimes(times)}</p>}
         {!weighted && !auto && per > maxTrade && <p className="hire-sub warn">{t.hsOverLimit(money(maxTrade))}</p>}
         {doubles && <p className="hire-sub">{t.hsDouble(money(Math.min(per * 2, maxTrade)))}</p>}
         {editing && <p className="hire-sub">{t.hsSpent(money(book(target.hired).spent))}</p>}
@@ -249,12 +265,13 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
           <span>{t.hsMode}</span>
           <div className="hire-modes" role="radiogroup" aria-label={t.hsMode}>
             {(['ask', 'auto'] as Mode[]).map((m) => (
-              <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
+              <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)} disabled={m === 'auto' && autoOff}>
                 <b>{m === 'ask' ? t.hsModeAsk : t.hsModeAuto}</b><small>{m === 'ask' ? t.hsModeAskSub : t.hsModeAutoSub}</small>
               </button>
             ))}
           </div>
           {auto && !real && why !== 'wait' && <p className="hire-sub warn">{t.hsAutoLogin}</p>}
+          {isAiRule && autoOff && <p className="hire-sub warn">{t.aiHireOff}</p>}
         </div>
 
         {auto && real && (
@@ -289,6 +306,12 @@ export default function HireSheet({ target, vault, onClose, onConfirm, onReloadV
           <p className="hire-sub">{saveSession ? t.hsSessionNew(new Date(sesUntil * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US'), money(sesMax)) : ses ? t.hsSessionOk(new Date(ses.until * 1000).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US')) : ''}</p>
         )}
         {pfee > 0 && <p className="hire-sub">{t.hsPlatformFee(feeText(pfee), money(feeOn(per, pfee)))}</p>}
+        {lab && (
+          <label className="hire-lab">
+            <span className="hire-lab-warn">{t.tierLabWarn}</span>
+            <span className="hire-lab-ok"><input type="checkbox" checked={labOk} onChange={(e) => setLabOk(e.target.checked)} />{t.tierLabConfirm}</span>
+          </label>
+        )}
         <ul className="hire-checks">{t.hsChecks.map((c) => <li key={c}><Icon name="check" size={16} />{c}</li>)}</ul>
         <p className="hire-trust"><a href="?trust" target="_blank" rel="noreferrer">{t.navTrust} ↗</a></p>
         {(why === 'login' || why === 'off') && <p className="hire-note demo">{why === 'login' ? t.hsLogin : t.hsDemo}</p>}

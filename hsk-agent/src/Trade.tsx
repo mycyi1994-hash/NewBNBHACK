@@ -444,7 +444,10 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, marker
     return () => cancelAnimationFrame(raf);
   }, [handleKey, candles.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Buys and sells as filled labels over the chart, kept on their candles as the chart moves.
+  // Buys and sells as small unlabelled ▲ (under the candle) and ▼ (over it), kept on their candles as the chart moves.
+  // Marks closer than 24px join one neutral dot with a count (its tooltip says how many buys and sells); zooming in
+  // splits it. At most three marks carry words: the notes (where the record joins another source, pauses) and the
+  // most recent trade. The details are in the trade list under the chart.
   useEffect(() => {
     const el = layer.current, c = chart.current, m = main.current;
     if (!el) return;
@@ -452,16 +455,16 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, marker
     const badges = study?.badges ?? [];
     if (!c || !m || !badges.length || !candles.length) return;
     const byTime = new Map(candles.map((x) => [x.time, x]));
-    const nodes = badges.map((b) => {
-      const n = document.createElement('span');
-      n.className = `cb cb-${b.side}`;
-      const arrow = document.createElement('i'); arrow.textContent = b.side === 'buy' ? '▲' : b.side === 'sell' ? '▼' : '•';
-      const text = document.createElement('b'); text.textContent = b.text;
-      n.append(arrow, text);
-      el.appendChild(n);
-      return n;
-    });
+    const CLUSTER_PX = 24, LABELS = 3;
     let raf = 0, sig = '';
+    const node = (cls: string, mark: string, text?: string, tip?: string) => {
+      const n = document.createElement('span');
+      n.className = cls;
+      const i = document.createElement('i'); i.textContent = mark; n.append(i);
+      if (text) { const b = document.createElement('b'); b.textContent = text; n.append(b); }
+      if (tip) n.dataset.tip = tip;
+      return n;
+    };
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const ts = c.timeScale();
@@ -471,24 +474,43 @@ export function CandleChart({ candles, inds, onOlder, priceLine, markers, marker
       const key = `${r?.from.toFixed(2)}|${r?.to.toFixed(2)}|${w}|${h}|${u}|${m.priceToCoordinate(candles[candles.length - 1].close)?.toFixed(1)}`;
       if (key === sig) return;
       sig = key;
-      const last = { buy: -1e9, sell: -1e9, note: -1e9 };
-      badges.forEach((b, i) => {
-        const n = nodes[i], cd = byTime.get(b.time);
-        const x = ts.timeToCoordinate(b.time as UTCTimestamp);
+      const seen: { b: Badge; x: number; y: number }[] = [];
+      for (const b of badges) {
+        const cd = byTime.get(b.time), x = ts.timeToCoordinate(b.time as UTCTimestamp);
         const y = cd ? m.priceToCoordinate(b.side === 'buy' ? cd.low : cd.high) : null;
-        if (x === null || y === null || x < 0 || x > w || y < 0 || y > h || (u !== undefined && b.time > u)) { n.style.display = 'none'; return; }
-        n.style.display = '';
-        // Too close to the one before: keep the arrow, drop the words. On top of it: one mark is enough.
-        const gap = x - last[b.side];
-        if (gap < 12) { n.style.display = 'none'; return; }
-        n.classList.toggle('tight', gap < 76);
-        last[b.side] = x;
-        n.style.left = `${x}px`; n.style.top = `${y}px`;
-      });
+        if (x === null || y === null || x < 0 || x > w || y < 0 || y > h || (u !== undefined && b.time > u)) continue;
+        seen.push({ b, x, y });
+      }
+      seen.sort((p, q) => p.x - q.x);
+      const groups: { b: Badge; x: number; y: number }[][] = [];
+      for (const s of seen) {
+        const g = groups[groups.length - 1];
+        if (g && s.b.side !== 'note' && g[0].b.side !== 'note' && s.x - g[0].x < CLUSTER_PX) g.push(s); else groups.push([s]);
+      }
+      // Words go to the notes first, then to the most recent single trade, up to LABELS.
+      let left = LABELS - groups.filter((g) => g[0].b.side === 'note').length;
+      const lastTrade = [...groups].reverse().find((g) => g.length === 1 && g[0].b.side !== 'note');
+      const out: HTMLElement[] = [];
+      for (const g of groups) {
+        let n: HTMLElement;
+        if (g.length > 1) {
+          const buys = g.filter((x) => x.b.side === 'buy').length, sells = g.length - buys;
+          n = node('cb cb-cluster', String(g.length), undefined, t.mkCluster(buys, sells));
+          n.style.left = `${g.reduce((a, x) => a + x.x, 0) / g.length}px`;
+          n.style.top = `${g.reduce((a, x) => a + x.y, 0) / g.length}px`;
+        } else {
+          const { b, x, y } = g[0];
+          const words = b.side === 'note' || (g === lastTrade && left-- > 0);
+          n = node(`cb cb-${b.side}${words ? '' : ' mini'}`, b.side === 'buy' ? '▲' : b.side === 'sell' ? '▼' : '•', words ? b.text : undefined, words ? undefined : b.text);
+          n.style.left = `${x}px`; n.style.top = `${y}px`;
+        }
+        out.push(n);
+      }
+      el.replaceChildren(...out);
     };
     tick();
     return () => cancelAnimationFrame(raf);
-  }, [study, candles]);
+  }, [study, candles, t]);
 
   return (
     <div className="chart-wrap">
@@ -764,7 +786,7 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
   const pickIv = (v: cex.Interval) => { setIv(v); save('moa.iv', v); };
   const { t, mi } = useCex(market);
   const [inds, toggleInd] = useStoredInds();
-  const { list, failed, retry: reloadAgents } = useMarketAgents('cex', market, asset);
+  const { list, failed, at: listAt, retry: reloadAgents } = useMarketAgents('cex', market, asset);
   const sel = list?.find((a) => a.id === selId) ?? null;
   // A picked short-term agent decides on hourly or 4-hour candles: the chart loads the same history it was scored on.
   const deep = !!sel?.interval && sel.interval === interval;
@@ -819,7 +841,7 @@ function CexPanel({ market, setMarket, asset, dexPrice, venueTabs, selId, setSel
         {heatOn ? <NanoChart base={market.base} interval={interval} state={nano} /> : candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
 
-      <Dock venue="cex" coin={market.base} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} onBuild={() => onBuild(market.base)} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
+      <Dock venue="cex" coin={market.base} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} onBuild={() => onBuild(market.base)} list={list} at={listAt} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} />
     </>
   );
 }
@@ -846,7 +868,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
   const p = POOLS[asset];
   const gate = quotes.find((q) => q.asset === asset);
   const gap = gate?.gap;
-  const { list, failed, retry: reloadAgents } = useMarketAgents('dex', market, asset);
+  const { list, failed, at: listAt, retry: reloadAgents } = useMarketAgents('dex', market, asset);
   const sel = list?.find((a) => a.id === selId) ?? null;
   useEffect(() => { if (sel) setIv(sel.interval ?? '1d'); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const { period, setPeriod, shown, busy } = useBacktest(sel);
@@ -936,7 +958,7 @@ function DexPanel({ asset, setAsset, market, detail, quotes, venueTabs, selId, s
         <PoolRange asset={asset} symbol={p.symbol} price={detail?.price} onLp={lp ? () => lp.setPlan(defaultPlan(asset)) : undefined} />
         {candles.length ? <CandleChart candles={candles} inds={inds} onOlder={more} priceLine={priceLine} markers={study ? undefined : markers} markerTips={study ? undefined : swapMarks.tips} study={study} until={replay.cursor ?? undefined} range={shown ? { from: shown.from - LEAD_DAYS * 86_400, key: `${shown.id}-${period}-${shown.days}` } : undefined} resetKey={key} /> : err ? <div className="chart-empty"><StateBox title={s.errChart} text={s.errChartText} retry={s.retry} onRetry={retry} /></div> : <div className="chart-empty loading" role="status"><span className="spin" aria-hidden />{s.loadingCandles}</div>}
       </section>
-      <Dock venue="dex" coin={asset} onLp={lp ? (x) => lp.setPlan({ ...defaultPlan(asset), ...strategyPlan(x) }) : undefined} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
+      <Dock venue="dex" coin={asset} onLp={lp ? (x) => lp.setPlan({ ...defaultPlan(asset), ...strategyPlan(x) }) : undefined} mine={mine?.node} mineCount={mine?.count} mineAsks={mine?.asks} list={list} at={listAt} failed={failed} sel={sel} shown={shown} period={period} setPeriod={setPeriod} busy={busy} cursor={replay.cursor} onRetry={reloadAgents} onSelect={setSel} onHire={onHire} onAsk={onAsk} swaps={(
         <div className="swaps">
           <div className="book-cols four muted"><span>{s.side}</span><span>{s.price}</span><span>{s.amount}</span><span>{s.when}</span></div>
           {detail?.swaps.slice(0, 20).map((x) => (

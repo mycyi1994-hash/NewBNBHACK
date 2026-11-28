@@ -9,6 +9,7 @@ import { Icon } from './Icons.tsx';
 import { madeById } from './madeStore.ts';
 import type { Cond, MadeSpec } from './spec.ts';
 import { Mark, RuleGlyph } from './Mark.tsx';
+import { MoneyHero, PeriodMarks, periodResult, stakeOf, usePeriod, won } from './Perf.tsx';
 
 /** Signed percent with a true minus sign, one decimal: the one number format used across the app. */
 export const pct = (v: number, d = 1) => { const x = Math.abs(v * 100).toFixed(d); return `${Number(x) === 0 ? '' : v > 0 ? '+' : '−'}${x}%`; };
@@ -92,8 +93,10 @@ export function RuleIcon({ rule }: { rule: RuleId }) {
 export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions }: {
   agent: Agent; size: 'tile' | 'cell' | 'chat'; picked?: boolean; best?: boolean; rank?: number; onPick?: () => void; actions?: ReactNode;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const pill = statePill(t, a);
+  // One period for every card on screen (src/Perf.tsx): the money number and the marks follow it.
+  const [period] = usePeriod();
 
   const edge = a.total - a.hold;
   if (size === 'cell') {
@@ -102,14 +105,13 @@ export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions 
     const active = pill.cls === 'sig-good';
     return (
       <button className={`hzr${picked ? ' on' : ''}`} onClick={onPick} aria-pressed={picked}>
-        <span className="hzr-rank">{rank}</span>
         <Face rule={a.rule} size="sm" />
         <span className="hzr-main">
           <span className="hzr-title"><b>{a.made?.name ?? t.agNick[a.rule]}</b>{best && <span className="badge pick"><i />{t.stratRec}</span>}</span>
           <span className="hzr-rule">{active && <em>{pill.text} · </em>}{t.agRule[a.rule]}</span>
         </span>
         <span className="hzr-eq" aria-hidden><Equity pts={a.equity} up={a.total >= 0} /></span>
-        <span className="hzr-num"><b className={a.total >= 0 ? 'pos' : 'neg'}>{pct(a.total)}</b><small>{t.ddShort} {drop(a.maxDd)}</small></span>
+        <span className="hzr-num">{(() => { const r = periodResult(a, period); return r ? <b className={r.total > 0 ? 'up' : r.total < 0 ? 'down' : ''}>{won(lang, stakeOf(lang) * (1 + r.total))}</b> : <b>—</b>; })()}</span>
       </button>
     );
   }
@@ -153,13 +155,11 @@ export function AgentCard({ agent: a, size, picked, best, rank, onPick, actions 
     return (
       <div className="acard">
         {head}
-        <p className="ag-line">{t.agLine[a.rule]} <span className={`origin tier-${a.tier}`}>{t.agOrigin[a.rule]}</span></p>
-        <div className="ag-stats">
-          <span>{t.fullOver(t.oosSpan(a.days), '')} · {t.acEdge}<b className={edge >= 0 ? 'pos' : 'neg'}>{pct(edge)}</b></span>
-          <span>{t.acTotal}<b>{pct(a.total)}</b></span>
-          <span>{t.acDd}<b>{drop(a.maxDd)}</b></span>
+        <p className="ag-line">{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</p>
+        <div className="acard-perf">
+          <MoneyHero a={a} period={period} size="sm" />
+          <PeriodMarks a={a} active={period} />
         </div>
-        <HoldLines a={a} cls="hold-lines chat" />
         <Equity pts={a.equity} up={a.total >= a.hold} wide />
         {!a.runnable && <p className="acard-demo">{t.whyNot(a.base)}</p>}
         <details className="acard-more">

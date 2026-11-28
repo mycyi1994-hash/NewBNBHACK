@@ -22,7 +22,8 @@ import MineDock from './MineDock.tsx';
 import type { LpPlan } from './lp.ts';
 import MoaFeed, { type MoaAsk, type MoaContext, type MoaInject } from './MoaFeed.tsx';
 import HireSheet, { type HireTarget } from './HireSheet.tsx';
-import { agentById, loadAgents, type Agent } from './agents.ts';
+import { agentById, type Agent } from './agents.ts';
+import { allAgents } from './agentsClient.ts';
 import type { Asset } from './intent.ts';
 import { agentSignal, chainNote, decide, newId, type HireChoice, type HiredAgent, type Signal } from './runner.ts';
 import { hiredName } from './hiredText.ts';
@@ -179,6 +180,8 @@ function Shell() {
   const now = useNow(30_000);
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentsFailed, setAgentsFailed] = useState(false);
+  /** When the market's list was scored (the server's cache time), for "5분 전 기준". */
+  const [agentsAt, setAgentsAt] = useState<number | null>(null);
   const [extra, setExtra] = useState<Record<string, Agent>>({});
   const [tradeCtx, setTradeCtx] = useState<MoaContext>({ label: '' });
   const [inject, setInject] = useState<MoaInject | null>(null);
@@ -219,7 +222,7 @@ function Shell() {
   useEffect(() => {
     let alive = true;
     setAgentsFailed(false);
-    const load = () => loadAgents().then((a) => { if (alive) { setAgents(a); setAgentsFailed(false); } }, () => { if (alive) setAgentsFailed(true); });
+    const load = () => allAgents().then((x) => { if (alive) { setAgents(x.agents); setAgentsAt(x.at); setAgentsFailed(false); } }, () => { if (alive) setAgentsFailed(true); });
     load();
     const x = setInterval(load, 10 * 60_000);
     return () => { alive = false; clearInterval(x); };
@@ -246,6 +249,8 @@ function Shell() {
     if (h.source.type === 'custom') return { kind: 'custom', price: quotes.find((q) => q.asset === h.asset)?.pool };
     const a = agentFor(h.source.agentId);
     if (!a) return undefined;
+    // Moa AI asks for nothing until the server's AI is on and has set a target.
+    if (a.ai && a.target === undefined) return undefined;
     return agentSignal(a);
   };
   const maxTradeUsd = vault?.configured && vault.maxTradeUsdt ? Number(vault.maxTradeUsdt) : undefined;
@@ -404,7 +409,7 @@ function Shell() {
           onOpen={(id) => tell({ kind: 'status', hiredId: id })} onPause={pause} onResume={resume} />}
         {view === 'trade' && <Trade quotes={quotes} show={show} lp={{ plan: lp, setPlan: openLp, vault, say: (text) => tell({ kind: 'note', text }) }}
           mine={{ count: hired.length, asks, node: <MineDock hired={hired} quotes={quotes} vault={vault} now={now} sending={sending} onOpen={(id) => tell({ kind: 'status', hiredId: id })} onEdit={(id) => { const h = hired.find((x) => x.id === id); if (h) setSheet({ kind: 'edit', hired: h }); }} onPause={pause} onResume={resume} /> }} onContext={setTradeCtx} onAsk={askMoaAbout} onBuild={(coin) => openBuilder({ coin })} onHire={(a) => setSheet({ kind: 'agent', agent: a })} />}
-        {view === 'agents' && <Agents agents={agents} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} onBuild={() => openBuilder({})} />}
+        {view === 'agents' && <Agents agents={agents} at={agentsAt} failed={agentsFailed && !agents} onRetry={() => setAgentsTry((n) => n + 1)} onHire={(a) => setSheet({ kind: 'agent', agent: a })} onOpen={openBacktest} onRecommend={() => tell({ kind: 'recommend' })} onBuild={() => openBuilder({})} />}
         {view === 'build' && <Builder draft={build} onOpen={openBacktest} />}
         {view === 'vault' && <VaultView address={new URLSearchParams(window.location.search).get('vault')} quotes={quotes} />}
         {view === 'trust' && <Trust quotes={quotes} />}

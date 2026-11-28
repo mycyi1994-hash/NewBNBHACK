@@ -22,12 +22,13 @@ import type { Decision } from './journal.ts';
 import { poolDetail, poolState } from './dex.ts';
 import { MADE_PREFIX, madeById, madeList } from './madeStore.ts';
 import { spreadAgent } from './spread.ts';
+import { aiAgentOf, type AiDecision, type AiState, type Paper } from './aiPilot.ts';
 import type { SharedTag } from './share.ts';
 
 export type PositionRule =
   | 'tsmom' | 'multiTrend' | 'dualMom' | 'trend200' | 'golden' | 'break' | 'turtle2' | 'donchian' | 'ma520' | 'triple'
   | 'macd' | 'ichimoku' | 'keltner' | 'psar' | 'adx' | 'aroon' | 'cryptoMom' | 'rsi2' | 'double7'
-  | 'trend' | 'ema' | 'rsi' | 'boll' | ShortRule | QuantRule | 'spread';
+  | 'trend' | 'ema' | 'rsi' | 'boll' | ShortRule | QuantRule | 'spread' | 'aiPilot';
 /**
  * Short-term agents: standard rules run on hourly or 4-hour candles, so they trade in hours and days instead of
  * weeks. Where the source is a daily rule this is Moa's shorter version, with no published test (PROOF 'none').
@@ -41,9 +42,20 @@ export type ShortRule = 'rsi2h' | 'rsi2q' | 'ema921h' | 'macd4h' | 'bollh' | 'rs
  *  - in or out with a chandelier stop (C1): the 20-day breakout (A4) and the Turtle/Donchian rules with the stop added.
  */
 export type QuantRule = WeightRule | 'brkAtr' | 'breakC' | 'turtle2C' | 'donchianC';
-export type WeightRule = 'volTarget' | 'donchEns' | 'tsmom3' | 'coreTrend' | 'maEns';
+export type WeightRule = 'volTarget' | 'donchEns' | 'tsmom3' | 'coreTrend' | 'maEns' | 'basket';
+/**
+ * The default basket (research/strategy-selection.md §2 and §6), chosen from the literature before looking at Moa's
+ * backtests: half of the money always in the coin, the other half × a slow trend blend, the share of the 3-, 6- and
+ * 12-month returns that are positive (a third each; Hurst, Ooi & Pedersen 2017 blend several horizons equally).
+ * Checked once a month (on the first daily candle of a UTC month), and it trades only when its target moves 25
+ * points or more: a wide no-trade band (Novy-Marx & Velikov 2016; Gârleanu & Pedersen 2013 on trading toward the
+ * target because of costs). Targets are 50%, 67%, 83% or 100%, so with the band it trades on a change of at least
+ * two signals and then goes all the way: the "partway" refinement is left out to keep the backtest and the live
+ * runner (which rebalances to the target) the same. Equal weighting over picking: DeMiguel, Garlappi & Uppal 2009.
+ */
+export const BASKET_BAND = 0.25;
 /** Each weight rule's rebalance band: the share held only moves when its target moves this far (research: B1 15 points, the others 10). */
-export const BAND: Record<WeightRule, number> = { volTarget: 0.15, donchEns: 0.10, tsmom3: 0.10, coreTrend: 0.10, maEns: 0.10 };
+export const BAND: Record<WeightRule, number> = { volTarget: 0.15, donchEns: 0.10, tsmom3: 0.10, coreTrend: 0.10, maEns: 0.10, basket: BASKET_BAND };
 export const isWeightRule = (rule: RuleId): rule is WeightRule => rule in BAND;
 /**
  * Retired by the research: the evidence is against them on BTC and ETH (large coins show momentum, not reversal) or
@@ -51,7 +63,8 @@ export const isWeightRule = (rule: RuleId): rule is WeightRule => rule in BAND;
  */
 export const isRetired = (a: { rule: RuleId; base: string }) => a.rule === 'macd' || ((a.rule === 'rsi2' || a.rule === 'double7' || a.rule === 'boll') && (a.base === 'BTC' || a.base === 'ETH'));
 /** Demoted to "classic": single-setting rules the research says newer ensembles supersede, or with no crypto evidence. */
-export const DEMOTED: ReadonlySet<RuleId> = new Set<RuleId>(['golden', 'ichimoku', 'trend200', 'tsmom', 'break', 'turtle2', 'donchian', 'psar', 'adx', 'aroon', 'keltner']);
+// 12-month time-series momentum is promoted out of it (with the 1/3/12 blend and dual momentum): the research's strongest prior.
+export const DEMOTED: ReadonlySet<RuleId> = new Set<RuleId>(['golden', 'ichimoku', 'trend200', 'break', 'turtle2', 'donchian', 'psar', 'adx', 'aroon', 'keltner']);
 export type CollectRule = 'daily' | 'smart' | 'trendDca' | 'rsiDca';
 /** `made` is an agent someone built themselves (its rule is data: see spec.ts). */
 export type RuleId = PositionRule | CollectRule | 'made';
@@ -80,8 +93,12 @@ export const TIER: Record<RuleId, Tier> = {
   rsi2h: 3, rsi2q: 3, donch1h: 3, donch4h: 3,
   // The research set: published strategies (tier 1), and Moa's combinations of published parts (tier 3).
   volTarget: 1, donchEns: 1, tsmom3: 1, maEns: 1, brkAtr: 1, coreTrend: 3, breakC: 3, turtle2C: 3, donchianC: 3,
+  // The default basket: a fixed combination of published parts.
+  basket: 3,
   // The spread hunter (src/spread.ts): Moa's own rule, read off recorded HSKSwap vs exchange gaps.
   spread: 3,
+  // Moa AI (src/aiPilot.ts): an AI model decides, inside fixed limits. No rule, no backtest.
+  aiPilot: 3,
 };
 /**
  * What stands behind a rule, said plainly on every agent:
@@ -102,8 +119,9 @@ export const HORIZON: Record<Exclude<RuleId, 'made'>, Horizon> = {
   break: 'swing', donchian: 'swing', macd: 'swing', ichimoku: 'swing', keltner: 'swing', adx: 'swing', aroon: 'swing', cryptoMom: 'swing', trend: 'swing', ema: 'swing', boll: 'swing',
   ma520: 'short', triple: 'short', psar: 'short', rsi2: 'short', double7: 'short', rsi: 'short',
   rsi2h: 'short', rsi2q: 'short', ema921h: 'short', macd4h: 'short', bollh: 'short', rsih: 'short', donch1h: 'short', donch4h: 'short',
-  volTarget: 'long', coreTrend: 'long', turtle2C: 'long', donchEns: 'swing', tsmom3: 'swing', maEns: 'swing', brkAtr: 'swing', breakC: 'swing', donchianC: 'swing',
+  volTarget: 'long', coreTrend: 'long', basket: 'long', turtle2C: 'long', donchEns: 'swing', tsmom3: 'swing', maEns: 'swing', brkAtr: 'swing', breakC: 'swing', donchianC: 'swing',
   spread: 'short',
+  aiPilot: 'short',
 };
 /** A made rule is placed by the longest stretch of days any of its conditions looks at. */
 export function horizonOf(a: { rule: RuleId; made?: MadeSpec }): Horizon {
@@ -121,8 +139,9 @@ export const PROOF: Record<RuleId, Proof> = {
   rsi2h: 'none', rsi2q: 'none', ema921h: 'none', macd4h: 'none', bollh: 'none', rsih: 'none', donch1h: 'none', donch4h: 'none',
   // Peer-reviewed or working-paper tests (each text says which, and that the costs and assets differed); a practitioner
   // rule for the chandelier stop; nothing published for the 50/50 blend.
-  volTarget: 'paper', donchEns: 'paper', tsmom3: 'paper', maEns: 'paper', brkAtr: 'paper', coreTrend: 'none', breakC: 'book', turtle2C: 'book', donchianC: 'book',
+  volTarget: 'paper', donchEns: 'paper', tsmom3: 'paper', maEns: 'paper', brkAtr: 'paper', coreTrend: 'none', basket: 'paper', breakC: 'book', turtle2C: 'book', donchianC: 'book',
   spread: 'none',
+  aiPilot: 'none',
 };
 /** The candles a short-term rule decides on. Every other rule is daily. */
 export const SHORT_INTERVAL: Record<ShortRule, Exclude<SpecInterval, '1d'>> = {
@@ -133,7 +152,7 @@ export const ruleInterval = (rule: RuleId): SpecInterval => (rule in SHORT_INTER
 /** Short-term rules that are an existing rule unchanged, only on shorter candles. */
 const SAME_AS: Partial<Record<ShortRule, PositionRule>> = { macd4h: 'macd', bollh: 'boll', rsih: 'rsi', donch1h: 'break', donch4h: 'break' };
 /** Days of history a rule needs before its first decision (the slow ones need their long averages). */
-const NEED: Partial<Record<RuleId, number>> = { tsmom: 365, multiTrend: 365, dualMom: 365, trend200: 200, golden: 200, rsi2: 200, double7: 200, ichimoku: 90, rsi2h: 200, rsi2q: 200, donchEns: 151, tsmom3: 92, coreTrend: 92, maEns: 100 };
+const NEED: Partial<Record<RuleId, number>> = { tsmom: 365, multiTrend: 365, dualMom: 365, trend200: 200, golden: 200, rsi2: 200, double7: 200, ichimoku: 90, rsi2h: 200, rsi2q: 200, donchEns: 151, tsmom3: 92, coreTrend: 92, maEns: 100, basket: 365 };
 
 export const POSITION_RULES: { id: PositionRule; style: Style; risk: Risk }[] = [
   { id: 'tsmom', style: 'trend', risk: 2 },
@@ -167,6 +186,7 @@ export const POSITION_RULES: { id: PositionRule; style: Style; risk: Risk }[] = 
   { id: 'rsih', style: 'revert', risk: 3 },
   { id: 'donch1h', style: 'trend', risk: 3 },
   { id: 'donch4h', style: 'trend', risk: 3 },
+  { id: 'basket', style: 'trend', risk: 1 },
   { id: 'volTarget', style: 'trend', risk: 2 },
   { id: 'donchEns', style: 'trend', risk: 2 },
   { id: 'tsmom3', style: 'trend', risk: 2 },
@@ -261,6 +281,8 @@ export interface Agent {
   equity: { time: number; value: number }[];
   /** Buying once at the start and holding, on the same days as `equity` (the line the agent is compared with). */
   bench: { time: number; value: number }[];
+  /** The three twelve-month blocks of the window against holding, oldest first (fewer for a younger coin). */
+  yearly?: Period[];
   /** What the backtest did and when: every entry and exit (position), every buy with its size (collect). */
   marks: Mark[];
   /** Position: holding right now. Collect: today is a buying day. */
@@ -278,6 +300,8 @@ export interface Agent {
   /** The candles it decides on, when they are not daily (a made agent on 4-hour or hourly candles). `days` stays in
    *  days either way; `trades`, `equity` and `marks` are per candle. */
   interval?: SpecInterval;
+  /** Moa AI (aiPilot.ts): no backtest; whether the server's AI is deciding, and its recorded decisions and paper result. */
+  ai?: { state: AiState; model: string | null; every: number; count: number; decisions: AiDecision[]; paper: Paper | null };
 }
 
 /** One action of the backtest, at the close of the day `time` opens. */
@@ -360,6 +384,11 @@ const models = new Map<string, { at: number; p: Promise<FillModel> }>();
 const modelsReady = new Map<string, FillModel>();
 /** The fill model of a market already read, else the stated one (exchange for a coin with no pool, the haircut for a pool). */
 export const fillModel = (m: cex.Market): FillModel => modelsReady.get(m.symbol) ?? (isRunnable(m.base) ? haircutModel() : exchangeModel());
+/** A fill model read elsewhere (the server's cache sends the one its list was scored with): used here without reading the chain again. */
+export function seedFillModel(symbol: string, model: FillModel) {
+  modelsReady.set(symbol, model);
+  models.set(symbol, { at: Date.now(), p: Promise.resolve(model) });
+}
 /**
  * Read the pool a runnable coin trades on: its depth, and a day of its swaps against the exchange's hourly candles
  * for the gap. Kept 30 minutes. Anything that cannot be read falls back to the haircut, never to a better fill.
@@ -510,6 +539,17 @@ function momScore(bars: Bar[]): number[] {
   }
   return out;
 }
+/** The basket's trend blend, read on the first daily candle of each UTC month and held until the next: 0.5 + 0.5 × the share of positive 3/6/12-month returns. */
+export function basketTarget(bars: Bar[]): number[] {
+  const c = bars.map((b) => b.close), out: number[] = [];
+  let held = 0.5;
+  for (let i = 0; i < c.length; i++) {
+    const month = new Date(bars[i].time * 1000).getUTCMonth(), prev = i ? new Date(bars[i - 1].time * 1000).getUTCMonth() : -1;
+    if (i >= 365 && month !== prev) held = 0.5 + (0.5 * [91, 182, 365].filter((d) => c[i] > c[i - d]).length) / 3;
+    out.push(held);
+  }
+  return out;
+}
 /** Donchian ensemble (A1): per lookback, in on a close above the prior n-day high close; a stop at the n-day close range's midpoint that only rises. */
 function donchianVotes(c: number[], lookbacks: number[]): number[] {
   const votes = new Array<number>(c.length).fill(0);
@@ -535,6 +575,7 @@ export function targets(rule: WeightRule, bars: Bar[]): number[] {
     case 'tsmom3': return momScore(bars);
     case 'coreTrend': { const w = volWeight(c), m = momScore(bars); return w.map((x, i) => clamp01(0.5 * x + 0.5 * m[i] * x)); }
     case 'maEns': { const ma = [20, 50, 100].map((n) => I.sma(c, n)); return c.map((x, i) => (Number.isFinite(ma[2][i]) ? ma.filter((m) => x > m[i]).length / 3 : 0)); }
+    case 'basket': return basketTarget(bars);
   }
 }
 /** Hold the share until the target moves at least `band` away from it (research: rebalance only on a big enough move). */
@@ -700,6 +741,7 @@ export function decisionOf(a: Agent, bars: Bar[], iv: SpecInterval = '1d'): Deci
       put('target', targets(a.rule, bars)[last]);
       if (a.rule === 'volTarget' || a.rule === 'coreTrend') put('vol', ewmaVol(c, 20)[last]);
       if (a.rule === 'tsmom3' || a.rule === 'coreTrend') put('momScore', momScore(bars)[last]);
+      if (a.rule === 'basket') { const k = [91, 182, 365].map((d) => (last >= d ? c[last] / c[last - d] - 1 : NaN)); put('ret91', k[0]); put('ret182', k[1]); put('ret365', k[2]); }
       if (a.rule === 'donchEns') { put('votes', donchianVotes(c, [10, 20, 30, 60, 90, 150])[last]); put('vol90', rollVol(c, 90)[last]); }
     }
   }
@@ -797,7 +839,7 @@ function run(who: { id: string; rule: RuleId; style: Style; risk: Risk }, pos: E
     runnable, source: 'hashkey', market, fee,
     days, from: bars[start].time, to: bars[bars.length - 1].time,
     total: eq - 1, hold: bars[bars.length - 1].close / bars[start].close - 1, maxDd, sharpe: stats(rets, perDay),
-    trades, inMarket: inDays / steps, exposure: held / steps, moves, fill, split, equity, bench, marks, live, mult: size, price: bars[bars.length - 1].close,
+    trades, inMarket: inDays / steps, exposure: held / steps, moves, fill, split, equity, bench, yearly: yearly({ equity, bench }), marks, live, mult: size, price: bars[bars.length - 1].close,
     seam: (seams.get(market.symbol) ?? 0) > bars[start].time ? seams.get(market.symbol) : undefined,
   };
 }
@@ -846,7 +888,7 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
     runnable: true, source: 'gate', fee,
     days, from: bars[start].time, to: bars[last].time,
     total: prev - 1, hold: c[last] / c[start] - 1, maxDd, sharpe: stats(rets),
-    trades: buys, inMarket: buys / days, equity, bench, marks, live: mult > 0, mult, price: c[last],
+    trades: buys, inMarket: buys / days, equity, bench, yearly: yearly({ equity, bench }), marks, live: mult > 0, mult, price: c[last],
   };
 }
 
@@ -854,7 +896,7 @@ export function scoreCollect(rule: CollectRule, asset: Asset, bars: Bar[], windo
 
 /** The same agent with its trades sized at `usd` (the hire's budget, or the detail view's $1,000 and $10,000): only price impact changes. */
 export async function rescoreAt(a: Agent, usd: number): Promise<Agent | null> {
-  if (a.kind === 'collect' || !a.market) return null;
+  if (a.kind === 'collect' || !a.market || a.ai) return null;
   const model = { ...(await fillModelFor(a.market)), amountUsd: usd };
   if (a.made) { const x = scoreMade(a.made, a.market, await madeHistory(a.market, intervalOf(a.made)), undefined, model); return x && (a.shared ? { ...x, id: a.id, shared: a.shared } : x); }
   const iv = ruleInterval(a.rule);
@@ -862,6 +904,7 @@ export async function rescoreAt(a: Agent, usd: number): Promise<Agent | null> {
 }
 /** The same agent over another window (days, or `Infinity` for everything after its warm-up), for a closer look at one agent. */
 export async function rescore(a: Agent, window: number): Promise<Agent | null> {
+  if (a.ai) return null;   // Moa AI has no backtest to rescore
   // A shared agent keeps its id and its creator over another window.
   if (a.made) return a.market ? scoreMadeLive(a.made, a.market, window).then((x) => x && (a.shared ? { ...x, id: a.id, shared: a.shared } : x)) : null;
   if (a.kind === 'collect') return isRunnable(a.base) ? scoreCollect(a.rule as CollectRule, a.base, await gateDaily(a.base), window) : null;
@@ -884,19 +927,109 @@ export const ACTIVE_DAYS = 30;
  * months has a small worst drop because it did nothing; it should not lead a list of agents to hire today.
  */
 export const active = (a: Agent, now = Date.now() / 1000) => a.live || (lastTradeDays(a, now) ?? Infinity) <= ACTIVE_DAYS;
+/* ---------- the label rule, periods and tiers (research/strategy-selection.md §1.3 and §6) ---------- */
+
+/** One stretch of the backtest against holding over the same days. */
+export interface Period { from: number; to: number; total: number; hold: number }
 /**
- * THE one definition of "beats holding", used by the pick, Moa's sentence, the rankings, the market cards and the
- * list under the chart: it made more than buying the coin and holding it over the ranking year (`split.pick`: the
- * year that ends three months ago), while holding the coin at least a quarter of that year. The last three months
- * (`split.holdout`) are never read here. Without a split (a collect agent), the whole window.
+ * The agent and holding over the last `days` days of its backtest (from its own equity and benchmark curves), or
+ * undefined when the backtest is shorter than that. For the UI: "last year", "last 3 months", any period.
  */
-export const beatsHold = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.pick.total > a.split.pick.hold && a.split.pick.exposure >= MIN_OOS_EXPOSURE : a.total > a.hold);
+export function periodResult(a: Pick<Agent, 'equity' | 'bench'>, days: number): Period | undefined {
+  const eq = a.equity, bn = a.bench;
+  if (eq.length < 2) return undefined;
+  const to = eq[eq.length - 1].time, from = to - days * 86_400;
+  if (eq[0].time > from + 86_400) return undefined;
+  let i = 0;
+  while (i < eq.length - 1 && eq[i].time < from) i++;
+  return { from: eq[i].time, to, total: eq[eq.length - 1].value / eq[i].value - 1, hold: bn[bn.length - 1].value / bn[i].value - 1 };
+}
+/** The three twelve-month blocks of a three-year backtest, oldest first (fewer for a younger coin). */
+export function yearly(a: Pick<Agent, 'equity' | 'bench'>): Period[] {
+  const out: Period[] = [];
+  const eq = a.equity, bn = a.bench;
+  if (eq.length < 2) return out;
+  const end = eq[eq.length - 1].time;
+  for (let k = 3; k >= 1; k--) {
+    const from = end - k * 365 * 86_400, to = end - (k - 1) * 365 * 86_400;
+    if (eq[0].time > from + 86_400) continue;
+    let i = 0, j = 0;
+    while (i < eq.length - 1 && eq[i].time < from) i++;
+    while (j < eq.length - 1 && eq[j].time < to) j++;
+    out.push({ from: eq[i].time, to: eq[j].time, total: eq[j].value / eq[i].value - 1, hold: bn[j].value / bn[i].value - 1 });
+  }
+  return out;
+}
+/** Annualised Sharpe ratio of the agent's returns minus holding's, day by day (costs are already in the curve). */
+export function excessSharpe(a: Pick<Agent, 'equity' | 'bench' | 'days'>): number {
+  const eq = a.equity, bn = a.bench, xs: number[] = [];
+  for (let i = 1; i < eq.length; i++) xs.push(eq[i].value / eq[i - 1].value - bn[i].value / bn[i - 1].value);
+  if (xs.length < 2) return 0;
+  const mean = xs.reduce((s, x) => s + x, 0) / xs.length, sd = Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length);
+  const perYear = xs.length / Math.max(1, a.days / 365);
+  return sd > 0 ? (mean / sd) * Math.sqrt(perYear) : 0;
+}
+/** How many agents per coin the luck hurdle allows for: the best of this many agents with no skill looks this good. */
+export const LUCK_N = 30;
 /**
- * The guard on the last-year test: in a falling year, sitting in cash beats holding by doing nothing. To count as
- * beating holding an agent must also have held the coin, on average, at least a quarter of that year (its average
- * share of the money in the coin, so a weight agent holding 50% all year counts as 0.5).
+ * The luck hurdle (a simplified deflated Sharpe): among N agents with no skill, the expected best Sharpe over a
+ * backtest of y years is about √(2·ln N / y). With N = 30 and three years that is about 1.5.
  */
+export const luckHurdle = (days: number, n = LUCK_N) => Math.sqrt((2 * Math.log(n)) / Math.max(0.25, days / 365));
+/** The guard on every "ahead" label: in a falling market, sitting in cash beats holding by doing nothing. */
 export const MIN_OOS_EXPOSURE = 0.25;
+/** Everything the label rule reads, for the UI to show next to the label. */
+export function holdTest(a: Pick<Agent, 'kind' | 'total' | 'hold' | 'equity' | 'bench' | 'days' | 'exposure' | 'inMarket'>) {
+  const blocks = yearly(a), won = blocks.filter((b) => b.total > b.hold).length;
+  const xs = excessSharpe(a), hurdle = luckHurdle(a.days), exposure = a.exposure ?? a.inMarket;
+  const ahead = a.kind === 'position' && a.total > a.hold && xs >= hurdle && blocks.length === 3 && won >= 2 && exposure >= MIN_OOS_EXPOSURE;
+  return { ahead, excessSharpe: xs, hurdle, blocks, won, exposure };
+}
+/**
+ * THE one definition of "beats holding", used by the pick, Moa's sentence, the tiers, the market cards and the list
+ * under the chart. Over the FULL window, net of costs, the agent's excess over holding clears the luck hurdle
+ * (excess Sharpe ≥ √(2·ln 30 / years)), it beat holding in at least 2 of the 3 twelve-month blocks, and it held the
+ * coin at least a quarter of the time on average. The whole window is read, the last three months included: the
+ * label picks nothing (Moa's default is fixed in advance), so there is nothing to hold data back from.
+ * Moa AI never does: it has no backtest, only a paper record that starts with its first decision.
+ */
+export const beatsHold = (a: Pick<Agent, 'kind' | 'total' | 'hold' | 'equity' | 'bench' | 'days' | 'exposure' | 'inMarket'> & { ai?: unknown }) => !a.ai && holdTest(a).ahead;
+/** Holding's own worst drop over the same days (from the benchmark curve), for the "calmer" tier. */
+export function holdDrop(a: Pick<Agent, 'bench'>): number {
+  let peak = -Infinity, dd = 0;
+  for (const p of a.bench) { peak = Math.max(peak, p.value); dd = Math.max(dd, 1 - p.value / peak); }
+  return dd;
+}
+
+/**
+ * Where an agent sits, in this order everywhere (lists, the market, Moa's picks). No rank numbers: inside a tier
+ * the order is working now first, then the smaller worst drop.
+ *  - default: the pre-registered default for the coin (the basket on BTC and ETH, plain daily DCA on HSK);
+ *  - ahead: passes the label rule (beatsHold);
+ *  - calmer: a smaller worst drop than holding while holding the coin at least a quarter of the time, not ahead;
+ *  - classic: the folded classics (DEMOTED) and everything else that is not experimental;
+ *  - lab: every agent on hourly or 4-hour candles and the 7/28/91-day momentum agent: too fast for 1–2% round
+ *    trips. Never recommended, always last, hireable only after an explicit confirmation (`needsLabConfirm`).
+ */
+export type ListTier = 'default' | 'ahead' | 'calmer' | 'classic' | 'lab';
+export const LIST_TIERS: ListTier[] = ['default', 'ahead', 'calmer', 'classic', 'lab'];
+/** The default agent's rule for a coin: the basket where there is a long history and evidence, plain DCA on HSK. */
+export const defaultRuleFor = (base: string): RuleId | undefined => (base === 'BTC' || base === 'ETH' ? 'basket' : base === 'HSK' ? 'daily' : undefined);
+export const isDefault = (a: Pick<Agent, 'rule' | 'base'>) => defaultRuleFor(a.base) === a.rule;
+export const isLab = (a: Pick<Agent, 'rule' | 'interval'>) => ruleInterval(a.rule) !== '1d' || (a.interval !== undefined && a.interval !== '1d') || a.rule === 'tsmom3';
+export function tierOf(a: Agent): ListTier {
+  if (isDefault(a)) return 'default';
+  if (isLab(a)) return 'lab';
+  if (beatsHold(a)) return 'ahead';
+  // The folded classics stay classics unless they earn the label; the rest is calmer only when it held the coin
+  // (the same 25% exposure guard: sitting in cash is not calm, it is absent) and its worst drop was smaller.
+  if (DEMOTED.has(a.rule)) return 'classic';
+  if (a.kind === 'position' && a.trades > 0 && (a.exposure ?? a.inMarket) >= MIN_OOS_EXPOSURE && a.maxDd < holdDrop(a)) return 'calmer';
+  return 'classic';
+}
+/** A lab agent can be hired only after the user says so in the hire sheet ("실험용이에요, 그래도 맡길게요"). */
+export const needsLabConfirm = (a: Agent) => !a.ai && tierOf(a) === 'lab';   // Moa AI has its own notice in the hire sheet
+
 /** The number rankings sort by and every list shows beside "beats holding": return against holding over the ranking year. */
 export const oosEdge = (a: Pick<Agent, 'total' | 'hold' | 'split'>) => (a.split ? a.split.pick.total - a.split.pick.hold : a.total - a.hold);
 export const pickEdge = oosEdge;
@@ -920,11 +1053,11 @@ export const holdoutDays = (a: Pick<Agent, 'split' | 'to'>) => (a.split ? Math.r
  * The default order everywhere: agents working now first; among them, the ones that beat just holding; then
  * published classics, then the smaller worst drop, then the better return. Agents that never traded come last.
  */
-// The tie-breaks read the same part of history as beatsHold: everything before the holdout. Only whether an agent is
-// working now (`active`: holding, or a trade in the last 30 days) looks at the present, as a state, not a result.
-const rankOf = (a: Agent) => a.split?.rank ?? { maxDd: a.maxDd, sharpe: a.sharpe, trades: a.trades, total: a.total };
+// The tie-breaks: working now (a state, not a result), then the smaller worst drop over the whole window.
+const rankOf = (a: Agent) => ({ maxDd: a.maxDd, sharpe: a.sharpe, trades: a.trades, total: a.total });
 export const rankSharpe = (a: Agent) => rankOf(a).sharpe;
-export const byMerit = (a: Agent, b: Agent) => Number(!active(a)) - Number(!active(b)) || Number(!beatsHold(a)) - Number(!beatsHold(b)) || a.tier - b.tier || Number(rankOf(a).trades === 0) - Number(rankOf(b).trades === 0) || rankOf(a).maxDd - rankOf(b).maxDd || rankOf(b).total - rankOf(a).total || a.id.localeCompare(b.id);
+const tierRank = (a: Agent) => LIST_TIERS.indexOf(tierOf(a));
+export const byMerit = (a: Agent, b: Agent) => tierRank(a) - tierRank(b) || Number(!active(a)) - Number(!active(b)) || Number(a.trades === 0) - Number(b.trades === 0) || a.maxDd - b.maxDd || a.id.localeCompare(b.id);
 
 /** The position agents for any HashKey market (the chart's market may not be in the listing). */
 export async function positionAgents(m: cex.Market, withRetired = false): Promise<Agent[]> {
@@ -985,6 +1118,8 @@ export async function agentById(id: string): Promise<Agent | null> {
   const rule = id.slice(0, cut), rest = id.slice(cut + 1);
   // The spread hunter reads recorded gaps, not candles (src/spread.ts).
   if (rule === 'spread') return isRunnable(rest) ? spreadAgent(rest) : null;
+  // Moa AI reads the decisions the server's AI recorded (src/aiPilot.ts).
+  if (rule === 'aiPilot') return isRunnable(rest) ? aiAgentOf(rest) : null;
   if (COLLECT_IDS.has(rule)) {
     if (!isRunnable(rest)) return null;
     return (await collectAgents(rest)).find((a) => a.id === id) ?? null;

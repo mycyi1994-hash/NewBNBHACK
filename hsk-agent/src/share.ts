@@ -23,6 +23,11 @@ export interface SharedAgent extends SharedRef {
 /** The contract's cap: 100 basis points = 1% of a trade. */
 export const MAX_FEE_BPS = 100;
 /** The fees a creator can pick from: none, 0.1%, 0.25%, 0.5%, 1%. */
+/**
+ * Whether a new share may ask for a creator fee. Off: the vaults on mainnet are version 2, which has no fee path, so a
+ * fee picked here could not be paid. Turn on when version-3 vaults are what people get.
+ */
+export const FEES_LIVE = false;
 export const FEE_CHOICES = [0, 10, 25, 50, 100] as const;
 export const MAX_NAME = 40;
 export const MAX_NICK = 20;

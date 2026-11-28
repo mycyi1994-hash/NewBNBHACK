@@ -4,7 +4,7 @@
 // on one coin. Nothing here claims a fund runs these agents.
 import type { RuleText } from './ruleText.ts';
 
-export type QuantTextRule = 'volTarget' | 'donchEns' | 'tsmom3' | 'coreTrend' | 'maEns' | 'brkAtr' | 'breakC' | 'turtle2C' | 'donchianC';
+export type QuantTextRule = 'volTarget' | 'donchEns' | 'tsmom3' | 'coreTrend' | 'maEns' | 'basket' | 'brkAtr' | 'breakC' | 'turtle2C' | 'donchianC';
 
 const COST_EN = 'Moa pays 0.3% per trade on HSKSwap, more than the published tests assumed.';
 const COST_KO = '모아는 HSKSwap에서 거래마다 0.3%를 내요. 논문들이 가정한 비용보다 커요.';
@@ -41,6 +41,16 @@ export const QUANT_TEXT: Record<'en' | 'ko', Record<QuantTextRule, RuleText>> = 
       users: 'Trend-following funds blend several horizons like this. No record of a fund running this exact rule.',
       proof: `Peer-reviewed. The crypto evidence is mostly 2011–2018 and counts no costs; the blend itself was tested on futures, not crypto. ${COST_EN}`,
       fit: 'You want to lean into what has been rising, a step at a time.', good: 'Rises that last weeks.', ov: '',
+    },
+    basket: {
+      nick: 'Steady Basket', rule: 'Default basket · half held + slow trend', line: 'Half always held; the other half follows the 3-, 6- and 12-month trend. Checked monthly.',
+      rules: ['Half of the money stays in the coin at all times.', 'The other half × the share of the 3-, 6- and 12-month returns that are up. Checked once a month; trades only on a 25-point change.'],
+      risk: 'In a long fall it still holds at least half. It will lag a strong rally while the trend signals catch up.',
+      origin: 'Moa’s default · chosen from the literature',
+      from: 'Chosen before looking at Moa’s backtests. The trend blend: Hurst, Ooi and Pedersen, “A Century of Evidence on Trend-Following Investing”, Journal of Portfolio Management 2017 (https://fairmodel.econ.yale.edu/ec439/hurst.pdf). The wide no-trade band: Novy-Marx and Velikov, “A Taxonomy of Anomalies and Their Trading Costs”, RFS 2016 (https://www.nber.org/papers/w20721), and Gârleanu and Pedersen, “Dynamic Trading with Predictable Returns and Transaction Costs”, JF 2013 (https://www.nber.org/papers/w15205). A simple fixed mix over picking a winner: DeMiguel, Garlappi and Uppal, “Optimal Versus Naive Diversification”, RFS 2009 (https://ideas.repec.org/a/oup/rfinst/v22y2009i5p1915-1953.html).',
+      users: 'Trend-following funds blend horizons like this; no record of a fund running this exact 50/50 mix on crypto.',
+      proof: `Each part is published and peer-reviewed; the blend was tested on futures, not crypto, and the mix is fixed in advance, not tuned. ${COST_EN}`,
+      fit: 'You want to own the coin but hold less of it when it has been falling for months.', good: 'Long trends, up or down.', ov: '',
     },
     coreTrend: {
       nick: 'Anchor', rule: 'Core plus trend · 50/50', line: 'Half always rides the coin (calmer when it is wild); the other half joins when the trend is up.',
@@ -121,6 +131,16 @@ export const QUANT_TEXT: Record<'en' | 'ko', Record<QuantTextRule, RuleText>> = 
       users: '추세 추종 펀드들이 이렇게 여러 기간을 섞어요. 이 규칙 그대로 운용하는 기관 기록은 없어요.',
       proof: `논문 심사를 거쳤어요. 암호화폐 근거는 대부분 2011~2018년이고 비용을 빼지 않았어요. 섞는 방식은 선물로 검증됐고 암호화폐는 아니에요. ${COST_KO}`,
       fit: '오르던 쪽에 조금씩 더 싣고 싶은 분.', good: '몇 주 이어지는 상승.', ov: '',
+    },
+    basket: {
+      nick: '든든 바구니', rule: '기본 바구니 · 절반 보유 + 느린 추세', line: '절반은 늘 들고, 나머지 절반은 3·6·12개월 추세를 따라가요. 한 달에 한 번만 봐요.',
+      rules: ['돈의 절반은 늘 코인으로 들고 있어요.', '나머지 절반 × 3·6·12개월 수익률 중 오른 비율. 한 달에 한 번 보고, 25%p 넘게 바뀔 때만 사고팔아요.'],
+      risk: '긴 하락장에서도 절반은 들고 있어요. 강한 상승 초반엔 추세 신호가 따라올 때까지 덜 벌어요.',
+      origin: 'Moa 기본값 · 연구 문헌에서 고름',
+      from: 'Moa 백테스트를 보기 전에 정했어요. 추세 섞기: Hurst·Ooi·Pedersen, 「A Century of Evidence on Trend-Following Investing」, Journal of Portfolio Management 2017 (https://fairmodel.econ.yale.edu/ec439/hurst.pdf). 넓게 두는 거래 안 함 구간: Novy-Marx·Velikov, 「A Taxonomy of Anomalies and Their Trading Costs」, RFS 2016 (https://www.nber.org/papers/w20721), Gârleanu·Pedersen, 「Dynamic Trading with Predictable Returns and Transaction Costs」, JF 2013 (https://www.nber.org/papers/w15205). 1등을 고르기보다 단순하게 섞기: DeMiguel·Garlappi·Uppal, 「Optimal Versus Naive Diversification」, RFS 2009 (https://ideas.repec.org/a/oup/rfinst/v22y2009i5p1915-1953.html).',
+      users: '추세 추종 펀드들이 이렇게 여러 기간을 섞어요. 이 50/50 조합을 암호화폐에 그대로 운용한 기록은 없어요.',
+      proof: `부품은 각각 논문 심사를 거쳤어요. 섞는 방식은 선물로 검증됐고 암호화폐는 아니에요. 비율은 미리 고정했고 맞추지 않았어요. ${COST_KO}`,
+      fit: '코인은 갖고 싶지만, 몇 달째 떨어질 땐 덜 들고 싶은 분.', good: '오르든 내리든 길게 가는 추세.', ov: '',
     },
     coreTrend: {
       nick: '앵커', rule: '코어 + 추세 · 50/50', line: '절반은 늘 들고(거칠면 덜), 나머지 절반은 추세가 좋을 때만 들어요.',

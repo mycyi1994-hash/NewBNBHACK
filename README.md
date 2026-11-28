@@ -71,26 +71,42 @@ the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) li
   break-even size and a recorded gap history (every 5 minutes, 14 days). Moving money between venues is not
   modelled and is said so. A "spread hunter" agent buys on HSKSwap when the pool is cheaper than the exchange by
   more than a round trip costs and sells when the gap closes; it shows no past result until a day of records exists.
-- **Agent market.** One card per agent: a mark, a plain one-line rule, and one number (how it did against simply
-  holding the coin), plus a ranking by coin. Agents come from published research (each card cites its paper),
-  classic rules (folded below), short-term versions on 1h/4h candles, and agents other people made and shared.
+- **Moa AI.** One agent per coin (BTC, ETH, HSK) whose decision is made by an AI model: every 4 hours it reads a
+  snapshot of numbers (returns, averages, volatility, the HSKSwap pool against the exchange, HSK's on-chain flow) and
+  answers with the share of the budget to hold and a reason. Code, not the model, sets the limits (see below). Every
+  decision is recorded with a hash and is public: `/api/ai/decisions?asset=BTC`. It has no backtest and says so; its
+  result is counted from its first recorded decision.
+- **Agent market.** One card per agent: a mark, a plain one-line rule, and what 1,000,000 won (or $1,000) given to it
+  would be now, with just holding the coin under it, for 3 months, 1 year or 3 years (one switch for the page).
+  Agents are grouped, not ranked: Moa's default, the ones that beat holding, the calmer ones, classics, and a lab for
+  experimental short-term agents (folded, with a warning). Agents come from published research (each cites its
+  paper), classic rules, short-term versions on 1h/4h candles, and agents other people made and shared.
 - **Make an agent.** Four short steps (coin, starting point, when to buy and sell, name), with the past result
   redrawn on every change. You can choose to check the price daily, every 4 hours or every hour.
-- **Share an agent.** A made agent can be shared with a link and a creator fee of 0–1%. Others can hire it; the
-  market shows the maker, the fee and a real hire count, and labels it "made by a person, not verified". The fee is
-  paid by the hirer's vault only to a creator the vault owner approved, capped at 1% by the contract (vault
-  version 3, see below).
+- **Share an agent.** A made agent can be shared with a link. Others can hire it; the market shows the maker and a
+  real hire count, and labels it "made by a person, not verified". New shares carry no creator fee for now: the fee
+  path exists only in vault version 3, which is not deployed (see above).
 - **My agents.** Each agent's money, holdings and profit or loss, a portfolio ring, and a running indicator.
 - **Moa** sits on the right of every screen. It explains, recommends an agent, asks before each trade (or lets the
   agent run on its own), and reports.
 
 ## What is a model and what is not
 
-- **Trading decisions are fixed rules, not a model.** An agent's rule is data (`src/spec.ts`, `src/agents.ts`).
-  Moa's pick is a fixed order (`src/recommend.ts`):
-  1. agents working now (holding, or traded in the last 30 days);
-  2. among those, the ones that made more than just holding;
-  3. the smallest worst fall.
+- **Moa AI's decisions are made by a model** (Claude, through the Anthropic API): one call per coin per closed
+  4-hour candle, answering in a fixed form (a target share from 0 to 1, a reason in English and Korean, the numbers
+  it leaned on). The model never trades and never sees an instruction from outside: its input is numbers the server
+  computed. **Code sets the limits** (`src/aiPilot.ts`, `server/aiPilot.ts`):
+  - the target is clamped to 0–100% and rounded to 5%;
+  - it moves at most 25 points per decision, and a change under 15 points is no change;
+  - old data, a failed or late call, a refusal, or an answer that does not fit the form all mean "hold the last
+    target", and are recorded as such;
+  - orders go through the same path as every other agent: inside the agent's budget, the vault's per-trade and daily
+    limits and its stop-loss, which the contract enforces;
+  - `MOA_AI_TRADER=off` switches it off; without an API key it shows "AI not connected" and cannot be hired on auto.
+- **Every other agent is a fixed rule, not a model.** An agent's rule is data (`src/spec.ts`, `src/agents.ts`).
+  **Moa's recommendation is a fixed rule too** (`src/recommend.ts`): the default chosen in advance from the
+  literature (a basket: half held, half a slow trend blend on BTC and ETH; plain daily buying on HSK), never a
+  backtest winner and never a lab agent.
 - **The chat uses Claude through the Anthropic API.** It answers questions and fills forms. It never places an
   order on its own: it can only propose one, and the order runs from the card's Confirm button, which carries a
   one-time signed ticket for that wallet and that exact order (5 minutes). Agents the user set to run on their own
@@ -103,26 +119,27 @@ the calls they have. [`docs/MAINNET_CHECKLIST.md`](docs/MAINNET_CHECKLIST.md) li
   recent swaps, or a stated 0.5% when there are too few), and price impact from the pool's real depth at the
   hire-default size of a $100 budget. The detail view shows the same backtest at $1,000 and $10,000 and warns where
   the pools are too thin. Past results do not promise future ones.
-- Each backtest is split into three parts: the early part, a **ranking year** (the year ending three months ago) and
-  a **holdout** (the last three months). Rankings and Moa's pick read only up to the holdout, and count an agent as
-  beating holding only if it did so over the ranking year while holding the coin for at least a quarter of it. The
-  holdout is shown as "the result after the choice" and is never used to rank. The published strategies use their
-  published parameters, not ones tuned on this data.
-- With these fills, over the full 3 years only a few agents beat simply holding BTC (+60%): dual momentum and the
-  multi-horizon trend blend. Over the last year, when BTC fell 34%, several more did. Every card states its number
-  against holding, and the detail view also compares it with a fixed coin/USDT mix of the same average share.
-- Short-term agents (1h/4h) mostly lost money after costs; the app says so where they are listed.
+- **The label "beat holding" is hard to earn.** An agent gets it only if, over the full window and after costs, its
+  excess over holding clears a luck hurdle (excess Sharpe ≥ √(2·ln 30 / years): what the best of 30 agents with no
+  skill would show), it beat holding in at least 2 of the 3 twelve-month blocks, and it held the coin at least a
+  quarter of the time. **Today no agent on any coin earns it, and the app says so** instead of showing a winner.
+- A walk-forward check of fourteen ways to pick an agent (pick with data before a date, score the next 90 days,
+  monthly) found none that reliably beat holding. That is why Moa's default is fixed in advance and not picked from
+  these backtests. The published strategies use their published parameters, not ones tuned on this data.
+- Each backtest still shows its last three months separately in the detail view.
+- Short-term agents (1h/4h) mostly lost money after costs. They sit in the lab, are never recommended, and can be
+  hired only after ticking "it's experimental, hire it anyway".
 - Each live order carries a keccak256 hash of the inputs it was decided on in the vault's trade note; the app shows
   those inputs and recomputes the hash.
-- Rankings are ordered by these backtests and by recent activity. Moa has no usage or popularity data and does not
-  claim any.
+- Lists are ordered by group, then by whether an agent is working now, then by the smaller worst drop. Moa has no
+  usage or popularity data and does not claim any.
 
 ## Repository
 
 ```
 hsk-agent/            the whole app (Render root directory)
   src/                React 19 + TypeScript app: screens, agents, rules, LP math
-  server/             Node server: API, Moa chat (Anthropic), sessions, auto runner, executor
+  server/             Node server: API, Moa AI and chat (Anthropic), sessions, auto runner, executor
   contracts/          MoaVault + MoaVaultFactory (Solidity), fork tests, mainnet scripts
   tests/ui/           screen checks (Playwright): every screen at 1440 and 390, key flows
 docs/                 demo script, mainnet checklist

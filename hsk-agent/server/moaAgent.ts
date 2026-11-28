@@ -18,6 +18,7 @@ import { STRINGS } from '../src/i18n.ts';
 import { LP_STRATEGIES, strategyPlan } from '../src/lpStrategies.ts';
 import { spreadRead, gapHistory, gapStats, POOL_FEE, TAKER_FEE } from '../src/spread.ts';
 import { onchainForModel, onchainView } from '../src/onchain.ts';
+import { aiFeed, AI_EVERY_MS, BAND, STEP } from '../src/aiPilot.ts';
 
 export const MODEL = 'claude-sonnet-5-5';
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -57,6 +58,7 @@ Rules:
 - You cannot execute trades. When the user clearly asks for a trade now (for example "buy $5 of ETH now"), call propose_trade once with exactly that order; the app shows it as a card with a Confirm button, and only the user's press sends it to their vault. Never propose on your own initiative, and never when the user says not to. Say in one sentence that it waits for their Confirm; never say it was executed.
 - The app has an agent market: agents that each follow one fixed rule on one coin. When the user asks what to hire, which agent to use, or to have buying done for them, call recommend_agent with the coin they mean ("any" if none). The app picks by its own rule and shows the agent card with a Hire button under your reply. Describe the pick in one or two sentences using only the numbers the tool returns. You never hire agents, change amounts or pause agents yourself: hiring and amounts go through a sheet the user confirms, and every agent has a pause button in the bar at the top.
 - When the conversation says the liquidity studio is open, the user is planning HSKSwap liquidity in steps: USDT in steps under the price (it buys the coin as the price comes down into them) and optionally the coin in steps over it (sold as the price goes up). Help them choose the USDT amount, the shape (spot = even; curve = most near the price, most fees while the price moves around it; spotCurve = half even, half curve; bidask = most at the far ends, buys most on a big fall) and how far under the price it reaches (reachPct, e.g. 3, 6, 12, 24). There are ready-made strategies (set_lp_plan's strategy): slowBuy (buy a little on every dip, 8% under the price), dipLadder (buy more the deeper it falls, 15%), crashCatcher (wide under the price for a big fall, 30%), takeProfit (sell a little on every rise, 15% over), rangeFees (both ways, packed near the price, 4%, most fees while the price moves sideways), wideGrid (both ways, even, 20%, set and leave). Do not quote past or expected returns. Call set_lp_plan with what they decided; it changes the plan on their screen. You never supply anything: they press Supply and sign in their wallet. Fees are 0.3% and only earned while the price trades inside a step; say so if they ask about returns, and do not promise any.
+- The market has one AI agent per coin, Moa AI (BTC, ETH, HSK): every 4 hours an AI model sets the share of its budget to hold, inside limits in the app's code. When the user asks what Moa AI decided or why, call get_ai_decision and explain its latest decision in plain words from what the tool returns. It has no backtest and its record starts with its first decision; say so if asked how good it is. You cannot change its decisions or make it trade.
 - Keep replies under 90 words. No markdown headers.`;
 
 const tools: Anthropic.Beta.BetaTool[] = [
@@ -126,6 +128,12 @@ const tools: Anthropic.Beta.BetaTool[] = [
       },
       additionalProperties: false,
     },
+  },
+  {
+    name: 'get_ai_decision',
+    description: 'The latest decisions of Moa AI for one coin: whether the AI is on, each decision\'s time, the share of the budget it set (and what the model asked for before the limits), its reason, the inputs it named, and the paper result since its first decision. Read-only.',
+    input_schema: { type: 'object', properties: { coin: { type: 'string', enum: ['BTC', 'ETH', 'HSK'] } }, required: ['coin'], additionalProperties: false },
+    strict: true,
   },
   {
     name: 'propose_trade',
@@ -222,6 +230,19 @@ function forModel(a: Agent) {
 export const CALL_DEADLINE_MS = 90_000;
 
 /** Turns a proposed order into a ticket for the logged-in wallet, or says why it cannot be proposed. */
+/** Moa AI's feed in plain numbers for the chat: the last few decisions, the limits, and the paper result, labelled as paper. */
+export function aiForModel(f: Awaited<ReturnType<typeof aiFeed>>) {
+  const pc = (x: number) => Math.round(x * 1000) / 10;
+  return {
+    coin: f.asset, state: f.state === 'on' ? 'deciding every 4 hours' : f.state === 'noKey' ? 'not connected: this server has no AI key, so nothing follows it' : 'switched off on this server, so nothing follows it',
+    limits: `target rounded to 5%, at most ${STEP * 100} points per decision, changes under ${BAND * 100} points ignored, one decision every ${AI_EVERY_MS / 3_600_000} hours; on bad data or a failed call the last target is kept`,
+    decisions: f.count,
+    latest: f.decisions.slice(-3).reverse().map((d) => ({ at: new Date(d.at).toISOString(), targetPct: pc(d.target), previousPct: d.prev === null ? null : pc(d.prev), modelAskedPct: d.proposed === undefined ? null : pc(d.proposed), held: d.held ?? null, reason: d.reason, signals: d.signals, model: d.model, hash: d.hash })),
+    paper: f.paper ? { since: new Date(f.paper.since).toISOString(), resultPct: pc(f.paper.total), holdingPct: pc(f.paper.hold), note: 'Paper only: from the recorded targets and prices, 0.3% fee per change, price impact not counted. Not a backtest.' } : null,
+    backtest: 'none',
+  };
+}
+
 export type Propose = (o: Order) => Ticket | string;
 
 export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[], onEvent: (e: MoaEvent) => void = () => {}, ctx: MoaContext = {}, signal?: AbortSignal, propose: Propose = () => 'Trades cannot be proposed here.'): Promise<MoaResult> {
@@ -268,6 +289,9 @@ export async function runMoa(apiKey: string, cfg: ExecConfig, history: ChatTurn[
         } else if (u.name === 'get_spread') {
           onEvent({ type: 'step', step: 'market' });
           content = JSON.stringify(await spreadSnapshot());
+        } else if (u.name === 'get_ai_decision') {
+          onEvent({ type: 'step', step: 'agents' });
+          content = JSON.stringify(aiForModel(await aiFeed(((u.input as { coin?: string }).coin ?? 'BTC') as 'BTC' | 'ETH' | 'HSK')));
         } else if (u.name === 'propose_plan') {
           onEvent({ type: 'step', step: 'plan' });
           const input = u.input as { steps: PlanStep[]; missing: string[] };

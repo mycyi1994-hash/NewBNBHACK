@@ -5,6 +5,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { checkFactory, platformFee, createVault, execConfigFromEnv, executeTrade, feesReceived, forOwner, serviceOn, vaultStatus, type CreatorRef, type ExecConfig, type FactoryCheck } from './executor.ts';
 import * as session from './session.ts';
 import { openStore, storeFile, type AutoStore } from './autoStore.ts';
+import { gzipSync } from 'node:zlib';
+import { agentCacheFile, DEFAULT_KEYS, isKey, openAgentCache, type AgentCache, type SetKey } from './agentCache.ts';
+import { RUNNABLE } from '../src/agents.ts';
 import { autoBlock, newRunnerState, runnerEvery, startRunner, type RunnerState } from './autoRunner.ts';
 import { frameCheck } from './nanoFrame.ts';
 import { cleanHistory, cleanOrder, issueTicket, MOA_LIMITS, rateLimiter, ticketBook } from './guard.ts';
@@ -14,6 +17,10 @@ import { openSpreads, spreadsFile, startRecorder, type SpreadStore } from './spr
 import { setGapSource, RECORD_EVERY_MS } from '../src/spread.ts';
 import { onchainFile, openOnchain, startOnchain, READ_EVERY_MS } from './onchainStore.ts';
 import { setOnchainSource } from '../src/onchain.ts';
+import { aiFile, openAiStore, type AiStore } from './aiStore.ts';
+import { aiState, claudeAsk, liveSnapshot, startAiPilot } from './aiPilot.ts';
+import { setAiSource } from '../src/aiPilot.ts';
+import { MODEL } from './moaAgent.ts';
 import { isRunnable, SIGNAL_MARKETS } from '../src/agents.ts';
 import type { Address } from 'viem';
 import type { SharedRef } from '../src/share.ts';
@@ -50,7 +57,7 @@ function sharedOf(x: unknown, shares?: ShareStore): { shared?: SharedRef } {
 }
 const creatorOf = (s: SharedRef | undefined): CreatorRef | undefined => (s ? { address: s.creator as Address, feeBps: s.feeBps } : undefined);
 
-export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareStore; spreads?: SpreadStore } = {}) {
+export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareStore; spreads?: SpreadStore; agents?: AgentCache; ai?: AiStore } = {}) {
   const asSet = execConfigFromEnv(env);
   const secret = session.sessionSecret(env);
   const store = opts.store ?? openStore(storeFile(env));
@@ -61,8 +68,14 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
   // The on-chain watch for HSK: the WHSK pool's own swaps and liquidity, read from HSK Chain.
   const onchain = openOnchain('HSK', onchainFile(env, 'HSK'));
   setOnchainSource(async (asset) => (asset === 'HSK' ? onchain.view() : null));
+  // Moa AI: the decisions its model made, one per coin every 4 hours, read by the runner, the chat and the page.
+  const ai = opts.ai ?? openAiStore(aiFile(env));
+  const aiOn = aiState(env);
+  setAiSource(async (asset) => ai.feed(asset, aiOn, aiOn === 'on' ? MODEL : null));
   // Trades Moa proposes run only from their Confirm button's single-use ticket; Moa's answers are rationed.
   const tickets = ticketBook(secret);
+  // The scored agent lists, kept and refreshed here so the browser gets a market's list in one request.
+  const agentSets = opts.agents ?? openAgentCache(agentCacheFile(env));
   // The auto runner's last looks, for /api/auto/status; set when the runner starts (only where the server can trade).
   let runner: RunnerState | null = null;
   const num = (v: string | undefined, d: number) => (Number(v) > 0 ? Number(v) : d);
@@ -161,6 +174,8 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         if (body.op === 'remove') return send(200, { ok: true, agent: store.remove(who, String(body.id)) ?? null });
         const agent = cleanAgent(body.agent, shares);
         if (!agent) return send(400, { error: 'Invalid agent.' });
+        // Moa AI runs on auto only while this server's AI is deciding (a key, and not switched off).
+        if (agent.source.type === 'market' && agent.source.rule === 'aiPilot' && aiOn !== 'on' && !agent.paused) return send(409, { ok: false, why: 'aiOff' });
         const block = autoBlock(await vaultStatus(await forOwner(base, who)));
         if (block) return send(409, { ok: false, why: block });
         // Amounts, pause and the rule come from the owner; what the agent already did stays as the server has it.
@@ -177,6 +192,13 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         const asset = new URL(req.url, 'http://x').searchParams.get('asset') ?? 'HSK';
         if (asset !== 'HSK') return send(400, { error: 'only HSK is watched on chain' });
         return send(200, { view: onchain.view() });
+      }
+      // Moa AI's decisions, public and read-only: when, the share it set, its reason, the inputs it named and the hash.
+      if (path === '/api/ai/decisions' && req.method === 'GET') {
+        const q = new URL(req.url, 'http://x').searchParams;
+        const asset = String(q.get('asset') ?? '');
+        if (!ASSETS.includes(asset)) return send(400, { error: 'asset must be HSK, ETH or BTC' });
+        return send(200, ai.feed(asset as 'HSK' | 'ETH' | 'BTC', aiOn, aiOn === 'on' ? MODEL : null, Number(q.get('n')) || 30));
       }
       // The gap history, public and read-only: only what this server recorded.
       if (path === '/api/spread' && req.method === 'GET') {
@@ -230,6 +252,24 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       }
       // Public health: what works, in words, and nothing about keys, paths or files. It never calls the model.
       // The details are in the server's own log at start.
+      // Scored agents, from the server's cache: ?base=BTC (that coin's market and its collect agents), ?keys=m:SYMBOL,c:COIN,
+      // or every default set. Each set carries the time it was scored. Public, read-only, gzip when the browser takes it.
+      if (path === '/api/agents' && req.method === 'GET') {
+        const q = new URL(req.url, 'http://x').searchParams;
+        const base = (q.get('base') ?? '').toUpperCase();
+        const keys: SetKey[] = q.get('keys') ? q.get('keys')!.split(',').filter(isKey).slice(0, 12)
+          : base ? [...SIGNAL_MARKETS.filter((m) => m.base === base).map((m) => `m:${m.symbol}` as SetKey), ...((RUNNABLE as string[]).includes(base) ? [`c:${base}` as SetKey] : [])]
+            : DEFAULT_KEYS;
+        if (!keys.length) return send(400, { error: 'Unknown market.' });
+        const sets = (await Promise.allSettled(keys.map((k) => agentSets.get(k)))).flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+        if (!sets.length) return send(503, { error: 'The agents could not be scored right now.' });
+        const body = Buffer.from(JSON.stringify({ sets }));
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.setHeader('cache-control', 'no-cache');
+        if (/\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) { res.setHeader('content-encoding', 'gzip'); return res.end(gzipSync(body)); }
+        return res.end(body);
+      }
       if (path === '/api/health' && req.method === 'GET') {
         return send(200, { ok: true, vaults: serviceOn(base) ? 'on' : 'demo', factory: factory === 'ok' ? 'ok' : factory === 'none' ? 'not configured' : factory === 'old' ? 'not the current version' : 'not reachable', ai: env.ANTHROPIC_API_KEY ? 'on' : 'off' });
       }
@@ -331,7 +371,12 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       // The gap recorder runs on every server, trading or not: MOA_SPREAD_MS shortens it for a local trial (one minute at least).
       const stopRec = startRecorder(spreads, Number(env.MOA_SPREAD_MS) || RECORD_EVERY_MS);
       const stopChain = startOnchain('HSK', onchain, Number(env.MOA_ONCHAIN_MS) || READ_EVERY_MS);
-      return () => { stop(); stopRec(); stopChain(); };
+      // The agent lists are scored on every server, trading or not, so the first visitor does not wait for them.
+      const stopAgents = agentSets.start();
+      // Moa AI decides only with a key and unless MOA_AI_TRADER=off; otherwise it says so and nothing follows it.
+      const stopAi = aiOn === 'on' ? startAiPilot(ai, { snapshot: liveSnapshot, ask: claudeAsk(env.ANTHROPIC_API_KEY!) }, Number(env.MOA_AI_TICK_MS) || undefined) : () => {};
+      console.log(`[moa] Moa AI ${aiOn === 'on' ? `on (${MODEL}, every 4 hours)` : aiOn === 'off' ? 'switched off (MOA_AI_TRADER=off)' : 'off: no ANTHROPIC_API_KEY'}`);
+      return () => { stop(); stopRec(); stopChain(); stopAgents(); stopAi(); };
     },
   };
 }

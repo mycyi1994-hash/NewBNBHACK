@@ -19,6 +19,8 @@ export interface Decision {
   values: Record<string, number>;
   /** What the rule concluded: in or out, or the share of the budget it wants (with its band). */
   out: { live?: boolean; target?: number; band?: number; mult?: number };
+  /** Moa AI only (aiPilot.ts): the model that decided, its reason and inputs, and the hash of that decision's record. */
+  ai?: { model: string; reason: string; reasonKo?: string; signals: string[]; hash: string; at: number; held?: string };
 }
 export interface JournalEntry {
   v: 1;

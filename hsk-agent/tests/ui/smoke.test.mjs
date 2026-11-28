@@ -119,3 +119,17 @@ describe('key flows', () => {
     await done();
   });
 });
+
+describe('agent list', () => {
+  test('the list under the chart opens with the default basket, and lab agents are not in it', async () => {
+    const { page, errors, done } = await open('desktop');
+    // The open tiers (default, ahead, calmer) are plain blocks; the classics and the lab are folded <details>.
+    const rows = page.locator('.tk-agents div.tk-tier .ar-row');
+    await rows.first().waitFor({ timeout: 120_000 });
+    assert.match(await rows.first().innerText(), /Steady Basket/);
+    const all = await rows.allInnerTexts();
+    assert.ok(!all.some((x) => /1h|4h|Tempo/.test(x)), 'no lab agent in the picks');
+    assert.deepEqual(errors, []);
+    await done();
+  });
+});

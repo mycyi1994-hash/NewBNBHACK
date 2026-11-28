@@ -135,8 +135,11 @@ async function liveSignal(h: HiredAgent): Promise<Signal | undefined> {
     return undefined;   // a made agent hired before its rule travelled with it: the app has to re-save it
   } else a = await agentById(h.source.agentId);
   if (!a) return undefined;
+  // Moa AI is followed only while the server's AI is on and has set a target; otherwise its agents do nothing.
+  if (a.ai && a.target === undefined) return undefined;
   const signal: Signal = agentSignal(a);
-  cache.set(id, { at: Date.now(), signal });
+  // Moa AI's target is read from this server's own record each time (no network), so a new decision is seen at once.
+  if (!a.ai) cache.set(id, { at: Date.now(), signal });
   return signal;
 }
 

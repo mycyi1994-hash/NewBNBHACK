@@ -11,11 +11,11 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
 import { SENSITIVITY_USD } from './fills.ts';
-import { beatsHold, holdNumbers, holdoutDays, pickDays, byMerit, DEMOTED, rescoreAt, collectAgents, horizonOf, idle, isRunnable, madeAgents, positionAgents, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
+import { marketAgents } from './agentsClient.ts';
+import { holdoutDays, POSITION_RULES, isRetired, pickDays, byMerit, DEMOTED, rescoreAt, horizonOf, idle, isRunnable, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
 import { TEMPLATES } from './spec.ts';
 import { useMade } from './madeStore.ts';
-import { AgentCard, agentName, condText, drop, freshLine, pct, ruleLines, sourceLine, statePill, Face, HoldLines } from './AgentCard.tsx';
-import { markColor } from './Mark.tsx';
+import { AgentCard, agentName, condText, drop, pct, ruleLines, statePill, Face } from './AgentCard.tsx';
 import { LP_STRATEGIES, type LpStrategy } from './lpStrategies.ts';
 import type { IconName } from './Icons.tsx';
 import { fmtPrice } from './market.ts';
@@ -24,6 +24,7 @@ import { Icon, Spark } from './Icons.tsx';
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import SpreadPanel from './SpreadPanel.tsx';
+import { AgentRow, AsOf, byTier, FOLDED, HoldRow, PERIODS, PeriodSwitch, periodResult, usePeriod, verdictOf, VERDICT_MARK, type PeriodDays } from './Perf.tsx';
 import OnchainPanel from './OnchainPanel.tsx';
 import { ASSETS } from './intent.ts';
 import { feeText } from './share.ts';
@@ -38,6 +39,8 @@ export function useMarketAgents(venue: 'cex' | 'dex', market: cex.Market, asset:
   const [list, setList] = useState<Agent[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [again, setAgain] = useState(0);
+  /** When the list was scored (ms): shown as "5분 전 기준". */
+  const [listAt, setListAt] = useState<number | null>(null);
   const mine = useMade();
   useEffect(() => {
     let alive = true;
@@ -45,11 +48,11 @@ export function useMarketAgents(venue: 'cex' | 'dex', market: cex.Market, asset:
     // The market's own agents, then the ones the user made for it. On the HSKSwap tab the same strategies are
     // listed (their signals come from the exchange's daily candles; the trades happen on HSKSwap), plus the agents
     // that buy on a schedule, which only exist there.
-    Promise.all([positionAgents(market), madeAgents(market), venue === 'dex' ? collectAgents(asset) : Promise.resolve([] as Agent[])]).then(([a, b, c]) => [...a, ...b, ...c])
-      .then((xs) => alive && setList(xs), () => alive && setFailed(true));
+    // From the server's cache in one request (scored every ~5 minutes; `at` says when), else scored here (agentsClient.ts).
+    marketAgents(venue, market, asset).then((x) => { if (alive) { setList(x.list); setListAt(x.at); } }, () => alive && setFailed(true));
     return () => { alive = false; };
   }, [venue, market.symbol, asset, again, mine]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { list, failed, retry: () => setAgain((n) => n + 1) };
+  return { list, failed, at: listAt, retry: () => setAgain((n) => n + 1) };
 }
 
 export type Period = 'year' | 'std' | 'all';
@@ -220,7 +223,20 @@ function Honesty({ a, pool }: { a: Agent; pool: number }) {
   );
 }
 
-function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: {
+/** The record over its last `days`, rebased to 1 at the window's start (the curve then reads from what was put in). */
+function cropTo(a: Agent, days: number): Agent {
+  const from = (a.equity[a.equity.length - 1]?.time ?? 0) - days * 86_400;
+  const cut = (xs: { time: number; value: number }[]) => { const ys = xs.filter((p) => p.time >= from); const b0 = ys[0]?.value || 1; return ys.map((p) => ({ time: p.time, value: p.value / b0 })); };
+  return { ...a, equity: cut(a.equity), bench: cut(a.bench) };
+}
+
+/**
+ * One agent's detail, in two columns. Above the fold (a few numbers, a few words): who and what it does; the money
+ * it would have made against just holding, as two bars; three periods that are also the switch; one risk line;
+ * when it works and when it struggles; hire. Everything else is in closed "자세히" sections: how it works, more
+ * numbers (steadiness, trades), the record in parts and how fills were priced, the evidence, and every trade.
+ */
+function Backtest({ a, year, ranked, cursor, onSelect, onHire, onAsk }: {
   a: Agent; year: Agent; ranked: Agent[]; period: Period; cursor: number | null;
   onSelect: (a: Agent) => void; onHire: (a: Agent) => void; onAsk: (a: Agent) => void;
 }) {
@@ -232,29 +248,30 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
   const seen = (time: number) => !live || time <= cursor;
   const rounds = a.kind === 'position' ? trips(a).filter((r) => seen(r.buy.time)) : [];
   const buys = a.kind === 'collect' ? [...a.marks].filter((m) => seen(m.time)).reverse().slice(0, 120) : [];
-  // Its place among the strategies with the same horizon; the arrows walk the whole list.
-  const hz = horizonOf(year);
-  const peers = ranked.filter((x) => horizonOf(x) === hz);
-  const at = peers.findIndex((x) => x.id === year.id);
   const here = ranked.findIndex((x) => x.id === year.id);
   const step = (n: number) => { const next = ranked[(here + n + ranked.length) % ranked.length]; if (next) onSelect(next); };
   const conds = a.made ?? (a.rule !== 'made' ? TEMPLATES[a.rule] : undefined);
-  // Money: what the amount put in would be worth, for the agent and for just holding, on the day shown.
   const cash = usePrincipal(lang);
-  const now = standing(a, cursor);
-  const total = now.eq - 1, hold = now.hold - 1, edge = total - hold;
   const m = (mult: number, short = false) => moneyText(lang, cash.amount * mult, short);
   const [pre, post] = t.btIf('\u0000', a.kind === 'collect').split('\u0000');
   const p = profile(a);
-  // The right-hand column: what kind of strategy this is, or its trades. A replay opens the trades.
-  const [side, setSide] = useState<'about' | 'log'>('about');
-  useEffect(() => { if (live) setSide('log'); }, [live]);
+  // The three periods are the switch: the hero and the curve follow the one picked (the page's period to start with).
+  const [pagePeriod, setPagePeriod] = usePeriod();
+  const avail = PERIODS.filter((d) => periodResult(a, d));
+  const win: PeriodDays = avail.includes(pagePeriod) ? pagePeriod : avail[avail.length - 1] ?? pagePeriod;
+  const r = periodResult(a, win);
+  // During a replay the hero follows the day on screen, over the whole record.
+  const now = live ? standing(a, cursor) : r ? { eq: 1 + r.total, hold: 1 + r.hold } : standing(a, null);
+  const top = Math.max(now.eq, now.hold, 0.0001);
+  const dir = now.eq > 1.0005 ? 'up' : now.eq < 0.9995 ? 'down' : 'flat';
+  const steady = a.sharpe >= 1 ? 'hi' : a.sharpe >= 0.4 ? 'mid' : 'lo';
   return (
-    <div className="bt" key={a.id}>
-      <section className="bt-who">
-        <div className="bt-title">
+    <div className="bt v2" key={a.id}>
+      <section className="dt-main">
+        <div className="dt-who">
           <Face rule={a.rule} base={a.base} size="lg" />
-          <div className="bt-name"><b>{agentName(t, a)}</b><small>{t.agRule[a.rule]} · {sourceLine(t, a)}</small></div>
+          <div className="dt-name"><b>{agentName(t, a)}</b><small>{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</small></div>
+          <span className={`badge ${pill.cls}`}><i />{pill.text}</span>
           {here >= 0 && ranked.length > 1 && (
             <span className="bt-step">
               <button className="icon-btn sm" onClick={() => step(-1)} aria-label={t.btPrev} data-tip={t.btPrev}><Icon name="chevron" size={14} /></button>
@@ -262,120 +279,123 @@ function Backtest({ a, year, ranked, period, cursor, onSelect, onHire, onAsk }: 
             </span>
           )}
         </div>
-        <div className="bt-badges">
-          {at >= 0 && <span className={`hz-chip hz-${hz}`} data-tip={t.hzSub[hz]}>{t.btRankIn(t.hz[hz], at + 1, peers.length)}</span>}
-          <span className={`badge ${pill.cls}`} data-tip={a.kind === 'collect' ? t.stCollect : year.live ? t.stHold : t.stWait}><i />{pill.text}</span>
-          <span className={`origin tier-${a.tier}`}>{a.shared ? t.shLabel : t.agOrigin[a.rule]}</span>
+
+        <div className="dt-hero">
+          <small>
+            {live ? t.rpAt(day(cursor)) : t.pfName[win]} · {pre}
+            <select className="bt-amt" value={cash.at} onChange={(e) => cash.pick(Number(e.target.value))} aria-label={t.btAmount}>
+              {cash.list.map((v, i) => <option key={v} value={i}>{moneyText(lang, v)}</option>)}
+            </select>
+            {post}
+          </small>
+          <div className="dt-bar me"><span className="dt-bar-name">{a.made?.name ?? t.agNick[a.rule]}</span><i style={{ width: `${(now.eq / top) * 100}%` }} /><b className={dir}>{m(now.eq)}<em aria-hidden>{dir === 'up' ? '▲' : dir === 'down' ? '▼' : ''}</em></b></div>
+          <div className="dt-bar hold"><span className="dt-bar-name">{t.acHold}</span><i style={{ width: `${(now.hold / top) * 100}%` }} /><b>{m(now.hold)}</b></div>
         </div>
-        {/* Its character in three words; each comes from a number in its own backtest, shown on hover and beside the curve. */}
-        <div className="bt-tags">
-          <span className={`risk-${p.risk}`} data-tip={`${t.mDd} ${drop(a.maxDd)}`}>{t.tagRisk[p.risk]}</span>
-          <span data-tip={t.perYear(p.perYear >= 10 ? p.perYear.toFixed(0) : p.perYear.toFixed(1))}>{t.tagFreq[p.freq]}</span>
-          {a.kind === 'position' && <span data-tip={`${Math.round(a.inMarket * 100)}%`}>{t.tagHold[p.hold]}</span>}
+
+        <div className="dt-cells" role="group" aria-label={t.pfPeriod}>
+          {PERIODS.map((d) => {
+            const x = periodResult(a, d), v = x && verdictOf(x);
+            return (
+              <button key={d} className={`dt-cell${win === d && !live ? ' on' : ''} ${v ?? ''}`} disabled={!x || live} aria-pressed={win === d} onClick={() => setPagePeriod(d)}>
+                <small>{t.pfName[d]}</small>
+                <b>{x ? `${x.total > 0 ? '+' : x.total < 0 ? '−' : ''}${Math.abs(Math.round(x.total * 100))}%` : '—'}</b>
+                <em data-tip={v ? t.pfVerdict[v] : t.pfNoData}>{v ? `${VERDICT_MARK[v]} ${t.pfVerdictShort[v]}` : t.pfNoData}</em>
+              </button>
+            );
+          })}
         </div>
-        {/* Its rule: when it buys and when it sells where that can be said in one line each, else its own steps. */}
-        {conds ? (
-          <div className="bt-rule">
-            <p><span className="wz-tag buy">{t.cuBuy}</span>{conds.buy.map((c) => condText(t, c)).join(` ${t.cuAnd} `)}</p>
-            <p><span className="wz-tag sell">{t.cuSell}</span>{conds.sell.length ? conds.sell.map((c) => condText(t, c)).join(` ${t.cuOr} `) : t.wzSellAuto}</p>
+
+        <p className={`dt-risk risk-${p.risk}`}><span className="dt-dots" aria-hidden>{[0, 1, 2].map((k) => <i key={k} className={k <= ['lo', 'mid', 'hi'].indexOf(p.risk) ? 'on' : ''} />)}</span>{t.dtRisk(t.dtRiskLevel[p.risk], drop(a.maxDd))}</p>
+        {a.rule !== 'made' && (
+          <div className="dt-chips">
+            <span className="good" title={t.agGood[a.rule]}><Icon name="check" size={14} /><b>{t.dtWorks}</b>{t.agGood[a.rule]}</span>
+            <span className="weak" title={t.agRisk[a.rule]}><Icon name="close" size={14} /><b>{t.dtStruggles}</b>{t.agRisk[a.rule]}</span>
           </div>
-        ) : <ul className="bt-rule list">{ruleLines(t, a).map((r) => <li key={r}>{r}</li>)}</ul>}
-        <div className="bt-cta">
+        )}
+        {!a.runnable && <p className="bt-demo">{t.whyNot(a.base)}</p>}
+        <div className="dt-cta">
           {a.runnable && <button className="btn-primary hire" onClick={() => onHire(year)}>{t.acHire}</button>}
           <button className="btn" onClick={() => onAsk(year)}><Spark size={14} />{t.acAsk}</button>
         </div>
       </section>
 
-      <section className="bt-perf">
-        <div className="bt-hero">
-          <div className="bt-big">
-            <small>
-              {pre}
-              <select className="bt-amt" value={cash.at} onChange={(e) => cash.pick(Number(e.target.value))} aria-label={t.btAmount}>
-                {cash.list.map((v, i) => <option key={v} value={i}>{moneyText(lang, v)}</option>)}
-              </select>
-              {post}
-            </small>
-            <span className="bt-sum"><b className={sign(total)}>{m(now.eq)}</b><em className={sign(total)}>{pct(total)}</em></span>
-          </div>
-          <div className="bt-big dim">
-            <small>{t.btIfHold}</small>
-            <span className="bt-sum"><b>{m(now.hold)}</b><em className={sign(hold)}>{pct(hold)}</em></span>
-          </div>
-          {live ? <span className="bt-edge live"><i />{t.rpAt(day(cursor))}</span> : <span className={`bt-edge ${sign(edge)}`}>{t.vsHold(pct(edge))}</span>}
-          {/* The fair second benchmark for an agent that holds part of the money: the same average share of the coin,
-              bought at the start and left alone, the rest in USDT (research: compare with a static mix). */}
-          {!live && a.kind === 'position' && a.exposure !== undefined && a.exposure < 0.995 && (
-            <span className={`bt-edge mix ${sign(a.total - a.exposure * a.hold)}`} data-tip={t.mixTip(Math.round(a.exposure * 100), pct(a.exposure * a.hold))}>{t.vsMix(pct(a.total - a.exposure * a.hold), Math.round(a.exposure * 100))}</span>
-          )}
-        </div>
-        <p className="bt-say">{t.btSay({ collect: a.kind === 'collect', better: a.total >= a.hold, trades: a.trades, hold: pct(a.hold), total: pct(a.total), held: `${Math.round(a.inMarket * 100)}%` })}{t.btFx && <span className="bt-fx"> {t.btFx}</span>}</p>
-        <dl className="bt-stats">
-          <div><dt>{t.thDd}</dt><dd>{drop(a.maxDd)}</dd></div>
-          <div><dt>{t.thSharpe}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
-          <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.target !== undefined ? a.moves ?? a.trades : a.trades)}</dd></div>
-          {a.target !== undefined ? <div><dt>{t.btAvgShare}</dt><dd>{Math.round((a.exposure ?? 0) * 100)}%</dd></div> : <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>}
-        </dl>
-        {!live && <Honesty a={a} pool={Math.max(1, ranked.length)} />}
-        <Curves a={a} peers={period === 'std' ? ranked.filter((x) => x.id !== year.id).slice(0, 5) : []} upto={cursor} label={(v) => m(v, true)} onPick={onSelect} />
+      <section className="dt-side">
+        <Curves a={live ? a : cropTo(a, win)} peers={[]} upto={cursor} label={(v) => m(v, true)} onPick={onSelect} />
         <div className="bt-legend">
           <span><i className="lg-agent" />{t.btAgent}</span><span><i className="lg-hold" />{t.acHold}</span>
           <span className="bt-span">{day(a.from)} – {day(a.to)}</span>
         </div>
-      </section>
-
-      <section className="bt-log">
-        <div className="bt-side-tabs has-line" role="tablist">
-          <SlidePill dep={side} />
-          <button role="tab" aria-selected={side === 'about'} className={side === 'about' ? 'on' : ''} onClick={() => setSide('about')}>{t.tabAbout}</button>
-          <button role="tab" aria-selected={side === 'log'} className={side === 'log' ? 'on' : ''} onClick={() => setSide('log')}>{t.tabLog}</button>
-        </div>
-        {side === 'about' ? (
-          <div className="ab2">
-            <p className="ab2-fit">{t.agFit[a.rule]}</p>
-            <div className="ab2-two">
-              <div className="good"><b><Icon name="check" size={14} />{t.abGood}</b><p>{t.agGood[a.rule]}</p></div>
-              <div className="weak"><b><Icon name="close" size={14} />{t.abWeak}</b><p>{t.agRisk[a.rule]}</p></div>
-            </div>
+        <details className="dt-more" open={live}>
+          <summary>{t.dtMore}<Icon name="down" size={14} /></summary>
+          <details className="dt-acc">
+            <summary>{t.dtHow}</summary>
+            {conds ? (
+              <div className="bt-rule">
+                <p><span className="wz-tag buy">{t.cuBuy}</span>{conds.buy.map((c) => condText(t, c)).join(` ${t.cuAnd} `)}</p>
+                <p><span className="wz-tag sell">{t.cuSell}</span>{conds.sell.length ? conds.sell.map((c) => condText(t, c)).join(` ${t.cuOr} `) : t.wzSellAuto}</p>
+              </div>
+            ) : <ul className="bt-rule list">{ruleLines(t, a).map((x) => <li key={x}>{x}</li>)}</ul>}
+            {a.rule !== 'made' && <p className="ab2-fit">{t.agFit[a.rule]}</p>}
+          </details>
+          <details className="dt-acc">
+            <summary>{t.dtNumbers}</summary>
+            <dl className="bt-stats">
+              <div><dt>{t.thDd}</dt><dd>{drop(a.maxDd)}</dd></div>
+              <div><dt>{t.dtSteady(a.sharpe.toFixed(2), t.dtSteadyWord[steady])}</dt><dd>{a.sharpe.toFixed(2)}</dd></div>
+              <div><dt>{a.kind === 'collect' ? t.acBuys : t.thTrades}</dt><dd>{t.btTimes(a.target !== undefined ? a.moves ?? a.trades : a.trades)}</dd></div>
+              {a.target !== undefined ? <div><dt>{t.btAvgShare}</dt><dd>{Math.round((a.exposure ?? 0) * 100)}%</dd></div> : <div><dt>{t.btHeldStat}</dt><dd>{Math.round(a.inMarket * 100)}%</dd></div>}
+            </dl>
+            <p className="bt-say">{t.btSay({ collect: a.kind === 'collect', better: a.total >= a.hold, trades: a.trades, hold: pct(a.hold), total: pct(a.total), held: `${Math.round(a.inMarket * 100)}%` })}</p>
+            {a.kind === 'position' && a.exposure !== undefined && a.exposure < 0.995 && <p className="bt-say">{t.mixTip(Math.round(a.exposure * 100), pct(a.exposure * a.hold))}</p>}
+          </details>
+          <details className="dt-acc">
+            <summary>{t.dtSlices} · {t.dtFill}</summary>
+            <Honesty a={a} pool={Math.max(1, ranked.length)} />
+          </details>
+          <details className="dt-acc">
+            <summary>{t.dtProof}</summary>
             <dl className="ab2-facts">
               <div><dt>{t.abProofRow}</dt><dd><span className={`proof lv-${PROOF[a.rule]}`}>{t.agProofLv[PROOF[a.rule]]}</span>{t.agProof[a.rule]}</dd></div>
               <div><dt>{t.abUsers}</dt><dd>{a.shared ? (a.shared.hires !== undefined ? t.shHires(a.shared.hires) : t.shLabel) : t.agUsers[a.rule]}</dd></div>
               <div><dt>{t.abSourceShow}</dt><dd className="src">{a.shared ? t.shFrom(whoText(lang, a.shared), a.shared.feeBps ? feeText(a.shared.feeBps) : '') : t.agFrom[a.rule]}</dd></div>
             </dl>
-            {!a.runnable && <p className="bt-demo">{t.whyNot(a.base)}</p>}
-          </div>
-        ) : a.kind === 'position' ? (
-          <>
-            <div className="bt-log-head"><span>{t.btBuy}</span><span>{t.btSell}</span><span>{t.btRet}</span></div>
-            <div className="bt-log-body">
-              {rounds.map((r) => {
-                const sold = r.sell && seen(r.sell.time) ? r.sell : undefined;
-                return (
-                  <div key={r.buy.time} className="bt-log-row">
-                    <span><b>{day(r.buy.time)}</b><small>{px(r.buy.price)}</small></span>
-                    <span>{sold ? <><b>{day(sold.time)}</b><small>{px(sold.price)}</small></> : <span className="badge sig-good"><i />{t.acHolding}</span>}</span>
-                    <span className={`bt-ret ${sold || !live ? sign(r.ret) : ''}`}>{sold || !live ? pct(r.ret) : t.scNone}</span>
-                  </div>
-                );
-              })}
-              {!rounds.length && <p className="bt-none">{t.btNoTrades}</p>}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="bt-log-head"><span>{t.btDay}</span><span>{t.price}</span><span>{t.btSize}</span></div>
-            <div className="bt-log-body">
-              {buys.map((b) => (
-                <div key={b.time} className="bt-log-row one">
-                  <span><b>{day(b.time)}</b></span>
-                  <span>{px(b.price)}</span>
-                  <span className={`bt-ret ${(b.mult ?? 1) > 1 ? 'pos' : ''}`}>×{b.mult ?? 1}</span>
+          </details>
+          <details className="dt-acc" open={live}>
+            <summary>{t.dtLog}</summary>
+            {a.kind === 'position' ? (
+              <>
+                <div className="bt-log-head"><span>{t.btBuy}</span><span>{t.btSell}</span><span>{t.btRet}</span></div>
+                <div className="bt-log-body">
+                  {rounds.map((x) => {
+                    const sold = x.sell && seen(x.sell.time) ? x.sell : undefined;
+                    return (
+                      <div key={x.buy.time} className="bt-log-row">
+                        <span><b>{day(x.buy.time)}</b><small>{px(x.buy.price)}</small></span>
+                        <span>{sold ? <><b>{day(sold.time)}</b><small>{px(sold.price)}</small></> : <span className="badge sig-good"><i />{t.acHolding}</span>}</span>
+                        <span className={`bt-ret ${sold || !live ? sign(x.ret) : ''}`}>{sold || !live ? pct(x.ret) : t.scNone}</span>
+                      </div>
+                    );
+                  })}
+                  {!rounds.length && <p className="bt-none">{t.btNoTrades}</p>}
                 </div>
-              ))}
-              {!buys.length && <p className="bt-none">{t.btNoTrades}</p>}
-            </div>
-          </>
-        )}
+              </>
+            ) : (
+              <>
+                <div className="bt-log-head"><span>{t.btDay}</span><span>{t.price}</span><span>{t.btSize}</span></div>
+                <div className="bt-log-body">
+                  {buys.map((b) => (
+                    <div key={b.time} className="bt-log-row one">
+                      <span><b>{day(b.time)}</b></span>
+                      <span>{px(b.price)}</span>
+                      <span className={`bt-ret ${(b.mult ?? 1) > 1 ? 'pos' : ''}`}>×{b.mult ?? 1}</span>
+                    </div>
+                  ))}
+                  {!buys.length && <p className="bt-none">{t.btNoTrades}</p>}
+                </div>
+              </>
+            )}
+          </details>
+        </details>
       </section>
     </div>
   );
@@ -385,28 +405,23 @@ type Tab = 'mine' | 'top' | 'list' | 'spread' | 'chain' | 'bt' | 'swaps';
 
 const LP_ICON: Record<LpStrategy['goal'], IconName> = { buy: 'dip', sell: 'trend', both: 'collect' };
 
-/** One agent in "doing well now": who, what it does, the one number, and hire. The row opens its past results. */
-function TopPick({ a, n, onOpen, onHire }: { a: Agent; n: number; onOpen: () => void; onHire: () => void }) {
+/** While the list is worked out: the market's rules as real rows (name, one line), only the number shimmering. */
+function PendingRows({ coin, period }: { coin: string; period: PeriodDays }) {
   const { t } = useT();
-  const h = holdNumbers(a), edge = h.full;
-  const fresh = freshLine(t, a);
+  const rules = POSITION_RULES.filter((r) => !isRetired({ rule: r.id, base: coin }) && !DEMOTED.has(r.id)).slice(0, 6);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const x = setTimeout(() => setSlow(true), 10_000); return () => clearTimeout(x); }, []);
   return (
-    <li className="tk-row" style={{ '--fam': markColor(a.rule) } as CSSProperties}>
-      <button className="tk-open" onClick={onOpen}>
-        <span className="tk-n">{n}</span>
-        <Face rule={a.rule} size="md" />
-        <span className="tk-main">
-          <b>{a.made?.name ?? t.agNick[a.rule]}<em className={`tk-fresh${fresh.on ? ' on' : ''}`}><i aria-hidden />{fresh.text}</em></b>
-          <small>{a.made ? ruleLines(t, a)[0] : t.agPlain[a.rule]}</small>
-        </span>
-        <span className="tk-num"><small>{t.mpVsHold}</small><b className={edge > 0 ? 'pos' : edge < 0 ? 'neg' : ''}>{pct(edge)}</b><small className="tk-win">{t.mpOver(h.fullDays)}</small><HoldLines a={a} cls="hold-lines tk" /></span>
-      </button>
-      {a.runnable ? <button className="btn-primary sm tk-hire" onClick={onHire}>{t.acHire}</button> : <span className="tk-only">{t.wzSignalOnly}</span>}
-    </li>
+    <>
+      <p className="tk-calc" role="status"><span className="spin" aria-hidden />{t.pfCalc(0, rules.length)}{slow && <em>{t.pfSlow}</em>}</p>
+      <ol className="tk-list">{rules.map((r) => <AgentRow key={r.id} a={{ rule: r.id, base: coin, live: false, kind: 'position' }} period={period} pending />)}</ol>
+    </>
   );
 }
 
-export default function Dock({ venue, coin, list, failed, sel, shown, period, setPeriod, busy, cursor = null, onRetry, onBuild, onSelect, onHire, onAsk, swaps, mine, mineCount = 0, mineAsks = 0, onLp }: {
+export default function Dock({ venue, coin, list, failed, sel, shown, period, cursor = null, onRetry, onBuild, onSelect, onHire, onAsk, swaps, mine, mineCount = 0, mineAsks = 0, onLp, at }: {
+  /** When the list was scored (ms, from the server's cache), for "5분 전 기준". */
+  at?: number | null;
   venue: 'cex' | 'dex'; coin: string; list: Agent[] | null; failed: boolean;
   /** The agent picked (its one-year numbers, as in the list) and the backtest on screen (one year or all history). */
   sel: Agent | null; shown: Agent | null; period: Period; setPeriod: (p: Period) => void; busy?: boolean; onRetry?: () => void; onBuild?: () => void;
@@ -432,7 +447,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
 
   // One order, Moa's: published classics first, then the smaller worst drop. (Other orders live in the agent market.)
   // The research's demoted classics keep their place in the list, after the others.
-  const all = useMemo(() => (list ? [...list].sort((p, r) => Number(DEMOTED.has(p.rule)) - Number(DEMOTED.has(r.rule)) || byMerit(p, r)) : []), [list]);
+  const all = useMemo(() => (list ? [...list].sort(byMerit) : []), [list]);
   // With enough published strategies for the market, the rules without a published source wait behind one row.
   const [more, setMore] = useState(false);
   const classics = all.filter((a) => a.tier === 1 || a.made);
@@ -446,9 +461,10 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
   const hint = isRunnable(coin) ? t.mkSignalTrade : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
   // "Doing well now": the same order as everywhere (working first, then beating just holding), the first few.
-  const ranked0 = all.filter((a) => !DEMOTED.has(a.rule));
-  const beat = ranked0.filter(beatsHold);
-  const best = beat.slice(0, 6);
+  // The list under the chart, by tier for the period on screen (src/Perf.tsx); classics and the lab stay folded.
+  const [pPeriod, setPPeriod] = usePeriod();
+  const tiered = useMemo(() => byTier(all), [all]);
+  const holdAgent = all.find((a) => periodResult(a, pPeriod));
   const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days, shown.interval)}` : tab === 'list' ? hint : '';
 
   return (
@@ -472,14 +488,9 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
         </div>
         <p className="tdock-note">{note}</p>
         {tab === 'mine' && <button className="btn sm tdock-build" onClick={() => setTab('list')}><Icon name="plus" size={14} />{t.mdAdd}</button>}
+        {tab === 'top' && <PeriodSwitch value={pPeriod} onChange={setPPeriod} />}
+        {tab === 'top' && <AsOf at={at} t={t} />}
         {(tab === 'list' || tab === 'top') && onBuild && <button className="btn sm tdock-build" onClick={onBuild}><Icon name="plus" size={14} />{t.mkBuild}</button>}
-        {tab === 'bt' && sel && (
-          <div className={`seg${busy ? ' busy' : ''}`} role="group" aria-label={t.thPeriod} aria-busy={busy}>
-            {busy && <span className="spin" aria-hidden />}
-            {/* A short-term agent is scored over its own window (90 days hourly, a year of 4-hour candles): that is its standard period. */}
-            {((sel?.interval ? ['std', 'all'] : ['year', 'std', 'all']) as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} aria-pressed={period === p} onClick={() => setPeriod(p)}>{p === 'year' ? t.btYear : p === 'std' ? (sel?.interval ? t.btDays(sel.days) : t.btStd) : t.btAll}</button>)}
-          </div>
-        )}
         {tab === 'bt' && sel && <button className="icon-btn sm" onClick={() => onSelect(null)} aria-label={t.btBack} data-tip={t.btBack}><Icon name="close" size={16} /></button>}
       </header>
 
@@ -507,13 +518,22 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, se
               </section>
             )}
             <section className="tk-agents" aria-label={t.dkTopTitle}>
-              <header className="tk-head"><b>{t.dkTopTitle}</b>{list && <small>{t.dkTopSub(beat.length, ranked0.length)}</small>}{all.length > 0 && <button className="btn-text sm tk-all" onClick={() => setTab('list')}>{t.dkSeeAll(all.length)}<Icon name="chevron" size={14} /></button>}</header>
               {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
-              <ol className="tk-list">
-                {!list && !failed && [0, 1, 2, 3].map((i) => <li key={i} className="tk-skel skel-block" />)}
-                {best.map((a, i) => <TopPick key={a.id} a={a} n={i + 1} onOpen={() => { onSelect(a); setTab('bt'); }} onHire={() => onHire(a)} />)}
-                {list && !failed && ranked0.length > 0 && !best.length && <li className="tk-none">{t.dkTopNone(ranked0.length)}</li>}
-              </ol>
+              {!list && !failed && <PendingRows coin={coin} period={pPeriod} />}
+              {list && !failed && !all.length && <p className="tk-none">{t.mpNone}</p>}
+              {list && !failed && !tiered.some((g) => g.tier === 'ahead') && all.length > 0 && <p className="tk-none">{t.pfNoneAhead}</p>}
+              {tiered.map((g) => {
+                const rows = (
+                  <ol className="tk-list">
+                    {g.agents.map((a) => <AgentRow key={a.id} a={a} period={pPeriod} onOpen={() => { onSelect(a); setTab('bt'); }} hire={a.runnable ? <button className="btn-primary sm tk-hire" onClick={() => onHire(a)}>{t.acHire}</button> : <span className="tk-only">{t.wzSignalOnly}</span>} />)}
+                    <HoldRow coin={coin} a={holdAgent} period={pPeriod} />
+                  </ol>
+                );
+                const head = <><b data-tip={t.tierWhy[g.tier]}>{t.tierName[g.tier]}</b><small>{g.tier === 'lab' ? t.tierLabWarn : t.pfTierSub[g.tier]}</small></>;
+                return FOLDED.has(g.tier)
+                  ? <details key={g.tier} className="tk-tier"><summary className="tk-head">{head}<Icon name="down" size={14} /></summary>{rows}</details>
+                  : <div key={g.tier} className="tk-tier"><header className="tk-head">{head}</header>{rows}</div>;
+              })}
             </section>
           </div>
         )}
