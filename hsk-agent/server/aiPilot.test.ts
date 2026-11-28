@@ -5,11 +5,14 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { aiState, decideOnce, targetInForce, type AiDeps } from './aiPilot.ts';
+import { AI_SYSTEM, FLOW_MAX_MS, POOL_RECORD_MAX_MS, aiState, decideOnce, flowInput, poolInput, poolRead, targetInForce, type AiDeps } from './aiPilot.ts';
 import { aiFile, openAiStore } from './aiStore.ts';
 import { createApi } from './api.ts';
 import { issue } from './session.ts';
-import { AI_EVERY_MS, verifyDecision, type AiSnapshot } from '../src/aiPilot.ts';
+import { AI_EVERY_MS, BAND, CUT, STEP, verifyDecision, type AiSnapshot } from '../src/aiPilot.ts';
+import { POOL_FEE, TAKER_FEE, roundTrip, type GapPoint } from '../src/spread.ts';
+import { viewOf } from '../src/onchain.ts';
+import type { PoolState } from '../src/depth.ts';
 
 const H4 = AI_EVERY_MS / 1000;
 const T0 = 1_799_971_200;                 // a 4-hour boundary (08:00 UTC)
@@ -143,4 +146,118 @@ test('the API: public decisions; with no key the AI says so and cannot go on aut
     assert.equal(hire.status, 409);
     assert.equal(((await hire.json()) as { why: string }).why, 'aiOff');
   } finally { server.close(); }
+});
+
+/* ---------- the pool and the flow: retried, then the server's own record, then said to be missing ---------- */
+
+const STATE: PoolState = { sqrtPrice: 1, tick: 0, liquidity: 1e12, ticks: [] };
+const fresh = (over: Partial<GapPoint> = {}) => ({ point: { t: NOW, pool: 99, hk: 100, ...over } as GapPoint, state: STATE });
+
+test('the pool read is tried again when it comes back empty, not only when it throws', async () => {
+  let n = 0;
+  const r = await poolRead('BTC', NOW, async () => (++n === 1 ? null : fresh()), 5);
+  assert.equal(n, 2, 'readNow returns null on a failed pool read: that is retried too');
+  assert.equal(r?.point.pool, 99);
+  n = 0;
+  assert.equal(await poolRead('BTC', NOW, async () => { n++; throw new Error('RPC down'); }, 5), null);
+  assert.equal(n, 2, 'a throw is retried once as before');
+  n = 0;
+  assert.equal(await poolRead('BTC', NOW, async () => { n++; return { point: { t: NOW, pool: 99 }, state: STATE }; }, 5), null, 'a pool price with no exchange price to compare is not a read');
+  assert.equal(n, 2);
+  n = 0;
+  const t0 = Date.now();
+  assert.equal(await poolRead('BTC', NOW, () => { n++; return new Promise(() => {}); }, 5, 20), null, 'a read that never comes back is given up');
+  assert.ok(n === 2 && Date.now() - t0 < 500);
+});
+
+test('pool inputs: a read made now; else the last recorded gap with its age; else nothing', () => {
+  const live = poolInput('BTC', fresh(), [], NOW)!;
+  assert.ok(Math.abs(live.gap - (99 / 100 - 1)) < 1e-12);
+  assert.equal(live.ageMin, undefined, 'read now: no age');
+  assert.ok(live.depth2pct !== undefined);
+  // the read failed: the newest record that has an exchange price, 20 minutes old
+  const rec: GapPoint[] = [
+    { t: NOW - 50 * 60_000, pool: 90, hk: 100, buy: 0.001, sell: 0.002 },
+    { t: NOW - 20 * 60_000, pool: 99, hk: 100, buy: 0.001, sell: 0.002 },
+    { t: NOW - 5 * 60_000, pool: 98 },                    // the exchanges did not answer: no gap in it
+  ];
+  const old = poolInput('BTC', null, rec, NOW)!;
+  assert.equal(old.price, 99);
+  assert.equal(Math.round(old.ageMin!), 20);
+  assert.ok(Math.abs(old.gap - -0.01) < 1e-12);
+  assert.ok(Math.abs(old.net100! - (100 / 99 - 1 - POOL_FEE - TAKER_FEE - 0.001)) < 1e-12, 'the same sum as a live spread, with the recorded slip');
+  assert.equal(old.roundTrip, roundTrip(rec[1]));
+  assert.equal(old.depth2pct, undefined, 'a record has no depth: not guessed');
+  // dearer on the pool: the sell slip, and no round trip (as in a live spread)
+  const dear = poolInput('BTC', null, [{ t: NOW - 60_000, pool: 101, gate: 100, buy: 0.001, sell: 0.002 }], NOW)!;
+  assert.ok(Math.abs(dear.net100! - (0.01 - POOL_FEE - TAKER_FEE - 0.002)) < 1e-12);
+  assert.equal(dear.roundTrip, undefined);
+  assert.equal(poolInput('BTC', null, [{ t: NOW - POOL_RECORD_MAX_MS - 1, pool: 99, hk: 100 }], NOW), null, 'too old a record is not used');
+  assert.equal(poolInput('BTC', null, [], NOW), null);
+});
+
+test('flow inputs come with the age of the on-chain reading; the week only once 7 days are read', () => {
+  const DAY = 86_400_000, at = NOW - 9 * 60_000;
+  const swaps = [{ block: 1, time: at - 3_600_000, side: 'buy' as const, usdt: 300, price: 0.08, tx: '0x1' }, { block: 2, time: at - 3 * DAY, side: 'sell' as const, usdt: 100, price: 0.08, tx: '0x2' }];
+  const young = flowInput(viewOf('HSK', swaps, at - 2 * DAY, [], at), NOW)!;
+  assert.deepEqual([young.net24h, young.swaps24h, Math.round(young.ageMin!), 'net7d' in young], [300, 1, 9, false]);
+  const full = flowInput(viewOf('HSK', swaps, at - 30 * DAY, [], at), NOW)!;
+  assert.equal(full.net7d, 200);
+  assert.equal(flowInput(null, NOW), null);
+  assert.equal(flowInput(viewOf('HSK', swaps, at - 30 * DAY, [], NOW - FLOW_MAX_MS - 1), NOW), null, 'a reading hours old is not passed off as now');
+});
+
+test('a failed call records its kind; the feed, and through it /api/health, say the AI is failing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'moa-ai-fail-'));
+  const ai = openAiStore(aiFile({ MOA_DATA_DIR: dir }));
+  const noCredit = Object.assign(new Error('400 credit balance is too low'), { status: 400, error: { error: { type: 'invalid_request_error' } } });
+  const d = await decideOnce('BTC', ai, fake({ ask: async () => { throw noCredit; }, snapshot: async () => ({ ok: true, snap: { ...snap(), missing: ['pool'] } }) }).deps, NOW);
+  assert.deepEqual([d?.held, d?.fail, d?.missing], ['callFailed', '400 invalid_request_error', ['pool']]);
+  assert.equal(verifyDecision(d!), true);
+  assert.deepEqual(ai.feed('BTC', 'on', 'm').trouble, { held: 'callFailed', kind: '400 invalid_request_error', at: NOW });
+  assert.equal(ai.feed('BTC', 'noKey', null).trouble, undefined, 'an AI that is off is off, not failing');
+  assert.equal(ai.feed('ETH', 'on', 'm').trouble, undefined);
+  // a data hold after it (no call made) does not hide that the last call failed
+  await decideOnce('BTC', ai, fake({ snapshot: async () => ({ ok: false, why: 'stale' }) }).deps, NOW + AI_EVERY_MS);
+  assert.equal(ai.feed('BTC', 'on', 'm').trouble?.kind, '400 invalid_request_error');
+
+  const serve = async (env: Record<string, string>, store = ai) => {
+    const api = createApi({ MOA_SESSION_SECRET: 'secret', MOA_DATA_DIR: dir, ...env }, { ai: store });
+    const server = createServer((req, res) => void api.handler(req, res, () => { res.statusCode = 404; res.end(); }));
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    const get = async (path: string) => (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`)).json() as Promise<Record<string, unknown>>;
+    return { get, close: () => server.close() };
+  };
+  // Date.now() is far from NOW in this test, so the failed decision is made "now" for the health check.
+  const live = openAiStore();
+  const now = Date.now(), c = Math.floor(now / AI_EVERY_MS) * H4 - H4;
+  await decideOnce('BTC', live, fake({ ask: async () => { throw noCredit; }, snapshot: async () => ({ ok: true, snap: snap(c) }) }).deps, now);
+  const failing = await serve({ ANTHROPIC_API_KEY: 'test-key-not-real' }, live);
+  const fine = await serve({ ANTHROPIC_API_KEY: 'test-key-not-real' }, openAiStore());
+  const off = await serve({}, live);
+  try {
+    assert.equal((await failing.get('/api/health')).ai, 'failing', 'a key is set, but the last call failed');
+    assert.deepEqual(Object.keys(await failing.get('/api/health')).sort(), ['ai', 'factory', 'ok', 'vaults'], 'and nothing else is added to the public health');
+    assert.deepEqual((await failing.get('/api/ai/decisions?asset=BTC')).trouble, { held: 'callFailed', kind: '400 invalid_request_error', at: now });
+    assert.equal((await fine.get('/api/health')).ai, 'on');
+    assert.equal((await off.get('/api/health')).ai, 'off');
+  } finally { failing.close(); fine.close(); off.close(); }
+});
+
+test('the prompt the model reads states the limits the code applies', () => {
+  assert.match(AI_SYSTEM, new RegExp(`raises the share at most ${STEP * 100} points per decision, lowers it at most ${CUT * 100} points per decision`));
+  assert.match(AI_SYSTEM, new RegExp(`ignores changes under ${BAND * 100} points`));
+  assert.match(AI_SYSTEM, /missing: input groups that could not be read/);
+});
+
+test('cuts move faster than buys through a whole decision, and each decision keeps its limits', async () => {
+  const store = openAiStore();
+  const at = (k: number) => ({ snapshot: async () => ({ ok: true as const, snap: snap(candle + k * H4) }) });
+  for (let k = 0; k < 4; k++) await decideOnce('BTC', store, fake({ ...at(k), out: answer(1) }).deps, NOW + k * AI_EVERY_MS);
+  assert.equal(targetInForce(store.list('BTC')), 1, 'four decisions to get to 100%');
+  const d1 = await decideOnce('BTC', store, fake({ ...at(4), out: answer(0) }).deps, NOW + 4 * AI_EVERY_MS);
+  const d2 = await decideOnce('BTC', store, fake({ ...at(5), out: answer(0) }).deps, NOW + 5 * AI_EVERY_MS);
+  assert.deepEqual([d1?.target, d2?.target], [0.5, 0], 'two to get out');
+  assert.deepEqual(d1?.limits, { band: BAND, step: STEP, cut: CUT });
+  assert.deepEqual(d1?.guard, { stepped: true });
 });

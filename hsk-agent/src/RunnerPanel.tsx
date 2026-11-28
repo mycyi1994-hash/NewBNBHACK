@@ -18,7 +18,8 @@ type Check =
   | { at: number; k: 'order'; signal: Signal; side: 'buy' | 'sell'; amount: number; ok: boolean; tx?: string; error?: string };
 export interface RunnerStatus {
   now: number;
-  runner: { on: true; every: number; startedAt: number; passes: number; lastPassAt: number | null; nextAt: number | null; error: string | null } | { on: false; why: 'demo' | 'starting' };
+  /** lastPassAt: when the last finished check began; lastPassMs: how long it took; runningSince: a check is under way. */
+  runner: { on: true; every: number; startedAt: number; passes: number; lastPassAt: number | null; lastPassMs?: number | null; runningSince?: number | null; nextAt: number | null; error: string | null } | { on: false; why: 'demo' | 'starting' };
   owner?: { lastLookAt: number | null; error: string | null };
   /** `why`: the server paused it and says why ('moved' = the wallet moved to a new vault). */
   agents?: { id: string; paused: boolean; why?: 'moved'; check: Check | null }[];

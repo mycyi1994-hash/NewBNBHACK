@@ -18,7 +18,7 @@ import { STRINGS } from '../src/i18n.ts';
 import { LP_STRATEGIES, strategyPlan } from '../src/lpStrategies.ts';
 import { spreadRead, gapHistory, gapStats, POOL_FEE, TAKER_FEE } from '../src/spread.ts';
 import { onchainForModel, onchainView } from '../src/onchain.ts';
-import { aiFeed, AI_EVERY_MS, BAND, STEP } from '../src/aiPilot.ts';
+import { aiFeed, AI_EVERY_MS, BAND, CUT, STEP } from '../src/aiPilot.ts';
 
 export const MODEL = 'claude-sonnet-5-5';
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -235,9 +235,10 @@ export function aiForModel(f: Awaited<ReturnType<typeof aiFeed>>) {
   const pc = (x: number) => Math.round(x * 1000) / 10;
   return {
     coin: f.asset, state: f.state === 'on' ? 'deciding every 4 hours' : f.state === 'noKey' ? 'not connected: this server has no AI key, so nothing follows it' : 'switched off on this server, so nothing follows it',
-    limits: `target rounded to 5%, at most ${STEP * 100} points per decision, changes under ${BAND * 100} points ignored, one decision every ${AI_EVERY_MS / 3_600_000} hours; on bad data or a failed call the last target is kept`,
+    limits: `today's limits: target rounded to 5%, raised at most ${STEP * 100} points and cut at most ${CUT * 100} points per decision, changes under ${BAND * 100} points ignored, one decision every ${AI_EVERY_MS / 3_600_000} hours; on bad data or a failed call the last target is kept. Each decision below carries the limits it was made under when the record has them`,
+    ...(f.trouble ? { trouble: `the last call to the AI model failed (${f.trouble.kind ?? f.trouble.held}); the share is held as it was until a call succeeds` } : {}),
     decisions: f.count,
-    latest: f.decisions.slice(-3).reverse().map((d) => ({ at: new Date(d.at).toISOString(), targetPct: pc(d.target), previousPct: d.prev === null ? null : pc(d.prev), modelAskedPct: d.proposed === undefined ? null : pc(d.proposed), held: d.held ?? null, reason: d.reason, signals: d.signals, model: d.model, hash: d.hash })),
+    latest: f.decisions.slice(-3).reverse().map((d) => ({ at: new Date(d.at).toISOString(), targetPct: pc(d.target), previousPct: d.prev === null ? null : pc(d.prev), modelAskedPct: d.proposed === undefined ? null : pc(d.proposed), held: d.held ?? null, reason: d.reason, signals: d.signals, model: d.model, hash: d.hash, ...(d.limits ? { limitsPoints: { band: d.limits.band * 100, up: d.limits.step * 100, down: d.limits.cut * 100 } } : {}), ...(d.missing?.length ? { inputsMissing: d.missing } : {}) })),
     paper: f.paper ? { since: new Date(f.paper.since).toISOString(), resultPct: pc(f.paper.total), holdingPct: pc(f.paper.hold), note: 'Paper only: from the recorded targets and prices, 0.3% fee per change, price impact not counted. Not a backtest.' } : null,
     backtest: 'none',
   };

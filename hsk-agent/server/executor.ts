@@ -69,12 +69,16 @@ export type TradeResult =
 /** Why a shared agent's trade paid its creator nothing: the vault is older than creator fees, or its owner did not approve this creator. */
 export type FeeNote = 'oldVault' | 'notApproved';
 
+/** Multicall3 on HSK Chain (and on a local fork of it): many reads in one call to the node. */
+const MULTICALL3: Address = '0xcA11bde05977b3631167028862bE2a173976CA11';
+const hasMulticall = (cfg: ExecConfig) => cfg.chainId === 177;
 function chainOf(cfg: ExecConfig) {
   return {
     id: cfg.chainId,
     name: cfg.chainId === 177 ? 'HSK Chain' : `chain ${cfg.chainId}`,
     nativeCurrency: { name: 'HSK', symbol: 'HSK', decimals: 18 },
     rpcUrls: { default: { http: [cfg.rpcUrl] } },
+    ...(hasMulticall(cfg) ? { contracts: { multicall3: { address: MULTICALL3 } } } : {}),
   } as const;
 }
 
@@ -82,11 +86,16 @@ const clients = new Map<string, ReturnType<typeof createPublicClient>>();
 /**
  * One reading client per node. A read gives up after 8 seconds and is tried once more: the default (10 seconds, four
  * tries) left a page waiting 40 seconds whenever the node was slow to answer.
+ * Contract reads asked for at the same moment travel together as one call (Multicall3): a vault's status was about
+ * 25 requests to the node and is now a handful, and the node stops answering a caller that sends too many.
  */
 const clientOf = (cfg: ExecConfig) => {
   const key = `${cfg.rpcUrl}|${cfg.chainId}`;
   let c = clients.get(key);
-  if (!c) { c = createPublicClient({ chain: chainOf(cfg), transport: http(cfg.rpcUrl, { timeout: 8_000, retryCount: 1 }) }); clients.set(key, c); }
+  if (!c) {
+    c = createPublicClient({ chain: chainOf(cfg), transport: http(cfg.rpcUrl, { timeout: 8_000, retryCount: 1 }), ...(hasMulticall(cfg) ? { batch: { multicall: { batchSize: 8_192 } } } : {}) });
+    clients.set(key, c);
+  }
   return c;
 };
 /** Can this server make vaults and trade for them? */
@@ -128,12 +137,18 @@ async function vaultAt(cfg: ExecConfig, factory: Address, owner: Address): Promi
  */
 export async function vaultOf(cfg: ExecConfig, owner: Address): Promise<Address | undefined> {
   if (!cfg.factory) return undefined;
+  // A wallet's vault on the current factory never changes once made, so it is looked up once.
+  const key = `${cfg.rpcUrl}|${cfg.factory}|${owner}`.toLowerCase();
+  const known = currentVaults.get(key);
+  if (known) return known;
   for (const f of [cfg.factory, ...(cfg.legacyFactories ?? [])]) {
     const v = await vaultAt(cfg, f, owner);
+    if (v && f === cfg.factory) currentVaults.set(key, v);
     if (v) return v;
   }
   return undefined;
 }
+const currentVaults = new Map<string, Address>();
 
 /** Every vault Moa's factories made for this wallet: the current factory's first, then the earlier ones in their order. */
 export async function vaultsOf(cfg: ExecConfig, owner: Address): Promise<{ vault: Address; current: boolean }[]> {
@@ -383,6 +398,26 @@ export async function vaultStatus(cfg: ExecConfig) {
     remainingTodayUsdt: limit(remaining),
     paused: paused as boolean,
     usdtBalance: formatUnits(usdtBal as bigint, 6),
+  };
+}
+
+/**
+ * What the auto runner needs from a vault at each check and nothing more: locked or not, the per-trade limit, and
+ * each coin held with whether its stop-loss is due. Five reads that travel as one request (vaultStatus is about 25).
+ */
+export async function vaultLook(cfg: ExecConfig) {
+  if (!cfg.vault) return { configured: false as const };
+  const pub = clientOf(cfg);
+  const read = (functionName: string, args: unknown[] = []) => pub.readContract({ address: cfg.vault!, abi, functionName, args }) as Promise<unknown>;
+  const [paused, maxTrade, ...held] = await Promise.all([read('paused'), read('maxTradeUsdt'), ...Object.values(TOKENS).map((t) => read('position', [t.address]))]);
+  return {
+    configured: true as const,
+    paused: paused as boolean,
+    maxTradeUsdt: limit(maxTrade),
+    holdings: Object.values(TOKENS).map((t, i) => {
+      const [qty, cost, value, stop] = held[i] as readonly [bigint, bigint, bigint, bigint];
+      return { symbol: t.symbol, amount: formatUnits(qty, t.decimals), stopDue: stop > 0n && cost > 0n && value < stop };
+    }).filter((h) => Number(h.amount) > 0),
   };
 }
 

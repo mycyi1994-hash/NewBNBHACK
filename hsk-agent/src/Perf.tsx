@@ -10,6 +10,7 @@ import { Face } from './AgentCard.tsx';
 import { markColor } from './Mark.tsx';
 import { LIST_TIERS, byMerit, periodResult, tierOf, type Agent, type ListTier, type Period } from './agents.ts';
 import { useT, type Strings } from './i18n.ts';
+import { lineKind, stakeOf, verdictOf, vsHold, won, type Verdict } from './vsHold.ts';
 
 export type PeriodDays = 90 | 365 | 1095;
 export const PERIODS: PeriodDays[] = [90, 365, 1095];
@@ -19,8 +20,7 @@ const DAY = 86_400;
 export type PeriodResult = Period;
 export { periodResult };
 
-export type Verdict = 'ahead' | 'even' | 'behind';
-export const verdictOf = (r: { total: number; hold: number }): Verdict => (r.total - r.hold > 0.01 ? 'ahead' : r.total - r.hold < -0.01 ? 'behind' : 'even');
+export { verdictOf, stakeOf, won, type Verdict };
 export const VERDICT_MARK: Record<Verdict, string> = { ahead: '▲', even: '=', behind: '▼' };
 
 /** The worst drop of a curve inside the last `days` (0..1). */
@@ -54,14 +54,6 @@ export function PeriodSwitch({ value, onChange }: { value: PeriodDays; onChange:
   );
 }
 
-/** What is put in, by language: 100만원, or $1,000. */
-export const stakeOf = (lang: 'ko' | 'en') => (lang === 'ko' ? 1_000_000 : 1_000);
-/** Money at card size: whole 만원 in Korean ("93만원"), whole dollars in English. */
-export function won(lang: 'ko' | 'en', v: number): string {
-  if (lang === 'en') return `$${Math.round(v).toLocaleString('en-US')}`;
-  return v >= 1e8 ? `${(v / 1e8).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}억원` : `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`;
-}
-
 /** "3달 ▲ · 1년 ▲ · 3년 ▼": did it beat just holding in each period. */
 export function PeriodMarks({ a, active }: { a: Agent; active?: PeriodDays }) {
   const { t } = useT();
@@ -75,11 +67,16 @@ export function PeriodMarks({ a, active }: { a: Agent; active?: PeriodDays }) {
   );
 }
 
-/** "보유보다 +9만원": the agent's money against just holding, as the one coloured thing on a card or row. */
+/**
+ * The agent's money against just holding, for the period on screen. Green only when the agent also made money;
+ * ahead of holding but still down is grey and says "8만원 덜 잃음".
+ */
 export function VsHold({ r }: { r: { total: number; hold: number } }) {
   const { t, lang } = useT();
-  const v = verdictOf(r), diff = stakeOf(lang) * (r.total - r.hold);
-  return <span className={`pf-vs ${v}`}>{v === 'even' ? t.pfVsEven : t.pfVs(`${diff > 0 ? '+' : '−'}${won(lang, Math.abs(diff))}`)}</span>;
+  const { verdict: v, diff, down } = vsHold(lang, r), amt = won(lang, Math.abs(diff));
+  if (v === 'even') return <span className="pf-vs even">{t.pfVsEven}</span>;
+  if (v === 'ahead' && down) return <span className="pf-vs ahead down">{t.pfVsLess(amt)}</span>;
+  return <span className={`pf-vs ${v}`}>{t.pfVs(`${diff > 0 ? '+' : '−'}${amt}`)}</span>;
 }
 
 /** The hero: "1년 · 100만원 맡겼다면", the agent's money, then "그냥 보유 …". Same slot and size up or down. */
@@ -130,6 +127,27 @@ export function byTier(list: Agent[]): { tier: ListTier; agents: Agent[] }[] {
 export function AsOf({ at, t }: { at?: number | null; t: Strings }) {
   if (!at) return null;
   return <span className="pf-asof">{t.listAsOf(Math.floor((Date.now() - at) / 60_000))}</span>;
+}
+
+/** How long a record is, in the words a person uses: "3년", "1년 10개월". */
+export function spanText(t: Strings, days: number): string {
+  const months = Math.round(days / 30.44);
+  return t.pfSpan(Math.floor(months / 12), months % 12);
+}
+
+/**
+ * The one line over a list where no agent earned "ahead": what the badges under it show for the period on screen,
+ * then the label rule (the whole record, past luck), so the two cannot be read against each other. Nothing when
+ * an agent did earn the label. It reads the open tiers only, the rows a person sees.
+ */
+export function HoldLine({ groups, period, className }: { groups: { tier: ListTier; agents: Agent[] }[]; period: PeriodDays; className: string }) {
+  const { t, lang } = useT();
+  const rows = groups.filter((g) => !FOLDED.has(g.tier)).flatMap((g) => g.agents);
+  if (!rows.length || groups.some((g) => g.tier === 'ahead')) return null;
+  const span = Math.max(...rows.map((a) => a.days));
+  const vs = rows.map((a) => periodResult(a, period)).filter((r): r is Period => !!r).map((r) => vsHold(lang, r));
+  const kind = lineKind(vs);
+  return <p className={className} data-kind={kind}>{t.pfLine(kind, t.pfLong[period], spanText(t, span), period >= span - 30, span < 1065, groups.some((g) => g.tier === 'default'))}</p>;
 }
 
 /**

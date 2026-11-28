@@ -1,4 +1,5 @@
 // HSKSwap (Uniswap V3 fork) pool details read straight from HSK Chain mainnet: reserves, recent swaps, price history.
+import { decodeFunctionResult, encodeFunctionData, multicall3Abi, type Hex } from 'viem';
 import type { Asset } from './intent.ts';
 import type { PoolState } from './depth.ts';
 
@@ -29,10 +30,48 @@ async function send<T>(method: string, params: unknown[]): Promise<T> {
 const MAX_IN_FLIGHT = 4;
 let inFlight = 0;
 const waiting: (() => void)[] = [];
+/**
+ * The server's ration of log reads (setLogPace): `burst` at once, then `perMinute`. Log reads are the bulk of what is
+ * asked of the node (a day of one pool's swaps is 44 of them) and none of them is urgent, so they wait their turn here;
+ * price and depth reads are few and are not rationed. Off in the browser, where one person reads one pool.
+ */
+let pace: { perMinute: number; burst: number; tokens: number; at: number } | null = null;
+export function setLogPace(perMinute: number | null, burst = 10): void {
+  pace = perMinute && perMinute > 0 ? { perMinute, burst, tokens: burst, at: Date.now() } : null;
+}
+let paceLine: Promise<void> = Promise.resolve();
+/** Wait for one log read's turn: first come, first served. */
+function logTurn(): Promise<void> {
+  const turn = paceLine.then(async () => {
+    const p = pace;
+    if (!p) return;
+    const now = Date.now();
+    p.tokens = Math.min(p.burst, p.tokens + ((now - p.at) / 60_000) * p.perMinute);
+    p.at = now;
+    if (p.tokens < 1) {
+      const wait = ((1 - p.tokens) / p.perMinute) * 60_000;
+      await new Promise((go) => setTimeout(go, wait));
+      p.tokens = 1; p.at = Date.now();
+    }
+    p.tokens -= 1;
+  });
+  paceLine = turn;
+  return turn;
+}
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+  if (pace && method === 'eth_getLogs') await logTurn();
   if (inFlight >= MAX_IN_FLIGHT) await new Promise<void>((go) => waiting.push(go));
   inFlight++;
   try { return await send<T>(method, params); } finally { inFlight--; waiting.shift()?.(); }
+}
+/** Multicall3 on HSK Chain: many reads in one call to the node, all at the same block. */
+const MULTICALL = '0xcA11bde05977b3631167028862bE2a173976CA11';
+/** Several contract reads as one request. Any read that fails fails them all, as one failed request did before. */
+async function readAll(calls: { to: string; data: string }[]): Promise<string[]> {
+  if (!calls.length) return [];
+  const data = encodeFunctionData({ abi: multicall3Abi, functionName: 'aggregate3', args: [calls.map((c) => ({ target: c.to as Hex, allowFailure: false, callData: c.data as Hex }))] });
+  const out = decodeFunctionResult({ abi: multicall3Abi, functionName: 'aggregate3', data: await rpc<Hex>('eth_call', [{ to: MULTICALL, data }, 'latest']) });
+  return out.map((r) => r.returnData);
 }
 const pad = (a: string) => a.toLowerCase().replace('0x', '').padStart(64, '0');
 const s256 = (h: string) => { let v = BigInt('0x' + h); if (v >= 2n ** 255n) v -= 2n ** 256n; return v; };
@@ -74,13 +113,14 @@ export async function swapsBetween(asset: Asset, from: number, to: number, head:
 export async function poolDetail(asset: Asset, days = 1): Promise<PoolDetail> {
   const p = POOLS[asset];
   const scale = 10 ** (p.decimals - 6);
-  const [slot0, balBase, balUsdt, headHex] = await Promise.all([
-    rpc<string>('eth_call', [{ to: p.pool, data: '0x3850c7bd' }, 'latest']),
-    rpc<string>('eth_call', [{ to: p.token, data: '0x70a08231' + pad(p.pool) }, 'latest']),
-    rpc<string>('eth_call', [{ to: USDT, data: '0x70a08231' + pad(p.pool) }, 'latest']),
-    rpc<string>('eth_blockNumber', []),
+  // The price, both balances and the block they were read at, in one request (0x42cbb15c: Multicall3's own block number).
+  const [slot0, balBase, balUsdt, headHex] = await readAll([
+    { to: p.pool, data: '0x3850c7bd' },
+    { to: p.token, data: '0x70a08231' + pad(p.pool) },
+    { to: USDT, data: '0x70a08231' + pad(p.pool) },
+    { to: MULTICALL, data: '0x42cbb15c' },
   ]);
-  const head = parseInt(headHex, 16);
+  const head = Number(BigInt(headHex));
   const sq = Number(BigInt(slot0.slice(0, 66))) / 2 ** 96;
   const now = Date.now();
 
@@ -100,19 +140,21 @@ export async function poolDetail(asset: Asset, days = 1): Promise<PoolDetail> {
 /* ---------- depth: the liquidity around the price, tick by tick ---------- */
 
 const int256 = (v: number) => (v < 0 ? 2n ** 256n + BigInt(v) : BigInt(v)).toString(16).padStart(64, '0');
-const call = (to: string, data: string) => rpc<string>('eth_call', [{ to, data }, 'latest']);
 
-/** The pool's price, the liquidity in range and every initialized tick within reach of the price (about a 4x move either way). */
+/**
+ * The pool's price, the liquidity in range and every initialized tick within reach of the price (about a 4x move
+ * either way). Three requests (price, then the tick bitmaps around it, then those ticks) where it was one per read.
+ */
 export async function poolState(asset: Asset): Promise<PoolState> {
   const pool = POOLS[asset].pool;
-  const [slot0, liq, spacingHex] = await Promise.all([call(pool, '0x3850c7bd'), call(pool, '0x1a686502'), call(pool, '0xd0c93a7c')]);
+  const [slot0, liq, spacingHex] = await readAll(['0x3850c7bd', '0x1a686502', '0xd0c93a7c'].map((data) => ({ to: pool, data })));
   const tick = Number(s256(slot0.slice(66, 130))), spacing = Number(s256(spacingHex.slice(2)));
   const word = Math.floor(tick / spacing) >> 8;
   const words = [word - 1, word, word + 1];
-  const maps = await Promise.all(words.map((w) => call(pool, '0x5339c296' + int256(w))));
+  const maps = await readAll(words.map((w) => ({ to: pool, data: '0x5339c296' + int256(w) })));
   const at: number[] = [];
   maps.forEach((hex, i) => { const bits = BigInt(hex); for (let b = 0; b < 256; b++) if ((bits >> BigInt(b)) & 1n) at.push(((words[i] << 8) + b) * spacing); });
-  const nets = await Promise.all(at.map((t) => call(pool, '0xf30dba93' + int256(t))));
+  const nets = await readAll(at.map((t) => ({ to: pool, data: '0xf30dba93' + int256(t) })));
   return {
     sqrtPrice: Number(BigInt(slot0.slice(0, 66))) / 2 ** 96, tick, liquidity: Number(BigInt(liq)),
     ticks: at.map((t, i) => ({ tick: t, net: Number(s256(nets[i].slice(66, 130))) })),

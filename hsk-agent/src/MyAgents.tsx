@@ -1,5 +1,5 @@
 // My agents: one place per agent. Each hired agent shows what it is doing, the money it was given and what it
-// holds, with its controls; someone with none gets one ready to start, and the empty places invite another.
+// holds, with its controls; someone with none gets one ready to start, and one empty place invites another.
 // The agents trade; the vault under them is the wallet they trade from, with the limits it enforces.
 import { JournalBox, journalOf } from './Journal.tsx';
 import { useMemo, useState } from 'react';
@@ -27,8 +27,6 @@ import { useSession } from './account.ts';
 const loc = () => (document.documentElement.lang === 'en' ? 'en-US' : 'ko-KR');
 const when = (t: number) => new Date(t).toLocaleString(loc(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
-/** How many places the page shows: your agents first, then empty places to add more, never fewer than this. */
-const SLOTS = 3;
 
 export default function MyAgents({ hired, quotes, vault, execs, now, agents, agentsFailed, onEdit, onPause, onResume, onRemove, onOpen, onRecommend, onStart, onMarket, onBuild, onReloadVault }: {
   hired: HiredAgent[]; quotes: Quote[]; vault: VaultInfo | null; execs: Execution[]; now: number;
@@ -47,7 +45,6 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
   const [open, setOpen] = useState<string | null>(null);
   // Someone with no agent yet gets one ready to start: Moa's pick for bitcoin at the level they chose.
   const ready = useMemo(() => (hired.length || !agents ? null : recommend(agents, { coin: 'BTC', level: readLevel() })?.pick ?? null), [hired.length, agents]);
-  const adds = Math.max(1, SLOTS - Math.max(1, hired.length));
   const priceOf = (a: string) => quotes.find((q) => q.asset === a)?.pool;
   const rows = agentRows(hired, priceOf, now);
   return (
@@ -156,21 +153,20 @@ export default function MyAgents({ hired, quotes, vault, execs, now, agents, age
           </li>
         )}
 
-        {Array.from({ length: adds }, (_, i) => (
-          <li key={`add-${i}`} className={`slot add${i > 0 ? ' more' : ''}`}>
-            <div className="slot-row">
-              <span className="slot-face plus" aria-hidden><Icon name="plus" size={20} /></span>
-              <span className="slot-main">
-                <span className="slot-name"><b>{t.slotAdd}</b>{i > 0 && <b className="slot-more">{t.slotMore}</b>}</span>
-                <small className="muted">{t.slotAddSub}</small>
-              </span>
-              <span className="slot-go">
-                <button className="btn" onClick={onMarket}>{t.slotMarket}</button>
-                <button className="btn-text" onClick={onBuild}>{t.slotBuild}</button>
-              </span>
-            </div>
-          </li>
-        ))}
+        {/* One invitation to add another: each agent gets its own money. */}
+        <li className="slot add">
+          <div className="slot-row">
+            <span className="slot-face plus" aria-hidden><Icon name="plus" size={20} /></span>
+            <span className="slot-main">
+              <span className="slot-name"><b>{t.slotAdd}</b></span>
+              <small className="muted">{t.slotAddSub}</small>
+            </span>
+            <span className="slot-go">
+              <button className="btn" onClick={onMarket}>{t.slotMarket}</button>
+              <button className="btn-text" onClick={onBuild}>{t.slotBuild}</button>
+            </span>
+          </div>
+        </li>
       </ol>
 
       <Portfolio rows={rows} hired={hired} vault={vault} quotes={quotes} priceOf={priceOf} now={now} ready={ready} onStart={onStart} onOpen={onOpen} />

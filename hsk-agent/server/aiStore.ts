@@ -14,6 +14,8 @@ export interface AiStore {
   add(d: AiDecision): void;
   /** One coin's feed for the API and the agent: the last `n` decisions, newest last, and the paper result over all. */
   feed(asset: Asset, state: AiState, model: string | null, n?: number): AiFeed;
+  /** Set when the last call to the model for this coin failed (no answer, or a late one): what was held, the kind, when. */
+  trouble(asset: Asset): AiFeed['trouble'];
 }
 
 export function openAiStore(file?: string): AiStore {
@@ -28,12 +30,20 @@ export function openAiStore(file?: string): AiStore {
     renameSync(`${file}.tmp`, file);
   };
   const list = (asset: Asset) => (COINS.includes(asset) && Array.isArray(data[asset]) ? data[asset]! : []);
+  // The last time the model was called for this coin (a hold for old or missing data makes no call and hides nothing).
+  const trouble = (asset: Asset): AiFeed['trouble'] => {
+    const called = [...list(asset)].reverse().find((d) => d.model !== null);
+    return called && (called.held === 'callFailed' || called.held === 'timeout') ? { held: called.held, ...(called.fail ? { kind: called.fail } : {}), at: called.at } : undefined;
+  };
   return {
     list,
     add: (d) => { data[d.asset] = [...list(d.asset), d].slice(-KEEP); save(); },
+    trouble,
     feed: (asset, state, model, n = 30) => {
       const all = list(asset);
-      return { asset, state, every: AI_EVERY_MS, model, decisions: all.slice(-Math.max(1, Math.min(200, n))), paper: paperTrack(all), count: all.length };
+      // An AI that is off is off, not failing: the feed names trouble only while it is deciding.
+      const t = state === 'on' ? trouble(asset) : undefined;
+      return { asset, state, every: AI_EVERY_MS, model, ...(t ? { trouble: t } : {}), decisions: all.slice(-Math.max(1, Math.min(200, n))), paper: paperTrack(all), count: all.length };
     },
   };
 }

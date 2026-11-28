@@ -4,7 +4,7 @@
 // backtest, so it never appears in a "beats holding" list or a ranking.
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useT, type Strings } from './i18n.ts';
-import { aiAgent, aiFeed, verifyDecision, COINS, type AiDecision, type AiFeed } from './aiPilot.ts';
+import { aiAgent, aiFeed, guardPoints, inputsMissing, verifyDecision, COINS, type AiDecision, type AiFeed } from './aiPilot.ts';
 import type { Agent } from './agents.ts';
 import type { Asset } from './intent.ts';
 import { markColor } from './Mark.tsx';
@@ -37,6 +37,16 @@ export function AiBadge({ sm }: { sm?: boolean }) {
 const when = (ms: number, lang: string) => new Date(ms).toLocaleString(lang === 'ko' ? 'ko-KR' : 'en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const reasonOf = (d: AiDecision, lang: string) => (lang === 'ko' ? d.reasonKo : d.reason);
 const stateLine = (t: Strings, f: AiFeed) => (f.state === 'noKey' ? t.aiNoKeySub : f.state === 'off' ? t.aiOffSub : '');
+/** "inputs missing: pool price, pool flow", or nothing when the decision had them all. */
+const missingLine = (t: Strings, d: AiDecision | undefined) => { const m = d ? inputsMissing(d) : []; return m.length ? t.aiMissing(m.map((k) => t.aiInput[k] ?? k).join(', ')) : ''; };
+/** What a limit did, with the number that was in force at that decision; a decision recorded without its limits gets no number. */
+function guardText(t: Strings, d: AiDecision, g: 'clamped' | 'stepped' | 'banded'): string {
+  if (g === 'clamped') return t.aiGuard.clamped;
+  const pts = guardPoints(d, g);
+  return pts === null ? t.aiGuardOld[g] : t.aiGuardAt[g](pts);
+}
+/** The failure kind in a few words: the held reason, and the API's own kind when the record has it. */
+const troubleKind = (t: Strings, f: AiFeed) => (f.trouble ? [t.aiHeld[f.trouble.held] ?? f.trouble.held, f.trouble.kind].filter(Boolean).join(' · ') : '');
 
 /** The share it held, decision by decision, as steps from 0% to 100%. */
 function TargetSteps({ ds }: { ds: AiDecision[] }) {
@@ -61,6 +71,7 @@ export function AiCard({ f, onHire, onLog, open }: { f: AiFeed; onHire: (a: Agen
   const decided = f.decisions.some((d) => !d.held);
   const p = f.paper;
   const off = f.state !== 'on';
+  const missing = missingLine(t, f.decisions[f.decisions.length - 1]);
   return (
     <article className={`mp-card aip-card${off ? ' off' : ''}`} style={{ '--fam': markColor('aiPilot') } as CSSProperties}>
       <header className="mp-top">
@@ -68,7 +79,7 @@ export function AiCard({ f, onHire, onLog, open }: { f: AiFeed; onHire: (a: Agen
           <Face rule="aiPilot" base={f.asset} size="xl" />
           <span className="mp-name">
             <b>{t.agNick.aiPilot} · {f.asset}</b>
-            <span className="mp-sub"><AiBadge /><span className={`mp-live${!off ? ' on' : ''}`}><i aria-hidden />{f.state === 'on' ? t.ivTag['4h'] : f.state === 'noKey' ? t.aiNoKey : t.aiOff}</span></span>
+            <span className="mp-sub"><AiBadge /><span className={`mp-live${!off && !f.trouble ? ' on' : ''}`}><i aria-hidden />{f.trouble ? t.aiTrouble : f.state === 'on' ? t.ivTag['4h'] : f.state === 'noKey' ? t.aiNoKey : t.aiOff}</span></span>
           </span>
         </div>
       </header>
@@ -83,6 +94,8 @@ export function AiCard({ f, onHire, onLog, open }: { f: AiFeed; onHire: (a: Agen
         <TargetSteps ds={f.decisions} />
       </div>
       {decided && last && <p className="aip-reason"><span>{t.aiReason}</span>{reasonOf(last, lang)}</p>}
+      {f.trouble && <p className="aip-note warn">{t.aiTroubleSub(troubleKind(t, f))}</p>}
+      {missing && <p className="aip-note">{missing}</p>}
       <p className="aip-paper">
         {p ? <><b className={sign(p.total)}>{pct(p.total)}</b> {t.aiPaper} · {t.aiVsHold(pct(p.hold))}</> : t.aiPaperNone}
       </p>
@@ -109,7 +122,7 @@ export function AiLog({ f, onClose }: { f: AiFeed; onClose: () => void }) {
         {f.model && <small>{t.aiModel(f.model)}</small>}
         <button type="button" className="btn-text" onClick={onClose}>{t.aiLogClose}</button>
       </header>
-      <p className="aip-log-sub">{f.state !== 'on' ? `${stateLine(t, f)} ` : ''}{t.aiLogSub(f.count)}</p>
+      <p className="aip-log-sub">{f.state !== 'on' ? `${stateLine(t, f)} ` : ''}{f.trouble ? `${t.aiTroubleSub(troubleKind(t, f))} ` : ''}{t.aiLogSub(f.count)}</p>
       {p && (
         <div className="aip-log-paper">
           <span><small>{t.aiPaper}</small><b className={sign(p.total)}>{pct(p.total)}</b></span>
@@ -126,9 +139,10 @@ export function AiLog({ f, onClose }: { f: AiFeed; onClose: () => void }) {
               <div className="aip-row">
                 <time dateTime={new Date(d.at).toISOString()}>{when(d.at, lang)}</time>
                 <b className="aip-t">{d.prev !== null && moved ? <>{P(d.prev)} <i aria-hidden>→</i> {P(d.target)}</> : P(d.target)}</b>
-                {d.held && <span className="aip-tag warn">{t.aiKept} · {t.aiHeld[d.held]}</span>}
+                {d.held && <span className="aip-tag warn">{t.aiKept} · {t.aiHeld[d.held]}{d.fail && d.fail !== d.held ? ` · ${d.fail}` : ''}</span>}
                 {!d.held && d.proposed !== undefined && d.proposed !== d.target && <span className="aip-tag">{t.aiAsked(P(d.proposed))}</span>}
-                {d.guard && (Object.keys(d.guard) as ('clamped' | 'stepped' | 'banded')[]).map((g) => <span key={g} className="aip-tag">{t.aiGuard[g]}</span>)}
+                {d.guard && (Object.keys(d.guard) as ('clamped' | 'stepped' | 'banded')[]).map((g) => <span key={g} className="aip-tag">{guardText(t, d, g)}</span>)}
+                {missingLine(t, d) && <span className="aip-tag warn">{missingLine(t, d)}</span>}
               </div>
               <p className="aip-why">{reasonOf(d, lang)}</p>
               {d.signals.length > 0 && <p className="aip-sigs"><span>{t.aiSignals}</span>{d.signals.map((s) => <i key={s}>{t.aiSig[s] ?? s}</i>)}</p>}

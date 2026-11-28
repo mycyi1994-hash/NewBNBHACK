@@ -9,6 +9,7 @@
 import { JournalBox } from './Journal.tsx';
 import type { Journal } from './journal.ts';
 import { AiBadge } from './AiPanel.tsx';
+import { AiAlso } from './AiRow.tsx';
 import { useEffect, useRef, useState } from 'react';
 import type { Quote } from './market.ts';
 import { useT } from './i18n.ts';
@@ -109,6 +110,18 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
   const [notes, setNotes] = useState<Note[]>([]);
   const [typing, setTyping] = useState(false);
   const [busy, setBusy] = useState<StepKey[] | null>(null);
+  // Is the AI answering? The server says whether its last call to the model failed (read now and every five minutes),
+  // and each question asked here says it again: the badge is not green while the last call failed.
+  const [askFailed, setAskFailed] = useState(false);
+  const [serverSays, setServerSays] = useState(false);
+  const aiDown = askFailed || serverSays;
+  useEffect(() => {
+    let alive = true;
+    const read = () => fetch('/api/health').then((r) => r.json()).then((h: { ai?: string }) => { if (alive) setServerSays(h.ai === 'failing'); }, () => undefined);
+    void read();
+    const id = setInterval(read, 5 * 60_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
   const [draft, setDraft] = useState('');
   const feed = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -509,6 +522,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       const plan = res.plan?.steps.length ? { steps: res.plan.steps.map(toStep), missing: res.plan.missing } : undefined;
       if (res.lp && lpRef.current) lpSet(lpFill({ ...(res.lp.usdt !== undefined ? { usdt: res.lp.usdt } : {}), ...(res.lp.coin !== undefined ? { coin: res.lp.coin } : {}), ...(res.lp.shape ? { shape: res.lp.shape } : {}), ...(res.lp.reachPct ? { ...widthFor(res.lp.reachPct), reachPct: res.lp.reachPct } : {}) }));
       if (res.executions?.length) onExecuted(res.executions.map((x) => ({ at: Date.now(), ok: x.ok, asset: x.request.asset, side: x.request.side, amount: x.request.amount, reason: x.reason, txHash: x.txHash, explorerUrl: x.explorerUrl, amountIn: x.amountIn, amountOut: x.amountOut, tokenIn: x.tokenIn, tokenOut: x.tokenOut })));
+      setAskFailed(false); setServerSays(false);
       push({ role: 'moa', text: res.reply, plan, goal: q, execs: res.executions?.length ? res.executions : undefined, proposals: res.proposals?.length ? res.proposals : undefined, follow: [] });
       if (res.recommend) {
         // The server ran the same rule; show its pick from this screen's data, or pick again if it is missing here.
@@ -518,6 +532,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
       }
     } catch {
       if (ctrl.signal.aborted) { setBusy(null); return; }
+      setAskFailed(true);
       // No server or the AI is unreachable: answer with the on-device parser, clearly marked. A question about a
       // coin is answered from the market data the briefing uses rather than with a request for a goal.
       const p = parseIntent(q);
@@ -605,7 +620,7 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
   return (
     <aside className="dock feed-dock" aria-label="Moa">
       <header className="feed-head">
-        <span className="feed-title"><span className={`moa-avatar${busy ? ' busy' : ''}`} aria-hidden><Spark size={13} /></span>Moa<span className="ai-badge" data-tip={level ? t.live : t.feedWatching}><span className="live-dot" /><span className="ai-long">{t.aiBadge}</span><span className="ai-short">{t.aiShort}</span></span></span>
+        <span className="feed-title"><span className={`moa-avatar${busy ? ' busy' : ''}`} aria-hidden><Spark size={13} /></span>Moa<span className={`ai-badge${aiDown ? ' down' : ''}`} data-tip={aiDown ? t.aiChatDown : level ? t.live : t.feedWatching}><span className="live-dot" /><span className="ai-long">{t.aiBadge}</span><span className="ai-short">{t.aiShort}</span></span></span>
         {level && (
           <div className="depth-switch has-pill" role="tablist" aria-label={t.depthLabel}>
             <SlidePill dep={level} />
@@ -627,13 +642,15 @@ export default function MoaFeed({ lp, onLp, quotes, vault, inject, context, agen
             {n.offline && <p className="note-offline">{t.offline}</p>}
             {n.sky && <SkyCard level={n.sky.level} list={n.sky.list} />}
             {n.agent && (
-              <AgentCard agent={n.agent.a} size="chat" actions={(
-                // Evidence first: the main button opens the backtest on the trade screen. Hiring stays one tap away.
+              <AgentCard agent={n.agent.a} size="chat" actions={<>
+                {/* Evidence first: the main button opens the backtest on the trade screen. Hiring stays one tap away. */}
                 <div className="acard-cta">
                   <button className="btn-primary" onClick={() => onShow(n.agent!.a)}>{t.acBacktest}</button>
                   {n.agent.a.runnable && <button className="btn" onClick={() => onHire({ kind: 'agent', agent: n.agent!.a })}>{t.acHire}</button>}
                 </div>
-              )} />
+                {/* A pick stays the default; the coin's Moa AI is only mentioned. */}
+                {n.agent.rec && <AiAlso coin={n.agent.a.base} onOpen={() => onGoto('agents')} />}
+              </>} />
             )}
             {n.list && (
               <div className="rowlist">

@@ -1,21 +1,21 @@
 // The panel under the chart. One screen does the whole job:
-//  - "Agents for this market": the agents from agents.ts for the market on the chart (same numbers as the agent
-//    market and Moa's cards), ranked. The default order is Moa's own: published classics first, then the smaller
-//    worst drop. Picking one does not move money; it opens its backtest right here.
+//  - "Agents": Moa AI for the coin first, then the agents from agents.ts for the market on the chart (same numbers
+//    as the agent market and Moa's cards), grouped by tier with the classics and the lab folded. Picking one does
+//    not move money; it opens its backtest right here.
 //  - "Backtest": what that agent would have done: the result against just holding, its curve among the others,
 //    and every buy and sell (the chart above shows the same buys and sells on the candles). One year by default,
 //    so agents compare like for like; "All history" reruns it over everything the exchange has.
 //  - "Recent swaps" (HSKSwap view only).
 // Hiring happens from the backtest, after the evidence, through the same hire sheet as everywhere else.
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Asset } from './intent.ts';
 import type * as cex from './cex.ts';
 import { SENSITIVITY_USD } from './fills.ts';
 import { marketAgents } from './agentsClient.ts';
-import { holdoutDays, POSITION_RULES, isRetired, pickDays, byMerit, DEMOTED, rescoreAt, horizonOf, idle, isRunnable, rescore, HORIZONS, PROOF, type Agent, type Horizon, type Mark } from './agents.ts';
+import { holdoutDays, POSITION_RULES, isRetired, pickDays, byMerit, DEMOTED, rescoreAt, rescore, PROOF, type Agent, type Mark } from './agents.ts';
 import { TEMPLATES } from './spec.ts';
 import { useMade } from './madeStore.ts';
-import { AgentCard, agentName, condText, drop, pct, ruleLines, statePill, Face } from './AgentCard.tsx';
+import { agentName, condText, drop, pct, ruleLines, statePill, Face } from './AgentCard.tsx';
 import { LP_STRATEGIES, type LpStrategy } from './lpStrategies.ts';
 import type { IconName } from './Icons.tsx';
 import { fmtPrice } from './market.ts';
@@ -24,7 +24,8 @@ import { Icon, Spark } from './Icons.tsx';
 import { SlidePill } from './motion.tsx';
 import { StateBox } from './ui.tsx';
 import SpreadPanel from './SpreadPanel.tsx';
-import { AgentRow, AsOf, byTier, FOLDED, HoldRow, PERIODS, PeriodSwitch, periodResult, usePeriod, verdictOf, VERDICT_MARK, type PeriodDays } from './Perf.tsx';
+import { AiRow } from './AiRow.tsx';
+import { AgentRow, AsOf, byTier, FOLDED, HoldLine, HoldRow, PERIODS, PeriodSwitch, periodResult, usePeriod, verdictOf, VERDICT_MARK, type PeriodDays } from './Perf.tsx';
 import OnchainPanel from './OnchainPanel.tsx';
 import { ASSETS } from './intent.ts';
 import { feeText } from './share.ts';
@@ -401,7 +402,7 @@ function Backtest({ a, year, ranked, cursor, onSelect, onHire, onAsk }: {
   );
 }
 
-type Tab = 'mine' | 'top' | 'list' | 'spread' | 'chain' | 'bt' | 'swaps';
+type Tab = 'mine' | 'top' | 'spread' | 'chain' | 'bt' | 'swaps';
 
 const LP_ICON: Record<LpStrategy['goal'], IconName> = { buy: 'dip', sell: 'trend', both: 'collect' };
 
@@ -439,33 +440,21 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, cu
   // The first agent hired (or the list arriving after login) brings its row up; the last one removed leaves the tab.
   const had = useRef(mineCount);
   useEffect(() => {
-    if (mineCount > had.current) setTab((cur) => (cur === 'list' || cur === 'top' || cur === 'bt' && !sel ? 'mine' : cur));
+    if (mineCount > had.current) setTab((cur) => (cur === 'top' || cur === 'bt' && !sel ? 'mine' : cur));
     had.current = mineCount;
   }, [mineCount]); // eslint-disable-line react-hooks/exhaustive-deps
   // Picking an agent opens its backtest; closing it goes back to the list.
   useEffect(() => { setTab((cur) => (sel ? 'bt' : cur === 'bt' ? 'top' : cur)); }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // One order, Moa's: published classics first, then the smaller worst drop. (Other orders live in the agent market.)
-  // The research's demoted classics keep their place in the list, after the others.
+  // One list, in Moa's order (agents.ts byMerit), by tier for the period on screen (src/Perf.tsx); the classics
+  // and the lab stay folded. The detail view steps through it in the same order.
   const all = useMemo(() => (list ? [...list].sort(byMerit) : []), [list]);
-  // With enough published strategies for the market, the rules without a published source wait behind one row.
-  const [more, setMore] = useState(false);
-  const classics = all.filter((a) => a.tier === 1 || a.made);
-  const fold = classics.length >= 4 && classics.length < all.length;
-  const open = fold && !more && !(sel && sel.tier !== 1) ? classics : all;
-  // Three columns side by side, by how long the strategy is built to hold: long, swing, short.
-  const groups = HORIZONS.map((h) => ({ h, rows: open.filter((a) => horizonOf(a) === h) })).filter((g) => g.rows.length);
-  const ranked = groups.flatMap((g) => g.rows);
-  /** Moa's pick in each group: the first in its order that actually traded in the backtest. */
-  const pickOf = (h: Horizon) => all.find((a) => horizonOf(a) === h && !idle(a))?.id;
-  const hint = isRunnable(coin) ? t.mkSignalTrade : t.mkHintSignal(coin);
   const seamDay = shown?.seam ? new Date(shown.seam * 1000).toISOString().slice(0, 10) : '';
-  // "Doing well now": the same order as everywhere (working first, then beating just holding), the first few.
-  // The list under the chart, by tier for the period on screen (src/Perf.tsx); classics and the lab stay folded.
   const [pPeriod, setPPeriod] = usePeriod();
   const tiered = useMemo(() => byTier(all), [all]);
+  const ranked = tiered.flatMap((g) => g.agents);
   const holdAgent = all.find((a) => periodResult(a, pPeriod));
-  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days, shown.interval)}` : tab === 'list' ? hint : '';
+  const note = tab === 'bt' && shown ? `${seamDay ? `${t.btSeam(seamDay)} ` : ''}${t.acFoot(`${(shown.fee * 100).toFixed(1)}%`, shown.days, shown.interval)}` : '';
 
   return (
     <section className={`tdock venue-${venue}`} aria-label={t.mkTitle}>
@@ -474,7 +463,6 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, cu
           <SlidePill dep={`${tab}-${sel?.id ?? ''}-${mineCount}`} />
           {mine && <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>{t.navMine}{mineCount > 0 && <span className={`tdock-count${mineAsks ? ' ask' : ''}`}>{mineCount}</span>}</button>}
           <button role="tab" aria-selected={tab === 'top'} className={tab === 'top' ? 'on' : ''} onClick={() => setTab('top')}>{t.dkTopTab}</button>
-          <button role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'on' : ''} onClick={() => setTab('list')}>{t.dkAllTab}</button>
           {/* HSKSwap against the exchange, for the three coins a vault trades */}
           {(ASSETS as string[]).includes(coin) && <button role="tab" aria-selected={tab === 'spread'} className={tab === 'spread' ? 'on' : ''} onClick={() => setTab('spread')}>{t.sxTab}</button>}
           {/* HSK's own chain: the WHSK pool's swaps and liquidity */}
@@ -487,10 +475,10 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, cu
           {swaps && <button role="tab" aria-selected={tab === 'swaps'} className={tab === 'swaps' ? 'on' : ''} onClick={() => setTab('swaps')}>{t.recentSwaps}</button>}
         </div>
         <p className="tdock-note">{note}</p>
-        {tab === 'mine' && <button className="btn sm tdock-build" onClick={() => setTab('list')}><Icon name="plus" size={14} />{t.mdAdd}</button>}
+        {tab === 'mine' && <button className="btn sm tdock-build" onClick={() => setTab('top')}><Icon name="plus" size={14} />{t.mdAdd}</button>}
         {tab === 'top' && <PeriodSwitch value={pPeriod} onChange={setPPeriod} />}
         {tab === 'top' && <AsOf at={at} t={t} />}
-        {(tab === 'list' || tab === 'top') && onBuild && <button className="btn sm tdock-build" onClick={onBuild}><Icon name="plus" size={14} />{t.mkBuild}</button>}
+        {tab === 'top' && onBuild && <button className="btn sm tdock-build" onClick={onBuild}><Icon name="plus" size={14} />{t.mkBuild}</button>}
         {tab === 'bt' && sel && <button className="icon-btn sm" onClick={() => onSelect(null)} aria-label={t.btBack} data-tip={t.btBack}><Icon name="close" size={16} /></button>}
       </header>
 
@@ -499,7 +487,7 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, cu
           <div className="md-empty">
             <b>{t.mineEmpty}</b>
             <p>{t.mdEmptySub}</p>
-            <button className="btn sm" onClick={() => setTab('list')}>{t.mdSee}</button>
+            <button className="btn sm" onClick={() => setTab('top')}>{t.mdSee}</button>
           </div>
         ))}
         {tab === 'top' && (
@@ -517,11 +505,13 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, cu
                 </div>
               </section>
             )}
-            <section className="tk-agents" aria-label={t.dkTopTitle}>
+            <section className="tk-agents" aria-label={t.dkTopTab}>
               {failed && <StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} />}
               {!list && !failed && <PendingRows coin={coin} period={pPeriod} />}
               {list && !failed && !all.length && <p className="tk-none">{t.mpNone}</p>}
-              {list && !failed && !tiered.some((g) => g.tier === 'ahead') && all.length > 0 && <p className="tk-none">{t.pfNoneAhead}</p>}
+              {/* The product's headline first: the AI that decides, inside limits. It has no backtest, so it sits apart from the tiers. */}
+              <AiRow coin={coin} onHire={onHire} />
+              {list && !failed && <HoldLine groups={tiered} period={pPeriod} className="tk-none" />}
               {tiered.map((g) => {
                 const rows = (
                   <ol className="tk-list">
@@ -529,30 +519,12 @@ export default function Dock({ venue, coin, list, failed, sel, shown, period, cu
                     <HoldRow coin={coin} a={holdAgent} period={pPeriod} />
                   </ol>
                 );
-                const head = <><b data-tip={t.tierWhy[g.tier]}>{t.tierName[g.tier]}</b><small>{g.tier === 'lab' ? t.tierLabWarn : t.pfTierSub[g.tier]}</small></>;
+                const head = <><b data-tip={t.tierWhy[g.tier]}>{t.tierName[g.tier]}</b><small>{t.pfTierSub[g.tier]}</small></>;
                 return FOLDED.has(g.tier)
                   ? <details key={g.tier} className="tk-tier"><summary className="tk-head">{head}<Icon name="down" size={14} /></summary>{rows}</details>
                   : <div key={g.tier} className="tk-tier"><header className="tk-head">{head}</header>{rows}</div>;
               })}
             </section>
-          </div>
-        )}
-        {tab === 'list' && (
-          <div className="hzb" key={`${venue}-${coin}`} style={{ '--cols': groups.length || 3 } as CSSProperties}>
-            {failed && <div className="hzb-wide"><StateBox compact title={t.errAgents} text={t.agFailed} retry={t.retry} onRetry={onRetry} /></div>}
-            {!list && !failed && HORIZONS.map((h) => (
-              <section key={h} className={`hz-col hz-${h}`} aria-hidden>
-                <header className="hz-head"><b>{t.hz[h]}</b><p>{t.hzSub[h]}</p></header>
-                {[0, 1, 2].map((i) => <div key={i} className="hzr skel-block" />)}
-              </section>
-            ))}
-            {groups.map((g) => (
-              <section key={g.h} className={`hz-col hz-${g.h} stagger`} aria-label={t.hz[g.h]}>
-                <header className="hz-head" data-tip={t.hzOrder}><b>{t.hz[g.h]}<small>{g.rows.length}</small></b><em>{t.hzLegend}</em><p>{t.hzSub[g.h]}</p><em>{t.hzHold(pct(g.rows[0].hold))}</em>{g.h === 'short' && <p className="hz-fee">{t.hzShortFee}</p>}</header>
-                {g.rows.map((a, i) => <AgentCard key={a.id} agent={a} size="cell" rank={i + 1} picked={sel?.id === a.id} best={a.id === pickOf(g.h)} onPick={() => { onSelect(a); setTab('bt'); }} />)}
-              </section>
-            ))}
-            {fold && <button className="frow-more hzb-wide" onClick={() => setMore((v) => !v)}>{more ? t.dkLess : t.dkMore(all.length - classics.length)}<Icon name="down" size={14} /></button>}
           </div>
         )}
         {tab === 'bt' && sel && shown && <Backtest a={shown} year={sel} ranked={ranked} period={period} cursor={cursor} onSelect={onSelect} onHire={onHire} onAsk={onAsk} />}

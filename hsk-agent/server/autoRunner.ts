@@ -1,15 +1,17 @@
 // The agents on "auto": every few minutes the server asks each one what it wants to do (the same decide() the app
-// uses) and, when it wants to trade, sends the order to its owner's vault at once. No model is involved.
+// uses) and, when it wants to trade, sends the order to its owner's vault at once. No model is called from here:
+// an agent's signal is its rule on closed candles, and for Moa AI the target its model last recorded
+// (server/aiPilot.ts decides that on its own clock; this runner only reads it).
 // It also carries out any stop-loss that is due on a vault it knows about; the vault decides whether one applies.
 // A daily spending limit and a stop-loss on the vault are recommended in the hire sheet and are the owner's choice:
 // the agent's own budget is the only cap this runner applies by itself.
 import { agentById, ruleInterval, scoreMadeLive, SIGNAL_MARKETS } from '../src/agents.ts';
 import { intervalOf } from '../src/spec.ts';
-import { loadQuotes } from '../src/market.ts';
+import { loadQuotes, type Quote } from '../src/market.ts';
 import { agentSignal, book, chainNote, decide, newId, settle, type HiredAgent, type Order, type Signal, type SkipWhy } from '../src/runner.ts';
 import type { Asset } from '../src/intent.ts';
 import type { Address } from 'viem';
-import { executeTrade, forOwner, stopOut, vaultStatus, type CreatorRef, type ExecConfig, type TradeResult } from './executor.ts';
+import { executeTrade, forOwner, stopOut, vaultLook, type CreatorRef, type ExecConfig, type TradeResult } from './executor.ts';
 import type { AutoStore } from './autoStore.ts';
 
 export const TICK_MS = 5 * 60_000;
@@ -38,12 +40,14 @@ export type AgentCheck =
   | { at: number; k: 'order'; signal: Signal; side: 'buy' | 'sell'; amount: number; ok: boolean; tx?: string; error?: string };
 export interface RunnerState {
   every: number; startedAt: number; passes: number;
-  lastPassAt?: number; lastPassMs?: number; nextAt?: number; passError?: string;
+  /** The last finished pass: when it began and how long it took. `runningSince`: a pass is under way since then. */
+  lastPassAt?: number; lastPassMs?: number; runningSince?: number; nextAt?: number; passError?: string;
   owners: Map<string, { at: number; error?: string }>;
   agents: Map<string, AgentCheck>;
 }
 export const newRunnerState = (every = TICK_MS, now = Date.now()): RunnerState => ({ every, startedAt: now, passes: 0, owners: new Map(), agents: new Map() });
-const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** An error in one short line: the chain library's messages go on for pages (the node's address, the whole request). */
+const msg = (e: unknown) => String((e as { shortMessage?: unknown } | null)?.shortMessage ?? (e instanceof Error ? e.message : e)).split('\n')[0].slice(0, 200);
 
 /** Why an agent cannot be put on auto for this vault, or nothing when it can. */
 export function autoBlock(v: { configured: boolean }): 'noVault' | undefined {
@@ -75,9 +79,16 @@ export function undoMovePause(store: AutoStore, owner: string, ids: string[]): v
 export async function tick(store: AutoStore, deps: Deps, now = Date.now(), state?: RunnerState): Promise<string[]> {
   const out: string[] = [];
   const seen = (id: string, c: AgentCheck) => state?.agents.set(id, c);
-  for (const owner of store.owners()) {
-    let v: Awaited<ReturnType<Deps['status']>>;
-    try { v = await deps.status(owner); } catch (e) { out.push(`${owner}: vault not readable (${msg(e)})`); state?.owners.set(owner.toLowerCase(), { at: now, error: `vault not readable: ${msg(e)}` }); continue; }
+  // Every vault is read first, side by side: the reads travel to the node together (a few requests for the whole
+  // pass). One owner after another, each waiting on its own reads, made a pass as long as the slowest read times
+  // the number of wallets whenever the node was slow to answer.
+  const owners = store.owners();
+  type Look = { v: Awaited<ReturnType<Deps['status']>> } | { error: string };
+  const looks = await Promise.all(owners.map((o): Promise<Look> => deps.status(o).then((v) => ({ v }), (e: unknown) => ({ error: msg(e) }))));
+  for (const [i, owner] of owners.entries()) {
+    const look = looks[i];
+    if ('error' in look) { out.push(`${owner}: vault not readable (${look.error})`); state?.owners.set(owner.toLowerCase(), { at: now, error: `vault not readable: ${look.error}` }); continue; }
+    const v = look.v;
     state?.owners.set(owner.toLowerCase(), { at: now, ...(v.configured ? {} : { error: 'no vault' }) });
     if (!v.configured) continue;
 
@@ -127,6 +138,9 @@ export async function tick(store: AutoStore, deps: Deps, now = Date.now(), state
       out.push(`${owner}/${h.id}: ${o.side} ${amount} ${h.asset}: ${r.ok ? r.txHash : r.reason}`);
     }
   }
+  // Not one vault could be read: the chain is not answering, and the pass says so instead of looking fine.
+  const failed = looks.flatMap((l) => ('error' in l ? [l.error] : []));
+  if (owners.length && failed.length === owners.length) throw new Error(`vaults not readable: ${failed[0]}`);
   return out;
 }
 
@@ -140,10 +154,23 @@ const cache = new Map<string, { at: number; signal: Signal }>();
  */
 export const signalTtl = (h: Partial<Pick<HiredAgent, 'spec' | 'source'>>) =>
   ({ '1d': 10 * 60_000, '4h': 4 * 60_000, '1h': 2 * 60_000 })[h.spec ? intervalOf(h.spec) : h.source?.type === 'market' ? ruleInterval(h.source.rule) : '1d'];
+/** The pool prices agents that follow a plan decide on: read once and shared for half a minute, not once per agent per pass. */
+let quotes: { at: number; p: Promise<Quote[]> } | undefined;
+const quotesNow = () => (quotes && Date.now() - quotes.at < 30_000 ? quotes : (quotes = { at: Date.now(), p: loadQuotes() })).p;
+/**
+ * The longest one agent's signal may take. Its sources have their own deadlines; this is the backstop, so that one
+ * read that never comes back costs a pass half a minute, not the five minutes an unanswered request is held by default
+ * (which made a pass last as long as the interval between passes, so every other one was skipped).
+ */
+export const SIGNAL_MS = 30_000;
+export function withDeadline<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([p, new Promise<never>((_, no) => { timer = setTimeout(() => no(new Error(`${what} timed out`)), ms); })]).finally(() => clearTimeout(timer));
+}
 /** What the agent's rule says right now, from the same scoring the app shows. */
 async function liveSignal(h: HiredAgent): Promise<Signal | undefined> {
   if (h.source.type === 'custom') {
-    const q = (await loadQuotes()).find((x) => x.asset === h.asset);
+    const q = (await quotesNow()).find((x) => x.asset === h.asset);
     return { kind: 'custom', price: q?.pool };
   }
   const id = h.spec ? `made:${JSON.stringify([h.spec.market, intervalOf(h.spec), h.spec.buy, h.spec.sell])}` : h.source.agentId;
@@ -168,8 +195,8 @@ async function liveSignal(h: HiredAgent): Promise<Signal | undefined> {
 export function liveDeps(cfg: ExecConfig): Deps {
   const forThe = (owner: string) => forOwner(cfg, owner as Address);
   return {
-    status: async (owner) => vaultStatus(await forThe(owner)),
-    signal: liveSignal,
+    status: async (owner) => vaultLook(await forThe(owner)),
+    signal: (h) => withDeadline(liveSignal(h), SIGNAL_MS, 'market data'),
     trade: async (owner, req) => executeTrade(await forThe(owner), req),
     stop: async (owner, asset) => stopOut(await forThe(owner), asset),
   };
@@ -178,23 +205,34 @@ export function liveDeps(cfg: ExecConfig): Deps {
 /** How often the runner looks: MOA_AUTO_TICK_MS shortens it for a local trial; never under ten seconds. */
 export const runnerEvery = () => Math.max(10_000, Number(process.env.MOA_AUTO_TICK_MS) || TICK_MS);
 
-/** Run a pass now and then every five minutes, recording into `state`. Returns a function that stops it. */
-export function startRunner(cfg: ExecConfig, store: AutoStore, state: RunnerState = newRunnerState(runnerEvery())): () => void {
-  let busy = false;
+/** After a pass that ran past its interval the next one still waits this long, so passes never run back to back. */
+export const MIN_REST_MS = 15_000;
+/** When the next pass starts: `every` after the last one began, or a short rest after it ended if it took longer. */
+export const nextPassAt = (began: number, ended: number, every: number) => Math.max(began + every, ended + Math.min(MIN_REST_MS, every));
+
+/**
+ * Run a pass soon and then one every five minutes, recording into `state`. Returns a function that stops it.
+ * Each pass schedules the next when it ends, so a slow pass delays the next one a little instead of making the
+ * runner skip a whole interval (it used to: a tick that found the last pass still running did nothing).
+ */
+export function startRunner(cfg: ExecConfig, store: AutoStore, state: RunnerState = newRunnerState(runnerEvery()), deps: Deps = liveDeps(cfg)): () => void {
+  let stopped = false, timer: ReturnType<typeof setTimeout>;
   const every = state.every;
   const pass = async () => {
-    if (busy) return;
-    busy = true;
     const at = Date.now();
+    state.runningSince = at;
     try {
-      for (const line of await tick(store, liveDeps(cfg), at, state)) console.log(`[moa auto] ${line}`);
+      for (const line of await tick(store, deps, at, state)) console.log(`[moa auto] ${line}`);
       state.passError = undefined;
     } catch (e) { state.passError = msg(e); console.error('[moa auto] pass failed:', msg(e)); } finally {
-      busy = false; state.passes++; state.lastPassAt = at; state.lastPassMs = Date.now() - at; state.nextAt = at + every;
+      const ended = Date.now();
+      state.passes++; state.lastPassAt = at; state.lastPassMs = ended - at; state.runningSince = undefined;
+      state.nextAt = nextPassAt(at, ended, every);
+      if (state.lastPassMs > 60_000) console.error(`[moa auto] the pass took ${Math.round(state.lastPassMs / 1000)} s`);
+      if (!stopped) timer = setTimeout(pass, state.nextAt - ended);
     }
   };
   state.nextAt = Date.now() + Math.min(15_000, every);
-  const first = setTimeout(pass, Math.min(15_000, every));
-  const timer = setInterval(pass, every);
-  return () => { clearTimeout(first); clearInterval(timer); };
+  timer = setTimeout(pass, Math.min(15_000, every));
+  return () => { stopped = true; clearTimeout(timer); };
 }

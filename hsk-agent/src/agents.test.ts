@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreCollect, scoreMade, scorePosition, positions, overlays, FEE_HASHKEY, FEE_HSKSWAP, POSITION_RULES, PROOF, TIER, type Agent } from './agents.ts';
+import { fillKeepMs, scoreCollect, scoreMade, scorePosition, positions, overlays, FEE_HASHKEY, FEE_HSKSWAP, POSITION_RULES, PROOF, TIER, type Agent } from './agents.ts';
+import { haircutModel, poolModel } from './fills.ts';
 import { recommend } from './recommend.ts';
 import { LEAD_DAYS, replayDays } from './replay.ts';
 import { TEMPLATE_IDS, fromTemplate, parse, problems, specPositions } from './spec.ts';
@@ -537,4 +538,12 @@ test('the headline is the whole period; a better ranking year over a worse whole
   const { STRINGS } = await import('./i18n.ts');
   assert.equal(STRINGS.ko.mixedNote('최근 1년', '3년'), '최근 1년은 보유보다 나았지만 3년 전체로는 뒤졌어요.');
   assert.match(STRINGS.ko.recCoin('BTC', true, '3달 전까지 1년', '+13.8%', '전체 3년 −77.3%', STRINGS.ko.mixedNote('3달 전까지 1년', '3년')), /전체 3년 −77\.3%.*\+13\.8%.*3년 전체로는 뒤졌어요/);
+});
+
+test('how long a pool fill model is kept: a measured one and a quiet pool six hours, a read that may have failed one hour', () => {
+  const H = 3_600_000;
+  assert.equal(fillKeepMs(poolModel(undefined, { median: 0, mad: 0.001, n: 20 })), 6 * H);
+  assert.equal(fillKeepMs(haircutModel()), H, 'a haircut may be a failed read: tried again sooner');
+  assert.equal(fillKeepMs(haircutModel(), true), 6 * H, 'the read worked and the pool had too few swaps: asking hourly changes nothing');
+  assert.equal(fillKeepMs(undefined), H);
 });

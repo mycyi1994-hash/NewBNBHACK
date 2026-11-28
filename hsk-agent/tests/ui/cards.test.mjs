@@ -44,7 +44,7 @@ describe('cards and lists', () => {
   test('the detail view: three period cells, extra numbers closed under "More"', async () => {
     const { page, errors, done } = await open('desktop');
     await page.waitForSelector('.chart-card', { timeout: 30_000 });
-    const row = page.locator('.tk-agents .ar-open:not([disabled])').first();
+    const row = page.locator('.tk-agents .tk-tier .ar-open:not([disabled])').first();
     await row.waitFor({ timeout: 90_000 });
     await row.click();
     await page.waitForSelector('.bt.v2', { timeout: 30_000 });

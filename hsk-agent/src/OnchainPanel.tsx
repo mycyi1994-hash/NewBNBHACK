@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useT } from './i18n.ts';
 import { EXPLORER } from './dex.ts';
-import { onchainView, type OnchainView } from './onchain.ts';
+import { onchainView, weekRead, type OnchainView } from './onchain.ts';
 
 const usd = (v: number) => `$${Math.round(Math.abs(v)).toLocaleString('en-US')}`;
 const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${usd(v)}`;
@@ -47,7 +47,7 @@ export default function OnchainPanel() {
             </span>
           ))}
         </div>
-        <p className="ow-meta">{t.owWeek(signed(v.week.net), v.week.count)}</p>
+        {weekRead(v) && <p className="ow-meta">{t.owWeek(signed(v.week.net), v.week.count)}</p>}
       </section>
       <section className="ow-liq">
         <small>{t.owLiq}</small>

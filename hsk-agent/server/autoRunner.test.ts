@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { autoBlock, signalTtl, tick, TICK_MS, type Deps } from './autoRunner.ts';
+import { autoBlock, MIN_REST_MS, newRunnerState, nextPassAt, signalTtl, startRunner, tick, TICK_MS, withDeadline, type Deps } from './autoRunner.ts';
 import { openStore } from './autoStore.ts';
 import { book, type HiredAgent, type Signal } from '../src/runner.ts';
 
@@ -176,4 +176,64 @@ test('a made agent on hourly candles is re-read within one pass of each candle c
   assert.ok(signalTtl({ spec: { ...spec, interval: '4h' } }) <= TICK_MS);
   assert.ok(signalTtl({ source: { type: 'market', agentId: 'rsi2h-ETHUSDT-PERPETUAL', kind: 'position', rule: 'rsi2h', base: 'ETH' } }) <= TICK_MS, 'a short-term market agent too');
   assert.equal(signalTtl({ source: { type: 'market', agentId: 'trend200-ETHUSDT-PERPETUAL', kind: 'position', rule: 'trend200', base: 'ETH' } }), 10 * 60_000);
+});
+
+const OTHERS = ['0x70997970C51812dc3A010C7d01b50e0d17dc79C8', '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC', '0x90F79bf6EB2c4f870365E785982E1f101E93b906'];
+
+test('every vault is read side by side: a pass takes one slow read, not one per wallet', async () => {
+  const store = openStore();
+  [OWNER, ...OTHERS].forEach((o, i) => store.put(o, agent({ id: `a${i}` })));
+  const w = world({ kind: 'position', live: false });
+  let open = 0, most = 0;
+  const deps: Deps = { ...w.deps, status: async () => { open++; most = Math.max(most, open); await new Promise((r) => setTimeout(r, 40)); open--; return w.state.vault; } };
+  const t0 = Date.now(), state = newRunnerState(300_000, NOW);
+  await tick(store, deps, NOW, state);
+  assert.equal(most, 4, 'all four vaults were being read at once');
+  assert.ok(Date.now() - t0 < 4 * 40, 'and the pass did not wait for them one after another');
+  assert.equal(state.agents.size, 4);
+});
+
+test('one vault that cannot be read does not stop the others; none readable fails the pass and says so', async () => {
+  const store = openStore();
+  store.put(OWNER, agent());
+  store.put(OTHERS[0], agent({ id: 'b1' }));
+  const w = world({ kind: 'position', live: true });
+  const state = newRunnerState(300_000, NOW);
+  const lines = await tick(store, { ...w.deps, status: async (o) => { if (o === OWNER.toLowerCase()) throw new Error('timed out'); return w.state.vault; } }, NOW, state);
+  assert.match(lines.join('\n'), /vault not readable \(timed out\)/);
+  assert.equal(w.sent.length, 1, 'the other wallet’s agent still traded');
+  assert.match(state.owners.get(OWNER.toLowerCase())?.error ?? '', /not readable/);
+  await assert.rejects(tick(store, { ...w.deps, status: async () => { throw new Error('timed out'); } }, NOW + 1, state), /vaults not readable: timed out/);
+  assert.equal(w.sent.length, 1);
+});
+
+test('the runner says how long its last pass took, and a slow pass delays the next one instead of skipping it', async () => {
+  assert.equal(nextPassAt(0, 4_000, 300_000), 300_000, 'a short pass: the next one an interval after this one began');
+  assert.equal(nextPassAt(0, 295_000, 300_000), 295_000 + MIN_REST_MS, 'a pass that took nearly the interval: a short rest, then the next');
+  assert.equal(nextPassAt(0, 900_000, 300_000), 900_000 + MIN_REST_MS, 'never back to back');
+  const store = openStore();
+  store.put(OWNER, agent());
+  const w = world({ kind: 'position', live: false });
+  const state = newRunnerState(20, Date.now());
+  const stop = startRunner({} as never, store, state, { ...w.deps, status: async () => { await new Promise((r) => setTimeout(r, 30)); return w.state.vault; } });
+  await new Promise((r) => setTimeout(r, 200));
+  stop();
+  assert.ok(state.passes >= 2, 'passes keep coming although each one takes longer than the interval');
+  assert.ok((state.lastPassMs ?? 0) >= 25, `the last pass took ${state.lastPassMs} ms`);
+  assert.ok(state.lastPassAt !== undefined && state.nextAt !== undefined && state.nextAt >= state.lastPassAt + (state.lastPassMs ?? 0));
+});
+
+test('a signal that never comes back costs its deadline, not the pass: the agent says so and the next one is looked at', async () => {
+  await assert.rejects(withDeadline(new Promise(() => {}), 20, 'market data'), /market data timed out/);
+  assert.equal(await withDeadline(Promise.resolve(7), 20, 'x'), 7);
+  const store = openStore();
+  store.put(OWNER, agent({ id: 'stuck' }));
+  store.put(OWNER, agent({ id: 'fine' }));
+  const w = world({ kind: 'position', live: true });
+  const state = newRunnerState(300_000, NOW);
+  const t0 = Date.now();
+  await tick(store, { ...w.deps, signal: (h) => withDeadline(h.id === 'stuck' ? new Promise(() => {}) : Promise.resolve(w.state.signal), 30, 'market data') }, NOW, state);
+  assert.ok(Date.now() - t0 < 1_000);
+  assert.deepEqual(state.agents.get('stuck'), { at: NOW, k: 'noSignal', error: 'market data timed out' });
+  assert.equal(state.agents.get('fine')?.k, 'order');
 });

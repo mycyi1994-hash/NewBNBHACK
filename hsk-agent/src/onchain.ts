@@ -14,8 +14,9 @@ export interface LiqPoint { t: number; usd: number }
 /** Who is in charge of the pool's flow: buyers, sellers, about even, or too little trading to say. */
 export type FlowSide = 'buyers' | 'sellers' | 'even' | 'quiet';
 export interface OnchainView {
+  /** `at`: the moment the chain was last read up to its newest block; every window below ends there. */
   asset: Asset; at: number;
-  /** The oldest moment read: flows before it are unknown, not zero. */
+  /** The oldest moment read: flows before it are unknown, not zero. The server reads further back over its first hour. */
   since: number;
   day: Flow; week: Flow; side: FlowSide;
   days: DayFlow[];
@@ -74,6 +75,9 @@ export function viewOf(asset: Asset, swaps: FlowSwap[], since: number, liq: LiqP
   };
 }
 
+/** Whether the read reaches back the whole 7 days the week's numbers add up. */
+export const weekRead = (v: Pick<OnchainView, 'at' | 'since'>) => v.at - v.since >= 7 * DAY - 60_000;
+
 /* ---------- where the view comes from: the server's reader in the server, its API in the browser ---------- */
 
 let source: (asset: Asset) => Promise<OnchainView | null> = async (asset) => {
@@ -86,13 +90,13 @@ export const onchainView = (asset: Asset = 'HSK') => source(asset);
 
 /** The view in plain numbers for Moa (get_market). */
 export function onchainForModel(v: OnchainView | null) {
-  if (!v) return { unavailable: 'the on-chain reader has not finished its first read yet' };
+  if (!v) return { unavailable: 'the on-chain reader has not finished reading its first day yet' };
   const r = (x: number) => Math.round(x);
   return {
     source: 'Swap events of the HSKSwap WHSK/USDT pool on HSK Chain, read from the chain',
-    readSince: new Date(v.since).toISOString(),
+    readSince: new Date(v.since).toISOString(), readUntil: new Date(v.at).toISOString(),
     last24h: { buyUsd: r(v.day.buy), sellUsd: r(v.day.sell), netUsd: r(v.day.net), swaps: v.day.count, leaning: v.side, largestSwapUsd: v.day.largest ? r(v.day.largest.usdt) : null },
-    last7d: { buyUsd: r(v.week.buy), sellUsd: r(v.week.sell), netUsd: r(v.week.net), swaps: v.week.count },
+    last7d: weekRead(v) ? { buyUsd: r(v.week.buy), sellUsd: r(v.week.sell), netUsd: r(v.week.net), swaps: v.week.count } : 'not read that far back yet',
     liquidityWithin2PctUsd: v.liquidity ? { now: r(v.liquidity.now), dayAgo: v.liquidity.dayAgo !== undefined ? r(v.liquidity.dayAgo) : null } : null,
     note: 'A live reading, not a tested trading signal: about 30 days of flows is too short to backtest. Transfers outside the pool are not read.',
   };

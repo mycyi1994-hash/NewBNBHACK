@@ -272,17 +272,17 @@ export function spreadBrief(xs: { s: Spread; reverted: boolean }[], lang: 'en' |
   const can = xs.filter(({ s, reverted }) => s.vaultNet !== undefined && s.vaultNet > 0 && reverted);
   const head = can.length
     ? (ko ? `있어요: ${can.map((x) => x.s.asset).join(', ')}를 HSKSwap에서 싸게 살 수 있어요.` : `Yes: ${can.map((x) => x.s.asset).join(', ')} can be bought cheaper on HSKSwap.`)
-    : (ko ? '지금은 볼트로 할 수 있는 차익이 없어요.' : 'Nothing your vault can act on right now.');
+    : (ko ? '지금은 금고로 할 수 있는 차익이 없어요.' : 'Nothing your vault can act on right now.');
   const lines = xs.map(({ s, reverted }) => {
-    if (s.side === 'poolDear') return ko ? `${s.asset}: HSKSwap이 ${pc(s.gap)} 비싸요. 볼트에 이 코인이 있으면 HSKSwap에서 파는 게 거래소보다 나아요.` : `${s.asset}: HSKSwap is ${pc(s.gap)} dearer. If the vault holds it, selling on HSKSwap beats the exchange.`;
+    if (s.side === 'poolDear') return ko ? `${s.asset}: HSKSwap이 ${pc(s.gap)} 비싸요. 금고에 이 코인이 있으면 HSKSwap에서 파는 게 거래소보다 나아요.` : `${s.asset}: HSKSwap is ${pc(s.gap)} dearer. If the vault holds it, selling on HSKSwap beats the exchange.`;
     const net = s.vaultNet === undefined ? '' : ko ? ` 사서 HSKSwap에서 되팔면 왕복 비용 ${pc(-(s.roundTrip ?? 0))}, 풀이 거래소 가격까지 오르면 ${pc(s.vaultNet)} 남아요.` : ` Buying and selling back on HSKSwap costs ${pc(-(s.roundTrip ?? 0))} round trip; ${pc(s.vaultNet)} is left if the pool rises to the exchange price.`;
     const rec = reverted ? '' : ko ? ' 다만 이 풀이 할인을 닫은 기록이 아직 없어요.' : ' But the record has not yet shown this pool closing a discount.';
     const cross = s.sizes.find((z) => z.usd === REF_USD)?.net;
-    const ex = cross === undefined || Number.isNaN(cross) ? '' : ko ? ` (거래소에서 팔 수 있을 때만 $${REF_USD} 기준 ${pc(cross)}, 볼트로는 못 해요.)` : ` (Only with an exchange account: ${pc(cross)} at $${REF_USD}; the vault cannot.)`;
+    const ex = cross === undefined || Number.isNaN(cross) ? '' : ko ? ` (거래소에서 팔 수 있을 때만 $${REF_USD} 기준 ${pc(cross)}, 금고로는 못 해요.)` : ` (Only with an exchange account: ${pc(cross)} at $${REF_USD}; the vault cannot.)`;
     return `${s.asset}: ${ko ? `HSKSwap이 ${pc(-s.gap).replace('+', '')} 싸요.` : `HSKSwap is ${pc(-s.gap).replace('+', '')} cheaper.`}${net}${rec}${ex}`;
   });
   const tail = ko
-    ? '볼트는 HSKSwap에서만 사고팔아요. 거래소로 옮겨 파는 건 할 수 없고, 그 시간과 비용도 계산에 없어요.'
+    ? '금고는 HSKSwap에서만 사고팔아요. 거래소로 옮겨 파는 건 할 수 없고, 그 시간과 비용도 계산에 없어요.'
     : 'Your vault buys and sells only on HSKSwap. It cannot move coins to the exchange and sell there; that time and cost are not counted.';
   const act = can.length ? (ko ? '이걸 대신 해 주는 스프레드 헌터가 트레이드 화면의 스프레드 탭에 있어요.' : 'The Spread Hunter on the trade screen’s Spread tab does this for you.') : '';
   return [head, ...lines, tail, act].filter(Boolean).join('\n');

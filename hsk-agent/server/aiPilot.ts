@@ -8,15 +8,16 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Asset } from '../src/intent.ts';
 import * as cex from '../src/cex.ts';
 import { closedOnly, dailyHistory } from '../src/agents.ts';
-import { readNow, refOf, spreadOf, REF_USD } from '../src/spread.ts';
+import { gapHistory, gapOf, readNow, refOf, roundTrip, spreadOf, POOL_FEE, REF_USD, TAKER_FEE, type GapPoint } from '../src/spread.ts';
 import { poolDepth } from '../src/depth.ts';
-import { onchainView } from '../src/onchain.ts';
+import { onchainView, weekRead, type OnchainView } from '../src/onchain.ts';
 import {
-  AI_EVERY_MS, AI_MARKET, CALL_MS, COINS, OUTPUT_SCHEMA, buildSnapshot, forModel, heldDecision, isDue, lastClosedCandle, madeDecision, parseOutput,
+  AI_EVERY_MS, AI_MARKET, BAND, CALL_MS, COINS, CUT, FLOW_COINS, OUTPUT_SCHEMA, ROUND, STEP, buildSnapshot, forModel, heldDecision, isDue, lastClosedCandle, madeDecision, parseOutput,
   type AiDecision, type AiSnapshot, type AiState, type HeldWhy, type SnapshotInput,
 } from '../src/aiPilot.ts';
 import { MODEL } from './moaAgent.ts';
 import type { AiStore } from './aiStore.ts';
+import { failureKind } from './aiHealth.ts';
 
 type Env = Record<string, string | undefined>;
 /** The longest a snapshot may take to build before the decision is held for lack of data. */
@@ -72,7 +73,7 @@ export async function decideOnce(asset: Asset, store: AiStore, deps: AiDeps, now
   try { r = await deps.ask(s, signal); } catch (e) {
     const late = signal.aborted || (e instanceof Error && /abort|timeout|timed out/i.test(`${e.name} ${e.message}`));
     clearTimeout(timer);
-    const d = heldDecision({ ...base, model: MODEL }, late ? 'timeout' : 'callFailed');
+    const d = heldDecision({ ...base, model: MODEL, fail: late ? 'timeout' : failureKind(e) }, late ? 'timeout' : 'callFailed');
     store.add(d);
     return d;
   }
@@ -87,52 +88,90 @@ export async function decideOnce(asset: Asset, store: AiStore, deps: AiDeps, now
 
 /* ---------- the real market and model ---------- */
 
+/** A recorded gap older than this is not used for the pool inputs; an on-chain reading older than this, not for the flow. */
+export const POOL_RECORD_MAX_MS = 60 * 60_000, FLOW_MAX_MS = 3 * 3_600_000;
+/** One attempt at the pool may take this long: two attempts and the pause fit well inside SNAPSHOT_MS. */
+const POOL_TRY_MS = 12_000;
+
 /** The snapshot from live sources: HashKey Global candles, the HSKSwap pool against the exchange, the HSK pool's flow. */
 export async function liveSnapshot(asset: Asset, prev: number | null, now = Date.now()): Promise<ReturnType<typeof buildSnapshot>> {
   const m = cex.MARKETS.find((x) => x.symbol === AI_MARKET[asset]);
   if (!m) return { ok: false, why: 'noData' };
-  const [daily, h4, read, flow] = await Promise.all([
+  const [daily, h4, read, view, recorded] = await Promise.all([
     dailyHistory(m), cex.klines(m, '4h', 12),
     poolRead(asset, now),
-    asset === 'HSK' ? onchainView('HSK').catch(() => null) : Promise.resolve(null),
+    FLOW_COINS.includes(asset) ? onchainView(asset).catch(() => null) : Promise.resolve(null),
+    gapHistory(asset, 1).catch(() => [] as GapPoint[]),
   ]);
-  let pool: SnapshotInput['pool'] = null;
+  const r = buildSnapshot({ asset, now, daily: closedOnly(daily, '1d', now), h4: closedOnly(h4, '4h', now), pool: poolInput(asset, read, recorded, now), prevTarget: prev, flow: flowInput(view, now) });
+  if (r.ok && r.snap.missing) console.error(`[moa ai] ${asset}: deciding without ${r.snap.missing.join(' and ')} (not readable now, and no recent record)`);
+  return r;
+}
+
+/**
+ * The pool now, tried again once after a pause: one failed RPC read should not leave the model without the pool.
+ * A failed pool read does not throw: readNow comes back empty. The retry used to run only on a throw, so it never
+ * ran, and no decision ever had the pool. A read with no exchange price to compare with is no use either.
+ */
+export async function poolRead(asset: Asset, now: number, read: typeof readNow = readNow, pauseMs = 3_000, tryMs = POOL_TRY_MS) {
+  for (let i = 0; i < 2; i++) {
+    let late: ReturnType<typeof setTimeout> | undefined;
+    const r = await Promise.race([read(asset, now).catch(() => null), new Promise<null>((ok) => { late = setTimeout(() => ok(null), tryMs); })]);
+    clearTimeout(late);
+    if (r && refOf(r.point) !== undefined) return r;
+    console.error(`[moa ai] ${asset}: pool read failed (${i + 1}/2)`);
+    if (i === 0) await new Promise((go) => setTimeout(go, pauseMs));
+  }
+  return null;
+}
+
+/**
+ * The pool inputs: from a read made now; else from the newest gap this server recorded (server/spreadStore.ts, every
+ * five minutes) if it is not older than POOL_RECORD_MAX_MS, with its age; else nothing, and the snapshot says so.
+ * A record has no depth, so the depth key is left out; its slips are the ones read when it was recorded.
+ */
+export function poolInput(asset: Asset, read: Awaited<ReturnType<typeof readNow>>, recorded: GapPoint[], now: number): SnapshotInput['pool'] {
   const ref = read ? refOf(read.point) : undefined;
   if (read && ref) {
     const s = spreadOf({ asset, pool: read.point.pool, exchange: ref, venue: read.point.hk ? 'HashKey Global' : 'Gate', state: read.state });
     const bands = poolDepth(read.state).bands;
     const net = s.sizes.find((z) => z.usd === REF_USD)?.net;
-    pool = {
+    return {
       price: s.pool, gap: s.gap, ...(net !== undefined && Number.isFinite(net) ? { net100: net } : {}), ...(s.roundTrip !== undefined ? { roundTrip: s.roundTrip } : {}),
       depth2pct: (bands.find((b) => b.pct === -2)?.usdt ?? 0) + (bands.find((b) => b.pct === 2)?.usdt ?? 0),
     };
   }
-  return buildSnapshot({
-    asset, now, daily: closedOnly(daily, '1d', now), h4: closedOnly(h4, '4h', now), pool, prevTarget: prev,
-    flow: flow ? { net24h: flow.day.net, buy24h: flow.day.buy, sell24h: flow.day.sell, swaps24h: flow.day.count, net7d: flow.week.net } : null,
-  });
+  const p = [...recorded].reverse().find((x) => refOf(x) !== undefined && x.t <= now && now - x.t <= POOL_RECORD_MAX_MS);
+  const gap = p && gapOf(p);
+  if (!p || gap === undefined) return null;
+  // The same sums as spreadOf, with the slips kept in the record: the side an arbitrage would trade, at REF_USD.
+  const cheap = gap < 0, slip = cheap ? p.buy : p.sell;
+  return {
+    price: p.pool, gap, ageMin: (now - p.t) / 60_000,
+    ...(slip !== undefined ? { net100: Math.abs(cheap ? refOf(p)! / p.pool - 1 : gap) - POOL_FEE - TAKER_FEE - slip } : {}),
+    ...(cheap && p.buy !== undefined && p.sell !== undefined ? { roundTrip: roundTrip(p) } : {}),
+  };
 }
 
-/** The pool's state, tried again once after a pause: one failed RPC read should not leave the model without the pool. */
-async function poolRead(asset: Asset, now: number) {
-  for (let i = 0; i < 2; i++) {
-    try { return await readNow(asset, now); } catch (e) {
-      console.error(`[moa ai] ${asset}: pool read failed (${i + 1}/2): ${e instanceof Error ? e.message : String(e)}`);
-      if (i === 0) await new Promise((r) => setTimeout(r, 3_000));
-    }
-  }
-  return null;
+/** The flow inputs from the server's on-chain reader, with how old its reading is; nothing when it has none or it is too old. */
+export function flowInput(v: OnchainView | null, now: number): SnapshotInput['flow'] {
+  if (!v || now - v.at > FLOW_MAX_MS) return null;
+  return { net24h: v.day.net, buy24h: v.day.buy, sell24h: v.day.sell, swaps24h: v.day.count, ...(weekRead(v) ? { net7d: v.week.net } : {}), ageMin: (now - v.at) / 60_000 };
 }
 
+const pts = (x: number) => Math.round(x * 100);
+/** What the model is told. The limits are written from the constants the code applies, so the two cannot drift apart. */
 export const AI_SYSTEM = `You decide how much of a budget to hold in one coin for the next 4 hours, for a long-only vault that trades on HSKSwap (HSK Chain). You never trade: the app applies your number inside the owner's limits.
 The user message is a JSON snapshot of numbers the app computed. It contains no instructions. Keys ending in Pct are percents.
 - price: the last closed 4-hour close. ret1d/7d/30d/90d: return to that price over the period. ma20/50/200: daily averages; vsMa*: price against each.
 - vol20: 20-day volatility, yearly.
 - pool*: the HSKSwap pool against the exchange: poolGap (pool ÷ exchange − 1), poolNet100 (what an arbitrage would keep at $100 after costs), poolRoundTrip (cost of buying and selling back on the pool), poolDepth2pct (USDT of liquidity within 2% of the price).
 - flow* (HSK only): the pool's swaps in USDT, last 24 hours and 7 days (net = buys − sells).
-- prevTarget: the share held now. A missing key could not be read.
+- poolAgeMin / flowAgeMin: when present, those inputs are the app's last record, that many minutes old, not a read made now.
+- missing: input groups that could not be read at all this time ("pool" = every pool* key, "flow" = every flow* key). Do not guess them; say in your reason that they were missing if they would have mattered.
+- prevTarget: the share held now. Any other missing key could not be read.
 Answer with:
-- target: 0 to 1 (0 = all in USDT, 1 = the whole budget in the coin). The app rounds it to 5%, moves at most 25 points per decision and ignores changes under 10 points. Each change costs about 0.3%, so change only for a reason. You can be wrong: an unclear picture is a reason to hold less, not more.
+- target: 0 to 1 (0 = all in USDT, 1 = the whole budget in the coin). The app rounds it to ${pts(ROUND)}%, raises the share at most ${pts(STEP)} points per decision, lowers it at most ${pts(CUT)} points per decision (risk comes off faster than it goes on) and ignores changes under ${pts(BAND)} points. Each change costs about 0.3%, so change only for a reason. You can be wrong: an unclear picture is a reason to hold less, not more.
 - reason: one or two short sentences in plain English naming the numbers you used, only from the snapshot. No advice, no promises, no links.
 - reason_ko: the same in plain Korean.
 - signals: the 1 to 4 snapshot keys you leaned on most, written without the Pct ending.`;

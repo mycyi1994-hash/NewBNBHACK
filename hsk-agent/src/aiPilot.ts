@@ -1,9 +1,10 @@
 // Moa AI: the one agent whose share of its budget is decided by an AI model instead of a fixed rule.
 // The server asks the model once per coin when each 4-hour candle closes, with a snapshot of numbers that this code
 // builds itself (no text from outside goes in), and every vault that hired it follows that one shared target.
-// Code, not the model, keeps the limits: the target is clamped to 0..1 and rounded to 5%, moves at most 25 points a
-// decision, a change under 10 points is no change, at most one decision per interval, and anything wrong (old or
-// missing data, a failed or late call, an answer that does not fit) keeps the previous target and records why.
+// Code, not the model, keeps the limits: the target is clamped to 0..1 and rounded to 5%, rises at most 25 points a
+// decision and falls at most 50 (risk comes off faster than it goes on), a change under 10 points is no change, at
+// most one decision per interval, and anything wrong (old or missing data, a failed or late call, an answer that does
+// not fit) keeps the previous target and records why. Each decision records the limits in force when it was made.
 // This file is pure (no clock, no network, no storage) apart from where the decisions are read from: the server's
 // own store in the server, its public API in the browser.
 import { keccak256, stringToBytes, type Hex } from 'viem';
@@ -25,8 +26,14 @@ export const COOLDOWN_MS = 60 * 60_000;
 /** The last closed 4-hour candle must be this recent, or the data is too old to decide on. */
 export const STALE_MS = AI_EVERY_MS + 30 * 60_000;
 export const ROUND = 0.05;
+/** The most the share may rise in one decision. */
 export const STEP = 0.25;
+/** The most it may fall in one decision: twice as far, so 100% is out in two decisions (8 hours), not four. */
+export const CUT = 0.50;
 export const BAND = 0.10;
+/** The limits a decision was made under. Kept in the decision: they have changed before and may change again. */
+export interface Limits { band: number; step: number; cut: number }
+export const LIMITS: Limits = { band: BAND, step: STEP, cut: CUT };
 /** How long one model call may take before it counts as failed. */
 export const CALL_MS = 90_000;
 export const COINS: Asset[] = ['BTC', 'ETH', 'HSK'];
@@ -45,8 +52,16 @@ export type SignalKey = typeof SIGNAL_KEYS[number];
 /** Keys whose values are shares (0.012 = 1.2%); the model sees them as percents. */
 const PCT_KEYS = new Set<SignalKey>(['ret1d', 'ret7d', 'ret30d', 'ret90d', 'vsMa20', 'vsMa50', 'vsMa200', 'vol20', 'poolGap', 'poolNet100', 'poolRoundTrip', 'prevTarget']);
 
-/** What the model is shown: the coin, the candle it decides on, and numbers. A value that could not be read has no key. */
-export type AiSnapshot = { asset: Asset; candle: number } & Partial<Record<SignalKey, number>>;
+/** The groups of inputs that come from the chain and can fail to be read: the pool* keys and the flow* keys. */
+export type AiInput = 'pool' | 'flow';
+/** The coins whose pool flow is an input at all (the server watches only the WHSK pool's swaps). */
+export const FLOW_COINS: Asset[] = ['HSK'];
+/**
+ * What the model is shown: the coin, the candle it decides on, and numbers. A value that could not be read has no key,
+ * and `missing` names each whole group that is absent. `poolAgeMin` / `flowAgeMin`: how old that group is, in minutes,
+ * when it comes from the server's own record (the recorded gap, the on-chain reader) instead of a read made just now.
+ */
+export type AiSnapshot = { asset: Asset; candle: number; missing?: AiInput[]; poolAgeMin?: number; flowAgeMin?: number } & Partial<Record<SignalKey, number>>;
 
 /** Why a decision kept the previous target instead of taking the model's. */
 export type HeldWhy = 'off' | 'stale' | 'noData' | 'timeout' | 'callFailed' | 'refusal' | 'invalid';
@@ -66,6 +81,12 @@ export interface AiDecision {
   held?: HeldWhy;
   /** Which limit changed the model's number. */
   guard?: { clamped?: true; stepped?: true; banded?: true };
+  /** The limits in force at this decision. Decisions from before they were recorded have none: their numbers are not known from the record. */
+  limits?: Limits;
+  /** The input groups the snapshot lacked (the same list as the snapshot's). Absent when nothing was missing. */
+  missing?: AiInput[];
+  /** A held decision whose call failed: the kind of failure (HTTP status and API error type), never the request. */
+  fail?: string;
   /** The price the snapshot read (the candle's close), for the paper result. */
   price?: number;
   snapshot?: AiSnapshot;
@@ -76,6 +97,8 @@ export type AiState = 'on' | 'noKey' | 'off';
 /** What the server says about one coin's AI agent: is it deciding, and what it decided. */
 export interface AiFeed {
   asset: Asset; state: AiState; every: number; model: string | null;
+  /** The last call to the model for this coin failed (no answer, or a late one): what was held, the failure kind when known, and when. */
+  trouble?: { held: HeldWhy; kind?: string; at: number };
   /** Newest last. The browser gets the last ones; `paper` is computed over all of them. */
   decisions: AiDecision[];
   paper: Paper | null;
@@ -88,19 +111,30 @@ export interface AiFeed {
 const round = (x: number) => Math.round(x / ROUND) * ROUND;
 const fix = (x: number) => Number(x.toFixed(2));
 /**
- * The model's number through the limits, in order: clamp to 0..1 and round to 5%; move at most STEP from the target
- * in force; a move under BAND is no move. An agent that has not decided yet starts from nothing held (0).
+ * The model's number through the limits, in order: clamp to 0..1 and round to 5%; rise at most `step` and fall at most
+ * `cut` from the target in force; a move under `band` is no move. An agent that has not decided yet starts from
+ * nothing held (0).
  */
-export function guard(prev: number | null, proposed: number): { target: number; guard: NonNullable<AiDecision['guard']> } {
+export function guard(prev: number | null, proposed: number, lim: Limits = LIMITS): { target: number; guard: NonNullable<AiDecision['guard']> } {
   const g: NonNullable<AiDecision['guard']> = {};
   const from = prev ?? 0;
   let t = Math.min(1, Math.max(0, proposed));
   if (t !== proposed) g.clamped = true;
   t = fix(round(t));
-  const d = t - from;
-  if (Math.abs(d) > STEP + 1e-9) { t = fix(from + Math.sign(d) * STEP); g.stepped = true; }
-  if (Math.abs(t - from) < BAND - 1e-9 && t !== from) { t = from; g.banded = true; }
+  const d = t - from, most = d < 0 ? lim.cut : lim.step;
+  if (Math.abs(d) > most + 1e-9) { t = fix(from + Math.sign(d) * most); g.stepped = true; }
+  if (Math.abs(t - from) < lim.band - 1e-9 && t !== from) { t = from; g.banded = true; }
   return { target: fix(t), guard: g };
+}
+
+/**
+ * The points a limit stood at when this decision was made: the band for a "banded" one; for a "stepped" one the cut
+ * limit when the share fell, the step when it rose. Null when the decision was recorded without its limits (the first
+ * live ones: the band was 15 points then and is 10 now), so the screen never puts today's number on them.
+ */
+export function guardPoints(d: Pick<AiDecision, 'limits' | 'target' | 'prev'>, g: 'stepped' | 'banded'): number | null {
+  if (!d.limits) return null;
+  return Math.round((g === 'banded' ? d.limits.band : d.target < (d.prev ?? 0) ? d.limits.cut : d.limits.step) * 100);
 }
 
 /** At most one decision per 4-hour candle, and never sooner than the cool-down after the last one. */
@@ -122,10 +156,13 @@ export interface SnapshotInput {
   daily: Bar[];
   /** Closed 4-hour candles, oldest first. */
   h4: Bar[];
-  /** The HSKSwap pool against the exchange (src/spread.ts): pool price, gap, net at $100, round trip; null when unread. */
-  pool?: { price: number; gap: number; net100?: number; roundTrip?: number; depth2pct?: number } | null;
-  /** The pool's on-chain flow (HSK only, src/onchain.ts). */
-  flow?: { net24h: number; buy24h: number; sell24h: number; swaps24h: number; net7d: number } | null;
+  /**
+   * The HSKSwap pool against the exchange (src/spread.ts): pool price, gap, net at $100, round trip; null when unread.
+   * `ageMin`: set when it is the server's last recorded gap, not a read made now.
+   */
+  pool?: { price: number; gap: number; net100?: number; roundTrip?: number; depth2pct?: number; ageMin?: number } | null;
+  /** The pool's on-chain flow (FLOW_COINS only, src/onchain.ts), as of `ageMin` minutes ago; the week only once 7 days are read. */
+  flow?: { net24h: number; buy24h: number; sell24h: number; swaps24h: number; net7d?: number; ageMin?: number } | null;
   prevTarget: number | null;
 }
 /**
@@ -155,6 +192,12 @@ export function buildSnapshot(i: SnapshotInput): { ok: true; snap: AiSnapshot } 
   if (i.pool) { put('poolPrice', i.pool.price); put('poolGap', i.pool.gap); put('poolNet100', i.pool.net100); put('poolRoundTrip', i.pool.roundTrip); put('poolDepth2pct', i.pool.depth2pct); }
   if (i.flow) { put('flowNet24h', i.flow.net24h); put('flowBuy24h', i.flow.buy24h); put('flowSell24h', i.flow.sell24h); put('flowSwaps24h', i.flow.swaps24h); put('flowNet7d', i.flow.net7d); }
   put('prevTarget', i.prevTarget ?? undefined);
+  const age = (m: number | undefined) => (m !== undefined && Number.isFinite(m) && m >= 1 ? Math.round(m) : undefined);
+  if (i.pool && age(i.pool.ageMin) !== undefined) s.poolAgeMin = age(i.pool.ageMin);
+  if (i.flow && age(i.flow.ageMin) !== undefined) s.flowAgeMin = age(i.flow.ageMin);
+  // A whole group that could not be read is named, so the model, the record and the screen all say so.
+  const missing: AiInput[] = [...(s.poolPrice === undefined ? ['pool' as const] : []), ...(FLOW_COINS.includes(i.asset) && s.flowNet24h === undefined ? ['flow' as const] : [])];
+  if (missing.length) s.missing = missing;
   return { ok: true, snap: s };
 }
 
@@ -166,6 +209,9 @@ export function forModel(s: AiSnapshot): Record<string, number | string> {
     if (v === undefined) continue;
     out[PCT_KEYS.has(k) ? `${k}Pct` : k] = PCT_KEYS.has(k) ? Number((v * 100).toFixed(2)) : Number(v.toPrecision(6));
   }
+  if (s.poolAgeMin !== undefined) out.poolAgeMin = s.poolAgeMin;
+  if (s.flowAgeMin !== undefined) out.flowAgeMin = s.flowAgeMin;
+  if (s.missing?.length) out.missing = s.missing.join(', ');
   return out;
 }
 
@@ -222,17 +268,28 @@ export function decisionHash(d: Omit<AiDecision, 'hash'>): Hex {
 export const withHash = (d: Omit<AiDecision, 'hash'>): AiDecision => ({ ...d, hash: decisionHash(d) });
 export const verifyDecision = (d: AiDecision) => { const { hash, ...rest } = d; return decisionHash(rest) === hash; };
 
-/** A decision that keeps the target in force, with the app's reason. */
-export function heldDecision(base: { at: number; candle: number; asset: Asset; prev: number | null; model: string | null; snapshot?: AiSnapshot; proposed?: number }, why: HeldWhy): AiDecision {
-  const [en, ko] = HELD_TEXT[why];
-  return withHash({ ...base, target: base.prev ?? 0, reason: en, reasonKo: ko, signals: [], held: why, ...(base.snapshot?.price ? { price: base.snapshot.price } : {}) });
+const missingOf = (s: AiSnapshot | undefined) => (s?.missing?.length ? { missing: [...s.missing] } : {});
+/**
+ * The input groups a decision was made without. Decisions record the list themselves; an earlier one is read from its
+ * snapshot (no pool price: the pool was not read; for a flow coin, no flow). No snapshot: nothing is known, so nothing is said.
+ */
+export function inputsMissing(d: Pick<AiDecision, 'asset' | 'missing' | 'snapshot'>): AiInput[] {
+  if (d.missing) return d.missing;
+  if (!d.snapshot) return [];
+  return [...(d.snapshot.poolPrice === undefined ? ['pool' as const] : []), ...(FLOW_COINS.includes(d.asset) && d.snapshot.flowNet24h === undefined ? ['flow' as const] : [])];
 }
-/** A decision from the model's parsed answer, through the limits. */
-export function madeDecision(base: { at: number; asset: Asset; prev: number | null; model: string; snapshot: AiSnapshot }, out: { target: number; reason: string; reasonKo: string; signals: SignalKey[] }): AiDecision {
-  const g = guard(base.prev, out.target);
+/** A decision that keeps the target in force, with the app's reason (and, for a failed call, the kind of failure). */
+export function heldDecision(base: { at: number; candle: number; asset: Asset; prev: number | null; model: string | null; snapshot?: AiSnapshot; proposed?: number; fail?: string }, why: HeldWhy, lim: Limits = LIMITS): AiDecision {
+  const [en, ko] = HELD_TEXT[why];
+  return withHash({ ...base, target: base.prev ?? 0, reason: en, reasonKo: ko, signals: [], held: why, limits: { ...lim }, ...(base.snapshot?.price ? { price: base.snapshot.price } : {}), ...missingOf(base.snapshot) });
+}
+/** A decision from the model's parsed answer, through the limits, which it records. */
+export function madeDecision(base: { at: number; asset: Asset; prev: number | null; model: string; snapshot: AiSnapshot }, out: { target: number; reason: string; reasonKo: string; signals: SignalKey[] }, lim: Limits = LIMITS): AiDecision {
+  const g = guard(base.prev, out.target, lim);
   return withHash({
     at: base.at, candle: base.snapshot.candle, asset: base.asset, model: base.model, target: g.target, proposed: out.target, prev: base.prev,
-    reason: out.reason, reasonKo: out.reasonKo, signals: out.signals, ...(Object.keys(g.guard).length ? { guard: g.guard } : {}), price: base.snapshot.price, snapshot: base.snapshot,
+    reason: out.reason, reasonKo: out.reasonKo, signals: out.signals, ...(Object.keys(g.guard).length ? { guard: g.guard } : {}), limits: { ...lim }, price: base.snapshot.price, snapshot: base.snapshot,
+    ...missingOf(base.snapshot),
   });
 }
 

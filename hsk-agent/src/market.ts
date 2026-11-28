@@ -11,6 +11,8 @@ const POOLS: Record<Asset, { address: string; scale: number; pair: string }> = {
   BTC: { address: '0xd9ea2ce468957ba49ccc38c4758ed6ecd561449a', scale: 1e2, pair: 'BTC_USDT' },
 };
 const SLOT0 = '0x3850c7bd';
+/** How long one price read may take before it counts as unavailable. */
+const TIMEOUT_MS = 8_000;
 
 export type SourceState = { state: 'live'; at: number } | { state: 'unavailable'; reason: string };
 
@@ -31,6 +33,9 @@ async function poolPrice(asset: Asset): Promise<number> {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: address, data: SLOT0 }, 'latest'] }),
+    // Without a deadline a node that takes the request and never answers holds this for five minutes (the default),
+    // and with it everything that waits for a quote: the server's auto runner did, once per agent.
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const j = (await r.json()) as { result?: string; error?: { message: string } };
   if (!j.result || j.result.length < 66) throw new Error(j.error?.message ?? 'empty RPC result');
@@ -41,7 +46,7 @@ async function poolPrice(asset: Asset): Promise<number> {
 async function exchangePrices(): Promise<Map<string, { last: number; change: number }>> {
   const rows = await Promise.all(
     Object.values(POOLS).map(async ({ pair }) => {
-      const r = await fetch(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${pair}`);
+      const r = await fetch(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${pair}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (!r.ok) throw new Error(`exchange HTTP ${r.status}`);
       return ((await r.json()) as { currency_pair: string; last: string; change_percentage: string }[])[0];
     }),

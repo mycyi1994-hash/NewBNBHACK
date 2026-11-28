@@ -18,7 +18,7 @@ import { CoinMark } from './CoinMark.tsx';
 import { markColor } from './Mark.tsx';
 import { Icon, Spark } from './Icons.tsx';
 import { SharedMarket } from './Shared.tsx';
-import { AgentRow, AsOf, byTier, FOLDED, HoldRow, MoneyHero, PeriodMarks, PeriodSwitch, usePeriod, won, stakeOf, periodResult, type PeriodDays, type ListTier } from './Perf.tsx';
+import { AgentRow, AsOf, byTier, FOLDED, HoldLine, HoldRow, MoneyHero, PeriodMarks, PeriodSwitch, usePeriod, won, stakeOf, periodResult, type PeriodDays, type ListTier } from './Perf.tsx';
 
 type Tab = 'top' | 'market' | 'people';
 
@@ -139,8 +139,6 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
     try { localStorage.setItem('moa.stars', JSON.stringify([...next])); } catch { /* storage unavailable */ }
     return next;
   });
-  // No agent earns "ahead" under the label rule today: say so once, calmly, instead of an empty section.
-  const noneAhead = (gs: { tier: ListTier }[]) => agents && gs.length > 0 && !gs.some((g) => g.tier === 'ahead') ? <p className="mp-empty">{t.pfNoneAhead}</p> : null;
 
   return (
     <div className="page market-page">
@@ -170,7 +168,8 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
           {/* Moa AI sits apart from the tiers: it has no backtest, only its record from the first decision. */}
           <AiSection onHire={onHire} coin={board} />
           {!agents && <ol className="tp-list">{[0, 1, 2, 3, 4].map((i) => <li key={i} className="tp-skel skel-block" />)}</ol>}
-          {noneAhead(glance)}
+          {/* No agent earns "ahead" under the label rule today: one line says so, in step with the badges under it. */}
+          <HoldLine groups={glance} period={period} className="mp-empty" />
           {glance.map((g) => (
             <TierBlock key={g.tier} tier={g.tier} n={g.agents.length}>
               <ol className="tp-list">
@@ -200,7 +199,7 @@ export default function Agents({ agents, failed, onRetry, onHire, onOpen, onReco
           <HoldStrip list={shown} period={period} />
           {!q.trim() && <AiSection onHire={onHire} coin={asset === 'all' ? undefined : asset} />}
           {!agents && <div className="mp-grid">{[0, 1, 2, 3].map((i) => <div key={i} className="mc mp-skel skel-block" />)}</div>}
-          {!q.trim() && noneAhead(groups)}
+          {!q.trim() && <HoldLine groups={groups} period={period} className="mp-empty" />}
           {groups.map((g) => (
             <TierBlock key={g.tier} tier={g.tier} n={g.agents.length}>
               <div className="mp-grid stagger">{g.agents.map((a) => <MarketCard key={a.id} a={a} period={period} starred={stars.has(a.id)} onStar={() => star(a.id)} onOpen={onOpen} onHire={onHire} />)}</div>

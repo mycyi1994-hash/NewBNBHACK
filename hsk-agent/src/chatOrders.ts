@@ -49,6 +49,6 @@ export function parseVaultChange(q: string): VaultChange | undefined {
     return day ? { kind: 'limits', perDay: v } : { kind: 'limits', perTrade: v };
   }
   if (/(잠금\s?풀|잠금을\s?풀|잠금 해제|unlock|다시 열어|거래 다시)/i.test(q)) return { kind: 'lock', on: false };
-  if (/(잠가|잠궈|잠금|lock|볼트.{0,6}(멈춰|정지)|거래.{0,4}(멈춰|정지|막아))/i.test(q)) return { kind: 'lock', on: true };
+  if (/(잠가|잠궈|잠금|lock|(?:금고|볼트).{0,6}(멈춰|정지)|거래.{0,4}(멈춰|정지|막아))/i.test(q)) return { kind: 'lock', on: true };
   return undefined;
 }

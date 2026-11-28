@@ -129,7 +129,7 @@ test('the brief says yes only for a trade the vault can make, and says what it c
   assert.match(spreadBrief([{ s: cheap, reverted: true }, { s: dear, reverted: true }], 'ko'), /^있어요: BTC를 HSKSwap에서/);
   // the same gap on a pool that has never closed one: no
   const no = spreadBrief([{ s: cheap, reverted: false }], 'ko');
-  assert.match(no, /^지금은 볼트로 할 수 있는 차익이 없어요/);
+  assert.match(no, /^지금은 금고로 할 수 있는 차익이 없어요/);
   assert.match(no, /할인을 닫은 기록이 아직 없어요/);
   assert.match(no, /거래소에서 팔 수 있을 때만/);
   assert.match(spreadBrief([{ s: dear, reverted: true }], 'en'), /^Nothing your vault can act on/);

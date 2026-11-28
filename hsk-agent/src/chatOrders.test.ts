@@ -23,6 +23,7 @@ test('a vault setting change is read from plain words', () => {
   assert.deepEqual(parseVaultChange('손절 꺼줘'), { kind: 'stop', pct: 0 });
   assert.equal(parseVaultChange('손절 200%로'), undefined);
   assert.deepEqual(parseVaultChange('볼트 잠가줘'), { kind: 'lock', on: true });
+  assert.deepEqual(parseVaultChange('금고 멈춰줘'), { kind: 'lock', on: true });
   assert.deepEqual(parseVaultChange('잠금 풀어줘'), { kind: 'lock', on: false });
   assert.equal(parseVaultChange('비트코인 어때?'), undefined);
   assert.equal(parseVaultChange('BTC 1달러 사줘'), undefined);

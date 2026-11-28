@@ -92,7 +92,7 @@ h1, h2, h3, h4, p { margin: 0; }
 @keyframes dot { 0%, 80%, 100% { transform: translateY(0); opacity: .45; } 40% { transform: translateY(-3px); opacity: 1; } }
 @keyframes breathe { 50% { transform: scale(1.06); } }
 @keyframes draw { to { stroke-dashoffset: 0; } }
-button, a, input, select, .nav-item, .frow, .tbl-row, .rowlist-row, .mp-card {
+button, a, input, select, .nav-item, .tbl-row, .rowlist-row, .mp-card {
   transition: background-color var(--d1) linear, border-color var(--d1) linear, color var(--d1) linear, box-shadow var(--d2) var(--ease), opacity var(--d1) linear;
 }
 .stagger > * { animation: rise var(--d3) var(--ease-in) backwards; }
@@ -622,31 +622,7 @@ select { padding-right: 8px; }
 .coin-switch button.on { font-weight: 600; color: var(--ink-title); }
 .coin-switch button:hover:not(.on) { background: var(--hover); }
 
-.frow { display: grid; grid-template-columns: 26px minmax(220px, 3.4fr) minmax(150px, 1.2fr) 92px minmax(70px, .9fr) repeat(3, minmax(70px, .7fr)) 18px; align-items: center; gap: 14px; padding: 0 16px; }
 
-.frow-more { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 36px; border: 0; border-top: 1px solid var(--line); background: var(--head); font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.frow-more:hover { color: var(--ink-title); background: var(--fill); }
-.frow-rank { font-size: 13px; font-weight: 700; color: var(--ink-3); text-align: center; }
-.frow-rank.top { color: var(--ink-title); }
-.frow-origin { min-width: 0; overflow: hidden; }
-.frow-star { display: none; color: #b7791f; font-size: 11px; }
-.frow { min-height: 42px; padding-block: 5px; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; }
-.frow:hover { background: #fafafa; }
-.frow.on { background: #f3f7fe; box-shadow: inset 3px 0 0 var(--accent); }
-.frow.skel-block { height: 42px; margin: 0; border-radius: 0; }
-.frow-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
-
-.frow-main { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
-.frow-title { display: flex; align-items: center; gap: 8px; flex: none; }
-.frow-title b { font-size: 14px; line-height: 20px; font-weight: 700; color: var(--ink-title); white-space: nowrap; }
-.frow-rule { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
-.frow-desc { flex: 1; min-width: 0; font-size: 12.5px; line-height: 18px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.frow-eq .ag-eq { display: block; width: 100%; height: 26px; }
-.frow-n { font-size: 14px; font-weight: 500; text-align: right; color: var(--ink-title); white-space: nowrap; }
-.frow-n.pos { color: var(--pos); } .frow-n.neg { color: var(--neg); }
-.frow-n.lead { font-weight: 700; }
-.frow-go { display: grid; place-items: center; color: var(--ink-3); transition: transform var(--d2) var(--ease); }
-.frow:hover .frow-go { transform: translateX(3px); color: var(--ink-title); }
 /* the backtest: who it is and how it works | the result against holding | every buy and sell */
 .bt { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1.05fr); animation: fade-in var(--d2) linear backwards; }
 .bt > section { min-width: 0; min-height: 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
@@ -943,10 +919,6 @@ select { padding-right: 8px; }
   .tdock-note { display: none; }
   .tdock-head .seg { margin-left: auto; }
   .bt-say { font-size: 12.5px; line-height: 18px; }
-  .frow-desc { display: none; }
-  .frow { grid-template-columns: 22px minmax(150px, 3fr) 84px minmax(56px, .8fr) repeat(3, minmax(62px, .7fr)) 16px; gap: 10px; }
-  .frow-origin { display: none; }
-  .frow-star { display: inline; }
    
     
   /* the narrow panel: fewer lines in the agent column, the two cards stacked */
@@ -1018,7 +990,6 @@ select { padding-right: 8px; }
   .bt-log-body { max-height: 260px; }
   .bt-chip { margin-left: 0; height: auto; min-height: 30px; flex-wrap: wrap; gap: 4px 10px; padding: 4px 4px 4px 12px; border-radius: 14px; }
   .segmented.venue { margin-left: 0; }
-  .frow-main { flex-direction: column; align-items: stretch; gap: 0; }
   .segmented button span { display: none; }
   
   .tbl-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
@@ -1027,8 +998,6 @@ select { padding-right: 8px; }
   .tbl-log li { grid-template-columns: 1fr auto; gap: 2px 12px; }
   .tbl-log li span { grid-column: 1 / -1; }
   .tbl-row.exec { grid-template-columns: 1fr auto; }
-  .frow { grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; }
-  .frow-origin, .frow-state, .frow-eq, .frow-n:not(.lead), .frow-go { display: none; }
   .modal-backdrop { place-items: end center; padding: 0; }
   .modal { width: 100%; border-radius: 16px 16px 0 0; animation: sheet-up var(--d3) var(--ease-in) backwards; }
 }
@@ -1043,10 +1012,11 @@ select { padding-right: 8px; }
 /* outlined chips (CEX | DEX) keep their own selected fill; the sliding pill is for borderless switches */
 .segmented > .slide-pill { display: none; }
 .segmented.has-pill > button.on { background: var(--fill) !important; }
-/* phones: the origin column is gone, so the classics keep their star */
-@media (max-width: 1000px) { .frow-star { display: inline; } .feed-head .ai-badge[data-tip]::after { left: 0; right: auto; } }
+@media (max-width: 1000px) { .feed-head .ai-badge[data-tip]::after { left: 0; right: auto; } }
 .feed-head .ai-badge[data-tip]::after { left: 0; right: auto; transform: none; }
 .ai-badge .live-dot { width: 6px; height: 6px; }
+.ai-badge.down { background: #fef3e0; color: #8a4b00; }
+.ai-badge.down .live-dot { background: #e37400; }
 .ai-short { display: none; }
 .depth-switch button { white-space: nowrap; }
 @media (max-width: 560px) { .ai-long { display: none; } .ai-short { display: inline; } .feed-head { gap: 6px; padding: 0 8px 0 14px; } .depth-switch button { padding: 0 8px; } }
@@ -1482,8 +1452,6 @@ select { padding-right: 8px; }
 
   
 
-.hz-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
-.hz-chip.hz-long { background: #e8f0fe; color: #1558b8; } .hz-chip.hz-swing { background: #f3e8fd; color: #7627bb; } .hz-chip.hz-short { background: #fef0db; color: #a35200; }
 
 .bt-rule { margin: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--fill); }
 .bt-rule p { margin: 0; display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 24px; color: var(--ink); }
@@ -1567,45 +1535,7 @@ select { padding-right: 8px; }
 .tdock-head .tdock-build { margin-left: auto; }
 
 /* long | swing | short, each its own ranked list */
-.hzb { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); min-height: 100%; }
-.hzb-wide { grid-column: 1 / -1; }
-.hz-col { min-width: 0; display: flex; flex-direction: column; }
-.hz-col + .hz-col { border-left: 1px solid var(--line); }
-.hz-head { position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 10px; padding: 9px 14px 8px 16px; background: var(--head); border-bottom: 1px solid var(--line); animation: none !important; }
-.hz-head b { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; line-height: 20px; font-weight: 700; color: var(--ink-title); }
-.hz-head b::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #9aa0a6; }
-.hz-long .hz-head b::before { background: #1a73e8; } .hz-swing .hz-head b::before { background: #9334e6; } .hz-short .hz-head b::before { background: #e37400; }
-.hz-head b small { font-size: 12px; font-weight: 600; color: var(--ink-3); }
-.hz-head em { font-style: normal; text-align: right; font-size: 11.5px; line-height: 17px; color: var(--ink-3); white-space: nowrap; }
-.hz-head p { min-width: 0; margin: 0; font-size: 12px; line-height: 17px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.hzr { display: grid; grid-template-columns: 14px 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 6px 14px 6px 12px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; }
-.hzr:hover { background: #fafafa; }
-.hzr.on { background: #f3f7fe; box-shadow: inset 3px 0 0 var(--accent); }
-.hzr.skel-block { height: 52px; margin: 0; border-radius: 0; }
-
-.hzr-main { min-width: 0; display: flex; flex-direction: column; }
-.hzr-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.hzr-title b { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 700; color: var(--ink-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hzr-title .badge { flex: none; padding: 0 6px; border-radius: 6px; font-size: 11px; line-height: 16px; }
-.hzr-rule { font-size: 12px; line-height: 17px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hzr-rule em { font-style: normal; font-weight: 600; color: var(--pos); }
-.hzr-eq { display: none; width: 72px; }
-.hzr-eq .ag-eq { display: block; width: 100%; height: 26px; }
-.hzr-num { display: flex; flex-direction: column; align-items: flex-end; }
-.hzr-num b { font-size: 14px; line-height: 20px; font-weight: 700; white-space: nowrap; }
-.hzr-num small { font-size: 11.5px; line-height: 17px; color: var(--ink-3); white-space: nowrap; }
-@container dock (min-width: 960px) {
-  .hzr { grid-template-columns: 14px 28px minmax(0, 1fr) 72px auto; gap: 12px; }
-  .hzr-eq { display: block; }
-}
-@container dock (max-width: 620px) {
-  .hzb { grid-template-columns: 1fr; min-height: 0; }
-  .hz-col + .hz-col { border-left: 0; }
-  .hz-head { position: static; }
-  .hzr { grid-template-columns: 14px 28px minmax(0, 1fr) 72px auto; }
-  .hzr-eq { display: block; }
-}
 
 /* my agents: one row each, the budget it was given, what it holds, what it made */
 .md { display: flex; flex-direction: column; min-height: 100%; }
@@ -2003,14 +1933,7 @@ button.lps-step-head:hover .lps-step-edit { background: var(--fill-2); color: va
   .slot.ready .slot-row, .slot.add .slot-row { grid-template-columns: 44px minmax(0, 1fr); }
   .slot.ready .slot-face, .slot.add .slot-face { width: 44px; height: 44px; }
   .slot.ready .slot-go, .slot.add .slot-go { grid-column: 1 / -1; }
-  /* a second free place folds into one quiet line instead of repeating the first card */
-  .slot.add.more .slot-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px 8px 8px 16px; }
-  .slot.add.more .slot-face, .slot.add.more .slot-main small, .slot.add.more .slot-name b:first-child, .slot.add.more .slot-go .btn-text { display: none; }
-  .slot.add.more .slot-more { display: inline; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
-  .slot.add.more .slot-go { grid-column: auto; }
-  .slot.add.more .slot-go .btn { height: 32px; padding: 0 12px; font-size: 13px; }
 }
-.slot-more { display: none; }
 .slot-face { position: relative; width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--fill); color: var(--ink-2); }
 .slot-face > .face { width: 100%; height: 100%; border-radius: 28%; }
 .slot-face:has(> .face.mark) { background: none; }
@@ -2263,7 +2186,6 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 
 /* the research set: a second benchmark beside "vs just holding", the classics group, the short-term fee note */
 
-.hz-fee { margin-top: 4px; padding: 6px 8px; border-radius: 8px; background: var(--warn-bg); color: #8a4b00 !important; font-size: 12px; line-height: 17px; }
 /* both benchmarks stay readable in the narrow panel: they wrap under the two amounts */
 
 /* ---------- sharing: agents people made (src/Shared.tsx), the creator fee in the hire sheet ---------- */
@@ -2659,6 +2581,8 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .aip-reason span, .order-ai p span { margin-right: 6px; font-weight: 700; color: #6b2fc4; }
 .aip-paper { margin: 0; font-size: 12.5px; line-height: 18px; color: var(--ink-3); }
 .aip-paper b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.aip-note { margin: 0; font-size: 12.5px; line-height: 18px; color: var(--ink-2); }
+.aip-note.warn { color: #8a4b00; }
 .aip-card.off .mp-run:not(.ghost) { background: #e9e9eb; border-color: #e9e9eb; color: var(--ink-2); cursor: not-allowed; }
 .mp-run.ghost.on { border-color: #8b3fe0; color: #6b2fc4; }
 .aip-log { display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px solid color-mix(in srgb, #8b3fe0 25%, #e4e5e8); border-radius: var(--r-panel); background: linear-gradient(180deg, color-mix(in srgb, #c04cf0 6%, var(--bg)), var(--bg) 160px); min-width: 0; }
@@ -2738,9 +2662,11 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .ar-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px; border: 0; background: none; text-align: left; }
 .ar-open:disabled { cursor: default; }
 .ar-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.ar-main b { display: flex; align-items: center; gap: 7px; font-size: 15px; line-height: 21px; font-weight: 700; color: var(--ink-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ar-main small { font-size: 13px; line-height: 18px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ar-live { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pos) 18%, transparent); }
+/* the name is always whole (it wraps before it is cut); its one line takes two lines at most */
+.ar-main b { display: block; font-size: 15px; line-height: 21px; font-weight: 700; color: var(--ink-title); }
+.ar-main b > * { margin-left: 7px; vertical-align: 2px; }
+.ar-main small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; line-height: 18px; color: var(--ink-2); word-break: keep-all; }
+.ar-live { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pos) 18%, transparent); }
 .ar-num { flex: none; min-width: 84px; display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 18px; line-height: 22px; font-weight: 800; color: var(--ink-title); font-variant-numeric: tabular-nums; }
 .ar-skel { display: inline-block; width: 72px; height: 18px; border-radius: 6px; }
 
@@ -2766,8 +2692,8 @@ details.mp-sec { border-top: 1px solid var(--line); }
 .mc-top { display: flex; align-items: flex-start; gap: 8px; }
 .mc-title { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; border: 0; background: none; padding: 0; text-align: left; }
 .mc-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.mc-name b { font-size: 17px; line-height: 23px; font-weight: 700; color: var(--ink-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mc-name small { font-size: 13.5px; line-height: 19px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-name b { font-size: 17px; line-height: 23px; font-weight: 700; color: var(--ink-title); }
+.mc-name small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13.5px; line-height: 19px; color: var(--ink-2); word-break: keep-all; }
 .mc-title:hover .mc-name b { text-decoration: underline; text-underline-offset: 3px; }
 /* every value on its own line; the curve in its own column with a minimum width (it moves under the hero when narrow) */
 .mc-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 40%); align-items: end; gap: 12px; }
@@ -2794,10 +2720,16 @@ details.tk-tier > summary svg { margin-left: auto; color: var(--ink-3); }
 .tk-calc { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 0; padding: 12px 18px 4px; font-size: 13px; color: var(--ink-2); }
 .tk-calc em { font-style: normal; color: var(--ink-3); }
 .tk-list .pf-holdrow { grid-column: 1 / -1; }
-.tk-none { margin: 10px 18px; font-size: 13.5px; color: var(--ink-2); }
+.tk-none { margin: 10px 18px; font-size: 13.5px; color: var(--ink-2); word-break: keep-all; }
+/* Moa AI, the list's first row: its own tint, so the AI that decides is seen before the rules */
+.tk-ai { display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 0; }
+.ar-row.ai { border: 1px solid color-mix(in srgb, var(--fam) 26%, #e4e5e8); background: linear-gradient(90deg, color-mix(in srgb, var(--fam) 9%, var(--bg)), var(--bg) 70%); }
 
 /* the chat card */
 .acard-perf { display: flex; flex-direction: column; gap: 8px; }
+/* under Moa's pick: one quiet line that the coin's Moa AI also exists */
+.acard-ai { align-self: flex-start; padding: 0; border: 0; background: none; font-size: 12.5px; line-height: 18px; color: var(--ink-3); text-align: left; }
+.acard-ai:hover { color: var(--ink-title); text-decoration: underline; text-underline-offset: 3px; }
 
 /* the detail view: few numbers above the fold, the rest in "자세히" */
 .bt.v2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -2859,8 +2791,14 @@ details.tk-tier > summary svg { margin-left: auto; color: var(--ink-3); }
   .tdock-head { flex-wrap: wrap; height: auto; min-height: 42px; gap: 0 10px; }
   .tdock-tabs { flex: 1 1 100%; height: 42px; min-width: 0; }
   .tdock-head .pf-switch { margin: 0 0 8px; }
-  .tdock-head .pf-asof { display: none; }
+  .tdock-head .pf-asof, .mp-filters .pf-asof { display: none; }
   .tdock-head .pf-switch ~ .tdock-build { margin-bottom: 8px; }
+  /* a row on a phone: mark, name and number on the first line; the agent's one line under them, across the row */
+  .ar-open { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; }
+  .ar-main { display: contents; }
+  .ar-main b { grid-area: 1 / 2; }
+  .ar-num { grid-area: 1 / 3; }
+  .ar-main small { grid-area: 2 / 1 / auto / -1; }
 }
 /* Moa AI cards: three across where there is room; one coin's card takes the row */
 .aip-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
@@ -2870,8 +2808,9 @@ details.tk-tier > summary svg { margin-left: auto; color: var(--ink-3); }
 .mp-live.on { color: var(--pos); }
 .mp-live.on i { background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, var(--pos) 18%, transparent); }
 
-/* against just holding: the one coloured thing on a card or row (green = did better than holding, even while down) */
+/* against just holding: the one coloured thing on a card or row. Green only when the agent also made money; ahead of holding but still down is grey ("8만원 덜 잃음") */
 .pf-vs { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 12px; line-height: 1; font-weight: 700; letter-spacing: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pf-vs.ahead { background: color-mix(in srgb, var(--pos) 12%, transparent); color: var(--pos); }
+.pf-vs.ahead.down { background: #eef0f2; color: var(--ink); }
 .pf-vs.behind { background: color-mix(in srgb, var(--neg) 10%, transparent); color: var(--neg); }
 .pf-vs.even { background: #f1f2f4; color: var(--ink-2); }

@@ -17,9 +17,11 @@ import { openSpreads, spreadsFile, startRecorder, type SpreadStore } from './spr
 import { setGapSource, RECORD_EVERY_MS } from '../src/spread.ts';
 import { onchainFile, openOnchain, startOnchain, READ_EVERY_MS } from './onchainStore.ts';
 import { setOnchainSource } from '../src/onchain.ts';
+import { setLogPace } from '../src/dex.ts';
 import { aiFile, openAiStore, type AiStore } from './aiStore.ts';
-import { aiState, claudeAsk, liveSnapshot, startAiPilot } from './aiPilot.ts';
-import { setAiSource } from '../src/aiPilot.ts';
+import { aiState, claudeAsk, liveSnapshot, startAiPilot, type AiDeps } from './aiPilot.ts';
+import { FAIL_KEEP_MS, openAiHealth } from './aiHealth.ts';
+import { COINS, setAiSource } from '../src/aiPilot.ts';
 import { MODEL } from './moaAgent.ts';
 import { isRunnable, SIGNAL_MARKETS } from '../src/agents.ts';
 import type { Address } from 'viem';
@@ -72,6 +74,10 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
   const ai = opts.ai ?? openAiStore(aiFile(env));
   const aiOn = aiState(env);
   setAiSource(async (asset) => ai.feed(asset, aiOn, aiOn === 'on' ? MODEL : null));
+  // Whether the model answers: the last outcome of the chat's calls and of Moa AI's (server/aiHealth.ts). Moa AI's
+  // last call is also in its record, so a restart does not forget that it failed.
+  const aiHealth = openAiHealth();
+  const aiFailing = (now = Date.now()) => aiHealth.failing(now) || (aiOn === 'on' && COINS.some((c) => { const t = ai.trouble(c); return !!t && now - t.at < FAIL_KEEP_MS.pilot; }));
   // Trades Moa proposes run only from their Confirm button's single-use ticket; Moa's answers are rationed.
   const tickets = ticketBook(secret);
   // The scored agent lists, kept and refreshed here so the browser gets a market's list in one request.
@@ -176,7 +182,8 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       // decided at that look, and why, only for the wallet that logged in (and only its own agents).
       if (req.url.split('?')[0] === '/api/auto/status' && req.method === 'GET') {
         const q = new URL(req.url, 'http://x').searchParams.get('owner');
-        const run = runner ? { on: true, every: runner.every, startedAt: runner.startedAt, passes: runner.passes, lastPassAt: runner.lastPassAt ?? null, nextAt: runner.nextAt ?? null, error: runner.passError ?? null } : { on: false, why: serviceOn(base) ? 'starting' : 'demo' };
+        // lastPassAt: when the last finished check began; lastPassMs: how long it took; runningSince: one is under way.
+        const run = runner ? { on: true, every: runner.every, startedAt: runner.startedAt, passes: runner.passes, lastPassAt: runner.lastPassAt ?? null, lastPassMs: runner.lastPassMs ?? null, runningSince: runner.runningSince ?? null, nextAt: runner.nextAt ?? null, error: runner.passError ?? null } : { on: false, why: serviceOn(base) ? 'starting' : 'demo' };
         const mine = !!who && (!q || q.toLowerCase() === who.toLowerCase());
         if (!mine) return send(200, { runner: run, now: Date.now() });
         const look = runner?.owners.get(who!.toLowerCase());
@@ -209,7 +216,8 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       if (path === '/api/onchain' && req.method === 'GET') {
         const asset = new URL(req.url, 'http://x').searchParams.get('asset') ?? 'HSK';
         if (asset !== 'HSK') return send(400, { error: 'only HSK is watched on chain' });
-        return send(200, { view: onchain.view() });
+        // `read`: how far back the server has read so far (it reads the newest day first, then back to 30 days).
+        return send(200, { view: onchain.view(), read: onchain.state() });
       }
       // Moa AI's decisions, public and read-only: when, the share it set, its reason, the inputs it named and the hash.
       if (path === '/api/ai/decisions' && req.method === 'GET') {
@@ -292,7 +300,8 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         return res.end(body);
       }
       if (path === '/api/health' && req.method === 'GET') {
-        return send(200, { ok: true, vaults: serviceOn(base) ? 'on' : 'demo', factory: factory === 'ok' ? 'ok' : factory === 'none' ? 'not configured' : factory === 'old' ? 'not the current version' : 'not reachable', ai: env.ANTHROPIC_API_KEY ? 'on' : 'off' });
+        // ai: 'off' with no key; 'failing' while the last call to the model (the chat's or Moa AI's) failed; else 'on'.
+        return send(200, { ok: true, vaults: serviceOn(base) ? 'on' : 'demo', factory: factory === 'ok' ? 'ok' : factory === 'none' ? 'not configured' : factory === 'old' ? 'not the current version' : 'not reachable', ai: !env.ANTHROPIC_API_KEY ? 'off' : aiFailing() ? 'failing' : 'on' });
       }
       if (req.url === '/api/moa' && req.method === 'POST') {
         const body = await posted();
@@ -320,14 +329,16 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
         const beat = setInterval(() => write({ type: 'ping' }), 5000);
         try {
           const result = await runMoa(env.ANTHROPIC_API_KEY, cfg, history, write, context, gone.signal, propose);
+          aiHealth.ok('chat');
           write({ type: 'done', result });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           console.error('[moa] Anthropic call failed:', msg);
           // The kind of failure (HTTP status and the API's error type, never the request or a key), so a failing AI can be
           // told apart from outside: a bad request, a refused key, no credit and a busy API need different fixes.
-          const st = (e as { status?: unknown }).status, ty = ((e as { error?: { error?: { type?: unknown } } }).error?.error?.type);
-          write({ type: 'error', error: 'The AI could not answer.', kind: `${typeof st === 'number' ? st : 'no-status'} ${typeof ty === 'string' ? ty : (e instanceof Error ? e.name : 'error')}`, detail: msg.replace(/sk-ant-[A-Za-z0-9_-]+/g, '[key]').slice(0, 300) });
+          // A question the user stopped (or a closed tab) is not a failure of the AI.
+          const kind = gone.signal.aborted ? 'stopped' : aiHealth.fail('chat', e);
+          write({ type: 'error', error: 'The AI could not answer.', kind, detail: msg.replace(/sk-ant-[A-Za-z0-9_-]+/g, '[key]').slice(0, 300) });
         } finally {
           clearInterval(beat);
         }
@@ -390,6 +401,9 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
     handler,
     /** Start the agents that work on their own. Only where the server can trade at all. */
     startAuto: () => {
+      // The node stops answering a caller that asks too much: this server's log reads (the on-chain history, a day of
+      // each pool's swaps for the fill models) share a ration of 30 a minute (MOA_LOGS_PER_MINUTE changes it).
+      setLogPace(Number(env.MOA_LOGS_PER_MINUTE) || 30);
       let stop = () => {};
       void settle.then(() => { if (serviceOn(base)) { runner = newRunnerState(runnerEvery()); stop = startRunner(base, store, runner); } });
       // The gap recorder runs on every server, trading or not: MOA_SPREAD_MS shortens it for a local trial (one minute at least).
@@ -398,7 +412,10 @@ export function createApi(env: Env, opts: { store?: AutoStore; shares?: ShareSto
       // The agent lists are scored on every server, trading or not, so the first visitor does not wait for them.
       const stopAgents = agentSets.start();
       // Moa AI decides only with a key and unless MOA_AI_TRADER=off; otherwise it says so and nothing follows it.
-      const stopAi = aiOn === 'on' ? startAiPilot(ai, { snapshot: liveSnapshot, ask: claudeAsk(env.ANTHROPIC_API_KEY!) }, Number(env.MOA_AI_TICK_MS) || undefined) : () => {};
+      // Each call Moa AI makes is noted: an answer (even one it then refuses to use) or the kind of failure.
+      const ask = aiOn === 'on' ? claudeAsk(env.ANTHROPIC_API_KEY!) : undefined;
+      const noted: AiDeps['ask'] = async (snap, signal) => { try { const r = await ask!(snap, signal); aiHealth.ok('pilot'); return r; } catch (e) { aiHealth.fail('pilot', e); throw e; } };
+      const stopAi = aiOn === 'on' ? startAiPilot(ai, { snapshot: liveSnapshot, ask: noted }, Number(env.MOA_AI_TICK_MS) || undefined) : () => {};
       console.log(`[moa] Moa AI ${aiOn === 'on' ? `on (${MODEL}, every 4 hours)` : aiOn === 'off' ? 'switched off (MOA_AI_TRADER=off)' : 'off: no ANTHROPIC_API_KEY'}`);
       return () => { stop(); stopRec(); stopChain(); stopAgents(); stopAi(); };
     },

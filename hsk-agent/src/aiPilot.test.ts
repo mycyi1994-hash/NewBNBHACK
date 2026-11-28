@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AI_EVERY_MS, BAND, COOLDOWN_MS, aiAgent, buildSnapshot, decisionHash, forModel, guard, heldDecision, isDue, lastClosedCandle, madeDecision,
+  AI_EVERY_MS, BAND, COOLDOWN_MS, CUT, LIMITS, STEP, aiAgent, buildSnapshot, decisionHash, forModel, guard, guardPoints, heldDecision, inputsMissing, isDue, lastClosedCandle, madeDecision,
   paperTrack, parseOutput, plain, verifyDecision, type AiDecision, type AiFeed, type AiSnapshot,
 } from './aiPilot.ts';
+import { AI_TEXT } from './aiText.ts';
 import { beatsHold } from './agents.ts';
 import { agentSignal, decide, type HiredAgent } from './runner.ts';
 import { journalHash, makeJournal, verifyJournal } from './journal.ts';
@@ -17,17 +18,30 @@ const h4 = (end: number, close: number) => Array.from({ length: 6 }, (_, i) => (
 
 test('guard: clamp to 0..1 and round to 5%', () => {
   assert.deepEqual(guard(0.5, 1.7), { target: 0.75, guard: { clamped: true, stepped: true } });
-  assert.equal(guard(0.5, -3).target, 0.25);
+  assert.deepEqual(guard(0.5, -3), { target: 0, guard: { clamped: true } }, 'clamped to 0: a 50-point cut is allowed');
   assert.equal(guard(0.8, 0.98).target, 1, 'rounded to 1.0: a 20-point move, within the step and above the band');
   assert.equal(guard(0.8, 1.02).target, 1);
   assert.equal(guard(0.4, 0.62).target, 0.6, '0.62 rounds to 0.60');
   assert.equal(guard(0.4, 0.63).target, 0.65, '0.63 rounds to 0.65');
 });
-test('guard: at most 25 points a decision, from nothing held at the start', () => {
+test('guard: up at most 25 points a decision, from nothing held at the start', () => {
   assert.deepEqual(guard(null, 1), { target: 0.25, guard: { stepped: true } });
   assert.equal(guard(0.25, 1).target, 0.5);
-  assert.equal(guard(1, 0).target, 0.75);
-  assert.equal(guard(0.6, 0).target, 0.35);
+  assert.equal(guard(0.5, 0.75).target, 0.75, 'exactly the step is not limited');
+  assert.equal(STEP, 0.25);
+});
+test('guard: risk comes off faster than it goes on: down at most 50 points a decision', () => {
+  assert.equal(CUT, 0.5);
+  assert.ok(CUT > STEP);
+  assert.deepEqual(guard(1, 0), { target: 0.5, guard: { stepped: true } }, '100% to 0%: half now');
+  assert.deepEqual(guard(0.5, 0), { target: 0, guard: {} }, 'and the rest at the next decision: out in two, not four');
+  assert.equal(guard(0.6, 0).target, 0.1);
+  assert.equal(guard(0.75, 0.3).target, 0.3, 'a 45-point cut goes through whole');
+  assert.equal(guard(0.3, 0.75).target, 0.55, 'the same distance up is still limited to 25');
+  assert.equal(guard(1, 0.95).target, 1, 'a cut under the band is still no move');
+  // the limits are an argument: a decision is always judged by the ones it is given
+  assert.equal(guard(1, 0, { band: 0.15, step: 0.25, cut: 0.25 }).target, 0.75);
+  assert.deepEqual(guard(0, 0.1, { band: 0.15, step: 0.25, cut: 0.25 }), { target: 0, guard: { banded: true } });
 });
 test('guard: a move under 10 points is no move', () => {
   assert.deepEqual(guard(0.5, 0.55), { target: 0.5, guard: { banded: true } });
@@ -67,11 +81,23 @@ test('snapshot: numbers computed in code, nothing missing guessed', () => {
   assert.equal(s.prevTarget, 0.5);
   assert.equal('poolGap' in s, false, 'no pool read: no pool keys');
   assert.equal('flowNet24h' in s, false);
-  for (const [k, v] of Object.entries(s)) if (k !== 'asset') assert.equal(typeof v, 'number', `${k} is a number`);
+  assert.deepEqual(s.missing, ['pool'], 'and the snapshot says the pool is missing (BTC has no flow input, so that is not missing)');
+  for (const [k, v] of Object.entries(s)) if (k !== 'asset' && k !== 'missing') assert.equal(typeof v, 'number', `${k} is a number`);
+  assert.equal(forModel(s).missing, 'pool', 'the model is told too');
+  const bare = buildSnapshot({ asset: 'HSK', now: NOW, daily: d, h4: h4(T0, 400), prevTarget: null });
+  assert.ok(bare.ok);
+  assert.deepEqual(bare.snap.missing, ['pool', 'flow'], 'HSK with neither read: both named');
   const withPool = buildSnapshot({ asset: 'HSK', now: NOW, daily: d, h4: h4(T0, 400), prevTarget: null, pool: { price: 398, gap: -0.005, roundTrip: 0.0071, depth2pct: 12000 }, flow: { net24h: -1200, buy24h: 800, sell24h: 2000, swaps24h: 31, net7d: 400 } });
   assert.ok(withPool.ok);
   assert.equal(withPool.snap.poolGap, -0.005);
   assert.equal(withPool.snap.flowSwaps24h, 31);
+  assert.equal('missing' in withPool.snap, false, 'everything read: nothing missing, no key');
+  assert.equal('poolAgeMin' in withPool.snap, false, 'read just now: no age');
+  // inputs from the server's own record carry their age, and a week that is not read yet is left out
+  const aged = buildSnapshot({ asset: 'HSK', now: NOW, daily: d, h4: h4(T0, 400), prevTarget: null, pool: { price: 398, gap: -0.005, ageMin: 12.4 }, flow: { net24h: 5, buy24h: 10, sell24h: 5, swaps24h: 3, ageMin: 7.6 } });
+  assert.ok(aged.ok);
+  assert.deepEqual([aged.snap.poolAgeMin, aged.snap.flowAgeMin, 'flowNet7d' in aged.snap, aged.snap.missing], [12, 8, false, undefined]);
+  assert.deepEqual([forModel(aged.snap).poolAgeMin, forModel(aged.snap).flowAgeMin], [12, 8]);
   assert.equal('prevTarget' in withPool.snap, false, 'no target in force yet: no key');
   const m = forModel(withPool.snap);
   assert.equal(m.poolGapPct, -0.5, 'shares become percents for the model');
@@ -118,6 +144,53 @@ test('decisions are hashed and the hash checks', () => {
   assert.equal(h.target, 0.4, 'held: the target in force stays');
   assert.equal(h.held, 'timeout');
   assert.equal(verifyDecision(h), true);
+});
+
+// The first decision the live server recorded (public at /api/ai/decisions?asset=BTC), exactly as stored: made when
+// the band was 15 points, with no limits and no pool inputs in the record.
+const LIVE_FIRST = JSON.parse("{\"at\":1795833765548,\"candle\":1795809600,\"asset\":\"BTC\",\"model\":\"claude-sonnet-5-5\",\"target\":0,\"proposed\":0.1,\"prev\":null,\"reason\":\"BTC is 8.1% below its 20-day, 19.4% below its 50-day and 16.6% below its 200-day average, with 30-day return -26.4%. The trend is down, so hold little.\",\"reasonKo\":\"BTC는 20일 평균보다 8.1%, 50일보다 19.4%, 200일보다 16.6% 낮고 30일 수익률은 -26.4%입니다. 하락 추세라 비중을 낮게 유지합니다.\",\"signals\":[\"vsMa20\",\"vsMa200\",\"ret30d\",\"vol20\"],\"guard\":{\"banded\":true},\"price\":59900.3,\"snapshot\":{\"asset\":\"BTC\",\"candle\":1795809600,\"price\":59900.3,\"ret1d\":-0.01104356669726514,\"ret7d\":0.0168621725771132,\"ret30d\":-0.26371704259111295,\"ret90d\":-0.23411532452122863,\"ma20\":65209.19500000001,\"vsMa20\":-0.08141328841737738,\"ma50\":74317.78200000002,\"vsMa50\":-0.19399774336645315,\"ma200\":71845.53649999999,\"vsMa200\":-0.16626275036584892,\"vol20\":0.45475582817079657},\"hash\":\"0x154fac72fff59815d1f8ccad0da2d295923ce2163373df3946da32948275ccb4\"}") as AiDecision;
+test('each decision records the limits it was made under; one recorded before that still checks and gets no number', () => {
+  const d = madeDecision({ at: NOW, asset: 'ETH', prev: 0.5, model: 'm', snapshot: snap }, { target: 0.55, reason: 'r', reasonKo: 'r', signals: [] });
+  assert.deepEqual(d.guard, { banded: true });
+  assert.deepEqual(d.limits, LIMITS);
+  assert.deepEqual(d.limits, { band: BAND, step: STEP, cut: CUT });
+  assert.equal(guardPoints(d, 'banded'), 10);
+  assert.equal(verifyDecision(d), true, 'the limits are part of what is hashed');
+  assert.equal(verifyDecision({ ...d, limits: { ...LIMITS, band: 0.15 } }), false);
+  const cut = madeDecision({ at: NOW, asset: 'ETH', prev: 1, model: 'm', snapshot: snap }, { target: 0, reason: 'r', reasonKo: 'r', signals: [] });
+  assert.deepEqual([cut.target, guardPoints(cut, 'stepped')], [0.5, 50], 'a cut says the cut limit');
+  const up = madeDecision({ at: NOW, asset: 'ETH', prev: 0, model: 'm', snapshot: snap }, { target: 1, reason: 'r', reasonKo: 'r', signals: [] });
+  assert.deepEqual([up.target, guardPoints(up, 'stepped')], [0.25, 25], 'a rise says the step');
+  // a decision made under other limits keeps saying those, whatever today's are
+  const then = madeDecision({ at: NOW, asset: 'ETH', prev: 0, model: 'm', snapshot: snap }, { target: 0.1, reason: 'r', reasonKo: 'r', signals: [] }, { band: 0.15, step: 0.25, cut: 0.25 });
+  assert.deepEqual([then.target, guardPoints(then, 'banded')], [0, 15]);
+  // the stored record from before: untouched, its hash still recomputes, and no number is claimed for it
+  assert.equal(verifyDecision(LIVE_FIRST), true);
+  assert.deepEqual(LIVE_FIRST.guard, { banded: true });
+  assert.equal(LIVE_FIRST.limits, undefined);
+  assert.equal(guardPoints(LIVE_FIRST, 'banded'), null, 'a 10% proposal held by the 15-point band of the time: not labelled "under 10 points"');
+});
+
+test('a decision says which inputs it lacked; an earlier one is read from its snapshot', () => {
+  const lacking = madeDecision({ at: NOW, asset: 'HSK', prev: 0, model: 'm', snapshot: { ...snap, asset: 'HSK', missing: ['pool', 'flow'] } }, { target: 0.2, reason: 'r', reasonKo: 'r', signals: [] });
+  assert.deepEqual(lacking.missing, ['pool', 'flow']);
+  assert.deepEqual(inputsMissing(lacking), ['pool', 'flow']);
+  assert.equal(verifyDecision(lacking), true);
+  const held = heldDecision({ at: NOW, candle: T0 - H4, asset: 'HSK', prev: 0.2, model: 'm', snapshot: { ...snap, asset: 'HSK', missing: ['flow'] }, fail: '400 invalid_request_error' }, 'callFailed');
+  assert.deepEqual([held.missing, held.fail, held.limits], [['flow'], '400 invalid_request_error', LIMITS], 'a held decision keeps the limits in force too');
+  assert.equal(verifyDecision(held), true);
+  const whole = madeDecision({ at: NOW, asset: 'ETH', prev: 0, model: 'm', snapshot: { ...snap, poolPrice: 2001 } }, { target: 0.2, reason: 'r', reasonKo: 'r', signals: [] });
+  assert.equal('missing' in whole, false);
+  assert.deepEqual(inputsMissing(whole), []);
+  assert.deepEqual(inputsMissing(LIVE_FIRST), ['pool'], 'the live record never had the pool: said, not left blank');
+  assert.deepEqual(inputsMissing({ ...LIVE_FIRST, asset: 'HSK' }), ['pool', 'flow']);
+  assert.deepEqual(inputsMissing(heldDecision({ at: NOW, candle: 0, asset: 'HSK', prev: null, model: null }, 'noData')), [], 'no snapshot at all: nothing is claimed');
+});
+
+test('the rule text people read states the limits the code applies', () => {
+  const [up, down, band] = [STEP, CUT, BAND].map((x) => Math.round(x * 100));
+  assert.match(AI_TEXT.en.aiPilot.rules[1], new RegExp(`up at most ${up} points.*down at most ${down}.*under ${band} points`));
+  assert.match(AI_TEXT.ko.aiPilot.rules[1], new RegExp(`${up}%p까지.*${down}%p까지.*${band}%p`));
 });
 
 const feed = (decisions: AiDecision[], state: AiFeed['state'] = 'on'): AiFeed => ({ asset: 'ETH', state, every: AI_EVERY_MS, model: 'claude-sonnet-5-5', decisions, paper: paperTrack(decisions), count: decisions.length });

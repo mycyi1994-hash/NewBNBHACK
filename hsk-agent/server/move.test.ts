@@ -9,7 +9,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { decodeFunctionData, encodeFunctionResult, zeroAddress, type Abi, type Address, type Hex } from 'viem';
+import { decodeFunctionData, encodeFunctionResult, multicall3Abi, zeroAddress, type Abi, type Address, type Hex } from 'viem';
 import vaultArtifact from '../contracts/out/MoaVault.json' with { type: 'json' };
 import factoryArtifact from '../contracts/out/MoaVaultFactory.json' with { type: 'json' };
 import { factoryVersion, feesLive, forOwner, moveStatus, upgradeVault, vaultVersion, vaultView, TOKENS, USDT, type ExecConfig } from './executor.ts';
@@ -28,6 +28,7 @@ const AGENT = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const F3 = '0x00000000000000000000000000000000000000f3', F2 = '0x00000000000000000000000000000000000000f2', F2B = '0x00000000000000000000000000000000000002fb';
 const OLD = '0x0000000000000000000000000000000000000a02', NEW = '0x0000000000000000000000000000000000000a03', OLDER = '0x0000000000000000000000000000000000000a01';
 const WBTC = TOKENS.BTC.address;
+const MULTICALL3 = '0xca11bde05977b3631167028862be2a173976ca11';
 const erc20 = [{ type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] }] as const;
 const abi = [...vaultArtifact.abi, ...factoryArtifact.abi, ...erc20] as Abi;
 const low = (a: string) => a.toLowerCase();
@@ -103,6 +104,12 @@ async function chain(w: World) {
       }
       if (method === 'eth_blockNumber') return reply({ result: '0x10' });
       if (method !== 'eth_call') return reply({ error: { code: -32601, message: `no ${method} here` } });
+      // Reads asked for together arrive as one Multicall3 call: each inner read is answered from the model as before.
+      if (low(params[0].to) === MULTICALL3) {
+        const inner = decodeFunctionData({ abi: multicall3Abi, data: params[0].data }).args![0] as readonly { target: Address; callData: Hex }[];
+        const result = inner.map((c) => { const r = answer(w, c.target, c.callData); return { success: r !== null, returnData: r ?? '0x' }; });
+        return reply({ result: encodeFunctionResult({ abi: multicall3Abi, functionName: 'aggregate3', result }) });
+      }
       const result = answer(w, params[0].to, params[0].data);
       return result ? reply({ result }) : reply({ error: { code: 3, message: 'execution reverted', data: '0x' } });
     });

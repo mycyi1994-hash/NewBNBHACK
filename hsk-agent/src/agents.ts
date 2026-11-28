@@ -393,9 +393,13 @@ export function seedFillModel(symbol: string, model: FillModel, at = Date.now())
  * How long a read fill model is used before the pool is read again. Reading it is a day of the pool's swaps (44 log
  * reads a pool): every half hour and at every start, that was most of what this server asked the node, and the node
  * stops answering a caller that asks too much. A measured model moves slowly; a haircut may be a failed read, so it
- * is tried again sooner.
+ * is tried again sooner. But a haircut from a read that worked and found too few swaps (`quiet`: the BTC and ETH
+ * pools go days without one) is as good an answer as a measured gap: asking again every hour was 88 log reads an
+ * hour for nothing.
  */
-export const fillKeepMs = (model: FillModel | undefined) => (model?.source === 'pool' ? 6 * 3_600_000 : 3_600_000);
+export const fillKeepMs = (model: FillModel | undefined, quiet = false) => (model?.source === 'pool' || quiet ? 6 * 3_600_000 : 3_600_000);
+/** Markets whose last pool read worked (depth and swaps both read) and still gave the haircut: a quiet pool, not a failed read. */
+const quietPools = new Set<string>();
 /**
  * Read the pool a runnable coin trades on: its depth, and a day of its swaps against the exchange's hourly candles
  * for the gap. Kept for fillKeepMs. Anything that cannot be read falls back to the haircut, never to a better fill.
@@ -403,17 +407,21 @@ export const fillKeepMs = (model: FillModel | undefined) => (model?.source === '
 export function fillModelFor(m: cex.Market): Promise<FillModel> {
   if (!isRunnable(m.base)) return Promise.resolve(exchangeModel());
   const hit = models.get(m.symbol);
-  if (hit && Date.now() - hit.at < fillKeepMs(modelsReady.get(m.symbol))) return hit.p;
+  if (hit && Date.now() - hit.at < fillKeepMs(modelsReady.get(m.symbol), quietPools.has(m.symbol))) return hit.p;
   const asset = m.base as Asset;
   const read = (async () => {
     const [depth, detail, hours] = await Promise.all([poolState(asset).catch(() => undefined), poolDetail(asset, 1).catch(() => null), madeHistory(m, '1h').catch(() => [] as Bar[])]);
-    return poolModel(depth, detail && hours.length ? measureBasis(detail.swaps, hours) : null);
+    const model = poolModel(depth, detail && hours.length ? measureBasis(detail.swaps, hours) : null);
+    if (model.source === 'haircut' && depth && detail && hours.length) quietPools.add(m.symbol); else quietPools.delete(m.symbol);
+    return model;
   })();
-  // A slow chain read does not hold the agents back: they use the haircut now, and the measured model once it arrives.
-  void read.then((x) => modelsReady.set(m.symbol, x), () => undefined);
+  // A slow chain read does not hold the agents back: they use the haircut now, and the measured model once it arrives
+  // (it then replaces the answer kept below, which would otherwise stay the haircut for as long as a model is kept).
+  const at = Date.now();
+  void read.then((x) => { modelsReady.set(m.symbol, x); if (models.get(m.symbol)?.at === at) models.set(m.symbol, { at, p: Promise.resolve(x) }); }, () => undefined);
   const timeout = new Promise<FillModel>((ok) => setTimeout(() => ok(modelsReady.get(m.symbol) ?? haircutModel()), 25_000));
   const p = Promise.race([read.catch(() => haircutModel()), timeout]).then((x) => { if (!modelsReady.has(m.symbol)) modelsReady.set(m.symbol, x); return x; });
-  models.set(m.symbol, { at: Date.now(), p });
+  models.set(m.symbol, { at, p });
   return p;
 }
 
