@@ -2622,7 +2622,7 @@ button.pf-row:hover, .pf-row.on { background: color-mix(in srgb, var(--agent) 7%
 .aip-badge.sm { height: 18px; padding: 0 6px; font-size: 11px; vertical-align: 2px; }
 .aip-sec .mp-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .aip-sec .mp-h2 small { flex: 1 1 260px; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink-3); }
-.aip-card .mp-sub { gap: 4px 8px; }
+.aip-card .mp-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .aip-honest { margin: -4px 0 0; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--ink-title); text-wrap: pretty; }
 .aip-result { align-items: center; min-height: 86px; }
 .aip-now { flex: none; display: flex; flex-direction: column; min-width: 0; }
