@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as cex from '../src/cex.ts';
-import { collectAgents, fillModelFor, isRunnable, positionAgents, RUNNABLE, SIGNAL_MARKETS, type Agent } from '../src/agents.ts';
+import { collectAgents, fillModelFor, isRunnable, positionAgents, seedFillModel, RUNNABLE, SIGNAL_MARKETS, type Agent } from '../src/agents.ts';
 import { pack, type AgentSet } from '../src/agentWire.ts';
 import type { FillModel } from '../src/fills.ts';
 
@@ -43,7 +43,14 @@ export function openAgentCache(file?: string, opts: { load?: Loader; every?: num
   const sets = new Map<string, AgentSet>();
   const running = new Map<string, Promise<AgentSet>>();
   if (file && existsSync(file)) {
-    try { for (const s of JSON.parse(readFileSync(file, 'utf8')) as AgentSet[]) if (s && isKey(s.key)) sets.set(s.key, s); } catch { console.error(`[moa] could not read ${file}; scoring agents afresh`); }
+    try {
+      for (const s of JSON.parse(readFileSync(file, 'utf8')) as AgentSet[]) {
+        if (!s || !isKey(s.key)) continue;
+        sets.set(s.key, s);
+        // The fill models the kept lists were scored with, at their age: a restart does not read every pool again.
+        if (!opts.load) for (const [symbol, model] of Object.entries(s.fills ?? {})) seedFillModel(symbol, model, s.at);
+      }
+    } catch { console.error(`[moa] could not read ${file}; scoring agents afresh`); }
   }
   const save = () => {
     if (!file) return;

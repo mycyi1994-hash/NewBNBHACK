@@ -385,18 +385,25 @@ const modelsReady = new Map<string, FillModel>();
 /** The fill model of a market already read, else the stated one (exchange for a coin with no pool, the haircut for a pool). */
 export const fillModel = (m: cex.Market): FillModel => modelsReady.get(m.symbol) ?? (isRunnable(m.base) ? haircutModel() : exchangeModel());
 /** A fill model read elsewhere (the server's cache sends the one its list was scored with): used here without reading the chain again. */
-export function seedFillModel(symbol: string, model: FillModel) {
+export function seedFillModel(symbol: string, model: FillModel, at = Date.now()) {
   modelsReady.set(symbol, model);
-  models.set(symbol, { at: Date.now(), p: Promise.resolve(model) });
+  models.set(symbol, { at, p: Promise.resolve(model) });
 }
 /**
+ * How long a read fill model is used before the pool is read again. Reading it is a day of the pool's swaps (44 log
+ * reads a pool): every half hour and at every start, that was most of what this server asked the node, and the node
+ * stops answering a caller that asks too much. A measured model moves slowly; a haircut may be a failed read, so it
+ * is tried again sooner.
+ */
+export const fillKeepMs = (model: FillModel | undefined) => (model?.source === 'pool' ? 6 * 3_600_000 : 3_600_000);
+/**
  * Read the pool a runnable coin trades on: its depth, and a day of its swaps against the exchange's hourly candles
- * for the gap. Kept 30 minutes. Anything that cannot be read falls back to the haircut, never to a better fill.
+ * for the gap. Kept for fillKeepMs. Anything that cannot be read falls back to the haircut, never to a better fill.
  */
 export function fillModelFor(m: cex.Market): Promise<FillModel> {
   if (!isRunnable(m.base)) return Promise.resolve(exchangeModel());
   const hit = models.get(m.symbol);
-  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.p;
+  if (hit && Date.now() - hit.at < fillKeepMs(modelsReady.get(m.symbol))) return hit.p;
   const asset = m.base as Asset;
   const read = (async () => {
     const [depth, detail, hours] = await Promise.all([poolState(asset).catch(() => undefined), poolDetail(asset, 1).catch(() => null), madeHistory(m, '1h').catch(() => [] as Bar[])]);
